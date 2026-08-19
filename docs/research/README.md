@@ -15,6 +15,7 @@ list into GitHub issues with dependencies flagged.
 | 4 | [bot-crew](bot-crew/brief.md) | Chief of Staff routing + bot templates + tools. Depends on #1. |
 | 5 | [git-and-prs](git-and-prs/brief.md) | Worktrees, PR view. Mostly independent; light dependency on #2. |
 | 6 | [data-and-persistence](data-and-persistence/brief.md) | Storage for threads, transcripts, crew config. Depends on #1–#2 shapes. |
+| 7 | [remote-and-mobile](remote-and-mobile/brief.md) | Bots hosted on other machines + mobile pairing (MVP2 feature, but the client/host split is an MVP1 decision). Depends on #1–#2. |
 
 ## Product source of truth
 
