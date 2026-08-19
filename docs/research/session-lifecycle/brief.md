@@ -5,7 +5,9 @@ sidebar), keeps working in the background, and resurfaces in the Inbox when it
 finishes, fails, or needs a human call.
 
 Depends on: [harness-integration](../harness-integration/brief.md) (what a
-session even is per harness).
+session even is per harness). Prior art:
+[setup-porting](../setup-porting/findings.md) (OpenClaw task ledger, Hermes
+outbox, Buzz supervisor — fold ≠ run ≠ Inbox).
 
 **Findings (2026-08):** questions below are answered in
 [findings.md](findings.md). Deep dives: [state-machine.md](state-machine.md),

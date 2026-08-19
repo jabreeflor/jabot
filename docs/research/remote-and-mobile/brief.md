@@ -18,7 +18,10 @@ fork with [app-shell](../app-shell/findings.md) — see
 Depends on: [harness-integration](../harness-integration/brief.md) and
 [session-lifecycle](../session-lifecycle/brief.md) (shapes what a "session
 connection" carries). Feeds [app-shell](../app-shell/brief.md) (UI vs daemon
-split becomes UI vs host split).
+split becomes UI vs host split). Prior art:
+[setup-porting](../setup-porting/findings.md) (OpenClaw device pairing, Hermes
+multi-machine Bots, Buzz QR/SAS — copy the state machine, not Nostr or
+master-secret transfer).
 
 ## Questions to answer
 

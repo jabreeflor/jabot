@@ -4,7 +4,9 @@ The messenger half: a Chief of Staff bot that routes work, plus template bots
 (Code, Inbox Manager, Scheduler, Research, Writer) the user can add, edit,
 recolor, and give instructions + tools.
 
-Depends on: [harness-integration](../harness-integration/brief.md).
+Depends on: [harness-integration](../harness-integration/brief.md). Prior art:
+[setup-porting](../setup-porting/findings.md) (OpenClaw agents + workspace
+files, Hermes Bot Mode/profiles, Buzz persona packs).
 
 **Findings (2026-08):** questions below are answered in
 [findings.md](findings.md). Deep dives: [bot-model.md](bot-model.md),
