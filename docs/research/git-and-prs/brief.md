@@ -7,6 +7,12 @@ Mostly independent; light dependency on
 [session-lifecycle](../session-lifecycle/brief.md) (a folded thread that opens
 a PR must link the two).
 
+**Findings (2026-08):** questions below are answered in
+[findings.md](findings.md). Deep dives: [worktrees.md](worktrees.md),
+[folders-and-auth.md](folders-and-auth.md), [pr-linkage.md](pr-linkage.md).
+Headline: JaBot-owned worktrees as ACP cwd; reuse `gh` for GitHub-only MVP;
+poll GraphQL; detect PRs from execute stdout + `gh pr view`.
+
 ## Questions to answer
 
 1. **Isolation per thread** — do concurrent threads on one repo each get a git

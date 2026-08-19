@@ -7,6 +7,12 @@ finishes, fails, or needs a human call.
 Depends on: [harness-integration](../harness-integration/brief.md) (what a
 session even is per harness).
 
+**Findings (2026-08):** questions below are answered in
+[findings.md](findings.md). Deep dives: [state-machine.md](state-machine.md),
+[keep-alive.md](keep-alive.md), [resurface.md](resurface.md). Headline:
+user-space supervisor keeps the ACP process while folded work is in flight;
+idle / sleep / crash resume from `sessionId` + `cwd`. Not launchd.
+
 ## Questions to answer
 
 1. **Keeping sessions alive** — when a thread folds, does the harness process

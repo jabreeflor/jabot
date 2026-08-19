@@ -7,6 +7,14 @@ so it's a desktop app first.
 Constrained by: [harness-integration](../harness-integration/brief.md) — the
 adapter layer decides how much process/PTY machinery the shell must own.
 
+**Findings (2026-08):** questions below are answered in
+[findings.md](findings.md). Deep dives: [electron-vs-tauri.md](electron-vs-tauri.md),
+[ui-stack.md](ui-stack.md), [process-architecture.md](process-architecture.md).
+Headline: macOS-only Tauri 2 + React 19; Rust host owns ACP subprocesses;
+no launchd daemon or PTY for MVP. Physical daemon vs in-process host is
+the remaining fork with [remote-and-mobile](../remote-and-mobile/findings.md)
+— see [README](../README.md#open-fork-physical-host).
+
 ## Questions to answer
 
 1. **Electron vs Tauri** — for an app that spawns many child processes / PTYs,

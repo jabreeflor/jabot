@@ -7,6 +7,15 @@ Depends on: shapes decided in
 [harness-integration](../harness-integration/brief.md) and
 [session-lifecycle](../session-lifecycle/brief.md).
 
+**Findings (2026-08):** questions below are answered in
+[findings.md](findings.md). Deep dives: [store.md](store.md),
+[schema.md](schema.md), [secrets-and-sync.md](secrets-and-sync.md).
+Headline: SQLite WAL as source of truth; ACP overlay not harness-log
+mirrors; secrets in the OS keychain. Thread states match
+[session-lifecycle](../session-lifecycle/findings.md)
+(`active | folded | resurfaced | archived`). Binding is `rusqlite` given
+[app-shell](../app-shell/findings.md) picked Tauri.
+
 ## Questions to answer
 
 1. **Store** — SQLite vs plain files (JSON/markdown) vs both. Transcripts are
