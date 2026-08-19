@@ -5,6 +5,12 @@ examples; user brings their own harness, like Buzz does) but keeps our chat UI.
 We need to know how to drive each harness programmatically and normalize their
 output into our message/toolblock format.
 
+**Findings (2026-08):** questions below are answered in
+[findings.md](findings.md). Deep dives: [acp.md](acp.md),
+[claude-code.md](claude-code.md), [codex.md](codex.md), [pi.md](pi.md),
+[buzz.md](buzz.md), [adapter-design.md](adapter-design.md). Headline:
+speak ACP; do not PTY-wrap TUIs.
+
 ## Questions to answer
 
 1. **Integration mode per harness** — for each of Claude Code, Codex, Pi:
