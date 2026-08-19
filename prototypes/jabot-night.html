@@ -1,0 +1,129 @@
+<title>JaBot Night Ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root{ --bg:#101010; --ink:#E8E8E8; --grey:#7A7A7A; --hair:#2A2A2A; }
+  *{box-sizing:border-box; margin:0}
+  body{
+    background:var(--bg); color:var(--ink); height:100vh; overflow:hidden; display:flex;
+    font:13px/1.6 "IBM Plex Mono", monospace;
+  }
+
+  .rail{width:240px; flex:none; border-right:1px solid var(--hair); padding:24px 20px; display:flex; flex-direction:column; gap:2px; overflow-y:auto}
+  .brand{font-weight:500; margin-bottom:20px}
+  .brand i{font-style:normal; animation:blink 1.2s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .lab{font-size:10.5px; letter-spacing:.14em; color:var(--grey); margin:16px 0 8px}
+  .it{display:flex; padding:3px 0; cursor:pointer; color:var(--ink)}
+  .it:hover{color:var(--grey)}
+  .it span{margin-left:auto; color:var(--grey); font-size:12px}
+  .bots{display:grid; grid-template-columns:repeat(3,1fr); gap:12px 6px; margin:10px 0 4px; justify-items:center}
+  .bot{
+    width:36px; height:36px; border-radius:50%; border:1px solid var(--ink); display:grid; place-items:center;
+    font-size:10.5px; cursor:pointer; background:var(--bg); color:var(--ink);
+  }
+  .bot:hover{background:var(--ink); color:var(--bg)}
+  .bot.chief{background:var(--ink); color:var(--bg)}
+
+  .main{flex:1; min-width:0; overflow-y:auto; padding:32px 40px}
+  .main-inner{max-width:640px}
+  h1{font-size:13px; font-weight:500; margin-bottom:4px}
+  .sub{color:var(--grey); font-size:12px; margin-bottom:28px}
+
+  .sec{font-size:10.5px; letter-spacing:.14em; color:var(--grey); margin:26px 0 4px}
+  .t{
+    display:flex; align-items:baseline; gap:10px; padding:10px 0; border-bottom:1px solid var(--hair);
+    transition:opacity .4s;
+  }
+  .t .glyph{width:14px; flex:none}
+  .t .glyph.run{animation:blink 1.4s steps(1) infinite}
+  .t b{font-weight:500}
+  .t .meta{color:var(--grey); font-size:12px}
+  .t .right{margin-left:auto; color:var(--grey); font-size:12px; white-space:nowrap}
+  .t button{
+    font:11px "IBM Plex Mono", monospace; background:none; color:var(--grey); border:1px solid var(--hair);
+    padding:2px 8px; cursor:pointer; border-radius:3px;
+  }
+  .t button:hover{color:var(--ink); border-color:var(--ink)}
+  .t button:focus-visible{outline:1px solid var(--ink); outline-offset:2px}
+  .t.gone{opacity:0}
+  .t.dim{color:var(--grey)}
+  .t.dim b{color:var(--grey); font-weight:400}
+
+  .hint{color:var(--grey); font-size:11.5px; margin-top:24px}
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important} }
+</style>
+
+<div class="rail">
+  <div class="brand">jabot<i>_</i></div>
+  <div class="lab">BOT CHATS</div>
+  <div class="it">schedules <span>3</span></div>
+  <div class="bots">
+    <div class="bot chief" title="chief of staff">cos</div>
+    <div class="bot">m</div>
+    <div class="bot">c</div>
+    <div class="bot">r</div>
+    <div class="bot">f</div>
+    <div class="bot">w</div>
+  </div>
+  <div class="lab">CODE</div>
+  <div class="it">new chat</div>
+  <div class="it">pull requests <span>4</span></div>
+  <div class="it">inbox <span id="inboxN">1</span></div>
+  <div class="it">folder1</div>
+  <div class="it">folder2</div>
+</div>
+
+<div class="main">
+  <div class="main-inner">
+    <h1>threads</h1>
+    <div class="sub">2 active · <span id="sleepN">1</span> sleeping · 1 resurfaced</div>
+
+    <div class="sec">ACTIVE</div>
+    <div class="t" id="mig">
+      <span class="glyph run">●</span>
+      <div><b>auth migration</b> <span class="meta">· step 3/7 · 18m</span></div>
+      <span class="right"><button id="sleepBtn">disappear</button></span>
+    </div>
+    <div class="t">
+      <span class="glyph">◐</span>
+      <div><b>sidebar overflow fix</b> <span class="meta">· waiting on you</span></div>
+      <span class="right">needs answer</span>
+    </div>
+
+    <div class="sec">SLEEPING</div>
+    <div id="sleepZone">
+      <div class="t dim">
+        <span class="glyph">◌</span>
+        <div><b>nas backup script</b> <span class="meta">· resurfaces on done or stuck</span></div>
+        <span class="right">2h 10m</span>
+      </div>
+    </div>
+
+    <div class="sec">INBOX — RESURFACED</div>
+    <div class="t">
+      <span class="glyph">○</span>
+      <div><b>weekly digest draft</b> <span class="meta">· writer finished · awaiting review</span></div>
+      <span class="right">09:41</span>
+    </div>
+
+    <div class="hint">sleeping threads leave the list and return to inbox when they finish or need you.</div>
+  </div>
+</div>
+
+<script>
+  document.getElementById('sleepBtn').onclick = () => {
+    const t = document.getElementById('mig');
+    if (t.classList.contains('gone')) return;
+    t.classList.add('gone');
+    setTimeout(() => {
+      t.style.display = 'none';
+      document.getElementById('sleepN').textContent = '2';
+      const z = document.getElementById('sleepZone');
+      const s = document.createElement('div');
+      s.className = 't dim';
+      s.innerHTML = '<span class="glyph">◌</span><div><b>auth migration</b> <span class="meta">· resurfaces on done or stuck</span></div><span class="right">now</span>';
+      z.prepend(s);
+    }, 380);
+  };
+</script>

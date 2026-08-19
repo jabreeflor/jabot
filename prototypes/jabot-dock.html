@@ -1,0 +1,126 @@
+<title>JaBot Staff Dock</title>
+<style>
+  :root{ --paper:#FFFFFF; --ink:#161616; --grey:#8F8F8F; --hair:#E7E7E7; }
+  *{box-sizing:border-box; margin:0}
+  body{
+    background:var(--paper); color:var(--ink); height:100vh; overflow:hidden;
+    display:flex; flex-direction:column;
+    font:14px/1.55 -apple-system, "Helvetica Neue", system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .top{
+    display:flex; align-items:center; padding:18px 32px; border-bottom:1px solid var(--ink); gap:32px;
+  }
+  .brand{font-weight:600; font-size:15px; letter-spacing:-.01em}
+  .dock{display:flex; gap:14px; margin:0 auto}
+  .b{
+    width:38px; height:38px; border-radius:50%; border:1.5px solid var(--ink); display:grid;
+    place-items:center; font-size:11px; font-weight:500; cursor:pointer; background:var(--paper);
+  }
+  .b:hover{background:var(--ink); color:var(--paper)}
+  .b.chief{width:46px; height:46px; background:var(--ink); color:var(--paper); font-size:12px}
+  .b.hire{border-style:dashed; color:var(--grey)}
+  .top .links{display:flex; gap:22px; font-size:13px}
+  .top .links span{cursor:pointer}
+  .top .links span:hover{opacity:.55}
+  .top .links i{font-style:normal; color:var(--grey); font-variant-numeric:tabular-nums}
+
+  .stage{flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 32px; min-height:0}
+  .stage-inner{width:100%; max-width:560px; text-align:center}
+  h1{font-size:30px; font-weight:600; letter-spacing:-.02em; text-wrap:balance}
+  .sub{color:var(--grey); font-size:13.5px; margin:10px 0 44px}
+
+  .ask{
+    display:flex; align-items:center; gap:12px; border-bottom:1.5px solid var(--ink); padding-bottom:12px;
+    text-align:left;
+  }
+  .ask input{flex:1; border:0; outline:0; font:15px inherit; font-family:inherit; background:none; color:var(--ink)}
+  .ask input::placeholder{color:var(--grey)}
+  .ask button{
+    font:13px inherit; font-family:inherit; background:none; border:0; color:var(--ink); cursor:pointer; padding:0;
+  }
+  .ask button:hover{opacity:.55}
+  .ask button:focus-visible{outline:2px solid var(--ink); outline-offset:3px}
+
+  .feed{margin-top:44px; text-align:left; display:flex; flex-direction:column; gap:0}
+  .row{
+    display:flex; align-items:baseline; gap:12px; padding:11px 0; border-bottom:1px solid var(--hair);
+    font-size:13.5px; transition:opacity .4s;
+  }
+  .row .who{
+    width:34px; flex:none; font-size:11px; font-weight:500; color:var(--grey); letter-spacing:.04em;
+  }
+  .row .what b{font-weight:500}
+  .row .what span{color:var(--grey)}
+  .row .end{margin-left:auto; white-space:nowrap}
+  .row .end button{
+    font:12px inherit; font-family:inherit; background:none; border:0; cursor:pointer; color:var(--ink);
+    text-decoration:underline; text-underline-offset:3px; padding:0;
+  }
+  .row .end button:hover{opacity:.55}
+  .row .end .quiet{color:var(--grey); font-size:12px}
+  .row.gone{opacity:0}
+  .foot{color:var(--grey); font-size:12px; margin-top:14px; text-align:left}
+</style>
+
+<div class="top">
+  <div class="brand">JaBot</div>
+  <div class="dock">
+    <div class="b" title="Mail">M</div>
+    <div class="b" title="Calendar">C</div>
+    <div class="b chief" title="Chief of Staff">CoS</div>
+    <div class="b" title="Research">R</div>
+    <div class="b" title="Writer">W</div>
+    <div class="b hire" title="Add a template bot">+</div>
+  </div>
+  <div class="links">
+    <span>Schedules</span>
+    <span>Inbox <i id="inboxN">2</i></span>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="stage-inner">
+    <h1>What are we knocking out today?</h1>
+    <div class="sub">Your chief routes the work. Long tasks fold away and return to Inbox.</div>
+
+    <div class="ask">
+      <input placeholder="Tell your chief what you need" aria-label="Tell your chief what you need">
+      <button>Send ↵</button>
+    </div>
+
+    <div class="feed">
+      <div class="row" id="mig">
+        <span class="who">CODE</span>
+        <div class="what"><b>Auth migration</b> <span>· running, step 2/7</span></div>
+        <span class="end"><button id="foldBtn">fold away</button></span>
+      </div>
+      <div class="row">
+        <span class="who">WRITE</span>
+        <div class="what"><b>Weekly digest</b> <span>· drafting</span></div>
+        <span class="end"><span class="quiet">folded · returns when done</span></span>
+      </div>
+      <div class="row">
+        <span class="who">CAL</span>
+        <div class="what"><b>Thursday conflict</b> <span>· resolved, moved standup to 10:30</span></div>
+        <span class="end"><span class="quiet">done 08:05</span></span>
+      </div>
+    </div>
+    <div class="foot" id="foot">Folded threads disappear from here and land in Inbox.</div>
+  </div>
+</div>
+
+<script>
+  document.getElementById('foldBtn').onclick = () => {
+    const r = document.getElementById('mig');
+    if (r.classList.contains('gone')) return;
+    r.classList.add('gone');
+    setTimeout(() => {
+      r.style.display = 'none';
+      const n = document.getElementById('inboxN');
+      n.textContent = (+n.textContent) + 1;
+      document.getElementById('foot').textContent = 'Auth migration folded — it will reappear in Inbox when done.';
+    }, 380);
+  };
+</script>

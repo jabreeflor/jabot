@@ -1,0 +1,1054 @@
+<title>JaBot Classic</title>
+<style>
+  :root{
+    --win:#1C1C1E; --side:#1C1C1E; --chat:#151516; --raise:#2A2A2C; --raise2:#232325;
+    --ink:#F2F2F2; --dim:#98989E; --faint:#6E6E73;
+    --bub-bot:#2C2C2E; --bub-me:#F1F1EC; --bub-me-ink:#1C1C1E;
+    --amber:#E8A33D; --red:#FF453A;
+  }
+  *{box-sizing:border-box; margin:0}
+  body{
+    background:var(--chat); color:var(--ink); height:100vh; overflow:hidden; display:flex;
+    font:14px/1.45 -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ============ sidebar ============ */
+  .side{
+    width:310px; flex:none; background:var(--side); border-right:1px solid #000;
+    display:flex; flex-direction:column;
+  }
+  .winbar{display:flex; align-items:center; padding:16px 16px 10px}
+  .lights{display:flex; gap:8px}
+  .lights i{width:12px; height:12px; border-radius:50%}
+  .lights i:nth-child(1){background:#FF5F57}
+  .lights i:nth-child(2){background:#FEBC2E}
+  .lights i:nth-child(3){background:#28C840}
+  .newchat{
+    margin-left:auto; color:var(--dim); font-size:22px; line-height:1; cursor:pointer;
+    background:none; border:0; padding:2px 6px;
+  }
+  .newchat:hover{color:var(--ink)}
+
+  .search{padding:4px 14px 12px}
+  .search .field{
+    background:var(--raise); border-radius:10px; display:flex; align-items:center; gap:8px;
+    padding:8px 12px; color:var(--faint); font-size:14px;
+  }
+  .search svg{flex:none}
+
+  .list{flex:1; overflow-y:auto; padding:0 8px}
+
+  /* horizontal bot strip */
+  .sechdr{
+    color:var(--faint); font-size:11px; font-weight:600; letter-spacing:.1em;
+    padding:10px 10px 8px; display:flex; align-items:center;
+  }
+  .botstrip{
+    display:grid; grid-template-columns:repeat(3, 62px); gap:8px 18px; padding:2px 6px 12px;
+    justify-content:center;
+  }
+  .chiefrow{display:flex; justify-content:center; padding:2px 6px 6px}
+  .chiefrow .bstop{width:76px}
+  .chiefrow .blob{width:54px; height:54px}
+  .chiefrow .blob::before, .chiefrow .blob::after{width:5px; height:13px}
+  .bstop{
+    flex:none; width:62px; display:flex; flex-direction:column; align-items:center; gap:6px;
+    cursor:pointer; padding:6px 0; border-radius:12px;
+  }
+  .bstop:hover{background:var(--raise2)}
+  .bstop .blob{width:44px; height:44px}
+  .bstop small{color:var(--dim); font-size:11px; font-weight:500; white-space:nowrap}
+  .bstop.sel .blob{box-shadow:0 0 0 2px var(--side), 0 0 0 4px var(--ink)}
+  .bstop.sel small{color:var(--ink)}
+  .bstop.sel{background:var(--raise2)}
+
+  /* ============ crew view ============ */
+  .crewgrid{display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; margin-top:6px}
+  .ccard{
+    background:var(--raise2); border:1px solid #303033; border-radius:16px; padding:16px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .ccard .r1{display:flex; align-items:center; gap:12px}
+  .ccard .blob{width:44px; height:44px}
+  .ccard .nm{font-weight:700; font-size:15px}
+  .ccard .role{color:var(--dim); font-size:13px; margin-top:1px}
+  .chiefbadge{
+    margin-left:auto; font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--amber);
+    background:rgba(232,163,61,.12); border-radius:99px; padding:3px 9px; align-self:flex-start;
+  }
+  .ccard .tools{display:flex; flex-wrap:wrap; gap:6px}
+  .minichip{
+    font-size:11px; font-weight:600; color:var(--dim); background:var(--raise);
+    border-radius:99px; padding:3px 10px;
+  }
+  .ccard .cacts{display:flex; gap:8px; margin-top:auto}
+  .cbtn.danger{color:#E8695D}
+  .addcard{
+    border:1.5px dashed #3A3A3E; background:transparent; border-radius:16px; min-height:130px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+    color:var(--faint); cursor:pointer; font-weight:600; font-size:13.5px;
+  }
+  .addcard:hover{color:var(--ink); border-color:var(--dim)}
+  .addcard .big{font-size:26px; font-weight:400}
+
+  /* bot editor modal extras */
+  .swatches{display:flex; gap:10px}
+  .swatches .sw{width:30px; height:30px; cursor:pointer}
+  .swatches .sw.sel{box-shadow:0 0 0 2px var(--side), 0 0 0 4px var(--ink)}
+  .toolrow{display:flex; flex-wrap:wrap; gap:7px}
+  .toolchip{
+    font:12.5px inherit; font-family:inherit; font-weight:600; color:var(--dim);
+    background:var(--raise2); border:1px solid #37373A; border-radius:99px; padding:6px 13px; cursor:pointer;
+  }
+  .toolchip.on{background:var(--bub-me); color:var(--bub-me-ink); border-color:var(--bub-me)}
+  .modal textarea{
+    width:100%; min-height:74px; resize:vertical; background:var(--raise); border:1px solid #37373A;
+    border-radius:11px; padding:10px 13px; font:13.5px/1.5 inherit; font-family:inherit; color:var(--ink); outline:0;
+  }
+  .modal textarea:focus{border-color:var(--dim)}
+
+  /* blob avatars */
+  .blob{
+    width:46px; height:46px; flex:none; position:relative;
+    border-radius:52% 48% 55% 45% / 48% 54% 46% 52%;
+  }
+  .blob::before, .blob::after{
+    content:""; position:absolute; top:34%; width:4px; height:11px; border-radius:3px;
+    background:rgba(20,20,22,.85);
+  }
+  .blob::before{left:34%; transform:rotate(-8deg)}
+  .blob::after{left:52%; transform:rotate(6deg)}
+  .b-teal{background:radial-gradient(circle at 32% 28%, #6FE0C0, #2FB894)}
+  .b-yellow{background:radial-gradient(circle at 32% 28%, #FFD24D, #EFA92F); border-radius:48% 52% 45% 55%/54% 46% 56% 44%}
+  .b-purple{background:radial-gradient(circle at 32% 28%, #9C8CFF, #6C55E8); border-radius:55% 45% 50% 50%/45% 55% 48% 52%}
+  .b-violet{background:radial-gradient(circle at 32% 28%, #C08BFF, #9257E8)}
+  .b-blue{background:radial-gradient(circle at 32% 28%, #6FAFFF, #3C7FE8); border-radius:46% 54% 52% 48%/55% 45% 52% 48%}
+  .b-orange{background:radial-gradient(circle at 32% 28%, #FFA65C, #EF7E2F)}
+  .b-pink{background:radial-gradient(circle at 32% 28%, #FF9BBB, #E85D8A); border-radius:47% 53% 50% 50%/53% 47% 55% 45%}
+  .b-green{background:radial-gradient(circle at 32% 28%, #7ADB8F, #3EA65C); border-radius:53% 47% 46% 54%/47% 53% 50% 50%}
+  .dot{
+    position:absolute; top:0; right:0; width:11px; height:11px; border-radius:50%;
+    background:var(--red); border:2.5px solid var(--side);
+  }
+  /* group avatar: three mini blobs */
+  .cluster{width:46px; height:46px; flex:none; position:relative}
+  .cluster i{position:absolute; width:26px; height:26px; border-radius:52% 48% 55% 45%/48% 54% 46% 52%}
+  .cluster i:nth-child(1){top:0; left:9px; background:radial-gradient(circle at 32% 28%,#6FE0C0,#2FB894)}
+  .cluster i:nth-child(2){bottom:0; left:0; background:radial-gradient(circle at 32% 28%,#9C8CFF,#6C55E8)}
+  .cluster i:nth-child(3){bottom:0; right:0; background:radial-gradient(circle at 32% 28%,#C08BFF,#9257E8)}
+
+  /* code section — options are flat rows, folders are containers */
+  .divider{height:1px; background:#000; margin:6px 2px 4px}
+  .crow{
+    display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px;
+    cursor:pointer; color:var(--ink); font-size:14px; font-weight:500;
+  }
+  .crow:hover{background:var(--raise2)}
+  .crow .ic{
+    width:22px; flex:none; display:flex; align-items:center; justify-content:center; color:var(--dim);
+  }
+  .crow .ic svg{width:17px; height:17px}
+  .crow:hover .ic{color:var(--ink)}
+  .crow .badge{
+    margin-left:auto; background:var(--red); color:#fff; font-size:11.5px; font-weight:600;
+    border-radius:99px; min-width:19px; text-align:center; padding:1px 6px;
+  }
+  .crow .n{margin-left:auto; color:var(--faint); font-size:12.5px; font-weight:400}
+
+  .folder{
+    background:var(--raise2); border:1px solid #303033; border-radius:12px;
+    margin:8px 4px 0; padding:4px; overflow:hidden;
+  }
+  .fhead{
+    display:flex; align-items:center; gap:8px; padding:7px 10px; cursor:pointer;
+    color:var(--dim); font-size:12px; font-weight:600; letter-spacing:.04em;
+  }
+  .fhead .n{margin-left:auto; color:var(--faint); font-weight:400}
+  .fhead svg{width:15px; height:15px; flex:none}
+  .fhead .chev{width:11px; height:11px; color:var(--faint)}
+  .fthread{
+    display:flex; align-items:center; gap:9px; padding:8px 10px; margin:0 2px 2px;
+    border-radius:8px; cursor:pointer; font-size:13.5px; background:var(--side);
+    transition:opacity .4s, transform .4s;
+  }
+  .fthread:hover{background:var(--raise)}
+  .fthread.gone{opacity:0; transform:translateX(-20px)}
+  .fthread .st{margin-left:auto; color:var(--faint); font-size:11.5px; flex:none}
+  .fthread .g{color:var(--amber); font-size:11px; flex:none}
+  .fthread .g.ok{color:#5DBB6E}
+
+  .me-row{
+    display:flex; align-items:center; gap:10px; padding:14px 18px; border-top:1px solid #000;
+  }
+  .me-row .av{
+    width:30px; height:30px; border-radius:50%; background:var(--raise); color:var(--dim);
+    display:grid; place-items:center; font-size:11px; font-weight:600;
+  }
+  .me-row span{font-size:14px}
+
+  /* ============ chat ============ */
+  .main{flex:1; min-width:0; display:flex; flex-direction:column; background:var(--chat)}
+  .view{flex:1; min-height:0; display:none; flex-direction:column}
+  .view.on{display:flex}
+  .crow.sel{background:var(--raise)}
+  .crow.sel .ic{color:var(--ink)}
+  .head{display:flex; align-items:center; gap:10px; padding:14px 20px}
+  .head .blob{width:28px; height:28px}
+  .head .blob::before, .head .blob::after{width:3px; height:7px; top:35%}
+  .head b{font-size:15px; font-weight:600}
+  .head .mon{margin-left:auto; color:var(--dim); cursor:pointer}
+
+  .scroll{flex:1; overflow-y:auto; padding:12px 24px}
+  .thread{max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:10px}
+  .stamp{text-align:center; color:var(--faint); font-size:12.5px; margin:10px 0 6px}
+  .sys{text-align:center; color:var(--faint); font-size:13px; margin:6px 0}
+  .bub{
+    max-width:72%; padding:11px 15px; border-radius:18px; font-size:14.5px; line-height:1.5;
+    white-space:pre-line;
+  }
+  .bot .bub{background:var(--bub-bot); align-self:flex-start; border-bottom-left-radius:6px}
+  .me{display:flex; justify-content:flex-end}
+  .me .bub{background:var(--bub-me); color:var(--bub-me-ink); border-bottom-right-radius:6px}
+  .bot{display:flex}
+
+  .card{
+    align-self:flex-start; max-width:72%; background:var(--raise2); border-radius:16px;
+    padding:14px 16px; transition:opacity .4s, transform .4s;
+  }
+  .card .r1{display:flex; align-items:center; gap:10px}
+  .card .r1 b{font-size:14px; font-weight:600; color:var(--dim)}
+  .pill{
+    margin-left:auto; color:var(--amber); background:rgba(232,163,61,.12); font-size:12px;
+    font-weight:600; border-radius:99px; padding:3px 10px; white-space:nowrap;
+  }
+  .card p{color:var(--dim); font-size:14px; margin-top:6px}
+  .card .acts{display:flex; gap:8px; margin-top:12px}
+  .cbtn{
+    font:13px inherit; font-family:inherit; font-weight:600; cursor:pointer; border-radius:99px;
+    padding:7px 14px; border:0; background:var(--raise); color:var(--ink);
+  }
+  .cbtn:hover{background:#333336}
+  .cbtn.main{background:var(--bub-me); color:var(--bub-me-ink)}
+  .cbtn:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+  .card.gone{opacity:0; transform:translateY(-10px) scale(.97)}
+
+  .composer{padding:14px 24px 20px}
+  .composer .box{
+    max-width:760px; margin:0 auto; display:flex; align-items:center; gap:10px;
+  }
+  .rndbtn{
+    width:36px; height:36px; flex:none; border-radius:50%; background:var(--raise); border:0;
+    color:var(--dim); font-size:18px; cursor:pointer; display:grid; place-items:center;
+  }
+  .rndbtn:hover{color:var(--ink)}
+  .composer input{
+    flex:1; background:var(--raise); border:0; outline:0; border-radius:99px; padding:11px 18px;
+    font:14.5px inherit; font-family:inherit; color:var(--ink);
+  }
+  .composer input::placeholder{color:var(--faint)}
+
+  /* ============ inbox ============ */
+  .ibx-scroll{flex:1; overflow-y:auto; padding:8px 24px 32px}
+  .ibx{max-width:680px; margin:0 auto}
+  .ibx-top{padding:18px 0 6px}
+  .ibx-top h1{font-size:22px; font-weight:700; letter-spacing:-.01em}
+  .ibx-top p{color:var(--dim); font-size:13.5px; margin-top:3px}
+  .tabs{display:flex; gap:8px; margin:16px 0 10px}
+  .tab{
+    font-size:13px; font-weight:600; color:var(--dim); background:var(--raise2);
+    border-radius:99px; padding:6px 14px; cursor:pointer; border:0; font-family:inherit;
+  }
+  .tab:hover{color:var(--ink)}
+  .tab.on{background:var(--bub-me); color:var(--bub-me-ink)}
+  .tab:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+
+  .ibx-sec{
+    color:var(--faint); font-size:11px; font-weight:600; letter-spacing:.1em; margin:20px 4px 8px;
+  }
+  .ibx-row{
+    display:flex; gap:13px; padding:13px 14px; border-radius:16px; cursor:pointer;
+    align-items:flex-start; background:transparent;
+  }
+  .ibx-row:hover{background:var(--raise2)}
+  .ibx-row.open{background:var(--raise2)}
+  .ibx-row .blob{width:38px; height:38px; margin-top:2px}
+  .ibx-row .blob::before, .ibx-row .blob::after{width:3.5px; height:9px}
+  .codeav{
+    width:38px; height:38px; flex:none; margin-top:2px; border-radius:11px;
+    background:var(--raise); border:1px solid #37373A; display:grid; place-items:center;
+    color:var(--dim);
+  }
+  .codeav svg{width:18px; height:18px}
+  .ibx-row .bd{min-width:0; flex:1}
+  .ibx-row .r1{display:flex; align-items:baseline; gap:10px}
+  .ibx-row .ti{font-weight:600; font-size:14.5px}
+  .ibx-row .when{margin-left:auto; color:var(--faint); font-size:12.5px; flex:none; font-variant-numeric:tabular-nums}
+  .ibx-row .de{color:var(--dim); font-size:13.5px; margin-top:2px}
+  .tagpill{
+    display:inline-block; font-size:11px; font-weight:700; letter-spacing:.03em;
+    border-radius:99px; padding:2.5px 9px; margin-top:8px;
+  }
+  .tagpill.done{background:rgba(93,187,110,.14); color:#5DBB6E}
+  .tagpill.needs{background:rgba(232,163,61,.14); color:var(--amber)}
+  .tagpill.slp{background:var(--raise); color:var(--faint)}
+  .ibx-row.dim .ti{color:var(--dim); font-weight:500}
+
+  .ibx-detail{
+    margin-top:12px; background:var(--side); border:1px solid #303033; border-radius:14px;
+    padding:14px 16px;
+  }
+  .ibx-detail .path{color:var(--faint); font-size:12px; letter-spacing:.03em}
+  .ibx-detail .path b{color:var(--dim); font-weight:600}
+  .ibx-detail ul{margin:10px 0 0 18px; color:var(--dim); font-size:13.5px}
+  .ibx-detail li{margin-bottom:4px}
+  .ibx-detail .acts{display:flex; gap:8px; margin-top:14px}
+
+  /* ============ pull requests ============ */
+  .prav{
+    width:38px; height:38px; flex:none; margin-top:2px; border-radius:11px;
+    background:var(--raise); border:1px solid #37373A; display:grid; place-items:center;
+  }
+  .prav svg{width:18px; height:18px}
+  .prav.o{color:#5DBB6E}
+  .prav.m{color:#A78BFA}
+  .prav.d{color:var(--faint)}
+  .tagpill.merged{background:rgba(167,139,250,.14); color:#A78BFA}
+  .tagpill.checks{background:rgba(232,163,61,.14); color:var(--amber)}
+  .diffstat{font-size:12.5px; font-variant-numeric:tabular-nums; margin-left:10px}
+  .diffstat .a{color:#5DBB6E}
+  .diffstat .d{color:#E8695D}
+  .checkline{display:flex; align-items:center; gap:7px; color:var(--dim); font-size:13px; margin-top:10px}
+  .checkline .ok{color:#5DBB6E}
+  .checkline .run{color:var(--amber)}
+
+  /* ============ thread session (wrapped TUI) ============ */
+  .head .codeav{width:28px; height:28px; margin:0; border-radius:9px}
+  .head .codeav svg{width:14px; height:14px}
+  .harness{
+    display:flex; align-items:center; gap:7px; background:var(--raise); border-radius:99px;
+    padding:4px 12px; font-size:12px; font-weight:600; color:var(--dim); white-space:nowrap;
+  }
+  .harness i{width:8px; height:8px; border-radius:50%; font-style:normal; background:var(--faint)}
+  .harness.h-claude i{background:#D97757}
+  .harness.h-codex i{background:#5DBB6E}
+  .harness.h-pi i{background:#A78BFA}
+  .harness.h-byo i{background:var(--amber)}
+  .toolblock{
+    align-self:flex-start; max-width:72%; background:#101012; border:1px solid #2C2C2F;
+    border-radius:12px; padding:11px 15px; font:12.5px/1.7 ui-monospace, "SF Mono", Menlo, monospace;
+    color:var(--dim); white-space:pre-wrap;
+  }
+  .toolblock .cmd{color:var(--ink)}
+  .toolblock .ok{color:#5DBB6E}
+  .toolblock .run{color:var(--amber)}
+
+  /* ============ new chat modal ============ */
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; place-items:center; z-index:10;
+  }
+  .overlay.on{display:grid}
+  .modal{
+    width:440px; max-width:92vw; background:var(--side); border:1px solid #333336;
+    border-radius:20px; padding:24px; box-shadow:0 24px 60px rgba(0,0,0,.5);
+  }
+  .modal h2{font-size:17px; font-weight:700}
+  .modal .mlab{color:var(--faint); font-size:11px; font-weight:600; letter-spacing:.09em; margin:18px 0 8px}
+  .hgrid{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .hcard{
+    border:1px solid #37373A; border-radius:13px; padding:11px 13px; cursor:pointer; background:var(--raise2);
+  }
+  .hcard:hover{border-color:var(--dim)}
+  .hcard.sel{border-color:var(--ink); background:var(--raise)}
+  .hcard b{font-size:13.5px; display:flex; align-items:center; gap:8px}
+  .hcard b i{width:8px; height:8px; border-radius:50%; font-style:normal; flex:none}
+  .hcard p{font-size:11.5px; color:var(--faint); margin-top:4px}
+  .modal select, .modal input[type=text]{
+    width:100%; background:var(--raise); border:1px solid #37373A; border-radius:11px;
+    padding:10px 13px; font:14px inherit; font-family:inherit; color:var(--ink); outline:0;
+  }
+  .modal select:focus, .modal input[type=text]:focus{border-color:var(--dim)}
+  .modal .macts{display:flex; justify-content:flex-end; gap:8px; margin-top:22px}
+
+  /* ============ context menu ============ */
+  .ctx{
+    position:fixed; z-index:20; background:var(--raise2); border:1px solid #3A3A3E;
+    border-radius:13px; padding:5px; min-width:180px; display:none;
+    box-shadow:0 14px 34px rgba(0,0,0,.55);
+  }
+  .ctx.on{display:block}
+  .ctx button{
+    display:flex; width:100%; gap:9px; align-items:center; background:none; border:0;
+    color:var(--ink); font:13.5px inherit; font-family:inherit; padding:8px 11px;
+    border-radius:9px; cursor:pointer; text-align:left;
+  }
+  .ctx button:hover{background:var(--raise)}
+  .ctx button.danger{color:#E8695D}
+  .ctx .sep{height:1px; background:#3A3A3E; margin:4px 6px}
+
+  /* new thread button in folder header */
+  .fadd{
+    margin-left:auto; width:20px; height:20px; flex:none; display:grid; place-items:center;
+    background:none; border:0; border-radius:6px; color:var(--faint); cursor:pointer;
+    font:15px/1 inherit; font-family:inherit; padding:0;
+  }
+  .fadd:hover{background:var(--raise); color:var(--ink)}
+  .fadd:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
+</style>
+
+<div class="side">
+  <div class="winbar">
+    <div class="lights"><i></i><i></i><i></i></div>
+  </div>
+  <div class="search">
+    <div class="field">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6E6E73" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      Search
+    </div>
+  </div>
+
+  <div class="list">
+    <div class="sechdr">BOT CHATS</div>
+    <div class="chiefrow">
+      <div class="bstop sel" id="navChief"><div class="blob b-teal"></div><small>Chief</small></div>
+    </div>
+    <div class="botstrip" id="botstrip">
+      <div class="bstop" id="navCrew"><div class="cluster"><i></i><i></i><i></i></div><small>Crew</small></div>
+    </div>
+
+    <div class="divider"></div>
+    <div class="sechdr">CODE</div>
+    <div class="crow" id="navNewChat">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L13 14l-4 1 1-4Z"/></svg></span>
+      New Chat
+    </div>
+    <div class="crow" id="navPRs">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v6.8"/><path d="M13.5 6H16a2 2 0 0 1 2 2v7.4"/><path d="M15.5 3.5 13 6l2.5 2.5"/></svg></span>
+      Pull Requests <span class="n">4</span>
+    </div>
+    <div class="crow" id="navInbox">
+      <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-5.5l-1.5 2.5h-6L7.5 12H2"/><path d="M5.4 5.6 2 12v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5l-3.4-6.4A2 2 0 0 0 16.8 4.5H7.2a2 2 0 0 0-1.8 1.1Z"/></svg></span>
+      Inbox <span class="badge" id="inboxN">2</span>
+    </div>
+
+    <div class="folder">
+      <div class="fhead">
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 7.2V17a2 2 0 0 0 2 2h13.6a2 2 0 0 0 2-2v-7.2a2 2 0 0 0-2-2h-6.9l-1.9-2.3a2 2 0 0 0-1.5-.7H5.2a2 2 0 0 0-2 2.4Z"/><path d="M3.2 9.8h17.6"/></svg>
+        JABOT-APP <button class="fadd" data-folder="jabot-app" title="New thread in jabot-app">＋</button>
+      </div>
+      <div class="fthread" data-thread="auth"><span class="g">●</span> Auth migration <span class="st">running</span></div>
+      <div class="fthread" data-thread="sidebar"><span class="g ok">●</span> Sidebar overflow fix <span class="st">done</span></div>
+    </div>
+    <div class="folder">
+      <div class="fhead">
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 7.2V17a2 2 0 0 0 2 2h13.6a2 2 0 0 0 2-2v-7.2a2 2 0 0 0-2-2h-6.9l-1.9-2.3a2 2 0 0 0-1.5-.7H5.2a2 2 0 0 0-2 2.4Z"/><path d="M3.2 9.8h17.6"/></svg>
+        GLOBNET-SYNC <button class="fadd" data-folder="globnet-sync" title="New thread in globnet-sync">＋</button>
+      </div>
+      <div class="fthread" data-thread="nas"><span class="st" style="margin-left:0">◌</span> NAS backup script <span class="st">sleeping</span></div>
+    </div>
+  </div>
+
+  <div class="me-row">
+    <div class="av">JB</div>
+    <span>Jabree Flor</span>
+  </div>
+</div>
+
+<div class="main">
+<div class="view on" id="viewChat">
+  <div class="head">
+    <div class="blob b-teal"></div>
+    <b>Chief</b>
+    <span class="mon">🖥</span>
+  </div>
+
+  <div class="scroll">
+    <div class="thread" id="thread">
+      <div class="stamp">2:23 PM</div>
+
+      <div class="bot"><div class="bub">Morning. Two things: the auth migration is running — about 40 minutes left — and Scheduler fixed Thursday. Want me to keep the migration thread here, or fold it away?</div></div>
+
+      <div class="me"><div class="bub">Fold it. I don't want to babysit a long task — just surface it in Inbox when it's done or stuck.</div></div>
+
+      <div class="card" id="taskCard">
+        <div class="r1"><b>Auth migration</b><span class="pill">✳ Long-running</span></div>
+        <p>Est. 40 min. If folded, this thread disappears and reappears in Inbox on done, failure, or question.</p>
+        <div class="acts">
+          <button class="cbtn main" id="foldBtn">Disappear until done</button>
+          <button class="cbtn">Keep watching</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="composer">
+    <div class="box">
+      <button class="rndbtn">＋</button>
+      <input placeholder="Message Chief" aria-label="Message Chief">
+      <button class="rndbtn" title="Voice">🎙</button>
+    </div>
+  </div>
+</div><!-- /viewChat -->
+
+<div class="view" id="viewInbox">
+  <div class="ibx-scroll">
+    <div class="ibx">
+      <div class="ibx-top">
+        <h1>Inbox</h1>
+        <p>Where folded threads come back to you</p>
+      </div>
+      <div class="tabs">
+        <button class="tab on">All</button>
+        <button class="tab">Needs you</button>
+        <button class="tab">Done</button>
+      </div>
+
+      <div class="ibx-sec">RESURFACED</div>
+
+      <div class="ibx-row open">
+        <div class="codeav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></div>
+        <div class="bd">
+          <div class="r1"><span class="ti">Auth migration finished</span><span class="when">10:12</span></div>
+          <div class="de">jabot-app coding session · slept 42 min · 3 files changed · tests green · PR #23 opened</div>
+          <span class="tagpill done">DONE</span>
+          <div class="ibx-detail">
+            <div class="path">jabot-app · started → <b>folded</b> → ran 42 min → <b>resurfaced</b></div>
+            <ul>
+              <li>Rewrote session middleware — 3 files changed</li>
+              <li>All 48 tests passing</li>
+              <li>One judgment call: kept the 30-day cookie expiry, flagged for review</li>
+            </ul>
+            <div class="acts">
+              <button class="cbtn main">Open PR #23</button>
+              <button class="cbtn">Reopen thread</button>
+              <button class="cbtn">Archive</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ibx-row">
+        <div class="blob b-purple"></div>
+        <div class="bd">
+          <div class="r1"><span class="ti">Inbox Manager needs a call</span><span class="when">9:47</span></div>
+          <div class="de">Two invoices from UGREEN — archive, or flag for finance?</div>
+          <span class="tagpill needs">NEEDS YOU</span>
+        </div>
+      </div>
+
+      <div class="ibx-row">
+        <div class="blob b-orange"></div>
+        <div class="bd">
+          <div class="r1"><span class="ti">Weekly digest draft ready</span><span class="when">8:30</span></div>
+          <div class="de">1,240 words in your voice. Awaiting review before it sends.</div>
+          <span class="tagpill needs">NEEDS YOU</span>
+        </div>
+      </div>
+
+      <div class="ibx-sec">STILL SLEEPING</div>
+      <div id="sleepList">
+        <div class="ibx-row dim">
+          <div class="codeav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></div>
+          <div class="bd">
+            <div class="r1"><span class="ti">Nightly NAS backup</span><span class="when">2h</span></div>
+            <div class="de">globnet-sync · resurfaces on success, failure, or question.</div>
+            <span class="tagpill slp">SLEEPING</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /viewInbox -->
+
+<div class="view" id="viewPRs">
+  <div class="ibx-scroll">
+    <div class="ibx">
+      <div class="ibx-top">
+        <h1>Pull Requests</h1>
+        <p>Opened by your coding sessions — review, merge, or send back</p>
+      </div>
+      <div class="tabs" data-group="pr">
+        <button class="tab on">Open · 4</button>
+        <button class="tab">Merged</button>
+        <button class="tab">Drafts</button>
+      </div>
+
+      <div class="ibx-sec">NEEDS REVIEW</div>
+
+      <div class="ibx-row open">
+        <div class="prav o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v6.8"/><path d="M13.5 6H16a2 2 0 0 1 2 2v7.4"/><path d="M15.5 3.5 13 6l2.5 2.5"/></svg></div>
+        <div class="bd">
+          <div class="r1"><span class="ti">Migrate auth to sessions</span><span class="when">10:12</span></div>
+          <div class="de">jabot-app #23 · from folded session · <span class="diffstat" style="margin-left:0"><span class="a">+214</span> <span class="d">−96</span></span></div>
+          <span class="tagpill needs">NEEDS REVIEW</span>
+          <div class="ibx-detail">
+            <div class="path">auth/sessions → <b>main</b> · 3 files changed</div>
+            <div class="checkline"><span class="ok">✓</span> 48 tests passing · <span class="ok">✓</span> lint · <span class="ok">✓</span> build</div>
+            <ul>
+              <li>Session middleware rewritten, cookie flow unchanged</li>
+              <li>Flagged: 30-day cookie expiry kept — confirm before merge</li>
+            </ul>
+            <div class="acts">
+              <button class="cbtn main">Merge</button>
+              <button class="cbtn">View diff</button>
+              <button class="cbtn">Reopen thread</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ibx-row">
+        <div class="prav o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v6.8"/><path d="M13.5 6H16a2 2 0 0 1 2 2v7.4"/><path d="M15.5 3.5 13 6l2.5 2.5"/></svg></div>
+        <div class="bd">
+          <div class="r1"><span class="ti">Fix sidebar overflow at narrow widths</span><span class="when">9:02</span></div>
+          <div class="de">jabot-app #22 · <span class="diffstat" style="margin-left:0"><span class="a">+18</span> <span class="d">−7</span></span> · checks green</div>
+          <span class="tagpill needs">NEEDS REVIEW</span>
+        </div>
+      </div>
+
+      <div class="ibx-sec">CHECKS RUNNING</div>
+
+      <div class="ibx-row">
+        <div class="prav o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v6.8"/><path d="M13.5 6H16a2 2 0 0 1 2 2v7.4"/><path d="M15.5 3.5 13 6l2.5 2.5"/></svg></div>
+        <div class="bd">
+          <div class="r1"><span class="ti">Add retry logic to NAS backup</span><span class="when">7:44</span></div>
+          <div class="de">globnet-sync #21 · <span class="diffstat" style="margin-left:0"><span class="a">+64</span> <span class="d">−12</span></span> · 2 of 3 checks done</div>
+          <span class="tagpill checks">CHECKS RUNNING</span>
+        </div>
+      </div>
+
+      <div class="ibx-row dim">
+        <div class="prav d"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v6.8"/><path d="M13.5 6H16a2 2 0 0 1 2 2v7.4"/><path d="M15.5 3.5 13 6l2.5 2.5"/></svg></div>
+        <div class="bd">
+          <div class="r1"><span class="ti">Bump dependencies</span><span class="when">Yesterday</span></div>
+          <div class="de">jabot-app #19 · draft · waiting on dependency audit session</div>
+          <span class="tagpill slp">DRAFT</span>
+        </div>
+      </div>
+
+      <div class="ibx-sec">RECENTLY MERGED</div>
+
+      <div class="ibx-row dim">
+        <div class="prav m"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="18" r="2.6"/><path d="M6 8.6v6.8"/><path d="M6 9a9 9 0 0 0 9 9"/></svg></div>
+        <div class="bd">
+          <div class="r1"><span class="ti">Onboarding flow polish</span><span class="when">Yesterday</span></div>
+          <div class="de">jabot-app #18 · merged by you · <span class="diffstat" style="margin-left:0"><span class="a">+142</span> <span class="d">−58</span></span></div>
+          <span class="tagpill merged">MERGED</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div><!-- /viewPRs -->
+
+<div class="view" id="viewSession">
+  <div class="head">
+    <div class="codeav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></div>
+    <b id="sessTitle">Thread</b>
+    <span class="harness" id="sessHarness"><i></i><span id="sessHarnessName">claude code</span></span>
+    <span class="mon" id="sessStatus" style="cursor:default; font-size:12.5px"></span>
+  </div>
+  <div class="scroll">
+    <div class="thread" id="sessBody"></div>
+  </div>
+  <div class="composer">
+    <div class="box">
+      <button class="rndbtn">＋</button>
+      <input id="sessInput" placeholder="Message this session" aria-label="Message this session">
+      <button class="rndbtn" title="Voice">🎙</button>
+    </div>
+  </div>
+</div><!-- /viewSession -->
+
+<div class="view" id="viewCrew">
+  <div class="ibx-scroll">
+    <div class="ibx">
+      <div class="ibx-top">
+        <h1>Your Crew</h1>
+        <p>Edit, add, or remove bots — each one is yours to customize</p>
+      </div>
+      <div class="crewgrid" id="crewGrid"></div>
+    </div>
+  </div>
+</div><!-- /viewCrew -->
+</div>
+
+<!-- new chat modal -->
+<div class="overlay" id="newChatOverlay">
+  <div class="modal" role="dialog" aria-label="New chat">
+    <h2>New Chat</h2>
+    <div class="mlab">HARNESS — BRING YOUR OWN</div>
+    <div class="hgrid" id="hgrid">
+      <div class="hcard sel" data-h="claude code" data-cls="h-claude"><b><i style="background:#D97757"></i>Claude Code</b><p>Anthropic's coding TUI, wrapped in JaBot's UI</p></div>
+      <div class="hcard" data-h="codex" data-cls="h-codex"><b><i style="background:#5DBB6E"></i>Codex</b><p>OpenAI's coding agent</p></div>
+      <div class="hcard" data-h="pi" data-cls="h-pi"><b><i style="background:#A78BFA"></i>Pi</b><p>Inflection's agent</p></div>
+      <div class="hcard" data-h="custom" data-cls="h-byo"><b><i style="background:#E8A33D"></i>Custom</b><p>Point at any TUI on your machine</p></div>
+    </div>
+    <div class="mlab">FOLDER</div>
+    <select id="folderSel">
+      <option value="jabot-app">jabot-app</option>
+      <option value="globnet-sync">globnet-sync</option>
+      <option value="">No folder</option>
+    </select>
+    <div class="mlab">WHAT SHOULD IT DO?</div>
+    <input type="text" id="taskInput" placeholder="e.g. Add dark mode to settings">
+    <div class="macts">
+      <button class="cbtn" id="cancelNew">Cancel</button>
+      <button class="cbtn main" id="startNew">Start session</button>
+    </div>
+  </div>
+</div>
+
+<!-- bot editor modal -->
+<div class="overlay" id="botOverlay">
+  <div class="modal" role="dialog" aria-label="Customize bot">
+    <h2 id="botModalTitle">Customize bot</h2>
+    <div class="mlab" id="tplWrapLab">START FROM A TEMPLATE</div>
+    <select id="tplSel">
+      <option value="">Blank bot</option>
+      <option value="expense">Expense Manager</option>
+      <option value="talent">Talent Scout</option>
+      <option value="social">Social Media</option>
+      <option value="ops">Ops / On-call</option>
+    </select>
+    <div class="mlab">NAME</div>
+    <input type="text" id="botName" placeholder="e.g. Expense Manager">
+    <div class="mlab">COLOR</div>
+    <div class="swatches" id="swatches">
+      <div class="sw blob b-yellow" data-cls="b-yellow"></div>
+      <div class="sw blob b-purple" data-cls="b-purple"></div>
+      <div class="sw blob b-violet" data-cls="b-violet"></div>
+      <div class="sw blob b-blue" data-cls="b-blue"></div>
+      <div class="sw blob b-orange" data-cls="b-orange"></div>
+      <div class="sw blob b-pink" data-cls="b-pink"></div>
+      <div class="sw blob b-green" data-cls="b-green"></div>
+    </div>
+    <div class="mlab">WHAT IT DOES</div>
+    <textarea id="botInstr" placeholder="Instructions, tone, boundaries — how this bot should work for you"></textarea>
+    <div class="mlab">TOOLS</div>
+    <div class="toolrow" id="toolRow"></div>
+    <div class="macts">
+      <button class="cbtn danger" id="botRemove">Remove</button>
+      <button class="cbtn" id="botCancel">Cancel</button>
+      <button class="cbtn main" id="botSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- right-click menu -->
+<div class="ctx" id="ctx">
+  <button id="ctxWait"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-5.5l-1.5 2.5h-6L7.5 12H2"/><path d="M5.4 5.6 2 12v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5l-3.4-6.4A2 2 0 0 0 16.8 4.5H7.2a2 2 0 0 0-1.8 1.1Z"/></svg> Wait for Inbox</button>
+  <button id="ctxArchive"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></svg> Archive</button>
+  <div class="sep"></div>
+  <button class="danger" id="ctxDelete"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg> Delete</button>
+</div>
+
+<script>
+  const views = {
+    chat:    [document.getElementById('navChief'), document.getElementById('viewChat')],
+    inbox:   [document.getElementById('navInbox'), document.getElementById('viewInbox')],
+    prs:     [document.getElementById('navPRs'),   document.getElementById('viewPRs')],
+    crew:    [document.getElementById('navCrew'),  document.getElementById('viewCrew')],
+    session: [null, document.getElementById('viewSession')],
+  };
+  function show(which){
+    for (const [name, [nav, view]] of Object.entries(views)) {
+      view.classList.toggle('on', name === which);
+      if (nav) nav.classList.toggle('sel', name === which);
+    }
+  }
+  for (const [, [nav]] of Object.entries(views)) if (nav) nav.onclick = () => show(Object.keys(views).find(k => views[k][0] === nav));
+
+  /* ---------- thread sessions (wrapped TUIs) ---------- */
+  const HCLS = {'claude code':'h-claude', 'codex':'h-codex', 'pi':'h-pi', 'custom':'h-byo'};
+  const THREADS = {
+    auth: {name:'Auth migration', harness:'claude code', status:'running · step 3/7', body:[
+      ['stamp','1:48 PM'],
+      ['me','Migrate auth from JWT to server sessions. Keep the cookie flow unchanged.'],
+      ['tool','<span class="cmd">▸ read</span>   src/auth/*.ts — 6 files\n<span class="cmd">▸ edit</span>   middleware/session.ts\n<span class="cmd">▸ bash</span>   npm test  <span class="run">● running…</span>'],
+      ['bot',"Middleware rewritten, cookie flow untouched. Running the full suite now — about 40 min left. Fold me into Inbox if you don't want to watch."],
+    ]},
+    sidebar: {name:'Sidebar overflow fix', harness:'codex', status:'done · PR #22', body:[
+      ['stamp','9:02 AM'],
+      ['me','The sidebar clips at narrow widths. Fix it.'],
+      ['tool','<span class="cmd">▸ read</span>   src/ui/sidebar.css\n<span class="cmd">▸ edit</span>   src/ui/sidebar.css  +18 −7\n<span class="cmd">▸ bash</span>   npm test  <span class="ok">✓ 48 passing</span>'],
+      ['bot','Fixed — the rail now collapses under 900px instead of clipping. Opened PR #22, checks are green.'],
+      ['sys','Session finished — PR #22 in Pull Requests'],
+    ]},
+    nas: {name:'NAS backup script', harness:'pi', status:'sleeping · 2h 10m', body:[
+      ['stamp','Yesterday'],
+      ['me','Write a nightly backup script for GlobNet on the NAS. Retry on network drops.'],
+      ['tool','<span class="cmd">▸ init</span>   pi session in globnet-sync\n<span class="cmd">▸ write</span>  scripts/backup.sh\n<span class="cmd">▸ cron</span>   scheduled nightly 2:00  <span class="run">● sleeping</span>'],
+      ['sys','Thread folded — will reappear in Inbox'],
+    ]},
+  };
+  function renderSession(t){
+    document.getElementById('sessTitle').textContent = t.name;
+    const chip = document.getElementById('sessHarness');
+    chip.className = 'harness ' + (HCLS[t.harness] || 'h-byo');
+    document.getElementById('sessHarnessName').textContent = t.harness;
+    document.getElementById('sessStatus').textContent = t.status;
+    document.getElementById('sessInput').placeholder = 'Message ' + t.name;
+    const b = document.getElementById('sessBody');
+    b.innerHTML = '';
+    for (const [kind, val] of t.body){
+      const d = document.createElement('div');
+      if (kind === 'stamp' || kind === 'sys'){ d.className = kind; d.textContent = val; }
+      else if (kind === 'tool'){ d.className = 'toolblock'; d.innerHTML = val; }
+      else { d.className = kind; const bub = document.createElement('div'); bub.className = 'bub'; bub.textContent = val; d.appendChild(bub); }
+      b.appendChild(d);
+    }
+  }
+  function openThread(id){
+    const t = THREADS[id];
+    if (!t) return;
+    renderSession(t);
+    show('session');
+  }
+
+  /* ---------- sidebar delegation: open threads, new-thread rows ---------- */
+  const list = document.querySelector('.list');
+  list.addEventListener('click', e => {
+    const fn = e.target.closest('.fadd');
+    if (fn){ openNewChat(fn.dataset.folder); return; }
+    const ft = e.target.closest('.fthread');
+    if (ft) openThread(ft.dataset.thread);
+  });
+
+  /* ---------- right-click: delete / archive / wait for inbox ---------- */
+  const ctx = document.getElementById('ctx');
+  let ctxTarget = null;
+  list.addEventListener('contextmenu', e => {
+    const ft = e.target.closest('.fthread');
+    if (!ft) return;
+    e.preventDefault();
+    ctxTarget = ft;
+    ctx.style.left = Math.min(e.clientX, innerWidth - 195) + 'px';
+    ctx.style.top = Math.min(e.clientY, innerHeight - 150) + 'px';
+    ctx.classList.add('on');
+  });
+  document.addEventListener('click', () => ctx.classList.remove('on'));
+  function threadName(ft){
+    const t = THREADS[ft.dataset.thread];
+    return t ? t.name : ft.textContent.trim();
+  }
+  function removeRow(ft){
+    ft.classList.add('gone');
+    setTimeout(() => ft.remove(), 380);
+  }
+  document.getElementById('ctxDelete').onclick = () => { if (ctxTarget) removeRow(ctxTarget); };
+  document.getElementById('ctxArchive').onclick = () => { if (ctxTarget) removeRow(ctxTarget); };
+  document.getElementById('ctxWait').onclick = () => {
+    if (!ctxTarget) return;
+    const name = threadName(ctxTarget);
+    removeRow(ctxTarget);
+    const n = document.getElementById('inboxN');
+    n.textContent = (+n.textContent) + 1;
+    const row = document.createElement('div');
+    row.className = 'ibx-row dim';
+    row.innerHTML = '<div class="codeav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></div><div class="bd"><div class="r1"><span class="ti"></span><span class="when">now</span></div><div class="de">Waiting quietly. Resurfaces on done, failure, or question.</div><span class="tagpill slp">SLEEPING</span></div>';
+    row.querySelector('.ti').textContent = name;
+    document.getElementById('sleepList').prepend(row);
+  };
+
+  /* ---------- new chat modal ---------- */
+  const overlay = document.getElementById('newChatOverlay');
+  let threadSeq = 0;
+  function openNewChat(folder){
+    if (folder) document.getElementById('folderSel').value = folder;
+    document.getElementById('taskInput').value = '';
+    overlay.classList.add('on');
+    document.getElementById('taskInput').focus();
+  }
+  document.getElementById('navNewChat').onclick = () => openNewChat();
+  document.getElementById('cancelNew').onclick = () => overlay.classList.remove('on');
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('on'); });
+  document.querySelectorAll('.hcard').forEach(c => c.onclick = () => {
+    document.querySelectorAll('.hcard').forEach(x => x.classList.remove('sel'));
+    c.classList.add('sel');
+  });
+  document.getElementById('startNew').onclick = () => {
+    const task = document.getElementById('taskInput').value.trim() || 'Untitled session';
+    const harness = document.querySelector('.hcard.sel').dataset.h;
+    const folder = document.getElementById('folderSel').value;
+    const id = 'new' + (++threadSeq);
+    THREADS[id] = {name: task, harness, status: 'starting…', body:[
+      ['stamp','Now'],
+      ['me', task],
+      ['tool','<span class="cmd">▸ init</span>   ' + harness + ' session in ' + (folder || '~') + '\n<span class="cmd">▸ read</span>   repo context  <span class="run">● running…</span>'],
+      ['bot', "On it. I'll report back here — fold me into Inbox any time and I'll resurface when it matters."],
+    ]};
+    if (folder){
+      const fadd = document.querySelector('.fadd[data-folder="' + folder + '"]');
+      const row = document.createElement('div');
+      row.className = 'fthread';
+      row.dataset.thread = id;
+      row.innerHTML = '<span class="g">●</span> <span class="tn"></span> <span class="st">running</span>';
+      row.querySelector('.tn').textContent = task;
+      fadd.closest('.folder').appendChild(row);
+    }
+    overlay.classList.remove('on');
+    openThread(id);
+  };
+
+  document.querySelectorAll('.tabs').forEach(g => {
+    g.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+      g.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+      t.classList.add('on');
+    });
+  });
+
+  document.getElementById('foldBtn').onclick = () => {
+    const c = document.getElementById('taskCard');
+    if (c.classList.contains('gone')) return;
+    c.classList.add('gone');
+    setTimeout(() => {
+      c.style.display = 'none';
+      const n = document.getElementById('inboxN');
+      n.textContent = (+n.textContent) + 1;
+      const t = document.getElementById('thread');
+      const s1 = document.createElement('div');
+      s1.className = 'sys';
+      s1.textContent = 'Thread folded — will reappear in Inbox';
+      t.appendChild(s1);
+      const b = document.createElement('div');
+      b.className = 'bot';
+      b.innerHTML = '<div class="bub">Done. It\'s out of your way — I\'ll ping you the moment it needs you.</div>';
+      t.appendChild(b);
+      const row = document.createElement('div');
+      row.className = 'ibx-row dim';
+      row.innerHTML = '<div class="codeav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></div><div class="bd"><div class="r1"><span class="ti">Auth migration</span><span class="when">now</span></div><div class="de">jabot-app · folded coding session. Resurfaces on done, failure, or question.</div><span class="tagpill slp">SLEEPING</span></div>';
+      document.getElementById('sleepList').prepend(row);
+    }, 380);
+  };
+
+  /* ---------- crew: edit / add / remove / customize ---------- */
+  const ALL_TOOLS = ['Gmail','Calendar','GitHub','Terminal','Browser','Notion','Drive','Slack'];
+  const CREW = [
+    {id:'chief',  name:'Chief',     cls:'b-teal',   chief:true, tools:['Everything'],
+     instr:'Route work across the crew. Fold long tasks away, surface only what matters.'},
+    {id:'code',   name:'Code',      cls:'b-yellow', dot:true, tools:['GitHub','Terminal'],
+     instr:'Run coding sessions in my repos. Open PRs, never push to main.'},
+    {id:'inboxm', name:'Inbox Mgr', cls:'b-purple', tools:['Gmail'],
+     instr:'Keep Gmail at zero. Park drafts for anything that needs my voice.'},
+    {id:'sched',  name:'Scheduler', cls:'b-violet', tools:['Calendar'],
+     instr:'Guard the calendar. Fix conflicts, protect deep-work mornings.'},
+    {id:'rsrch',  name:'Research',  cls:'b-blue',   tools:['Browser','Notion'],
+     instr:'Dig sources, pull context into GlobNet, brief me short.'},
+    {id:'writer', name:'Writer',    cls:'b-orange', tools:['Gmail','Notion'],
+     instr:'Draft in my voice: plain, short, no filler.'},
+  ];
+  const TEMPLATES = {
+    expense: {name:'Expense Manager', cls:'b-green', tools:['Gmail','Drive'],
+      instr:'Chase receipts, file the monthly report, flag anything unusual.'},
+    talent:  {name:'Talent Scout', cls:'b-pink', tools:['Browser','Gmail'],
+      instr:'Watch for interesting people. Draft warm intros in my voice, hold for review.'},
+    social:  {name:'Social Media', cls:'b-blue', tools:['Browser'],
+      instr:'Draft posts from my shipped work. Never publish without approval.'},
+    ops:     {name:'Ops / On-call', cls:'b-orange', tools:['Terminal','Slack'],
+      instr:'Watch deploys and alerts. Wake me only for real fires.'},
+  };
+
+  const strip = document.getElementById('botstrip');
+  const crewGrid = document.getElementById('crewGrid');
+  const navChiefEl = document.getElementById('navChief');
+  function blobHTML(bot){
+    return '<div class="blob ' + bot.cls + '">' + (bot.dot ? '<span class="dot"></span>' : '') + '</div>';
+  }
+  function renderCrew(){
+    const chief = CREW.find(b => b.chief);
+    navChiefEl.innerHTML = blobHTML(chief) + '<small></small>';
+    navChiefEl.querySelector('small').textContent = chief.name;
+    strip.querySelectorAll('.bstop.dyn').forEach(x => x.remove());
+    const crewTile = document.getElementById('navCrew');
+    for (const bot of CREW.filter(b => !b.chief)){
+      const d = document.createElement('div');
+      d.className = 'bstop dyn';
+      d.innerHTML = blobHTML(bot) + '<small></small>';
+      d.querySelector('small').textContent = bot.name;
+      strip.insertBefore(d, crewTile);
+    }
+    crewGrid.innerHTML = '';
+    for (const bot of CREW){
+      const card = document.createElement('div');
+      card.className = 'ccard';
+      card.innerHTML =
+        '<div class="r1">' + blobHTML(bot) + '<div><div class="nm"></div></div>' +
+        (bot.chief ? '<span class="chiefbadge">CHIEF</span>' : '') + '</div>' +
+        '<div class="role"></div>' +
+        '<div class="tools">' + bot.tools.map(() => '<span class="minichip"></span>').join('') + '</div>' +
+        '<div class="cacts"><button class="cbtn edit">Edit</button>' +
+        (bot.chief ? '' : '<button class="cbtn danger rm">Remove</button>') + '</div>';
+      card.querySelector('.nm').textContent = bot.name;
+      card.querySelector('.role').textContent = bot.instr;
+      card.querySelectorAll('.minichip').forEach((c, i) => c.textContent = bot.tools[i]);
+      card.querySelector('.edit').onclick = () => openBotModal(bot);
+      const rm = card.querySelector('.rm');
+      if (rm) rm.onclick = () => { CREW.splice(CREW.indexOf(bot), 1); renderCrew(); };
+      crewGrid.appendChild(card);
+    }
+    const add = document.createElement('div');
+    add.className = 'addcard';
+    add.innerHTML = '<span class="big">＋</span>Add a bot';
+    add.onclick = () => openBotModal(null);
+    crewGrid.appendChild(add);
+  }
+
+  const botOverlay = document.getElementById('botOverlay');
+  const toolRow = document.getElementById('toolRow');
+  let editingBot = null;
+  toolRow.innerHTML = ALL_TOOLS.map(t => '<button class="toolchip">' + t + '</button>').join('');
+  toolRow.querySelectorAll('.toolchip').forEach(c => c.onclick = () => c.classList.toggle('on'));
+  document.getElementById('swatches').addEventListener('click', e => {
+    const sw = e.target.closest('.sw');
+    if (!sw) return;
+    document.querySelectorAll('#swatches .sw').forEach(x => x.classList.remove('sel'));
+    sw.classList.add('sel');
+  });
+  function fillBotModal(src){
+    document.getElementById('botName').value = src.name || '';
+    document.getElementById('botInstr').value = src.instr || '';
+    document.querySelectorAll('#swatches .sw').forEach(x =>
+      x.classList.toggle('sel', x.dataset.cls === src.cls));
+    toolRow.querySelectorAll('.toolchip').forEach(c =>
+      c.classList.toggle('on', (src.tools || []).includes(c.textContent)));
+  }
+  function openBotModal(bot){
+    editingBot = bot;
+    const adding = !bot;
+    document.getElementById('botModalTitle').textContent = adding ? 'Add a bot' : 'Customize ' + bot.name;
+    document.getElementById('tplWrapLab').style.display = adding ? '' : 'none';
+    document.getElementById('tplSel').style.display = adding ? '' : 'none';
+    document.getElementById('tplSel').value = '';
+    document.getElementById('botRemove').style.display = (adding || bot.chief) ? 'none' : '';
+    fillBotModal(adding ? {cls:'b-green', tools:[]} : bot);
+    botOverlay.classList.add('on');
+  }
+  document.getElementById('tplSel').onchange = e => {
+    const t = TEMPLATES[e.target.value];
+    if (t) fillBotModal(t);
+  };
+  document.getElementById('botCancel').onclick = () => botOverlay.classList.remove('on');
+  botOverlay.addEventListener('click', e => { if (e.target === botOverlay) botOverlay.classList.remove('on'); });
+  document.getElementById('botRemove').onclick = () => {
+    if (editingBot && !editingBot.chief) CREW.splice(CREW.indexOf(editingBot), 1);
+    botOverlay.classList.remove('on');
+    renderCrew();
+  };
+  document.getElementById('botSave').onclick = () => {
+    const data = {
+      name: document.getElementById('botName').value.trim() || 'Unnamed bot',
+      instr: document.getElementById('botInstr').value.trim(),
+      cls: (document.querySelector('#swatches .sw.sel') || {dataset:{cls:'b-green'}}).dataset.cls,
+      tools: [...toolRow.querySelectorAll('.toolchip.on')].map(c => c.textContent),
+    };
+    if (editingBot) Object.assign(editingBot, data);
+    else CREW.push(Object.assign({id:'bot' + Date.now()}, data));
+    botOverlay.classList.remove('on');
+    renderCrew();
+  };
+
+  renderCrew();
+</script>

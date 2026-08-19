@@ -1,0 +1,140 @@
+<title>JaBot Inbox First</title>
+<style>
+  :root{ --paper:#FFFFFF; --ink:#161616; --grey:#8F8F8F; --hair:#E7E7E7; }
+  *{box-sizing:border-box; margin:0}
+  body{
+    background:var(--paper); color:var(--ink); height:100vh; overflow:hidden; display:flex;
+    font:14px/1.55 -apple-system, "Helvetica Neue", system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* letter rail */
+  .rail{
+    width:64px; flex:none; border-right:1px solid var(--hair); display:flex; flex-direction:column;
+    align-items:center; padding:22px 0; gap:14px;
+  }
+  .r-bot{
+    width:34px; height:34px; border-radius:50%; border:1.5px solid var(--ink); display:grid;
+    place-items:center; font-size:11px; font-weight:500; cursor:pointer;
+  }
+  .r-bot:hover{background:var(--ink); color:var(--paper)}
+  .r-bot.chief{background:var(--ink); color:var(--paper)}
+  .rail .gap{flex:1}
+  .rail .tiny{font-size:9.5px; letter-spacing:.12em; color:var(--grey)}
+
+  .main{flex:1; min-width:0; overflow-y:auto}
+  .col{max-width:620px; margin:0 auto; padding:48px 28px 60px}
+  h1{font-size:22px; font-weight:600; letter-spacing:-.01em}
+  .sub{color:var(--grey); font-size:13px; margin:4px 0 34px}
+
+  .sec{
+    font-size:10.5px; font-weight:600; letter-spacing:.14em; color:var(--grey);
+    text-transform:uppercase; margin:30px 0 2px;
+  }
+  .entry{
+    display:flex; align-items:baseline; gap:14px; padding:14px 0; border-bottom:1px solid var(--hair);
+    cursor:pointer;
+  }
+  .entry:hover .title{text-decoration:underline; text-underline-offset:3px}
+  .entry .mark{width:12px; flex:none; font-size:12px}
+  .entry .title{font-weight:500}
+  .entry .desc{color:var(--grey); font-size:13px; margin-top:2px; max-width:56ch}
+  .entry .when{margin-left:auto; color:var(--grey); font-size:12px; white-space:nowrap; font-variant-numeric:tabular-nums}
+  .entry.dim .title{color:var(--grey); font-weight:400}
+
+  .open{
+    border:1.5px solid var(--ink); border-radius:12px; padding:20px 22px; margin-top:14px;
+  }
+  .open .steps{color:var(--grey); font-size:12px; letter-spacing:.04em; margin-bottom:12px}
+  .open .steps b{color:var(--ink); font-weight:500}
+  .open ul{margin:10px 0 0 16px; color:var(--grey); font-size:13px}
+  .open li{margin-bottom:4px}
+  .open .acts{display:flex; gap:18px; margin-top:16px}
+  .open .acts button{
+    font:13px inherit; font-family:inherit; background:none; border:0; cursor:pointer;
+    color:var(--ink); text-decoration:underline; text-underline-offset:3px; padding:0;
+  }
+  .open .acts button:hover{opacity:.55}
+  .open .acts button:focus-visible{outline:2px solid var(--ink); outline-offset:3px}
+</style>
+
+<div class="rail">
+  <div class="r-bot chief" title="Chief of Staff">CoS</div>
+  <div class="r-bot">M</div>
+  <div class="r-bot">C</div>
+  <div class="r-bot">R</div>
+  <div class="r-bot">F</div>
+  <div class="r-bot">W</div>
+  <div class="gap"></div>
+  <div class="tiny">CODE</div>
+  <div class="r-bot" title="Pull Requests">PR</div>
+  <div class="r-bot" title="New chat">+</div>
+</div>
+
+<div class="main">
+  <div class="col">
+    <h1>Inbox</h1>
+    <div class="sub">Where sleeping threads come back to you</div>
+
+    <div class="sec">Resurfaced</div>
+
+    <div class="entry">
+      <span class="mark">●</span>
+      <div>
+        <div class="title">Auth migration finished</div>
+        <div class="desc">Slept 42 min. 3 files changed, tests green, PR #23 opened.</div>
+        <div class="open">
+          <div class="steps">started → <b>disappeared</b> → ran 42 min → <b>resurfaced</b> → reviewed</div>
+          One judgment call made while you were away:
+          <ul>
+            <li>Kept the 30-day cookie expiry — flagged for your review</li>
+          </ul>
+          <div class="acts">
+            <button>Open PR #23</button>
+            <button>Reopen thread</button>
+            <button>Archive</button>
+          </div>
+        </div>
+      </div>
+      <span class="when">10:12</span>
+    </div>
+
+    <div class="entry">
+      <span class="mark">◐</span>
+      <div>
+        <div class="title">Mail bot needs a call</div>
+        <div class="desc">Two invoices from UGREEN — archive, or flag for finance?</div>
+      </div>
+      <span class="when">09:47</span>
+    </div>
+
+    <div class="entry">
+      <span class="mark">◐</span>
+      <div>
+        <div class="title">Weekly digest draft ready</div>
+        <div class="desc">1,240 words. Awaiting your review.</div>
+      </div>
+      <span class="when">08:30</span>
+    </div>
+
+    <div class="sec">Still sleeping</div>
+
+    <div class="entry dim">
+      <span class="mark">◌</span>
+      <div>
+        <div class="title">Nightly NAS backup</div>
+        <div class="desc">Will resurface on success, failure, or question.</div>
+      </div>
+      <span class="when">2h</span>
+    </div>
+
+    <div class="entry dim">
+      <span class="mark">◌</span>
+      <div>
+        <div class="title">Dependency audit</div>
+        <div class="desc">Scanning 214 packages. Nothing needs you yet.</div>
+      </div>
+      <span class="when">40m</span>
+    </div>
+  </div>
+</div>
