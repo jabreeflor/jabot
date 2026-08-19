@@ -15,7 +15,7 @@ npm run tauri dev    # macOS dev (requires Tauri prerequisites)
 npm run build        # frontend-only build (CI / Linux)
 ```
 
-macOS MVP: overlay title bar, hide-to-Dock on window close (#4). The host API is shaped like a future socket protocol — see `host_health` in `src-tauri/src/host.rs`.
+macOS MVP: overlay title bar, hide-to-Dock on window close (#4). The renderer talks **JSON-RPC 2.0** to the Rust host (`host_rpc` + `host-rpc` events) — same messages a Unix socket will carry later (#8).
 
 ## Prototypes
 

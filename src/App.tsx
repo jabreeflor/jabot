@@ -1,27 +1,27 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { connectHost, type HelloResult, HostRpcError } from "./host";
 import "./App.css";
 
-export interface HostInfo {
-  version: string;
-  platform: string;
-  host_mode: string;
-}
-
 function App() {
-  const [host, setHost] = useState<HostInfo | null>(null);
+  const [hello, setHello] = useState<HelloResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
+    let disconnect: (() => void) | undefined;
 
-    invoke<HostInfo>("host_health")
-      .then((info) => {
-        if (!cancelled) setHost(info);
+    connectHost()
+      .then(({ client, hello: result }) => {
+        if (cancelled) {
+          client.disconnect();
+          return;
+        }
+        disconnect = () => client.disconnect();
+        setHello(result);
       })
       .catch((err) => {
-        if (!cancelled) setError(String(err));
+        if (!cancelled) setError(formatError(err));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -29,6 +29,7 @@ function App() {
 
     return () => {
       cancelled = true;
+      disconnect?.();
     };
   }, []);
 
@@ -49,10 +50,10 @@ function App() {
         </header>
         <div className="main-content">
           <div className="scaffold-card">
-            <h2>Tauri 2 scaffold</h2>
+            <h2>Host API</h2>
             <p>
-              Rust host in <code>src-tauri</code>, React 19 renderer via Vite.
-              macOS overlay title bar and hide-to-Dock on window close (#4, #7).
+              Typed JSON-RPC 2.0 between the React renderer and the in-process
+              Rust host. Same messages will ride a Unix socket later (#8).
             </p>
             {error && (
               <p className="host-error" role="alert">
@@ -61,24 +62,43 @@ function App() {
             )}
             {loading && !error && (
               <p className="host-loading" aria-live="polite">
-                Loading host info…
+                Connecting to host…
               </p>
             )}
-            {host && (
-              <dl className="host-info">
-                <dt>version</dt>
-                <dd>{host.version}</dd>
-                <dt>platform</dt>
-                <dd>{host.platform}</dd>
-                <dt>host_mode</dt>
-                <dd>{host.host_mode}</dd>
-              </dl>
-            )}
+            {hello && <HelloInfo hello={hello} />}
           </div>
         </div>
       </main>
     </div>
   );
+}
+
+function HelloInfo({ hello }: { hello: HelloResult }) {
+  return (
+    <dl className="host-info">
+      <dt>protocol</dt>
+      <dd>jsonrpc-2.0 / v{hello.protocolVersion}</dd>
+      <dt>version</dt>
+      <dd>{hello.version}</dd>
+      <dt>platform</dt>
+      <dd>{hello.platform}</dd>
+      <dt>host_mode</dt>
+      <dd>{hello.hostMode}</dd>
+      <dt>host_id</dt>
+      <dd>{hello.hostId}</dd>
+      <dt>device_id</dt>
+      <dd>{hello.device.deviceId}</dd>
+      <dt>device_role</dt>
+      <dd>{hello.device.role}</dd>
+    </dl>
+  );
+}
+
+function formatError(err: unknown): string {
+  if (err instanceof HostRpcError) {
+    return `${err.message} (${err.code})`;
+  }
+  return String(err);
 }
 
 export default App;
