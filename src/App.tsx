@@ -11,11 +11,25 @@ export interface HostInfo {
 function App() {
   const [host, setHost] = useState<HostInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     invoke<HostInfo>("host_health")
-      .then(setHost)
-      .catch((err) => setError(String(err)));
+      .then((info) => {
+        if (!cancelled) setHost(info);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return (
@@ -40,7 +54,16 @@ function App() {
               Rust host in <code>src-tauri</code>, React 19 renderer via Vite.
               macOS overlay title bar and hide-to-Dock on window close (#4, #7).
             </p>
-            {error && <p className="host-error">{error}</p>}
+            {error && (
+              <p className="host-error" role="alert">
+                {error}
+              </p>
+            )}
+            {loading && !error && (
+              <p className="host-loading" aria-live="polite">
+                Loading host info…
+              </p>
+            )}
             {host && (
               <dl className="host-info">
                 <dt>version</dt>

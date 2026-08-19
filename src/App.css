@@ -10,3 +10,8 @@ code {
   color: var(--red);
   margin-bottom: 12px;
 }
+
+.host-loading {
+  color: var(--dim);
+  margin-bottom: 12px;
+}

@@ -48,11 +48,10 @@ body {
 .titlebar-drag {
   position: fixed;
   top: 0;
-  left: 0;
+  left: 78px;
   right: 0;
   height: 28px;
   z-index: 100;
-  -webkit-app-region: drag;
 }
 
 .sidebar {
@@ -161,4 +160,13 @@ body {
 
 .host-info dd:last-child::after {
   margin-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
