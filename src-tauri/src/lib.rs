@@ -42,17 +42,7 @@ fn load_session(app: &tauri::AppHandle) -> HostSession {
                 eprintln!("failed to create app data dir {}: {err}", dir.display());
                 return HostSession::ephemeral();
             }
-            let path = dir.join("host-identity.json");
-            match HostSession::load_or_create(&path) {
-                Ok(session) => session,
-                Err(err) => {
-                    eprintln!(
-                        "failed to persist host identity at {}: {err}; using ephemeral identity",
-                        path.display()
-                    );
-                    HostSession::ephemeral()
-                }
-            }
+            HostSession::load(&dir)
         }
         Err(err) => {
             eprintln!("failed to resolve app data dir: {err}; using ephemeral identity");
@@ -91,6 +81,13 @@ pub fn run() {
                     let _ = window.unminimize();
                     let _ = window.show();
                     let _ = window.set_focus();
+                }
+            }
+            if let tauri::RunEvent::Exit = event {
+                if let Some(state) = app.try_state::<HostState>() {
+                    if let Ok(mut session) = state.0.lock() {
+                        session.checkpoint_store();
+                    }
                 }
             }
         });

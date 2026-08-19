@@ -88,6 +88,22 @@ pub struct HelloResult {
     pub device: DeviceInfo,
     pub methods: Vec<String>,
     pub notifications: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store: Option<StoreStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreStatus {
+    pub path: String,
+    pub schema_version: i32,
+    pub sqlite_version: String,
+    pub journal_mode: String,
+    pub secrets_backend: String,
+    pub harness_count: i64,
+    pub bot_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -101,6 +117,10 @@ pub struct HealthResult {
     pub connected: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store: Option<StoreStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub store_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

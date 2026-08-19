@@ -53,7 +53,8 @@ function App() {
             <h2>Host API</h2>
             <p>
               Typed JSON-RPC 2.0 between the React renderer and the in-process
-              Rust host. Same messages will ride a Unix socket later (#8).
+              Rust host. Same messages will ride a Unix socket later (#8). The
+              host owns SQLite (WAL) and an OS keychain vault for secrets (#9).
             </p>
             {error && (
               <p className="host-error" role="alert">
@@ -90,6 +91,27 @@ function HelloInfo({ hello }: { hello: HelloResult }) {
       <dd>{hello.device.deviceId}</dd>
       <dt>device_role</dt>
       <dd>{hello.device.role}</dd>
+      {hello.storeError && (
+        <>
+          <dt>store_error</dt>
+          <dd className="host-error">{hello.storeError}</dd>
+        </>
+      )}
+      {hello.store && (
+        <>
+          <dt>sqlite</dt>
+          <dd>
+            v{hello.store.sqliteVersion} / {hello.store.journalMode} / schema{" "}
+            {hello.store.schemaVersion}
+          </dd>
+          <dt>secrets</dt>
+          <dd>{hello.store.secretsBackend}</dd>
+          <dt>catalog</dt>
+          <dd>
+            {hello.store.harnessCount} harnesses · {hello.store.botCount} bots
+          </dd>
+        </>
+      )}
     </dl>
   );
 }
