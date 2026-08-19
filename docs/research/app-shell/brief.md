@@ -6,6 +6,9 @@ so it's a desktop app first.
 
 Constrained by: [harness-integration](../harness-integration/brief.md) — the
 adapter layer decides how much process/PTY machinery the shell must own.
+Prior art: [setup-porting](../setup-porting/findings.md) (OpenClaw LaunchAgent
+host, Hermes Electron+`hermes serve`, Buzz Tauri supervisor — daemon split
+first, Electron vs Tauri second).
 
 ## Questions to answer
 
