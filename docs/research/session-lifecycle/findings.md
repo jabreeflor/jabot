@@ -8,8 +8,9 @@ live in sibling files.
 supervisor** that keeps the ACP subprocess alive while a folded thread is
 still working, checkpoints `sessionId` + `cwd` so idle / sleep / crash can
 resume, and maps ACP idle + stop reason / `requires_action` onto a four-state
-Inbox overlay (`active` → `folded` → `resurfaced` → `archived`) — not
-launchd, not "kill the process on fold."
+Inbox overlay (`active` → `folded` → `resurfaced` → `archived`) **plus a
+run ledger** ([#5](../../decisions/issues-4-6.md)) — not launchd, not
+"kill the process on fold."
 
 | Question | Short answer | Detail |
 |---|---|---|

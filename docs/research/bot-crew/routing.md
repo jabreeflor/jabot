@@ -49,7 +49,7 @@ Host tools on Chief (names illustrative):
 
 | Tool | Effect |
 |---|---|
-| `handoff_to_bot` | Ensure worker thread exists; append a `sys` brief; run the worker loop; return a card to Chief |
+| `handoff_to_bot` | Ensure worker thread exists; append a `sys` brief; `session/prompt` on that bot's harness; return a card to Chief |
 | `spawn_code_session` | New ACP session (`cwd`, harness, Code bot instructions + MCP); optional fold |
 | `fold_thread` | Session-lifecycle fold; Inbox on done/fail/question |
 | `list_crew_status` | Refresh the board without guessing |
@@ -78,19 +78,19 @@ host actually creating the job. The tool call *is* the handoff.
 
 | User / Chief intent | Runtime |
 |---|---|
-| "Migrate auth in jabot-app" | ACP `session/new` in that folder. Code bot instructions apply. |
-| "What's on Thursday?" | Scheduler worker + Calendar MCP. |
-| "Zero the inbox" | Inbox Mgr + Gmail MCP. |
-| "Brief me on this paper" | Research + Browser/Notion MCP. |
-| "Write the update in my voice" | Writer + Gmail/Notion MCP. |
+| "Migrate auth in jabot-app" | ACP `session/new` in that folder. Code bot instructions apply. Harness from New Chat or Code's `harness_id`. |
+| "What's on Thursday?" | Scheduler bot's ACP session + Calendar MCP. |
+| "Zero the inbox" | Inbox Mgr ACP session + Gmail MCP. |
+| "Brief me on this paper" | Research ACP session + Browser/Notion MCP. |
+| "Write the update in my voice" | Writer ACP session + Gmail/Notion MCP. |
 | "Watch deploys" (Ops template) | Prefer a folded **code** session with Terminal, or Slack MCP + a scoped exec later. |
 
 Chief does not PTY-wrap a harness. Spawning code is the adapter from
 [adapter-design.md](../harness-integration/adapter-design.md).
 
-When a code session needs GitHub/Browser, pass those MCP servers on
-`session/new` from the **same catalog** workers use. One OAuth grant,
-two runtimes.
+When a worker or code session needs GitHub/Browser/Gmail, pass those MCP
+servers on `session/new` from the **same catalog**. One OAuth grant,
+per-bot allowlist, one runtime.
 
 ## Cross-talk
 

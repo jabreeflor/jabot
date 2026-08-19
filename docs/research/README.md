@@ -6,10 +6,10 @@ Research needed before we open build issues. Each topic has its own folder with 
 its "What this unblocks" list into GitHub issues with dependencies flagged.
 
 **Numbered topics #1–#7 plus cross-cutting setup-porting have findings in
-(August 2026).** Headline decisions are below. Remaining forks:
-[physical host process](#open-fork-physical-host) and the
-[setup-porting tensions](#tensions-with-setup-porting) that landed on `main`
-after #2–#7 were written.
+(August 2026).** Headline decisions are below. The three product forks
+(host process, fold/run/Inbox, what is a bot) are **settled** in
+[`docs/decisions/issues-4-6.md`](../decisions/issues-4-6.md). How those
+relate to setup-porting is in [tensions](#tensions-with-setup-porting).
 
 ## Topics, in dependency order
 
@@ -19,7 +19,7 @@ after #2–#7 were written.
 | — | [setup-porting](setup-porting/brief.md) | [findings](setup-porting/findings.md) | Prior art from OpenClaw, Hermes Agent, and Buzz. Cross-cuts #1–#7: daemon split, crew scopes, Inbox vs runs, catalog, pairing. |
 | 2 | [session-lifecycle](session-lifecycle/brief.md) | [findings](session-lifecycle/findings.md) | User-space supervisor keeps the ACP process while folded work is in flight; idle / sleep / crash **resume** from `sessionId` + `cwd`. Not launchd. |
 | 3 | [app-shell](app-shell/brief.md) | [findings](app-shell/findings.md) | macOS-only **Tauri 2 + React 19**; Rust host owns ACP subprocesses. Hide-to-Dock, no PTY for MVP. |
-| 4 | [bot-crew](bot-crew/brief.md) | [findings](bot-crew/findings.md) | **Code = ACP session.** Every other bot is a thin host-owned LLM + MCP allowlist. Chief hands off to worker threads. |
+| 4 | [bot-crew](bot-crew/brief.md) | [findings](bot-crew/findings.md) | **Every bot is an ACP harness session** (Buzz-style catalog + per-bot harness). Chief hands off to worker threads. Findings' two-runtime split is superseded by [#6](../decisions/issues-4-6.md). |
 | 5 | [git-and-prs](git-and-prs/brief.md) | [findings](git-and-prs/findings.md) | Folder = one repo. **Host-owned worktree** per thread as ACP `cwd`. Reuse `gh`; GitHub-only; poll GraphQL. |
 | 6 | [data-and-persistence](data-and-persistence/brief.md) | [findings](data-and-persistence/findings.md) | **SQLite WAL** as source of truth; ACP overlay (not harness-log mirrors); secrets in the OS keychain. |
 | 7 | [remote-and-mobile](remote-and-mobile/brief.md) | [findings](remote-and-mobile/findings.md) | **Logical client/host split** from day one. JaBot-owned host protocol. Pairing + thin mobile Inbox are MVP2. |
@@ -38,49 +38,39 @@ claude-agent-acp / codex-acp / pi-acp / custom
 
 - **Shell:** Tauri 2, macOS-only, Developer ID + notarize (not App Store).
 - **Harness:** ACP v1 client in the host. One adapter subprocess per live thread.
-- **Threads:** UI overlay `active → folded → resurfaced → archived`. Wait for Inbox is a permission policy, not a fifth state.
-- **Code isolation:** `git worktree` per concurrent thread; path is ACP `cwd`.
-- **Crew:** Code bots are harness sessions; Chief / Inbox Mgr / etc. are prompt + MCP.
+- **Threads:** UI overlay `active → folded → resurfaced → archived` plus a `runs` table. Inbox is a projection of run events. Wait for Inbox is a permission policy, not a fifth state.
+- **Code isolation:** `git worktree` per concurrent **code** thread; path is ACP `cwd`.
+- **Crew:** every bot (Chief, Code, Inbox Mgr, templates) is an ACP harness session. Buzz three-tier catalog; per-bot `harness_id`; custom JSON. Isolation is credentials + memory, not a second runtime.
 - **Store:** one SQLite file, single-writer host; Keychain for tokens.
 - **Remote:** same host API over LAN/Tailscale later. No JaBot relay. No ACP-over-HTTP (still draft).
 
-## Open fork: physical host
+## Settled forks (was: physical host)
 
 [app-shell](app-shell/process-architecture.md) and
-[session-lifecycle](session-lifecycle/keep-alive.md) want the host **in-process**
+[session-lifecycle](session-lifecycle/keep-alive.md) wanted the host **in-process**
 with the Tauri binary (hide window ≠ quit; Cmd-Q resumes from disk).
-[remote-and-mobile](remote-and-mobile/architecture.md) wants a **separate host
-daemon in MVP1** so local and remote are the same process shape.
-[setup-porting](setup-porting/findings.md) also wants a **durable host daemon**
-(OpenClaw LaunchAgent / Hermes `serve` / Buzz supervisor), including after the
-UI quits.
+[remote-and-mobile](remote-and-mobile/architecture.md) wanted a **separate host
+daemon in MVP1**. [setup-porting](setup-porting/findings.md) wanted a **durable
+host daemon** even after the UI quits.
 
-They already agree on the expensive part: the **UI never owns ACP stdio**, and
-the host API should be socket-shaped so it can detach.
+**Settled in [#4](../decisions/issues-4-6.md):** logical split in MVP1 (webview
+talks only to a host API). Host stays in the Tauri binary; hide-to-Dock.
+Extract `jabot-host` when a second client exists. Do not install launchd.
+Window close ≠ host quit (hide). Cmd-Q does quit; resume from disk.
 
-**Recommended resolution when opening issues:** ship the logical split in MVP1
-(webview talks only to a host API). Keep the host in the Tauri binary and
-hide-to-Dock. Extract `jabot-host` as a sidecar when a second client exists
-(phone or another Mac). Do not install launchd. The protocol is the MVP1
-decision; the extra OS process is MVP2.
-
-That resolution is **ours from #2–#7**, not a merge of setup-porting. Setup-porting
-explicitly treats a durable daemon as non-optional and calls folded work that dies
-on window close a product bug. Do not silently pick a winner here — see
-[tensions below](#tensions-with-setup-porting).
+The UI never owns ACP stdio. The host API is socket-shaped so it can detach.
 
 ## Tensions with setup-porting
 
 [#2–#7 findings](.) were written before
-[setup-porting](setup-porting/findings.md) landed. Briefs auto-merged a prior-art
-pointer; the findings themselves were **not** rewritten to match. Three product
-intents still disagree:
+[setup-porting](setup-porting/findings.md) landed. The three forks are now
+settled in [`docs/decisions/issues-4-6.md`](../decisions/issues-4-6.md):
 
-| Topic | #2–#7 findings | setup-porting |
-|---|---|---|
-| Host process | In-process Tauri host + hide-to-Dock; sidecar later | Durable host **daemon** from day one, even locally; UI quit ≠ host quit |
-| Fold / Inbox | One thread overlay (`active → folded → resurfaced → archived`); Inbox is a query on `threads.state` | **Three stores**: fold (UI), run/task (durable), Inbox (projection of run events) |
-| What is a bot? | Code = ACP session; others = prompt + MCP allowlist + memory files | Isolated **scope** (workspace, persona, tools, memory policy); never share auth/session stores |
+| Topic | #2–#7 findings | setup-porting | Settled |
+|---|---|---|---|
+| Host process | In-process Tauri host + hide-to-Dock; sidecar later | Durable host **daemon** from day one; UI quit ≠ host quit | **#4:** in-process + hide-to-Dock. Quit resumes. Sidecar when a second client exists. Folded work must not die on *window close*. |
+| Fold / Inbox | Thread overlay; Inbox is a query on `threads.state` | **Three stores**: fold, run, Inbox projection | **#5:** overlay **and** a `runs` table. Inbox is persist-then-notify from run events. Still sleeping = folded threads. |
+| What is a bot? | Code = ACP; others = prompt + MCP | Isolated **scope**; never share auth/session stores | **#6:** every bot is an ACP harness (Buzz catalog). Scope = persona + tools + memory + per-bot harness. Shared OAuth grants with allowlists; no shared harness session stores. |
 
 Aligned already: ACP as the harness seam, persist-then-notify, never auto-allow
 execute because a thread is folded, SQLite + OS keychain, pairing without a
@@ -89,6 +79,8 @@ JaBot account/relay.
 ## File map
 
 ```
+docs/decisions/
+  issues-4-6.md                      ← settled forks (#4 host, #5 fold/run/Inbox, #6 bot=harness)
 docs/research/
   README.md                          ← you are here
   harness-integration/

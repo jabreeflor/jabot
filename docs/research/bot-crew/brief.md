@@ -12,8 +12,10 @@ files, Hermes Bot Mode/profiles, Buzz persona packs).
 [findings.md](findings.md). Deep dives: [bot-model.md](bot-model.md),
 [routing.md](routing.md), [mcp-and-tools.md](mcp-and-tools.md),
 [templates-memory-schedules.md](templates-memory-schedules.md). Headline:
-Code is ACP; every other bot is a thin LLM + MCP allowlist; Chief hands
-off to worker threads instead of nesting subagents.
+every bot is an ACP harness session (Buzz-style catalog + per-bot harness);
+Chief hands off to worker threads instead of nesting subagents. The older
+“Code is ACP; everyone else is a thin LLM loop” split is superseded by
+[`docs/decisions/issues-4-6.md`](../../decisions/issues-4-6.md).
 
 ## Questions to answer
 

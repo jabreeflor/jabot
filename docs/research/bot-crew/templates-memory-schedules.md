@@ -42,14 +42,16 @@ name
 color          # prototype cls: b-green, b-pink, …
 instructions   # the textarea
 tools[]        # catalog ids
+harness_id     # default ACP harness; user-customizable after add
 ```
 
 Optional later, not MVP: default schedules, sample `MEMORY.md`, icon
 beyond color blob.
 
 Do not ship executable code per template. Do not ship CrewAI YAML.
-Templates are **data**. The runtime is always thin-loop or ACP based on
-`kind` (Code vs worker).
+Templates are **data**. The runtime is always ACP, with `harness_id` choosing
+which catalog entry (and cwd/worktree policy choosing Code vs standing
+worker).
 
 Ops' Terminal chip means "may start folded code sessions," not a second
 shell runtime ([mcp-and-tools.md](mcp-and-tools.md)).
