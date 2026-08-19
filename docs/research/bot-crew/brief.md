@@ -8,6 +8,13 @@ Depends on: [harness-integration](../harness-integration/brief.md). Prior art:
 [setup-porting](../setup-porting/findings.md) (OpenClaw agents + workspace
 files, Hermes Bot Mode/profiles, Buzz persona packs).
 
+**Findings (2026-08):** questions below are answered in
+[findings.md](findings.md). Deep dives: [bot-model.md](bot-model.md),
+[routing.md](routing.md), [mcp-and-tools.md](mcp-and-tools.md),
+[templates-memory-schedules.md](templates-memory-schedules.md). Headline:
+Code is ACP; every other bot is a thin LLM + MCP allowlist; Chief hands
+off to worker threads instead of nesting subagents.
+
 ## Questions to answer
 
 1. **What is a bot, technically?** A system prompt + tool allowlist on top of a

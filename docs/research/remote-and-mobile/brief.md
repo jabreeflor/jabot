@@ -6,6 +6,15 @@ connect to sessions across various locations. Mobile pairing (phone talks to
 your crew) is MVP2, but the architecture decision is MVP1 — it decides whether
 the UI talks to sessions directly or over a connection layer.
 
+**Findings (2026-08):** questions below are answered in
+[findings.md](findings.md). Deep dives: [architecture.md](architecture.md),
+[protocol-and-reach.md](protocol-and-reach.md),
+[pairing-security-mobile.md](pairing-security-mobile.md). Headline: force a
+**logical** host (UI never owns ACP stdio) and a JaBot-owned host protocol;
+pairing/mobile are MVP2. Physical daemon vs in-process is the remaining
+fork with [app-shell](../app-shell/findings.md) — see
+[README](../README.md#open-fork-physical-host).
+
 Depends on: [harness-integration](../harness-integration/brief.md) and
 [session-lifecycle](../session-lifecycle/brief.md) (shapes what a "session
 connection" carries). Feeds [app-shell](../app-shell/brief.md) (UI vs daemon
