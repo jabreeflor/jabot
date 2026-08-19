@@ -14,7 +14,7 @@ secrets in the OS keychain — never plaintext in the store.
 |---|---|---|
 | 1. Store | SQLite WAL as SoT. Files only for export/debug. Not JSON-as-database. | [store.md](store.md) |
 | 2. Transcript ownership | Overlay, do not mirror. Store ACP updates we saw + `nativeSessionRef`. | [store.md](store.md#transcript-ownership) |
-| 3. Schema first pass | Tables below. States `active \| folded \| resurfaced \| archived`. Wait for Inbox is a fold policy, not a row type. | [schema.md](schema.md) |
+| 3. Schema first pass | Thread overlay + `runs` + Inbox projection. Wait for Inbox is a fold policy. Bots have `harness_id`. | [schema.md](schema.md) |
 | 4. Secrets | OS keychain (Electron `safeStorage` / Rust `keyring` + Security.framework). Never plaintext. | [secrets-and-sync.md](secrets-and-sync.md) |
 | 5. Sync later | Single-writer now. UUIDs + `updated_at`. No CRDT. Litestream-class backup is the later door. | [secrets-and-sync.md](secrets-and-sync.md#sync-later) |
 
@@ -31,9 +31,10 @@ The brief's "What this blocks" list can become issues:
    (`threadId`, `harnessId`, `acpSessionId`, `nativeSessionRef`, `cwd`,
    runtime snapshot, state) plus append-only ACP `session/update` events.
    Do not parse Claude/Codex/Pi JSONL as our renderer input.
-3. **Inbox as a view** — query threads by state; write `inbox_events` when
-   a thread folds, resurfaces, or records a judgment call. Wait for Inbox is
-   `fold_policy` on the thread.
+3. **Inbox as a projection** — query folded threads for Still sleeping;
+   write `inbox_events` from `runs` transitions (done / failed / needs_you /
+   lost). Wait for Inbox is `fold_policy` on the thread. See
+   [#5](../../decisions/issues-4-6.md).
 4. **Secrets vault** — `secret_refs` in SQLite, bytes in the OS store.
    Inject into MCP / adapter env at spawn; never write tokens into
    `threads.runtime_json`.

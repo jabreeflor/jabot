@@ -4,10 +4,11 @@ Research draft, not a migration to paste blindly. Types are SQLite.
 Timestamps are ISO-8601 UTC text (`strftime('%Y-%m-%dT%H:%M:%fZ')`) so they
 survive language bindings. IDs are UUID text.
 
-**Aligned with [session-lifecycle](../session-lifecycle/findings.md).**
-Thread `state` and Inbox triggers below match that overlay. "Stuck" is a
-`resurfacedReason`, not a fifth state. If lifecycle later renames a reason
-enum, migrate the CHECK; do not add a parallel column.
+**Aligned with [session-lifecycle](../session-lifecycle/findings.md) and
+[#5](../../decisions/issues-4-6.md).** Thread `state` is the UI overlay.
+Work lives in `runs`. Inbox is persist-then-notify from run transitions.
+"Stuck" is a `resurfacedReason`, not a fifth state. If lifecycle later
+renames a reason enum, migrate the CHECK; do not add a parallel column.
 
 ## State machine (draft)
 
@@ -53,23 +54,30 @@ rendering; purge overlay after a grace period. **Reopen** from Inbox →
 `active`.
 
 Inbox **cards** are not a second copy of the thread. The Resurfaced /
-Still sleeping sections are queries on `threads.state`. `inbox_events` is
-the audit / notification log (and the expanded "1 judgment call" list).
+Still sleeping sections mix:
+
+- **Still sleeping** = `threads` where `state = 'folded'`.
+- **Resurfaced / Needs you / Done** = latest `inbox_events` (from `runs`
+  transitions) joined to those threads.
+
+`inbox_events` is the audit / notification log (and the expanded
+"1 judgment call" list). Write the event before notifying the UI.
 
 ## ER sketch
 
 ```
 folders 1──* threads 1──* transcript_events
                 │
-                ├──* inbox_events
+                ├──* runs 1──* inbox_events
                 ├──* thread_prs
                 └──* permission_decisions
 
 bots 1──* threads          (nullable: Chief chats vs code threads)
 bots 1──* schedules
 bots *──* bot_tools        (or tools_json on bots — MVP: JSON)
+bots N──1 harnesses        (default harness; thread may override)
 
-harnesses  (catalog; threads.harness_id)
+harnesses  (Buzz-style catalog; threads.harness_id + bots.harness_id)
 
 secret_refs  (pointers only; bytes live in the OS store)
 ```
@@ -96,25 +104,6 @@ CREATE TABLE folders (
   updated_at  TEXT NOT NULL
 );
 
--- Crew. Prototype CREW[]: chief, code, inboxm, sched, rsrch, writer.
--- tools_json: JSON array of tool ids (gmail, github, …).
--- secret_ref_id: optional pointer for that bot's bundled MCP auth.
-CREATE TABLE bots (
-  id              TEXT PRIMARY KEY,
-  name            TEXT NOT NULL,
-  color           TEXT NOT NULL,           -- prototype cls: b-teal, …
-  instructions    TEXT NOT NULL DEFAULT '',
-  tools_json      TEXT NOT NULL DEFAULT '[]',
-  is_chief        INTEGER NOT NULL DEFAULT 0 CHECK (is_chief IN (0, 1)),
-  template_id     TEXT,                    -- expense | talent | social | ops | NULL
-  host_id         TEXT,                    -- NULL = this machine; remote-and-mobile later
-  sort_order      INTEGER NOT NULL DEFAULT 0,
-  created_at      TEXT NOT NULL,
-  updated_at      TEXT NOT NULL
-);
-
-CREATE UNIQUE INDEX bots_one_chief ON bots(is_chief) WHERE is_chief = 1;
-
 -- Built-in + Custom harness catalog (Buzz-style JSON).
 CREATE TABLE harnesses (
   id             TEXT PRIMARY KEY,         -- claude | codex | pi | user id
@@ -127,6 +116,27 @@ CREATE TABLE harnesses (
   created_at     TEXT NOT NULL,
   updated_at     TEXT NOT NULL
 );
+
+-- Crew. Prototype CREW[]: chief, code, inboxm, sched, rsrch, writer.
+-- tools_json: JSON array of tool ids (gmail, github, …).
+-- harness_id: default ACP catalog entry (Buzz-style). Thread may override.
+-- secret_ref_id: optional pointer for that bot's bundled MCP auth.
+CREATE TABLE bots (
+  id              TEXT PRIMARY KEY,
+  name            TEXT NOT NULL,
+  color           TEXT NOT NULL,           -- prototype cls: b-teal, …
+  instructions    TEXT NOT NULL DEFAULT '',
+  tools_json      TEXT NOT NULL DEFAULT '[]',
+  harness_id      TEXT NOT NULL REFERENCES harnesses(id),
+  is_chief        INTEGER NOT NULL DEFAULT 0 CHECK (is_chief IN (0, 1)),
+  template_id     TEXT,                    -- expense | talent | social | ops | NULL
+  host_id         TEXT,                    -- NULL = this machine; remote-and-mobile later
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL,
+  updated_at      TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX bots_one_chief ON bots(is_chief) WHERE is_chief = 1;
 
 -- Adapter-design thread row, plus JaBot overlay.
 CREATE TABLE threads (
@@ -160,6 +170,30 @@ CREATE UNIQUE INDEX threads_acp_session ON threads(acp_session_id)
 CREATE INDEX threads_folder_state ON threads(folder_id, state) WHERE deleted_at IS NULL;
 CREATE INDEX threads_inbox ON threads(state, resurfaced_at) WHERE deleted_at IS NULL;
 
+-- One turn/job on a thread. A thread (ACP sessionId) has many sequential
+-- runs: user prompt, schedule fire, Chief re-dispatch. See #5.
+CREATE TABLE runs (
+  id            TEXT PRIMARY KEY,
+  thread_id     TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  seq           INTEGER NOT NULL,
+  kind          TEXT NOT NULL
+                  CHECK (kind IN ('prompt', 'schedule', 'handoff', 'resume')),
+  state         TEXT NOT NULL DEFAULT 'queued'
+                  CHECK (state IN (
+                    'queued', 'running', 'succeeded', 'failed',
+                    'cancelled', 'timed_out', 'lost', 'needs_you'
+                  )),
+  trigger_json  TEXT,                      -- who/what started it
+  error         TEXT,
+  started_at    TEXT,
+  ended_at      TEXT,
+  created_at    TEXT NOT NULL,
+  UNIQUE (thread_id, seq)
+);
+
+CREATE INDEX runs_thread_state ON runs(thread_id, state);
+CREATE INDEX runs_state ON runs(state, ended_at);
+
 -- Append-only ACP session/update (and permission request/response) log.
 -- payload_json is the ACP notification/request object, not a JaBot DTO.
 CREATE TABLE transcript_events (
@@ -171,15 +205,16 @@ CREATE TABLE transcript_events (
   PRIMARY KEY (thread_id, seq)
 );
 
--- Inbox is mostly threads.state. This table is the notification log:
--- "Auth migration finished", "1 judgment call while you were away."
+-- Inbox is a persist-then-notify projection of run transitions.
+-- Still sleeping is threads.state = folded, not a row here.
 CREATE TABLE inbox_events (
   id            TEXT PRIMARY KEY,
   thread_id     TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  run_id        TEXT REFERENCES runs(id) ON DELETE SET NULL,
   kind          TEXT NOT NULL
                   CHECK (kind IN (
                     'folded', 'done', 'failed', 'needs_you',
-                    'judgment_call', 'permission'
+                    'judgment_call', 'permission', 'lost', 'stuck'
                   )),
   title         TEXT NOT NULL,
   summary       TEXT NOT NULL DEFAULT '',
@@ -255,8 +290,9 @@ CREATE TABLE app_meta (
 ```
 
 Seed `harnesses` with the three New Chat cards plus no Custom rows until the
-user adds one. Seed `bots` with Chief of Staff. Folders are user-created
-(register a repo path).
+user adds one. Seed `bots` with the core crew (Chief, Code, Inbox Mgr, …),
+each with a `harness_id` (Chief/workers default to `claude` until the user
+picks otherwise). Folders are user-created (register a repo path).
 
 ## How the prototype views query this
 
@@ -264,18 +300,18 @@ user adds one. Seed `bots` with Chief of Staff. Folders are user-created
 and `deleted_at IS NULL`. Status chip = derived: running if the supervisor
 says the process is live; else `last_stop_reason` / PR status.
 
-**Inbox → Resurfaced.** `threads` where `state = 'resurfaced'`. Expand uses
-the latest `inbox_events` for that thread (done / needs_you / judgment_call
-list). Badge count = those rows with `read_at IS NULL`.
+**Inbox → Resurfaced.** Latest `inbox_events` of kind done / failed /
+needs_you / lost / stuck (join `runs`). Badge count = those rows with
+`read_at IS NULL`. Thread `state` should already be `resurfaced`.
 
 **Inbox → Still sleeping.** `threads` where `state = 'folded'`. Prototype
 `tagpill slp`. No extra entity.
 
 **Inbox tabs (All / Needs you / Done).** Filter `inbox_events.kind` (and/or
-`last_stop_reason`). Still-sleeping stays a section, not a tab.
+latest `runs.state`). Still-sleeping stays a section, not a tab.
 
 **Crew.** `SELECT * FROM bots ORDER BY is_chief DESC, sort_order`. Edit
-updates `name`, `color`, `instructions`, `tools_json`.
+updates `name`, `color`, `instructions`, `tools_json`, `harness_id`.
 
 **Pull Requests.** `thread_prs` joined to `threads` / `folders`. Prototype
 sections (needs review / checks running / merged) are `status` +
