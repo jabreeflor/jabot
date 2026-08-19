@@ -5,7 +5,10 @@ schedules. Local-first — this is a personal desktop app.
 
 Depends on: shapes decided in
 [harness-integration](../harness-integration/brief.md) and
-[session-lifecycle](../session-lifecycle/brief.md).
+[session-lifecycle](../session-lifecycle/brief.md). Prior art:
+[setup-porting](../setup-porting/findings.md) (per-agent SQLite, Hermes
+`state.db`, Buzz persist-then-notify — local-first SQLite + keychain, not
+Postgres/Redis).
 
 ## Questions to answer
 

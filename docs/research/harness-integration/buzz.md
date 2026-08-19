@@ -1,7 +1,9 @@
 # How Buzz does it
 
 Named prior art in the brief. Buzz (Block, [github.com/block/buzz](https://github.com/block/buzz))
-is a desktop agent manager whose entire harness story is **ACP**.
+is a desktop agent manager whose entire harness story is **ACP**. Broader
+setup (relay, supervisor, pairing, personas) lives in
+[setup-porting/buzz.md](../setup-porting/buzz.md).
 
 JaBot should copy the *seam*, not the product (Buzz is Nostr/team-oriented;
 we are a personal messenger with Inbox).
