@@ -9,7 +9,7 @@ list into GitHub issues with dependencies flagged.
 
 | # | Topic | Why it's first/later |
 |---|-------|----------------------|
-| 1 | [harness-integration](harness-integration/brief.md) | The core bet. Everything depends on how we wrap the TUIs. |
+| 1 | [harness-integration](harness-integration/brief.md) ([findings](harness-integration/findings.md)) | The core bet. Everything depends on how we wrap the TUIs. **Findings in.** |
 | 2 | [session-lifecycle](session-lifecycle/brief.md) | Disappearing Threads / Inbox. Depends on #1 (what a "session" is per harness). |
 | 3 | [app-shell](app-shell/brief.md) | Electron vs Tauri vs web. Constrained by #1 (process management needs). |
 | 4 | [bot-crew](bot-crew/brief.md) | Chief of Staff routing + bot templates + tools. Depends on #1. |
