@@ -24,5 +24,12 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["apple-native"] }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "fake-acp-agent"
+path = "src/bin/fake_acp_agent.rs"

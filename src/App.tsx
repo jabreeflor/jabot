@@ -54,7 +54,8 @@ function App() {
             <p>
               Typed JSON-RPC 2.0 between the React renderer and the in-process
               Rust host. Same messages will ride a Unix socket later (#8). The
-              host owns SQLite (WAL) and an OS keychain vault for secrets (#9).
+              host owns SQLite (WAL), an OS keychain vault for secrets (#9), and
+              one ACP adapter subprocess per live thread (#10).
             </p>
             {error && (
               <p className="host-error" role="alert">

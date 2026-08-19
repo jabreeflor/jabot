@@ -13,6 +13,7 @@ pub const PROTOCOL_MISMATCH: i64 = -32000;
 pub const UNIMPLEMENTED: i64 = -32001;
 pub const HELLO_REQUIRED: i64 = -32002;
 pub const UNPAIRED_DEVICE: i64 = -32003;
+pub const HARNESS_UNAVAILABLE: i64 = -32004;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -34,6 +35,11 @@ pub enum RpcError {
     HelloRequired,
     #[error("Unpaired device")]
     UnpairedDevice,
+    #[error("Harness unavailable: {command}")]
+    HarnessUnavailable {
+        command: String,
+        install_hint: Option<String>,
+    },
 }
 
 impl RpcError {
@@ -48,6 +54,7 @@ impl RpcError {
             Self::Unimplemented(_) => UNIMPLEMENTED,
             Self::HelloRequired => HELLO_REQUIRED,
             Self::UnpairedDevice => UNPAIRED_DEVICE,
+            Self::HarnessUnavailable { .. } => HARNESS_UNAVAILABLE,
         }
     }
 
@@ -63,6 +70,13 @@ impl RpcError {
             })),
             Self::InvalidParams(detail) => Some(serde_json::json!({ "detail": detail })),
             Self::Internal(detail) => Some(serde_json::json!({ "detail": detail })),
+            Self::HarnessUnavailable {
+                command,
+                install_hint,
+            } => Some(serde_json::json!({
+                "command": command,
+                "installHint": install_hint,
+            })),
             _ => None,
         }
     }

@@ -123,11 +123,53 @@ pub struct HealthResult {
     pub store_error: Option<String>,
 }
 
+/// Snapshot of the adapter command used to spawn an ACP subprocess.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSpec {
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env: Option<std::collections::BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_hint: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptParams {
     pub thread_id: String,
     pub content: Value,
+    /// Used when the thread is not yet in the store (tests / first prompt).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<RuntimeSpec>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptResult {
+    pub thread_id: String,
+    pub acp_session_id: String,
+    pub accepted: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionCancelResult {
+    pub thread_id: String,
+    pub cancelled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionReplyResult {
+    pub request_id: String,
+    pub delivered: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -192,7 +234,7 @@ pub struct SessionUpdateParams {
     pub host_id: String,
     pub thread_id: String,
     pub seq: u64,
-    /// Opaque ACP `session/update` payload. Typed in the adapter issue (#10).
+    /// Opaque ACP `session/update` payload (ACP v1 `session/update` params).
     pub acp: Value,
 }
 

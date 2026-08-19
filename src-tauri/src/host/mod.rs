@@ -3,6 +3,7 @@
 //! The UI never talks to ACP stdio. It sends JSON-RPC frames through this
 //! session — Tauri IPC now, Unix socket later, same messages.
 
+mod acp;
 mod identity;
 mod log;
 mod protocol;
@@ -11,19 +12,23 @@ mod seq;
 mod store;
 
 #[allow(unused_imports)]
+pub use acp::AdapterWake;
+#[allow(unused_imports)]
 pub use identity::{DeviceRecord, HostIdentity};
 #[allow(unused_imports)]
 pub use protocol::{
     decode_frame, encode_frame, DeviceInfo, DeviceRole, HealthResult, HelloParams, HelloResult,
     JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId,
     ResurfaceReason, RpcError, StoreStatus, CLIENT_METHODS, HOST_HEALTH, HOST_HELLO,
-    HOST_NOTIFICATIONS, JSONRPC_VERSION, PROTOCOL_VERSION,
+    HOST_NOTIFICATIONS, JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_REPLY, PERMISSION_RESOLVED,
+    PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
 };
 #[allow(unused_imports)]
-pub use store::{Secrets, Store, StoreError};
+pub use store::{NewThread, Secrets, Store, StoreError, ThreadRow};
 
-use std::collections::VecDeque;
-use std::path::Path;
+use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde_json::Value;
 
@@ -48,6 +53,10 @@ pub struct HostSession {
     store: Option<Store>,
     secrets: Secrets,
     store_error: Option<String>,
+    connections: HashMap<String, acp::AcpConnection>,
+    pending_permissions: HashMap<String, acp::PendingPermission>,
+    wake: Arc<acp::AdapterWake>,
+    log_dir: PathBuf,
 }
 
 impl HostSession {
@@ -68,10 +77,20 @@ impl HostSession {
                 Identity::generate()
             }
         };
-        Self::with_identity(identity).with_store_at(&data_dir.join("jabot.sqlite"))
+        Self::with_identity(identity)
+            .with_store_at(&data_dir.join("jabot.sqlite"))
+            .with_log_dir(data_dir.join("adapter-logs"))
+    }
+
+    fn with_log_dir(mut self, log_dir: PathBuf) -> Self {
+        self.log_dir = log_dir;
+        self
     }
 
     pub fn with_identity(identity: Identity) -> Self {
+        let log_dir = std::env::temp_dir()
+            .join("jabot-adapter-logs")
+            .join(&identity.host_id);
         Self {
             identity,
             connected_device_id: None,
@@ -81,6 +100,10 @@ impl HostSession {
             store: None,
             secrets: Secrets::memory(),
             store_error: None,
+            connections: HashMap::new(),
+            pending_permissions: HashMap::new(),
+            wake: acp::AdapterWake::new(),
+            log_dir,
         }
     }
 
@@ -310,11 +333,17 @@ impl HostSession {
     }
 }
 
+impl Drop for HostSession {
+    fn drop(&mut self) {
+        self.shutdown_adapters();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::protocol::error::{
-        HELLO_REQUIRED, INVALID_PARAMS, METHOD_NOT_FOUND, PROTOCOL_MISMATCH, UNIMPLEMENTED,
-        UNPAIRED_DEVICE,
+        HELLO_REQUIRED, INVALID_PARAMS, METHOD_NOT_FOUND, PROTOCOL_MISMATCH, UNPAIRED_DEVICE,
+        HARNESS_UNAVAILABLE,
     };
     use super::protocol::jsonrpc::RequestId;
     use super::protocol::{
@@ -372,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn prompt_requires_hello_then_validates_then_unimplemented() {
+    fn prompt_requires_hello_then_validates() {
         let mut session = HostSession::ephemeral();
         let missing = session.handle_request(req(
             1,
@@ -393,14 +422,36 @@ mod tests {
         ));
         assert_eq!(bad.error.unwrap().code, INVALID_PARAMS);
 
-        let not_yet = session.handle_request(req(
+        let no_runtime = session.handle_request(req(
             4,
             SESSION_PROMPT,
             Some(json!({ "threadId": "t1", "content": "hi" })),
         ));
-        let err = not_yet.error.unwrap();
-        assert_eq!(err.code, UNIMPLEMENTED);
-        assert_eq!(err.data.unwrap()["method"], SESSION_PROMPT);
+        assert_eq!(no_runtime.error.unwrap().code, INVALID_PARAMS);
+    }
+
+    #[test]
+    fn missing_harness_is_unavailable_not_a_crash() {
+        let mut session = HostSession::ephemeral();
+        session
+            .handle_request(req(1, HOST_HELLO, None))
+            .result
+            .expect("hello");
+        let response = session.handle_request(req(
+            2,
+            SESSION_PROMPT,
+            Some(json!({
+                "threadId": "t-missing",
+                "content": "hi",
+                "runtime": {
+                    "command": "jabot-definitely-not-on-path-xyz",
+                    "installHint": "brew install nope"
+                }
+            })),
+        ));
+        let err = response.error.unwrap();
+        assert_eq!(err.code, HARNESS_UNAVAILABLE);
+        assert_eq!(err.data.unwrap()["installHint"], "brew install nope");
     }
 
     #[test]

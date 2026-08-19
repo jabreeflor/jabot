@@ -137,6 +137,14 @@ impl Store {
         overlay::get_thread(&self.conn, id)
     }
 
+    pub fn set_thread_acp_session(
+        &self,
+        id: &str,
+        acp_session_id: &str,
+    ) -> Result<ThreadRow, StoreError> {
+        overlay::set_thread_acp_session(&self.conn, id, acp_session_id)
+    }
+
     pub fn list_threads_by_state(&self, state: &str) -> Result<Vec<ThreadRow>, StoreError> {
         overlay::list_threads_by_state(&self.conn, state)
     }
