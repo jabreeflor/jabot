@@ -8,14 +8,19 @@ mod log;
 mod protocol;
 mod router;
 mod seq;
+mod store;
 
+#[allow(unused_imports)]
 pub use identity::{DeviceRecord, HostIdentity};
+#[allow(unused_imports)]
 pub use protocol::{
     decode_frame, encode_frame, DeviceInfo, DeviceRole, HealthResult, HelloParams, HelloResult,
     JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId,
-    ResurfaceReason, RpcError, CLIENT_METHODS, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS,
-    JSONRPC_VERSION, PROTOCOL_VERSION,
+    ResurfaceReason, RpcError, StoreStatus, CLIENT_METHODS, HOST_HEALTH, HOST_HELLO,
+    HOST_NOTIFICATIONS, JSONRPC_VERSION, PROTOCOL_VERSION,
 };
+#[allow(unused_imports)]
+pub use store::{Secrets, Store, StoreError};
 
 use std::collections::VecDeque;
 use std::path::Path;
@@ -40,6 +45,9 @@ pub struct HostSession {
     seq: SeqStore,
     events: EventLog,
     outbound: VecDeque<JsonRpcNotification>,
+    store: Option<Store>,
+    secrets: Secrets,
+    store_error: Option<String>,
 }
 
 impl HostSession {
@@ -47,10 +55,20 @@ impl HostSession {
         Self::with_identity(Identity::generate())
     }
 
-    pub fn load_or_create(identity_path: &Path) -> std::io::Result<Self> {
-        Ok(Self::with_identity(Identity::load_or_create(
-            identity_path,
-        )?))
+    /// Open identity + SQLite under the app data directory. Store failures are
+    /// surfaced on hello/health (`storeError`) instead of crashing the app.
+    pub fn load(data_dir: &Path) -> Self {
+        let identity = match Identity::load_or_create(&data_dir.join("host-identity.json")) {
+            Ok(identity) => identity,
+            Err(err) => {
+                eprintln!(
+                    "failed to persist host identity at {}: {err}",
+                    data_dir.display()
+                );
+                Identity::generate()
+            }
+        };
+        Self::with_identity(identity).with_store_at(&data_dir.join("jabot.sqlite"))
     }
 
     pub fn with_identity(identity: Identity) -> Self {
@@ -60,6 +78,41 @@ impl HostSession {
             seq: SeqStore::default(),
             events: EventLog::default(),
             outbound: VecDeque::new(),
+            store: None,
+            secrets: Secrets::memory(),
+            store_error: None,
+        }
+    }
+
+    fn with_store_at(mut self, sqlite_path: &Path) -> Self {
+        match Store::open(sqlite_path) {
+            Ok(store) => {
+                self.store = Some(store);
+                self.secrets = Secrets::platform();
+                self.store_error = None;
+            }
+            Err(err) => {
+                eprintln!(
+                    "failed to open sqlite store at {}: {err}",
+                    sqlite_path.display()
+                );
+                self.store = None;
+                self.secrets = Secrets::platform();
+                self.store_error = Some(err.to_string());
+            }
+        }
+        self
+    }
+
+    pub fn store(&self) -> Option<&Store> {
+        self.store.as_ref()
+    }
+
+    pub fn checkpoint_store(&mut self) {
+        if let Some(store) = &self.store {
+            if let Err(err) = store.checkpoint() {
+                eprintln!("failed to checkpoint sqlite store: {err}");
+            }
         }
     }
 
@@ -128,6 +181,8 @@ impl HostSession {
             protocol_version: PROTOCOL_VERSION,
             connected: self.connected_device_id.is_some(),
             device_id: self.connected_device_id.clone(),
+            store: self.store_status(),
+            store_error: self.store_error.clone(),
         }
     }
 
@@ -236,7 +291,22 @@ impl HostSession {
                 .iter()
                 .map(|m| (*m).to_string())
                 .collect(),
+            store: self.store_status(),
+            store_error: self.store_error.clone(),
         }
+    }
+
+    fn store_status(&self) -> Option<StoreStatus> {
+        let store = self.store.as_ref()?;
+        store.status(&self.secrets).ok().map(|status| StoreStatus {
+            path: status.path,
+            schema_version: status.schema_version,
+            sqlite_version: status.sqlite_version,
+            journal_mode: status.journal_mode,
+            secrets_backend: status.secrets_backend,
+            harness_count: status.harness_count,
+            bot_count: status.bot_count,
+        })
     }
 }
 
@@ -455,5 +525,24 @@ mod tests {
         let out = encode_frame(&JsonRpcMessage::Response(response)).unwrap();
         assert!(out.contains("\"hostId\""));
         assert!(out.ends_with('\n'));
+    }
+
+    #[test]
+    fn load_opens_sqlite_and_hello_reports_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = HostSession::load(dir.path());
+        assert!(session.store().is_some());
+        assert!(session.store_error.is_none());
+        let response = session.handle_request(req(1, HOST_HELLO, None));
+        let value = result_value(&response);
+        assert_eq!(value["store"]["journalMode"], "wal");
+        assert_eq!(value["store"]["schemaVersion"], 1);
+        assert_eq!(value["store"]["botCount"], 6);
+        assert_eq!(value["store"]["harnessCount"], 3);
+        let backend = value["store"]["secretsBackend"].as_str().unwrap();
+        assert!(
+            backend == "keychain" || backend == "unavailable",
+            "unexpected secrets backend {backend}"
+        );
     }
 }

@@ -77,6 +77,18 @@ export interface HelloResult {
   device: DeviceInfo;
   methods: string[];
   notifications: string[];
+  store?: StoreStatus;
+  storeError?: string;
+}
+
+export interface StoreStatus {
+  path: string;
+  schemaVersion: number;
+  sqliteVersion: string;
+  journalMode: string;
+  secretsBackend: string;
+  harnessCount: number;
+  botCount: number;
 }
 
 export interface HealthResult {
@@ -87,6 +99,8 @@ export interface HealthResult {
   protocolVersion: number;
   connected: boolean;
   deviceId?: string;
+  store?: StoreStatus;
+  storeError?: string;
 }
 
 export interface PromptParams {
