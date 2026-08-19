@@ -17,26 +17,30 @@ fn host_health() -> HostInfo {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![host_health])
-        .setup(|app| {
-            let window = app
-                .get_webview_window("main")
-                .expect("main window must exist");
-            window.set_decorations(true)?;
-            Ok(())
-        })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Hide-to-Dock: closing the last window hides instead of quitting (#4).
+                // Hide-to-Dock (macOS only, MVP per #4): closing the last window hides
+                // instead of quitting. On other platforms, close quits the app.
                 #[cfg(target_os = "macos")]
                 {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if let Err(err) = window.hide() {
+                        eprintln!("failed to hide main window: {err}");
+                    }
                 }
             }
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, _event| {});
+        .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

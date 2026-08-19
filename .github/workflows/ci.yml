@@ -28,4 +28,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npm run tauri build
