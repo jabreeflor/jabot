@@ -87,6 +87,13 @@ impl LocalAuthServer {
         ACCESS_TOKEN
     }
 
+    /// A token endpoint that refuses everything with 400 `invalid_grant` —
+    /// what a revoked refresh token gets back, and the one answer that is
+    /// allowed to cost the user their stored grant.
+    pub fn refusing_token_endpoint(&self) -> String {
+        format!("{}/token-refused", self.origin)
+    }
+
     pub fn disable_dynamic_registration(&self) {
         self.dynamic_registration.store(false, Ordering::Relaxed);
     }
@@ -183,6 +190,7 @@ fn serve(
             write_json(&mut stream, metadata);
         }
         "/register" => write_json(&mut stream, json!({ "client_id": "dcr-client-1" })),
+        "/token-refused" => write_error(&mut stream, "invalid_grant", "the grant was revoked"),
         "/authorize" => {
             let params = parse_query(query);
             let redirect_uri = param(&params, "redirect_uri").unwrap_or_default();

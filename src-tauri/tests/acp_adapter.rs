@@ -5,7 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use jabot_lib::{
-    HostSession, JsonRpcNotification, JsonRpcRequest, NewThread, RequestId, HOST_HELLO,
+    HostSession, JsonRpcNotification, JsonRpcRequest, NewThread, RequestId, ThreadRepo, HOST_HELLO,
     PERMISSION_ASK, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
 };
 use serde_json::{json, Value};
@@ -294,6 +294,7 @@ fn persists_acp_session_id_on_thread() {
             runtime_json: runtime,
             title: "Stored thread".into(),
             fold_policy: "default".into(),
+            repo: ThreadRepo::default(),
         })
         .unwrap();
 
