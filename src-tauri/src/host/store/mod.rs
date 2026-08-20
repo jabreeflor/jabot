@@ -8,6 +8,7 @@ mod error;
 mod migrate;
 mod models;
 mod overlay;
+mod permission;
 mod secrets;
 mod seed;
 
@@ -17,6 +18,11 @@ use rusqlite::{Connection, Row};
 
 pub use error::StoreError;
 pub use models::*;
+/// `permission_requests.state`, so the broker and the SQL cannot spell the
+/// same three words differently (#20).
+pub use permission::{
+    ANSWERED as ASK_ANSWERED, CANCELLED as ASK_CANCELLED, PENDING as ASK_PENDING,
+};
 pub use secrets::{Secrets, SecretsBackend};
 
 const MIN_SQLITE: (u32, u32, u32) = (3, 51, 3);
@@ -214,6 +220,12 @@ impl Store {
         overlay::set_thread_worktree(&self.conn, id, path)
     }
 
+    /// Record the branch a thread's saved work is really on — see
+    /// [`overlay::set_thread_branch`].
+    pub fn set_thread_branch(&self, id: &str, branch: &str) -> Result<ThreadRow, StoreError> {
+        overlay::set_thread_branch(&self.conn, id, branch)
+    }
+
     pub fn list_threads_by_state(&self, state: &str) -> Result<Vec<ThreadRow>, StoreError> {
         overlay::list_threads_by_state(&self.conn, state)
     }
@@ -363,6 +375,51 @@ impl Store {
     /// Runs a stopped host left open, for boot reconciliation (#21).
     pub fn list_open_runs(&self) -> Result<Vec<RunRow>, StoreError> {
         overlay::list_open_runs(&self.conn)
+    }
+
+    /// The permission broker's ledger — see [`permission`] (#20).
+    pub fn insert_permission_request(
+        &self,
+        new: &NewPermissionRequest,
+    ) -> Result<PermissionRequestRow, StoreError> {
+        permission::insert_permission_request(&self.conn, new)
+    }
+
+    pub fn get_permission_request(
+        &self,
+        id: &str,
+    ) -> Result<Option<PermissionRequestRow>, StoreError> {
+        permission::get_permission_request(&self.conn, id)
+    }
+
+    /// Asks nobody has answered, on threads that can still be answered on.
+    pub fn list_open_permission_requests(
+        &self,
+        thread_id: Option<&str>,
+    ) -> Result<Vec<PermissionRequestRow>, StoreError> {
+        permission::list_open_permission_requests(&self.conn, thread_id)
+    }
+
+    /// Every ask ever taken on a thread, answered ones included.
+    pub fn list_permission_requests(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<PermissionRequestRow>, StoreError> {
+        permission::list_permission_requests(&self.conn, thread_id)
+    }
+
+    /// Claim an outstanding request. `false` means it was already resolved.
+    pub fn resolve_permission_request(
+        &self,
+        id: &str,
+        state: &str,
+        decided_by: &str,
+        option_id: Option<&str>,
+        delivered: bool,
+    ) -> Result<bool, StoreError> {
+        permission::resolve_permission_request(
+            &self.conn, id, state, decided_by, option_id, delivered,
+        )
     }
 
     /// Update the newest undismissed card of a kind on a thread, and unread it.
@@ -886,6 +943,24 @@ pub(crate) fn map_inbox_event(row: &Row<'_>) -> rusqlite::Result<InboxEventRow> 
     })
 }
 
+pub(crate) fn map_permission_request(row: &Row<'_>) -> rusqlite::Result<PermissionRequestRow> {
+    Ok(PermissionRequestRow {
+        id: row.get(0)?,
+        thread_id: row.get(1)?,
+        run_id: row.get(2)?,
+        kind: row.get(3)?,
+        title: row.get(4)?,
+        subject_json: row.get(5)?,
+        options_json: row.get(6)?,
+        state: row.get(7)?,
+        decided_by: row.get(8)?,
+        option_id: row.get(9)?,
+        delivered: row.get(10)?,
+        created_at: row.get(11)?,
+        resolved_at: row.get(12)?,
+    })
+}
+
 pub(crate) fn map_receipt(row: &Row<'_>) -> rusqlite::Result<SessionReceiptRow> {
     Ok(SessionReceiptRow {
         thread_id: row.get(0)?,
@@ -1007,7 +1082,7 @@ mod tests {
     fn open_uses_wal_and_seeds_catalog() {
         let (store, _dir) = open_store();
         assert_eq!(store.journal_mode().unwrap(), "wal");
-        assert_eq!(store.schema_version().unwrap(), 4);
+        assert_eq!(store.schema_version().unwrap(), 5);
         // Both compiled-in tiers land as rows, because `threads.harness_id`
         // is a foreign key and a preset has to be nameable by a thread (#13).
         let harnesses = store.list_harnesses().unwrap();
