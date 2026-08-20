@@ -86,8 +86,20 @@ impl HostSession {
                 "adapter for {thread_id} has no ACP session"
             )));
         };
-        conn.cancel(&session_id)?;
+        // Order matters, and it is the reverse of the obvious one. #10:
+        // "Cancellation resolves outstanding permission requests with
+        // `cancelled` before `session/cancel`". An agent blocked on a
+        // permission it never gets an answer to has no reason to act on the
+        // cancel, so answering first is what actually unblocks the turn.
+        // `cancel_pending_permissions` borrows self, so the connection is
+        // re-fetched after it rather than held across the call.
         self.cancel_pending_permissions(&thread_id, "session/cancel")?;
+        let Some(conn) = self.connections.get_mut(&thread_id) else {
+            return Err(RpcError::Internal(format!(
+                "no live adapter for thread {thread_id}"
+            )));
+        };
+        conn.cancel(&session_id)?;
         self.pump_acp();
         Ok(SessionCancelResult {
             thread_id,

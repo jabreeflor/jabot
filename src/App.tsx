@@ -221,6 +221,12 @@ function App() {
   );
 }
 
+/**
+ * Both conversation views are keyed by the conversation they show. Without the
+ * key, switching bot or thread is a props change rather than a remount, and the
+ * composer's unsent draft follows you across — a half-typed instruction landing
+ * in whichever session you opened next.
+ */
 function MainView({
   state,
   selection,
@@ -285,8 +291,6 @@ function MainView({
           </div>
         );
       }
-      // Keyed by thread: a conversation is its own component instance, so an
-      // unsent draft cannot follow you into the next thread's composer.
       return (
         <ThreadView
           key={thread.id}
@@ -306,7 +310,7 @@ function MainView({
       if (!bot) return <div className="view" />;
       return (
         <ChatView
-
+          key={bot.id}
           bot={bot}
           host={host}
           items={state.transcripts[bot.id] ?? []}

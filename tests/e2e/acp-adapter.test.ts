@@ -10,30 +10,14 @@
  * The adapter under test is `fake_acp_agent.rs`, addressed by absolute path
  * the way `acp_adapter.rs` addresses it through `CARGO_BIN_EXE_*`.
  *
- * ---------------------------------------------------------------------------
- * The four skipped cases below are blocked on host defects, not on anything
- * missing here. `jabot-hostd` never pumps the ACP connections: the
- * Tauri host runs a `jabot-acp-pump` thread (`src-tauri/src/lib.rs`) that waits
- * on `AdapterWake` and calls `pump_acp()` + `take_outbound()`, but
- * `src-tauri/src/bin/jabot-hostd.rs` only calls `take_outbound()` after a
- * request it has just handled and calls `pump_acp()` nowhere. Adapter events
- * therefore sit unread in the connection's channel, and no `session/update`,
- * `permission/ask` or `permission/resolved` ever reaches a client of the
- * stdio host — nor does the event log they are replayed from.
- *
- * Repro: start `jabot-hostd`, `host/hello`, `session/prompt` with the fake
- * agent, wait: nothing arrives, and `sync/resumeFrom` stays at `headSeq: 0`.
- * The fix is a pump thread in `jabot-hostd` mirroring `spawn_acp_pump`.
- *
- * The cancel-ordering case is blocked a second time, on the host itself:
- * `HostSession::session_cancel` (`src-tauri/src/host/acp/mod.rs`) calls
- * `conn.cancel()` before `cancel_pending_permissions()`, which is the reverse
- * of "reply `cancelled` to every pending request, then close"
- * (`docs/research/harness-integration/adapter-design.md`). Both fixes are
- * outside this suite's file zone. The cases are written against the intended
- * behaviour and were run green against an out-of-tree `jabot-hostd` carrying
- * both fixes, so they should need no edits once those land — with the pump
- * alone, three pass and the ordering one still fails on its last assertion.
+ * Four of these cases were written first against defects they then proved:
+ * `jabot-hostd` drained outbound notifications only after handling a request
+ * and never called `pump_acp`, so adapter events sat unread and no
+ * `session/update` or `permission/ask` ever reached a stdio client; and
+ * `session_cancel` cancelled the turn before answering outstanding permission
+ * requests, the reverse of what #10 specifies. Both are fixed — the stdio host
+ * now runs the same pump thread the Tauri host does, and cancel answers first
+ * — and the cases run live.
  * ---------------------------------------------------------------------------
  */
 import { tmpdir } from "node:os";
@@ -230,8 +214,7 @@ describe("adapter errors", () => {
   });
 });
 
-// Blocked on the first defect in the module header: jabot-hostd never pumps.
-describe.skip("adapter streaming (blocked: jabot-hostd never calls pump_acp)", () => {
+describe("adapter streaming", () => {
   it("streams session/update with a host-stamped, strictly increasing envelope", async () => {
     const { host, hello } = await connected();
     await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-stream"));
@@ -316,10 +299,7 @@ describe.skip("adapter streaming (blocked: jabot-hostd never calls pump_acp)", (
   });
 });
 
-// Blocked on both defects in the module header: without a pump the host never
-// learns a permission is outstanding, and `session_cancel` answers the ones it
-// does know about only after it has already cancelled the turn.
-describe.skip("cancel ordering (blocked: session_cancel resolves permissions last)", () => {
+describe("cancel ordering", () => {
   it("answers outstanding permission requests as cancelled before cancelling the turn", async () => {
     const { host, client } = await connected({ persistent: true });
     await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-cancel", "permission", "rm -rf"));

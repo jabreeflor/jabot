@@ -22,6 +22,10 @@ FAST=0
 [[ "${1:-}" == "--fast" ]] && FAST=1
 
 MANIFEST=(--manifest-path src-tauri/Cargo.toml)
+# `jabot-hostd` and `fake-acp-agent` are cargo targets only under the
+# `dev-bins` feature, so that `tauri build` never sees them (src-tauri/Cargo.toml
+# has the reason). Anything here that compiles, lints, or runs them has to ask.
+DEV_BINS=(--features dev-bins)
 FAILED=()
 run() {
   local name="$1"; shift
@@ -37,11 +41,11 @@ run() {
 run "typecheck"      npx tsc --noEmit
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
-run "rust clippy"    cargo clippy "${MANIFEST[@]}" --all-targets -- -D warnings
-run "rust tests"     cargo test "${MANIFEST[@]}"
+run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings
+run "rust tests"     cargo test "${MANIFEST[@]}" "${DEV_BINS[@]}"
 
 if [[ $FAST -eq 0 ]]; then
-  run "build jabot-hostd" cargo build "${MANIFEST[@]}" --bin jabot-hostd
+  run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${DEV_BINS[@]}" --bin jabot-hostd
   # Only meaningful if the binary exists; a failed build would make every e2e
   # case fail with the same confusing spawn error.
   if [[ -x src-tauri/target/debug/jabot-hostd ]]; then

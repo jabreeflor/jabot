@@ -185,6 +185,8 @@ describe("PullRequestsView", () => {
   it("names the panel after the tab that is showing it", () => {
     renderPrs();
 
-    expect(screen.getByRole("tabpanel", { name: "Open · 2" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tabpanel", { name: "Open · 2" }),
+    ).toBeInTheDocument();
   });
 });

@@ -5,8 +5,8 @@
 //! already landed. A draft is listed under Open but never claims review.
 //!
 //! Rows are `thread_prs` joined with GitHub state (#28). Every PR here was
-//! opened by a session — that is what the table is — so "Reopen thread" always
-//! has somewhere to go.
+//! opened by a session — that is what the table is — so "Reopen thread"
+//! always has somewhere to go.
 
 import { useState } from "react";
 

@@ -51,9 +51,9 @@ describe("the seed", () => {
     // Read from the repo root: vitest runs there, and the point of the test is
     // that this list and the store's cannot drift apart unnoticed.
     const seed = readFileSync("src-tauri/src/host/store/seed.rs", "utf8");
-    const builtins = [...seed.matchAll(/BuiltinHarness \{\s*id: "([^"]+)"/g)].map(
-      (match) => match[1],
-    );
+    const builtins = [
+      ...seed.matchAll(/BuiltinHarness \{\s*id: "([^"]+)"/g),
+    ].map((match) => match[1]);
 
     expect(builtins).toContain("claude");
     for (const harness of HARNESSES) {

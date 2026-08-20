@@ -85,6 +85,13 @@ fn spawn_acp_pump(app: tauri::AppHandle, wake: std::sync::Arc<AdapterWake>) {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            // The signed release feed (#12) is only consumed if the plugin is
+            // registered; the endpoint and pubkey in tauri.conf.json are read
+            // by the bundler, never at runtime. macOS-only because the
+            // dependency is (see src-tauri/Cargo.toml).
+            #[cfg(target_os = "macos")]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
             let session = load_session(app.handle());
             let wake = session.adapter_wake();
             app.manage(HostState(Mutex::new(session)));

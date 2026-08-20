@@ -28,7 +28,16 @@ jobs:
       # tauri-action creates the release and uploads the bundles.
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      # Every `uses:` in this job is pinned to a commit SHA, not a tag or a
+      # branch. This job holds the Developer ID .p12 and its password, the
+      # Apple app-specific password, and the updater's Ed25519 private key, and
+      # every step of a job shares one runner: a third-party action that moves
+      # under us could plant a cargo config or build script that runs during
+      # `tauri build` with all of those in the environment. Exfiltrating the
+      # updater key in particular is unrecoverable — see the backup note in
+      # docs/packaging.md. Tags can be force-moved and `@stable` is a branch,
+      # so neither is a pin. docs/packaging.md says how to bump these.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Both failures below are cheap to detect and expensive to hit late: the
       # pubkey is only decoded after the whole app has compiled, and a version
@@ -49,17 +58,20 @@ jobs:
             exit 1
           fi
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable branch, 2026-08-20
         with:
+          # Named explicitly because the pin no longer says it: the action
+          # defaults to stable, but the ref is where a reader would look.
+          toolchain: stable
           # `--target universal-apple-darwin` lipos one build of each.
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2 tag, 2026-08-20
         with:
           workspaces: src-tauri
 
@@ -76,7 +88,7 @@ jobs:
       #
       # TAURI_SIGNING_* is the separate Ed25519 (minisign) keypair the updater
       # uses. It is unrelated to Apple signing and cannot be turned off.
-      - uses: tauri-apps/tauri-action@v1
+      - uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa # v1 tag, 2026-08-20
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -104,6 +116,12 @@ jobs:
           # so that an unsigned `tauri build` (the CI bundle job, or a laptop)
           # still works: with it on, the bundler hard-errors unless
           # TAURI_SIGNING_PRIVATE_KEY is set.
+          #
+          # `--target universal-apple-darwin` only works because the crate's
+          # two test binaries are gated behind the `dev-bins` feature: the
+          # universal output directory receives one lipo'd binary, and the
+          # bundler errors out copying any other binary cargo reports. See
+          # src-tauri/Cargo.toml.
           args: >-
             --target universal-apple-darwin
             --config {"bundle":{"createUpdaterArtifacts":true}}

@@ -71,3 +71,32 @@ zombie** — so it reported a corpse as alive and failed correct code. Any
 environment whose init does not reap promptly (most containers, including the
 new Linux CI job) would hit this. Replaced the check with a process-state query
 that treats `Z` as gone.
+
+---
+
+## D-003 — two host defects found by the e2e suite, fixed outside their issues
+
+Writing the TypeScript-side e2e coverage for #10 surfaced two real defects
+that the Rust-side tests could not see, because those tests drive
+`HostSession` in-process and call `pump_acp()` themselves.
+
+**1. `jabot-hostd` never pumped ACP.** My own bug, from D-001: the stdio host
+was written before the adapter layer merged, so it drained outbound
+notifications only after handling a request and called `pump_acp()` nowhere.
+Adapter events sat unread — no `session/update`, `permission/ask`, or
+`permission/resolved` ever reached a stdio client, and `sync/resumeFrom`
+stayed at `headSeq: 0`. Fixed by giving it the same pump thread the Tauri host
+runs (`spawn_acp_pump` in `lib.rs`), with stdout in place of the event bus.
+
+**2. `session_cancel` cancelled before answering permissions.** In the merged
+#10 code, `conn.cancel()` ran before `cancel_pending_permissions()`. #10
+specifies the reverse: "Cancellation resolves outstanding permission requests
+with `cancelled` before `session/cancel`". An agent blocked on a permission it
+never gets an answer to has no reason to act on the cancel. Reordered.
+
+Both were found because the e2e agent was told to report host bugs rather than
+fix them out of zone — it wrote the cases against the intended behaviour and
+`.skip`ped them with a precise repro. Both now run live; all 21 e2e cases pass.
+
+This is the argument for D-001 in one paragraph: the in-process Rust tests all
+passed against both defects.

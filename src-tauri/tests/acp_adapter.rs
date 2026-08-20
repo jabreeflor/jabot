@@ -78,6 +78,24 @@ fn wait_for(
     found
 }
 
+/// Poll the adapter's teed stderr until it has read the cancel, then return it
+/// split into lines. The file is written by the child process, so it lags the
+/// host's write by a scheduling hop rather than appearing atomically.
+fn wait_for_log(path: &std::path::Path, timeout: Duration) -> Vec<String> {
+    let start = Instant::now();
+    loop {
+        let lines: Vec<String> = std::fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect();
+        if lines.iter().any(|line| line == "cancelled") || start.elapsed() >= timeout {
+            return lines;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+}
+
 fn result_value(response: &jabot_lib::JsonRpcResponse) -> &Value {
     response.result.as_ref().expect("expected result")
 }
@@ -204,6 +222,54 @@ fn cancel_keeps_process_alive() {
     ));
     assert_eq!(result_value(&cancel)["cancelled"], true);
     assert_eq!(session.live_adapter_count(), 1);
+}
+
+/// #10's ordering claim, in-process: a permission still outstanding when the
+/// user cancels is answered `cancelled` *before* `session/cancel` reaches the
+/// agent. An agent that sees the turn torn down while it is still blocked on a
+/// request it never got an answer to is the hang this ordering exists to
+/// prevent. The fake agent narrates both events to stderr as it reads them and
+/// the host tees that into the thread log, so the log is a faithful record of
+/// the order the host wrote to the adapter's stdin — which `live_adapter_count`
+/// or the outbound notifications alone cannot show.
+#[test]
+fn cancel_answers_pending_permission_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut session = HostSession::load(dir.path());
+    hello(&mut session);
+    let response = session.handle_request(req(
+        2,
+        SESSION_PROMPT,
+        Some(prompt_params("t-order", "rm -rf", Some("permission"))),
+    ));
+    assert!(response.error.is_none(), "{:?}", response.error);
+    let outbound = wait_for(&mut session, PERMISSION_ASK, Duration::from_secs(5));
+    assert!(
+        outbound.iter().any(|n| n.method == PERMISSION_ASK),
+        "adapter never asked for permission: {outbound:?}"
+    );
+
+    let cancel = session.handle_request(req(
+        3,
+        SESSION_CANCEL,
+        Some(json!({ "threadId": "t-order" })),
+    ));
+    assert_eq!(result_value(&cancel)["cancelled"], true);
+
+    let log = dir.path().join("adapter-logs").join("t-order.stderr.log");
+    let lines = wait_for_log(&log, Duration::from_secs(5));
+    let reply = lines
+        .iter()
+        .position(|line| line.starts_with("permission_reply="))
+        .unwrap_or_else(|| panic!("adapter never read a permission outcome: {lines:?}"));
+    let cancelled = lines
+        .iter()
+        .position(|line| line == "cancelled")
+        .unwrap_or_else(|| panic!("adapter never read session/cancel: {lines:?}"));
+    assert!(
+        reply < cancelled,
+        "session/cancel reached the agent before the pending permission was answered: {lines:?}"
+    );
 }
 
 #[test]

@@ -4,10 +4,11 @@
   JaBot entitlements — Developer ID + Hardened Runtime, not Mac App Store.
 
   This file is the audit, not just the grant list. Every entitlement JaBot
-  could plausibly want is accounted for below: the one it genuinely needs is
-  declared, and the ones it does not need are named with the reason they are
-  absent. Adding a key here widens what a compromised adapter subprocess can
-  reach, so a key without a justification is a bug.
+  could plausibly want is accounted for below, each with the reason it is
+  absent. The dict is deliberately empty: nothing JaBot does today needs an
+  entitlement. Adding a key here widens what a compromised adapter subprocess
+  can reach, so a key without a justification is a bug — and a justification
+  has to describe what the key actually permits, not what we hope it permits.
 
   Hardened Runtime is required for notarization and is enabled in
   tauri.conf.json (`bundle.macOS.hardenedRuntime`). App Sandbox is
@@ -20,27 +21,23 @@
 <plist version="1.0">
 <dict>
 	<!--
-	  Subprocess spawn. THE one JaBot cannot ship without.
-
-	  Every thread runs an ACP adapter the host execs from the user's PATH:
-	  npm-installed Node CLIs, Homebrew binaries, a shell shim, whatever a
-	  Tier-3 custom harness JSON points at. None of that carries our Team ID.
-	  Under Hardened Runtime, library validation refuses code not signed by
-	  the same team or by Apple; for an app in this category the first symptom
-	  is the adapter dying at startup with `code signature invalid` in a build
-	  that works perfectly unsigned, which is exactly the failure the shell
-	  research warned would cost a day.
-
-	  This weakens us to code injection via loadable libraries. Accepted:
-	  JaBot's whole purpose is running third-party agent binaries the user
-	  chose, so the trust boundary is the harness catalog and the permission
-	  broker (#20), not dyld.
-	-->
-	<key>com.apple.security.cs.disable-library-validation</key>
-	<true/>
-
-	<!--
 	  Audited and deliberately NOT declared:
+
+	  com.apple.security.cs.disable-library-validation
+	      The obvious candidate, and the wrong one. Library validation governs
+	      code loaded INTO this process — dylibs, bundles, plug-ins — not
+	      programs this process execs. ACP adapters are spawned with
+	      fork/exec (host/acp/spawn.rs), and macOS evaluates a child's
+	      signature on its own terms; the parent's library-validation setting
+	      is not inherited and does not gate the launch. So this key would buy
+	      nothing for the adapters while giving up a real protection in the
+	      process that holds the keychain-backed harness credentials (#9):
+	      with it set, any ad-hoc or foreign-team dylib may be loaded here.
+	      Nothing in the dependency set wants it either — rusqlite is
+	      `bundled` (static), `keyring` talks to Apple-signed system
+	      frameworks. If a signed, notarized build ever does fail to load
+	      something, add it back with the observed error recorded here, not a
+	      predicted one.
 
 	  com.apple.security.network.client / .server
 	      Sandbox-only keys. Outgoing HTTPS to harness APIs and to the update

@@ -87,12 +87,12 @@ Recovery is telling users to re-download by hand.
 
 ---
 
-## Still to hook up
+## What consumes the feed
 
-`src-tauri/Cargo.toml` depends on `tauri-plugin-updater`, and
-`tauri.conf.json` names the feed, but nothing calls the update check yet —
-that lives in the app shell, not in packaging. One line in the `Builder` setup
-in `src-tauri/src/lib.rs`:
+`tauri.conf.json` names the endpoint and carries the `pubkey`, but both are
+read by the *bundler*. Nothing checks for an update unless the plugin is
+registered at runtime, which happens in the `Builder` setup in
+`src-tauri/src/lib.rs`:
 
 ```rust
 #[cfg(target_os = "macos")]
@@ -104,8 +104,9 @@ Checking from Rust needs no capability entry. If the renderer is ever the one
 to trigger a check, it also needs `updater:default` in
 `src-tauri/capabilities/`.
 
-Signed release artifacts are produced regardless — the plugin is what consumes
-them.
+A green release run is not by itself evidence that updates work: it proves the
+artifacts were signed and published, not that an installed copy accepts them.
+That is what the feed verification below is for.
 
 ---
 
@@ -137,6 +138,26 @@ To retry a failed release, delete the draft release and the tag, then push the
 tag again; the workflow is not re-runnable from the Actions UI because
 `workflow_dispatch` cannot target a tag ref.
 
+### Why every action in `release.yml` is a 40-character SHA
+
+This job has all eight secrets in its environment and every step of it shares
+one runner, so any third-party action in it can reach them. A tag can be
+force-moved and `dtolnay/rust-toolchain@stable` is a *branch*, which moves by
+design — either would let an upstream compromise change what runs here with no
+change to this repo, and a stolen `TAURI_SIGNING_PRIVATE_KEY` cannot be
+rotated without stranding every install. So the pins are deliberate, not
+noise; the trailing comment names the human-readable version.
+
+To bump one, resolve the ref and paste the SHA:
+
+```sh
+git ls-remote https://github.com/tauri-apps/tauri-action refs/tags/v1
+```
+
+Read the diff between the old pin and the new one before taking it. `ci.yml`
+holds no secrets and is left on floating tags on purpose — it is not worth the
+maintenance there.
+
 ### Why `createUpdaterArtifacts` is set in the workflow, not the config
 
 With it enabled, `tauri build` hard-errors unless `TAURI_SIGNING_PRIVATE_KEY`
@@ -153,6 +174,18 @@ a release with no `.app.tar.gz` — a feed nobody can update from. The raw
 `.app` is not uploaded twice; tauri-action drops it once the signed
 `.app.tar.gz` exists.
 
+### Why the test binaries are behind a cargo feature
+
+`src-tauri` has three binaries; only `jabot` is the app. The bundler copies
+*every* binary cargo reports into `JaBot.app/Contents/MacOS`, and for
+`--target universal-apple-darwin` the tooling lipos only the main one into the
+universal output directory — so an ungated build shipped the test binaries on
+a plain `tauri build` and hard-failed on the universal one, after both full
+release compiles had finished. `jabot-hostd` and `fake-acp-agent` therefore
+carry `required-features = ["dev-bins"]`, which makes them cargo targets only
+when asked for. `scripts/verify.sh` asks; `tauri build` does not. Anything
+that builds or runs them by hand needs `--features dev-bins` too.
+
 ---
 
 ## Verifying notarization succeeded
@@ -167,7 +200,7 @@ Gatekeeper actually reacts to.
 #   flags=0x10000(runtime)
 codesign -dv --verbose=4 /Volumes/JaBot/JaBot.app
 
-# Seals intact, including nested adapter/helper binaries.
+# Seals intact, including everything nested in the bundle.
 codesign --verify --deep --strict --verbose=2 /Volumes/JaBot/JaBot.app
 
 # The one that matters. Expect: "accepted" + "source=Notarized Developer ID".
@@ -179,8 +212,8 @@ spctl -a -vvv -t install /Volumes/JaBot/JaBot.app
 xcrun stapler validate /Volumes/JaBot/JaBot.app
 ```
 
-Confirm the entitlements that shipped are the ones we intended — exactly one
-key, `com.apple.security.cs.disable-library-validation`:
+Confirm the entitlements that shipped are the ones we intended — an empty
+dict, no keys at all:
 
 ```sh
 codesign -d --entitlements - --xml /Volumes/JaBot/JaBot.app | plutil -convert xml1 -o - -
@@ -201,9 +234,13 @@ executable that was added to the bundle without being signed.
 Then the real test, once: mount the downloaded `.dmg`, drag to
 `/Applications`, launch, and start a thread. Gatekeeper problems and
 hardened-runtime problems look nothing alike — the first blocks the app, the
-second lets the app open and then kills the adapter subprocess. If adapters die
-at spawn in a notarized build that works unsigned, the entitlements are the
-suspect, not the harness.
+second lets the app open and then kills the adapter subprocess. Adapters are
+`fork`/`exec`ed, so macOS judges each one by its own signature and no
+entitlement of ours changes that; if one dies at spawn in a notarized build
+that works unsigned, capture the real error first — `log stream --predicate
+'sender == "kernel"'` while launching, plus the adapter's teed stderr — and
+record it in `entitlements.plist` alongside whatever key turns out to fix it.
+Do not add an entitlement against a predicted failure.
 
 ### Verifying the feed
 
@@ -246,14 +283,14 @@ bolt a post-upload staple onto a file that is already published.
 
 ## Entitlements
 
-The full audit — what is declared, and what was considered and deliberately
-left out — is in the comments of
-[`src-tauri/entitlements.plist`](../src-tauri/entitlements.plist). The short
-version:
+The full audit is in the comments of
+[`src-tauri/entitlements.plist`](../src-tauri/entitlements.plist), which
+declares nothing: every entitlement JaBot could plausibly want was considered
+and left out, each with its reason. The short version:
 
 | Need | Entitlement | Why |
 |---|---|---|
-| Spawn ACP adapters from PATH | `com.apple.security.cs.disable-library-validation` | Adapters are third-party binaries with no Team ID of ours; hardened runtime otherwise refuses them |
+| Spawn ACP adapters from PATH | none | An exec'd child is signature-checked on its own; `disable-library-validation` governs what loads *into* JaBot's process, not what it spawns, so it would not help — and it would let any foreign-team dylib into the process holding the keychain secrets |
 | Outgoing network to harness APIs | none | Sandbox-only key; a non-sandboxed Developer ID app already has network access |
 | Keychain secrets vault ([#9](https://github.com/jabreeflor/jabot/issues/9)) | none | Only needed to *share* keychain items with another of our apps |
 | Camera, mic, location, App Sandbox | none | JaBot uses none of them, and App Sandbox would make PATH adapters illegal |

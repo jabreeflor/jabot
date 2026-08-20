@@ -17,9 +17,12 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use jabot_lib::host::{
-    decode_frames, encode_frame, HostSession, JsonRpcMessage, JsonRpcResponse, RequestId,
+    decode_frames, encode_frame, AdapterWake, HostSession, JsonRpcMessage, JsonRpcResponse,
+    RequestId,
 };
 
 fn main() {
@@ -35,7 +38,7 @@ fn main() {
         }
     }
 
-    let mut session = match &data_dir {
+    let session = match &data_dir {
         Some(dir) => {
             if let Err(err) = std::fs::create_dir_all(dir) {
                 fatal(&format!("create data dir {}: {err}", dir.display()));
@@ -44,6 +47,16 @@ fn main() {
         }
         None => HostSession::ephemeral(),
     };
+
+    // Adapter events arrive whenever a child process feels like writing, not
+    // when a client sends a request, so draining only after a request would
+    // strand every session/update and permission/ask until the client happened
+    // to ask something else. The Tauri host solves this with a `jabot-acp-pump`
+    // thread (`lib.rs`); this is that thread, with stdout in place of the Tauri
+    // event bus. Without it the stdio host looks alive but never streams.
+    let wake = session.adapter_wake();
+    let session = Arc::new(Mutex::new(session));
+    spawn_acp_pump(Arc::clone(&session), wake);
 
     let stdin = BufReader::new(std::io::stdin());
     let stdout = std::io::stdout();
@@ -86,15 +99,50 @@ fn main() {
                 // notifications. Anything else on the inbound stream is noise.
                 continue;
             };
-            let response = session.handle_request(request);
+            let mut guard = lock(&session);
+            let response = guard.handle_request(request);
+            let outbound = guard.take_outbound();
+            drop(guard);
             write_message(&stdout, &JsonRpcMessage::Response(response));
-            for notification in session.take_outbound() {
+            for notification in outbound {
                 write_message(&stdout, &JsonRpcMessage::Notification(notification));
             }
         }
     }
 
-    session.checkpoint_store();
+    lock(&session).checkpoint_store();
+}
+
+/// Drain ACP inbound events and write the notifications they produce.
+///
+/// Mirrors `spawn_acp_pump` in `lib.rs`. The timeout matters as much as the
+/// wake: `AdapterWake::ping` can land while the pump is mid-cycle, so a purely
+/// event-driven wait would miss it and stall until the next unrelated event.
+fn spawn_acp_pump(session: Arc<Mutex<HostSession>>, wake: Arc<AdapterWake>) {
+    std::thread::Builder::new()
+        .name("jabot-acp-pump".into())
+        .spawn(move || {
+            let stdout = std::io::stdout();
+            loop {
+                wake.wait_timeout(Duration::from_millis(50));
+                let mut guard = lock(&session);
+                guard.pump_acp();
+                let outbound = guard.take_outbound();
+                drop(guard);
+                for notification in outbound {
+                    write_message(&stdout, &JsonRpcMessage::Notification(notification));
+                }
+            }
+        })
+        .expect("acp pump thread");
+}
+
+/// A poisoned host mutex means another thread panicked mid-update, not that the
+/// session is unusable — the Tauri host takes the same view.
+fn lock(session: &Arc<Mutex<HostSession>>) -> std::sync::MutexGuard<'_, HostSession> {
+    session
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn write_message(stdout: &std::io::Stdout, message: &JsonRpcMessage) {

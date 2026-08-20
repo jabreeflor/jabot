@@ -6,13 +6,25 @@ authors = ["JaBot"]
 edition = "2021"
 # The crate ships three binaries: the app itself, plus `jabot-hostd` (the host
 # over stdio, for the e2e suite) and `fake-acp-agent` (a scriptable ACP agent
-# for tests). `tauri build` bundles one binary and cannot guess which, so say so
-# explicitly — without this it fails with "failed to find main binary".
+# for tests). The latter two are gated behind `dev-bins` below, so a plain
+# build has only one; this says which one it is for anything run with the
+# feature on, and for `tauri build`, which otherwise fails with "failed to find
+# main binary".
 default-run = "jabot"
 
 [lib]
 name = "jabot_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# The two test binaries are cargo targets only when this is on, which is how
+# they stay out of `tauri build`: the bundler copies *every* binary cargo
+# reports into `JaBot.app/Contents/MacOS`, and for `--target
+# universal-apple-darwin` it lipos only the main one into the universal output
+# directory, so the copy of the others fails on a path that was never written.
+# Ungated, a release build dies after both full compiles have finished. Every
+# stage that needs them asks for the feature; see scripts/verify.sh.
+dev-bins = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -30,8 +42,8 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 keyring = { version = "3", default-features = false, features = ["apple-native"] }
 # Ships the update check against the signed release feed configured in
 # tauri.conf.json. macOS-only alongside keyring so the Linux e2e build of
-# jabot-hostd does not pay for reqwest. See docs/packaging.md for the one line
-# of Builder setup this still needs in lib.rs.
+# jabot-hostd does not pay for reqwest; the matching `.plugin()` registration
+# in lib.rs carries the same cfg.
 tauri-plugin-updater = "2"
 
 [target.'cfg(unix)'.dependencies]
@@ -40,6 +52,14 @@ libc = "0.2"
 [dev-dependencies]
 tempfile = "3"
 
+# Declared rather than auto-discovered from src/bin/ so both carry the gate;
+# an auto-discovered binary has no place to put `required-features`.
 [[bin]]
 name = "fake-acp-agent"
 path = "src/bin/fake_acp_agent.rs"
+required-features = ["dev-bins"]
+
+[[bin]]
+name = "jabot-hostd"
+path = "src/bin/jabot-hostd.rs"
+required-features = ["dev-bins"]
