@@ -246,6 +246,8 @@ mod tests {
                 folder_id: None,
                 bot_id: None,
                 fold_policy: None,
+                use_checkout: None,
+                base_ref: None,
             })
             .expect("thread/open");
         (dir, session)
