@@ -31,6 +31,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use super::git;
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
     FoldPolicy, InboxEventView, InboxListParams, InboxListResult, ProcessView, ReceiptView,
@@ -120,23 +121,41 @@ impl HostSession {
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         if self.lifecycle_thread(&thread_id)?.is_none() {
             let runtime_json = self.runtime_json_for(&params)?;
+            // A code thread gets its own checkout before it gets a row (#23):
+            // `cwd` *is* the worktree, and the repo stamp is read out of it, so
+            // the tree has to exist by the time the INSERT runs.
+            let worktree = self.provision_worktree(&thread_id, &params)?;
+            let cwd = worktree
+                .as_ref()
+                .map(|tree| tree.path.to_string_lossy().into_owned())
+                .unwrap_or_else(|| params.cwd.clone());
             let new = NewThread {
                 id: thread_id.clone(),
                 folder_id: params.folder_id.clone(),
                 bot_id: params.bot_id.clone(),
                 harness_id: params.harness_id.clone(),
-                cwd: params.cwd.clone(),
+                cwd: cwd.clone(),
                 runtime_json,
                 title: params.title.clone(),
                 fold_policy: params.fold_policy.unwrap_or_default().as_str().to_string(),
+                worktree_path: worktree
+                    .as_ref()
+                    .map(|tree| tree.path.to_string_lossy().into_owned()),
                 // Where this thread works, resolved now and written with the
                 // row (#16, setup-porting §19). Opening is the only moment the
-                // answer is knowable without guessing.
-                repo: self.thread_repo_record(params.folder_id.as_deref(), &params.cwd),
+                // answer is knowable without guessing. The branch comes from
+                // the cwd, which is why this reads the worktree and not the
+                // folder: they are different trees on different branches.
+                repo: self.thread_repo_record(params.folder_id.as_deref(), &cwd),
             };
-            self.store_or_err()?
-                .insert_thread(&new)
-                .map_err(store_error)?;
+            if let Err(err) = self.store_or_err()?.insert_thread(&new) {
+                // A tree whose thread does not exist is a tree nothing will
+                // ever clean up, so the failed spawn takes it back out.
+                if let Some(tree) = worktree.as_ref() {
+                    self.discard_worktree(tree, &thread_id);
+                }
+                return Err(store_error(err));
+            }
         }
         self.thread_state(ThreadRefParams {
             thread_id: thread_id.clone(),
@@ -177,6 +196,10 @@ impl HostSession {
         params: ThreadRefParams,
     ) -> Result<ThreadStateResult, RpcError> {
         self.apply_action(&params.thread_id, ThreadAction::Reopen)?;
+        // Reopening a *folded* thread finds its worktree exactly where it left
+        // it. Reopening an *archived* one does not — archive removed the tree —
+        // so it is put back on the branch archive saved the work onto (#23).
+        self.restore_worktree(&params.thread_id);
         self.store_or_err()?
             .mark_inbox_read(&params.thread_id)
             .map_err(store_error)?;
@@ -190,6 +213,11 @@ impl HostSession {
     ) -> Result<ThreadStateResult, RpcError> {
         self.apply_action(&params.thread_id, ThreadAction::Archive)?;
         self.close_out(&params.thread_id, "archived");
+        // After the adapter is gone, never before: removing the directory out
+        // from under a live process is how a half-written file becomes the
+        // agent's last act. Uncommitted work is committed to the thread's own
+        // branch first, and a tree whose work cannot be saved is kept (#23).
+        self.release_worktree(&params.thread_id, git::Release::Archived);
         self.thread_state(params)
     }
 
@@ -201,6 +229,11 @@ impl HostSession {
     ) -> Result<ThreadStateResult, RpcError> {
         self.apply_action(&params.thread_id, ThreadAction::Delete)?;
         self.close_out(&params.thread_id, "deleted");
+        // Delete forces where archive would give up — the user said delete, and
+        // the tree is ours — but it still saves first. The `jabot/<id>` branch
+        // survives a deleted thread on purpose: a branch costs nothing and is
+        // the only copy of anything that was never pushed.
+        self.release_worktree(&params.thread_id, git::Release::Deleted);
         self.thread_state(params)
     }
 
@@ -225,7 +258,7 @@ impl HostSession {
         let unread = store
             .count_unread_inbox(Some(&row.id))
             .map_err(store_error)?;
-        let process = self.process_view(&row.id);
+        let process = self.process_view(&row);
         Ok(ThreadStateResult {
             thread_id: row.id.clone(),
             title: row.title.clone(),
@@ -236,6 +269,7 @@ impl HostSession {
                 .as_deref()
                 .and_then(ResurfaceReason::parse),
             cwd: row.cwd.clone(),
+            worktree_path: row.worktree_path.clone(),
             repo_root: row.repo_root.clone(),
             repo: row.repo.clone(),
             forge_host: row.forge_host.clone(),
@@ -696,6 +730,58 @@ impl HostSession {
             .unwrap_or(AcpState::Unknown)
     }
 
+    // ---- what the supervisor (#21) reads and writes on the process axis ----
+    //
+    // The axis is this module's, and it stays this module's: #21 reconciles it
+    // rather than keeping a second copy, so these are the whole seam between
+    // the two. Each one is a fact about a *process*, never about the overlay.
+
+    /// A session was attached — a fresh spawn, a resume, or a load.
+    pub(crate) fn lifecycle_on_attached(&mut self, thread_id: &str) {
+        let entry = self.lifecycle.entry(thread_id);
+        entry.connected = true;
+        // Idle, not running: a restored session has context and no turn. The
+        // next prompt is what makes it running.
+        entry.acp = AcpState::Idle;
+        entry.touch();
+    }
+
+    /// The adapter is gone and nothing is going to report on it — an idle
+    /// evict, or a resume that could not find a verb the agent speaks.
+    pub(crate) fn lifecycle_on_detached(&mut self, thread_id: &str) {
+        let entry = self.lifecycle.entry(thread_id);
+        entry.connected = false;
+        entry.acp = AcpState::Unknown;
+        entry.run_id = None;
+    }
+
+    /// How long since this thread's adapter last said anything.
+    pub(crate) fn thread_idle_for(&self, thread_id: &str) -> Duration {
+        self.lifecycle
+            .get(thread_id)
+            .map(|status| status.last_activity.elapsed())
+            .unwrap_or_default()
+    }
+
+    /// Connected *and* mid-turn — the pair the sleep path resurfaces on.
+    pub(crate) fn lifecycle_is_running(&self, thread_id: &str) -> bool {
+        self.lifecycle
+            .get(thread_id)
+            .map(|status| status.connected && status.acp == AcpState::Running)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn lifecycle_stuck_reported(&self, thread_id: &str) -> bool {
+        self.lifecycle
+            .get(thread_id)
+            .map(|status| status.stuck_reported)
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn lifecycle_latch_stuck(&mut self, thread_id: &str, reported: bool) {
+        self.lifecycle.entry(thread_id).stuck_reported = reported;
+    }
+
     // ---- internals -----------------------------------------------------
 
     /// Where this action would move the thread, without moving it. Read-only,
@@ -745,7 +831,7 @@ impl HostSession {
         Ok(updated)
     }
 
-    fn try_resurface(
+    pub(crate) fn try_resurface(
         &mut self,
         thread_id: &str,
         reason: ResurfaceReason,
@@ -767,7 +853,7 @@ impl HostSession {
     ///
     /// Returns `false` when the thread is not somewhere a resurface applies —
     /// an `active` thread finishing a turn is the common case, not an error.
-    fn resurface_and_notify(
+    pub(crate) fn resurface_and_notify(
         &mut self,
         thread_id: &str,
         reason: ResurfaceReason,
@@ -912,7 +998,7 @@ impl HostSession {
     }
 
     /// The thread's live run, if it has one, as (id, state).
-    fn open_run(&self, thread_id: &str) -> Option<(String, RunState)> {
+    pub(crate) fn open_run(&self, thread_id: &str) -> Option<(String, RunState)> {
         let store = self.store.as_ref()?;
         let run = store.latest_run(thread_id).ok()??;
         let state = RunState::parse(&run.state).ok()?;
@@ -923,8 +1009,15 @@ impl HostSession {
         self.open_run(thread_id).map(|(id, _)| id)
     }
 
-    fn process_view(&self, thread_id: &str) -> ProcessView {
-        let status = self.lifecycle.get(thread_id);
+    /// The process axis for one thread, plus what #21 could do about it.
+    ///
+    /// `resumable` and `drift` are computed here rather than cached because
+    /// they are answers about *now*: a folder deleted a second ago makes a
+    /// resumable thread unresumable, and a cached `true` would send the user
+    /// at a button that cannot work.
+    fn process_view(&self, row: &ThreadRow) -> ProcessView {
+        let status = self.lifecycle.get(&row.id);
+        let readiness = self.resume_readiness(row);
         ProcessView {
             connected: status.map(|s| s.connected).unwrap_or(false),
             acp_state: status
@@ -932,23 +1025,26 @@ impl HostSession {
                 .unwrap_or(AcpState::Unknown)
                 .as_str()
                 .to_string(),
-            pending_permissions: self.pending_permission_count(thread_id),
+            pending_permissions: self.pending_permission_count(&row.id),
+            pid: self.adapter_pid(&row.id),
+            resumable: readiness.resumable,
+            drift: readiness.drift,
         }
     }
 
-    fn lifecycle_thread(&self, thread_id: &str) -> Result<Option<ThreadRow>, RpcError> {
+    pub(crate) fn lifecycle_thread(&self, thread_id: &str) -> Result<Option<ThreadRow>, RpcError> {
         self.store_or_err()?
             .get_thread(thread_id)
             .map_err(store_error)
     }
 
-    fn store_or_err(&self) -> Result<&Store, RpcError> {
+    pub(crate) fn store_or_err(&self) -> Result<&Store, RpcError> {
         self.store.as_ref().ok_or(RpcError::StoreUnavailable)
     }
 
     /// What this thread would be spawned with today — the other half of the
     /// drift check against the stored receipt.
-    fn fingerprint_for(&self, thread: &ThreadRow) -> SessionFingerprint {
+    pub(crate) fn fingerprint_for(&self, thread: &ThreadRow) -> SessionFingerprint {
         let model = serde_json::from_str::<Value>(&thread.runtime_json)
             .ok()
             .and_then(|runtime| {
