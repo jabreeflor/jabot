@@ -378,9 +378,9 @@ impl HostSession {
         self.lifecycle.entry(thread_id).run_id = Some(run.id);
     }
 
-    /// Any `session/update`. Also the completion signal, when the update is a
-    /// v2 `state_update` going idle or the v1 prompt result the ACP layer
-    /// normalises into one.
+    /// Any `session/update`. Keeps the process axis current, and ends the turn
+    /// only for a v2 `state_update` that reports going idle **and** says why —
+    /// the completion signal is the stop reason, never idleness on its own.
     pub(crate) fn lifecycle_on_update(&mut self, thread_id: &str, acp: &Value) {
         self.lifecycle.entry(thread_id).touch();
         if acp.get("sessionUpdate").and_then(Value::as_str) != Some("state_update") {
