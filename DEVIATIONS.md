@@ -562,6 +562,49 @@ not MVP). One honest gap in the queue: if an adapter never answers a
 adapter closes and is then reported as dropped — the host cannot invent an end
 to a turn the agent will not end.
 
+### D-010a — two things the reducer could not learn from the events alone
+
+Review found that `ThreadStream` had exactly one writer for two facts the host
+owns, and both went stale in the same way: **the renderer only ever heard about
+its own actions.**
+
+**1. A drained queue never shortened the strip.** `queued` was raised by
+`markPromptQueued` and lowered only by an error or by `prompt_dropped`. When
+the host *dispatched* a held prompt it wrote the ordinary `user_message_chunk`
+item 2 above — indistinguishable from the echo of a prompt the user had just
+typed — so the chat showed the same message as sent (a bubble) and as waiting
+(the strip) at once, one stale entry per drain. The strip's **Send now** button
+is `session/cancel`, so clicking it to unstick a message delivered minutes ago
+killed whatever turn was actually in flight. Fixed on the wire, not in the
+renderer: `drain_prompt_queue` now records the prompt with
+`jabot: { event: "prompt_dispatched" }` beside the ACP shape, and the reducer
+shifts the head of its mirror when it sees one. Beside and not inside, so a
+client that has never heard of the marker still draws the bubble.
+
+**2. `busy` could not describe a turn the renderer did not start.** It was set
+only by `markPromptSent`, so a turn begun by a queue drain — or one already
+running when the view mounted, which is every reopened thread, since
+`LiveThreadView` is keyed on the thread id and remounts from `EMPTY_STREAM` —
+offered no Stop button, built agent bubbles with `streaming: false`, and left
+the header reporting the *previous* turn's stop reason while the agent was
+mid-sentence. Two halves to the fix, because there are two ways to learn it:
+
+- *From the events.* Agent output after a stop reason is a new turn, whoever
+  started it, so `agent_message_chunk`, `tool_call`, `tool_call_update`, `plan`
+  and a dispatched `user_message_chunk` all raise `busy` and clear the stale
+  stop reason.
+- *From the ledger.* The events cannot cover the mount-mid-turn case at all:
+  the last row of a live turn and the last row of one whose host died under it
+  are the same row. So `thread/transcript` now reports `runState` — the
+  thread's **open** run, absent once it ended — read in the same call as the
+  rows it has to agree with, and `hydrate` seeds `busy` from it. An optimistic
+  `busy` from a prompt sent while that read was in flight still wins, or the
+  Stop button would vanish under the user.
+
+The second half also closed a smaller lie the first half would have introduced:
+a replay over a run that has already ended now closes its trailing bubble, so a
+thread whose host died mid-sentence stops blinking a caret at the user.
+
 ---
 
 ## D-011 — #21: what the supervisor built, what it refused to guess, and what it left declared
@@ -698,6 +741,39 @@ run open — is never overtaken. `fake-acp-agent`'s new `v2-cancel` mode makes t
 first path deterministic, and the test hangs for the full timeout without the
 backstop.
 
+### D-011b — two holes review found in #21, and a new error code
+
+**1. A missing `cwd` was refused on `thread/resume` and nowhere else.**
+`keep-alive.md` is explicit — "cwd mismatch: refuse and resurface `failed`
+('folder missing'). Do not silently `session/new` in a different directory" —
+and `resume.rs` implemented exactly that. But the path a user actually takes
+after a restart is not `thread/resume`; it is reopening the thread and typing.
+`session_prompt` spawned first and asked later: `spawn_adapter` silently
+dropped `current_dir` for a directory that was not there, so the adapter
+inherited **JaBot's own working directory**, `attach_session` then saw a
+receipt whose `cwd` failed `is_dir`, judged the session unresumable, and minted
+a fresh one over it. An unmounted volume, a moved checkout or a #23 worktree
+removed under a folded thread all reach it, and the result is an agent editing
+files in whatever folder the `.app` was launched from with the real
+conversation now unreachable. `session/prompt` now resolves the `cwd` before
+anything is spawned and refuses with a new `CWD_MISSING` (-32012), resurfacing
+`failed` the way resume does; `spawn_adapter` errors on a missing directory
+instead of falling through, as the backstop for every other caller.
+
+**2. Archive and delete dropped the adapter but kept the queue.**
+`close_out` called `drop_adapter`, which — unlike `on_adapter_gone` — does not
+touch `prompt_queue`. A thread archived while the user had typed a follow-up
+kept those words in RAM, and `thread/reopen` then handed them back to
+`intercept_in_flight`, which held every subsequent prompt behind them. Nothing
+could drain it: #14's drain hangs off a `session/prompt` response, and D-011a's
+backstop iterates live connections, which is empty for a thread with no
+adapter. The thread reported "waiting" for the life of the app and could never
+be prompted again — the exact failure D-011a set out to close, in the one case
+its backstop could not reach. `close_out` now drops the queue, writing the
+`prompt_dropped` rows #14 renders as "Not sent — …", and the backstop was
+widened to *drop* (never send) a queue on a thread that has no connection and
+no open run, so no future path can reintroduce the stranding.
+
 ### What #21 did not build
 
 - **App Nap.** `keep-alive.md` wants
@@ -752,7 +828,16 @@ first**, with `user.name`/`user.email` overridden, `--no-verify` and
 GPG key that wants a passphrase must not be able to turn "save this" into "lose
 this". So the honest answer to *what happens to uncommitted changes when a
 thread is archived*: they become one commit, on a branch JaBot never deletes,
-recoverable with `git checkout jabot/<id>`. Ignored files (`node_modules`, the
+recoverable with `git checkout jabot/<id>`. The commit is not assumed to have
+landed there: `git commit` moves whatever `HEAD` is, and an agent that ran
+`git checkout <sha>`, `git bisect`, or a rebase that stopped on a conflict
+leaves `HEAD` detached — a commit made there is held only by the worktree's own
+`HEAD`, which `git worktree remove` deletes, so the save would become a dangling
+object while the host logged that it had saved it. The save therefore asks
+`symbolic-ref` where `HEAD` is and, when the answer is not a `jabot/` branch,
+plants `jabot/<id>-rescue` at the new commit before returning; the thread's row
+is updated to that branch, so a reopen restores the tree holding the work rather
+than one that does not. Ignored files (`node_modules`, the
 copied `.env`) are not preserved — they were put there by setup, not by the
 agent, and they are re-created by setup next time. If the commit **cannot** be
 made, archive keeps the tree rather than removing it, and says so in the log;
@@ -808,6 +893,118 @@ way to work in the user's own tree.
   button; there is no folder-settings surface to put it on yet.
 - **A disk cap.** Cursor's max-count sweep is explicitly not-MVP in the
   research, and it is not here. Nothing auto-deletes a tree on age or count —
-  only on archive, on delete, and on being unclaimed at boot.
+  only on archive, on delete, and on being unclaimed at boot. "Unclaimed" is
+  read off the store, so a boot whose store would not open skips the sweep
+  entirely rather than treating an empty answer as "nobody claims anything" —
+  a corrupt `jabot.sqlite` is exactly the boot where every live thread's
+  checkout must survive.
 - **PR-aware archive.** "Archive after merged" is #28's knowledge; archive here
   cleans up whether or not a PR merged.
+
+---
+
+## D-013 — #20: the broker's ledger, and what "answerable" means once the agent is gone
+
+**Plan:** #20 asks for a permission broker with "a durable record of
+outstanding requests: a request that arrives while the app is closed must still
+be answerable when it reopens", the prompt UI, Wait for Inbox wired to #15's
+policy, and answering that is idempotent and race-safe. #10 already routed
+`session/request_permission` out as `permission/ask` and `permission/reply`
+back; #15 already decided *whether* to ask. Neither wrote anything down: the
+outstanding request lived in one `HashMap` in `HostSession`, so a quit — or an
+adapter dying — took the agent's question with it, and a second click on the
+same card came back as `unknown permission requestId`.
+
+**Built:** `host/permission/` (the broker) over a new
+`permission_requests` table (migration `0005`), a `permission/pending` host
+method, and permission cards in the live thread view.
+
+- **Every ask is a row, written before it is announced.** The same
+  persist-then-notify rule decision #5 gives the Inbox, applied to the question
+  instead of the result. The row carries what the agent asked, the options it
+  offered, and which run it belongs to — everything a human needs to be asked
+  again — and deliberately *not* the ACP request id, which belongs to a live
+  adapter call and is meaningless to the next process.
+- **Auto-allowed reads get a row too.** Wait for Inbox is still #15's
+  `lifecycle_permission_policy` and there is no second policy path; what is new
+  is that the answer the host gave on the user's behalf is recorded as
+  `decided_by = 'host'` beside the asks it did put to them.
+- **Answering is idempotent, and it says whether the agent heard it.**
+  `permission/reply` now returns `alreadyAnswered`, `optionId` and `cancelled`
+  as well as `delivered`. A second click returns what the *first* one decided.
+  An id nothing has ever heard of is still `INVALID_PARAMS` — idempotence is
+  about a request the host actually took.
+- **The prompt UI** is #14's `notice` card, fed by `permission/ask` live and by
+  `permission/pending` on hydrate, with the agent's own ACP options as its
+  buttons and nothing else. Answering locks the card immediately, which is the
+  renderer half of "two clicks must not double-answer".
+
+### Where this departs, and why
+
+**1. "A request that arrives while the app is closed" cannot literally
+happen, so the durable record covers the ask that was outstanding when it
+closed.** Decision #4 kills adapter process groups on Quit; a closed app has no
+agent running and therefore nothing that can ask. The real case — and the one
+`state-machine.md` describes — is an ask that was on the screen when the app
+went away. That is what survives here.
+
+**2. Quit leaves the record `pending` on purpose; a cancel resolves it.**
+`shutdown_adapters` used to answer outstanding requests `cancelled`, which
+would now also have resolved the row and thrown away the question at exactly
+the moment it needs keeping. So withdrawal has two shapes: `Cancelled` (the
+user stopped the turn, or the adapter died — nobody will ever answer, resolve
+it) and `Abandoned` (the *host* is going away — the agent is still told
+`cancelled` so it is not left blocked, and the row stays outstanding). #10's
+ordering claim is unchanged and its test still passes.
+
+**3. Answering a stale ask is recorded and not delivered, and the UI says
+so.** After a restart there is no ACP call to hand the outcome to, and
+`state-machine.md` is explicit that the next launch must not replay a dead RPC.
+So `delivered: false` comes back, the card carries "JaBot restarted while it
+was waiting, so your answer is recorded rather than delivered", and the
+transcript gains a line saying to message the thread to pick the work back up.
+The alternative — a card that fades on click exactly as it would have if the
+agent had acted on it — is the one lie this surface cannot tell. The run
+ledger is left alone in that case for the same reason: #21 has already closed
+that run as `lost`, and putting it back to `running` because of an answer no
+process is acting on would be the ledger asserting work that is not happening.
+
+**4. A new table rather than the unused `permission_decisions` from `0001`.**
+That table is scoped (`once` / `session` / `always`) and is about *remembered*
+decisions — "always allow this" — which nothing offers yet. Outstanding
+requests are a different question with a different lifetime, so they got their
+own table and `permission_decisions` stays unused until a remembered scope
+exists to put in it.
+
+**5. An ask on a thread with no row is live-only.** `permission_requests` has
+a foreign key to `threads`, so a prompt against a thread the store has never
+heard of (an ephemeral host, `tests/e2e/acp-adapter.test.ts`) records nothing.
+The ask still appears and is still answerable — the live half stands on its
+own, and `permission/pending` unions RAM with the store rather than serving
+only rows. What such a thread loses is durability it never had.
+
+**6. The store grew methods, and the migration count moved to 5.** #20's file
+zone is the broker and the UI, but "a durable record" is a table, and the
+`Store` is the only thing that may open SQLite. Four `Store` methods and one
+SQL module were added in the store's own style; nothing existing changed shape.
+
+### What #20 did not build
+
+- **A remembered "always allow".** ACP offers `allow_always` and the host
+  passes it through as a button, but the host treats every option as a
+  one-shot answer to one request: nothing consults `permission_decisions`
+  before asking. That is a policy feature with a settings surface (#26) behind
+  it, and inventing half of it — remembering without a way to see or revoke
+  what was remembered — is worse than not having it.
+- **Answering from the Inbox.** `permission/pending` takes an optional
+  `threadId` precisely so the Inbox can list every outstanding ask across
+  threads, and #22 owns that surface. Today the card is drawn in the thread.
+  Answering a stale ask also does not clear the thread's `needs_you` Inbox
+  row — the Inbox's read/dismiss rules are #22's.
+- **Permission cards on a bot's standing thread.** `ChatView` still renders
+  from the fixtures (D-009 leaves the standing thread to #22/#24), so the card
+  is wired into `LiveThreadView` only. The reducer and the hook are the same
+  for both the day the bot view goes live.
+- **A second device answering.** `permission/reply` records `deviceId` and the
+  card locks on anyone's `permission/resolved`, so the pieces are there, but
+  pairing is MVP2 and nothing else was built for it.
