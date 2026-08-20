@@ -6,7 +6,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use super::error::StoreError;
-use super::models::{BotRow, FolderPatch, FolderRow, HarnessRow, NewFolder};
+use super::models::{BotPatch, BotRow, FolderPatch, FolderRow, HarnessRow, NewBot, NewFolder};
 use super::{env_key_looks_secret, map_bot, map_folder, map_harness, now_utc};
 
 /// Column order for [`map_folder`], in one place so a new column lands in every
@@ -14,6 +14,11 @@ use super::{env_key_looks_secret, map_bot, map_folder, map_harness, now_utc};
 const FOLDER_COLUMNS: &str = "id, name, path, sort_order, created_at, updated_at, repo_root, \
      origin_url, forge_host, repo_owner, repo_name, default_branch, setup_command, \
      files_to_copy_json";
+
+/// Column order for [`map_bot`], for the same reason `FOLDER_COLUMNS` exists:
+/// three reads of one table that have to stay in step.
+const BOT_COLUMNS: &str = "id, name, color, instructions, tools_json, harness_id, is_chief, \
+     template_id, host_id, sort_order, created_at, updated_at";
 
 pub fn insert_folder(conn: &Connection, new: &NewFolder) -> Result<FolderRow, StoreError> {
     if new.name.trim().is_empty() || new.path.trim().is_empty() {
@@ -249,11 +254,9 @@ pub fn upsert_custom_harness(
 }
 
 pub fn list_bots(conn: &Connection) -> Result<Vec<BotRow>, StoreError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, name, color, instructions, tools_json, harness_id, is_chief,
-                template_id, host_id, sort_order, created_at, updated_at
-         FROM bots ORDER BY is_chief DESC, sort_order, name",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {BOT_COLUMNS} FROM bots ORDER BY is_chief DESC, sort_order, name"
+    ))?;
     let rows = stmt
         .query_map([], map_bot)?
         .collect::<Result<Vec<_>, _>>()?;
@@ -262,12 +265,117 @@ pub fn list_bots(conn: &Connection) -> Result<Vec<BotRow>, StoreError> {
 
 pub fn get_bot(conn: &Connection, id: &str) -> Result<Option<BotRow>, StoreError> {
     conn.query_row(
-        "SELECT id, name, color, instructions, tools_json, harness_id, is_chief,
-                template_id, host_id, sort_order, created_at, updated_at
-         FROM bots WHERE id = ?1",
+        &format!("SELECT {BOT_COLUMNS} FROM bots WHERE id = ?1"),
         [id],
         map_bot,
     )
     .optional()
     .map_err(Into::into)
+}
+
+/// Add a bot. The id is minted here — a template supplies fields, never an
+/// identity, which is what makes "add from template" a snapshot (#17).
+pub fn insert_bot(conn: &Connection, new: &NewBot) -> Result<BotRow, StoreError> {
+    if new.name.trim().is_empty() {
+        return Err(StoreError::invalid("bot name is required"));
+    }
+    if new.harness_id.trim().is_empty() {
+        return Err(StoreError::invalid("bot harnessId is required"));
+    }
+    serde_json::from_str::<Vec<String>>(&new.tools_json)?;
+    let id = Uuid::new_v4().to_string();
+    let now = now_utc();
+    conn.execute(
+        "INSERT INTO bots (
+            id, name, color, instructions, tools_json, harness_id,
+            is_chief, template_id, host_id, sort_order, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, NULL, ?8, ?9, ?9)",
+        params![
+            id,
+            new.name.trim(),
+            new.color,
+            new.instructions,
+            new.tools_json,
+            new.harness_id,
+            new.template_id,
+            new.sort_order,
+            now,
+        ],
+    )?;
+    get_bot(conn, &id)?.ok_or_else(|| StoreError::NotFound(id))
+}
+
+/// Where a new bot goes in the crew grid: after the ones already there.
+pub fn next_bot_sort_order(conn: &Connection) -> Result<i64, StoreError> {
+    conn.query_row(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM bots",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
+/// Edit a bot in place. Each column moves only when the patch names it, so
+/// changing a harness cannot silently rewrite the instructions the user typed.
+///
+/// `is_chief` and `template_id` are not patchable: the first is a seat the
+/// schema allows exactly one of, and the second is a record of where the fields
+/// were copied from — rewriting it would claim a link that does not exist.
+pub fn update_bot(conn: &Connection, id: &str, patch: &BotPatch) -> Result<BotRow, StoreError> {
+    if let Some(name) = &patch.name {
+        if name.trim().is_empty() {
+            return Err(StoreError::invalid("bot name must be non-empty"));
+        }
+    }
+    if let Some(tools) = &patch.tools_json {
+        serde_json::from_str::<Vec<String>>(tools)?;
+    }
+    let now = now_utc();
+    let changed = conn.execute(
+        "UPDATE bots SET
+            name = COALESCE(?2, name),
+            color = COALESCE(?3, color),
+            instructions = COALESCE(?4, instructions),
+            tools_json = COALESCE(?5, tools_json),
+            harness_id = COALESCE(?6, harness_id),
+            updated_at = ?7
+         WHERE id = ?1",
+        params![
+            id,
+            patch.name.as_deref().map(str::trim),
+            patch.color,
+            patch.instructions,
+            patch.tools_json,
+            patch.harness_id,
+            now,
+        ],
+    )?;
+    if changed == 0 {
+        return Err(StoreError::NotFound(id.into()));
+    }
+    get_bot(conn, id)?.ok_or_else(|| StoreError::NotFound(id.into()))
+}
+
+/// Remove a bot from the crew.
+///
+/// The threads survive: `threads.bot_id` is `ON DELETE SET NULL`, and every
+/// thread already carries its own cwd, harness and runtime snapshot — so work
+/// a removed bot started keeps running and keeps its transcript. Returns how
+/// many live threads lost their owner, the same count `folder/forget` returns.
+///
+/// Chief is refused here as well as at the API edge. This function is the last
+/// thing between a caller and the row, and `bots_one_chief` cannot bring a
+/// deleted seat back.
+pub fn delete_bot(conn: &Connection, id: &str) -> Result<usize, StoreError> {
+    let bot = get_bot(conn, id)?.ok_or_else(|| StoreError::NotFound(id.into()))?;
+    if bot.is_chief {
+        return Err(StoreError::invalid("Chief cannot be removed"));
+    }
+    let detached: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM threads WHERE bot_id = ?1 AND deleted_at IS NULL",
+        [id],
+        |row| row.get(0),
+    )?;
+    conn.execute("DELETE FROM bots WHERE id = ?1", [id])?;
+    Ok(detached as usize)
 }

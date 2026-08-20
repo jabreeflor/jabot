@@ -19,6 +19,7 @@ pub const THREAD_NOT_FOUND: i64 = -32006;
 pub const STORE_UNAVAILABLE: i64 = -32007;
 pub const RUN_IN_FLIGHT: i64 = -32008;
 pub const FOLDER_EXISTS: i64 = -32009;
+pub const CHIEF_REQUIRED: i64 = -32010;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -73,6 +74,12 @@ pub enum RpcError {
     /// folder that already exists so the UI can select it instead (#16).
     #[error("{path} is already registered")]
     FolderExists { folder_id: String, path: String },
+    /// Chief is the one crew seat the product assumes exists — the Inbox, the
+    /// handoff tools and every "ask Chief" path are written against it, and
+    /// `bots_one_chief` means a deleted seat cannot simply be re-added. Every
+    /// other bot is the user's to remove (#6, #17).
+    #[error("Chief cannot be removed")]
+    ChiefRequired { bot_id: String },
 }
 
 impl RpcError {
@@ -93,6 +100,7 @@ impl RpcError {
             Self::StoreUnavailable => STORE_UNAVAILABLE,
             Self::RunInFlight { .. } => RUN_IN_FLIGHT,
             Self::FolderExists { .. } => FOLDER_EXISTS,
+            Self::ChiefRequired { .. } => CHIEF_REQUIRED,
         }
     }
 
@@ -140,6 +148,7 @@ impl RpcError {
                 "folderId": folder_id,
                 "path": path,
             })),
+            Self::ChiefRequired { bot_id } => Some(serde_json::json!({ "botId": bot_id })),
             _ => None,
         }
     }

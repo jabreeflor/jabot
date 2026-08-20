@@ -99,6 +99,36 @@ pub struct BotRow {
     pub updated_at: String,
 }
 
+/// What `crew/create` writes. `is_chief` is absent on purpose: the seat is
+/// seeded once and `bots_one_chief` allows exactly one, so "add a bot" can
+/// never be the thing that mints a second Chief.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewBot {
+    pub name: String,
+    pub color: String,
+    pub instructions: String,
+    pub tools_json: String,
+    pub harness_id: String,
+    /// Provenance only. The template's fields were copied at create time and
+    /// nothing reads back through this id (#17) — editing the bot later must
+    /// not be affected by the pack it came from.
+    pub template_id: Option<String>,
+    pub sort_order: i64,
+}
+
+/// A field-by-field patch: `None` leaves the column alone. There is no
+/// `is_chief` and no `template_id` — one is a seat, the other is history.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BotPatch {
+    pub name: Option<String>,
+    pub color: Option<String>,
+    pub instructions: Option<String>,
+    pub tools_json: Option<String>,
+    pub harness_id: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadRow {

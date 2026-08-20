@@ -6,10 +6,11 @@ use serde_json::Value;
 use super::protocol::error::RpcError;
 use super::protocol::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use super::protocol::methods::{
-    FolderRefParams, FolderRegisterParams, FolderUpdateParams, GithubStatusParams,
-    HarnessDoctorParams, HelloParams, InboxListParams, PermissionReplyParams, PromptParams,
-    ResumeFromParams, SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
-    ToolRefParams, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS,
+    CrewCreateParams, CrewRefParams, CrewUpdateParams, FolderRefParams, FolderRegisterParams,
+    FolderUpdateParams, GithubStatusParams, HarnessDoctorParams, HelloParams, InboxListParams,
+    PermissionReplyParams, PromptParams, ResumeFromParams, SessionCancelParams, ThreadFoldParams,
+    ThreadOpenParams, ThreadRefParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE,
+    CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS,
     HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PERMISSION_REPLY,
     SESSION_CANCEL, SESSION_PROMPT, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
     THREAD_OPEN, THREAD_REOPEN, THREAD_STATE, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
@@ -139,6 +140,28 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: FolderRefParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.folder_forget(params)?)
+        }
+        CREW_LIST => {
+            session.require_hello()?;
+            to_value(session.crew_list()?)
+        }
+        CREW_CREATE => {
+            session.require_hello()?;
+            let params: CrewCreateParams = parse_params_or_default(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.crew_create(params)?)
+        }
+        CREW_UPDATE => {
+            session.require_hello()?;
+            let params: CrewUpdateParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.crew_update(params)?)
+        }
+        CREW_REMOVE => {
+            session.require_hello()?;
+            let params: CrewRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.crew_remove(params)?)
         }
         GITHUB_STATUS => {
             session.require_hello()?;
