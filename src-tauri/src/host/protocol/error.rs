@@ -21,6 +21,7 @@ pub const RUN_IN_FLIGHT: i64 = -32008;
 pub const FOLDER_EXISTS: i64 = -32009;
 pub const CHIEF_REQUIRED: i64 = -32010;
 pub const WORKTREE_FAILED: i64 = -32011;
+pub const CWD_MISSING: i64 = -32012;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -92,6 +93,14 @@ pub enum RpcError {
         path: Option<String>,
         detail: String,
     },
+    /// The thread's working directory is not there any more — an unmounted
+    /// volume, a moved checkout, a worktree removed under a folded thread —
+    /// so there is nothing to prompt in. `keep-alive.md` says refuse: an
+    /// adapter spawned anyway inherits JaBot's own working directory, and the
+    /// `session/new` that follows would overwrite the receipt still pointing
+    /// at the real conversation (#21).
+    #[error("{cwd} is gone; {thread_id} cannot run until it is back")]
+    CwdMissing { thread_id: String, cwd: String },
 }
 
 impl RpcError {
@@ -114,6 +123,7 @@ impl RpcError {
             Self::FolderExists { .. } => FOLDER_EXISTS,
             Self::ChiefRequired { .. } => CHIEF_REQUIRED,
             Self::WorktreeFailed { .. } => WORKTREE_FAILED,
+            Self::CwdMissing { .. } => CWD_MISSING,
         }
     }
 
@@ -170,6 +180,10 @@ impl RpcError {
                 "threadId": thread_id,
                 "path": path,
                 "detail": detail,
+            })),
+            Self::CwdMissing { thread_id, cwd } => Some(serde_json::json!({
+                "threadId": thread_id,
+                "cwd": cwd,
             })),
             _ => None,
         }

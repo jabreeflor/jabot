@@ -100,6 +100,12 @@ impl HostSession {
     /// nothing is running, and the adapter says it is idle. All three have to
     /// agree before anything is sent, so a turn genuinely in flight — which
     /// keeps its run open — is never overtaken.
+    ///
+    /// A queue on a thread with **no** adapter is the same failure and cannot
+    /// be fixed by sending: `drain_prompt_queue` needs a live session, so
+    /// nothing would ever empty it and every later prompt would be held behind
+    /// it. Those are dropped rather than delivered, which is what every other
+    /// end-of-adapter path already does.
     fn drain_stranded_queues(&mut self) {
         let stranded: Vec<String> = self
             .connections
@@ -112,6 +118,17 @@ impl HostSession {
             .collect();
         for thread_id in stranded {
             self.drain_prompt_queue(&thread_id);
+        }
+        let orphaned: Vec<String> = self
+            .queued_thread_ids()
+            .into_iter()
+            .filter(|thread_id| !self.connections.contains_key(thread_id))
+            // An open run without an adapter is a *lost* run, and the boot and
+            // reap paths own it; touching the queue here would race them.
+            .filter(|thread_id| self.open_run(thread_id).is_none())
+            .collect();
+        for thread_id in orphaned {
+            self.drop_prompt_queue(&thread_id, "the adapter is no longer running");
         }
     }
 

@@ -257,6 +257,43 @@ pub struct InboxEventRow {
     pub dismissed_at: Option<String>,
 }
 
+/// One `session/request_permission`, as the broker recorded it (#20).
+///
+/// The ACP request id it arrived on is deliberately *not* here: it belongs to
+/// a live adapter call and is meaningless to the next process. What is here is
+/// everything a human needs in order to be asked the same question again after
+/// a quit — and `delivered`, which says whether the agent ever heard the
+/// answer.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionRequestRow {
+    pub id: String,
+    pub thread_id: String,
+    pub run_id: Option<String>,
+    pub kind: Option<String>,
+    pub title: String,
+    pub subject_json: String,
+    pub options_json: String,
+    pub state: String,
+    pub decided_by: Option<String>,
+    pub option_id: Option<String>,
+    pub delivered: bool,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewPermissionRequest {
+    pub id: String,
+    pub thread_id: String,
+    pub run_id: Option<String>,
+    pub kind: Option<String>,
+    pub title: String,
+    pub subject_json: String,
+    pub options_json: String,
+}
+
 /// What a session was spawned with, so a later resume can tell whether the
 /// world moved under it (#21). Persisted, not held in RAM — an in-memory map
 /// is exactly the drift bug this table exists to avoid.
