@@ -279,6 +279,22 @@
   font-weight: 400;
 }
 
+/* A folder that is not a repo. Quiet, because it is a fact about the folder,
+   not a problem with it. */
+.folder-badge {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.folder-toggle .folder-badge + .count {
+  margin-left: var(--sp-3);
+}
+
 .folder-add {
   width: 20px;
   height: 20px;
@@ -292,6 +308,10 @@
   cursor: pointer;
   font: 15px/1 var(--font-ui);
   padding: 0;
+}
+
+.section-header .section-add {
+  margin-left: auto;
 }
 
 .folder-add:hover {

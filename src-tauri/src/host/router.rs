@@ -6,12 +6,13 @@ use serde_json::Value;
 use super::protocol::error::RpcError;
 use super::protocol::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use super::protocol::methods::{
+    FolderRefParams, FolderRegisterParams, FolderUpdateParams, GithubStatusParams,
     HarnessDoctorParams, HelloParams, InboxListParams, PermissionReplyParams, PromptParams,
     ResumeFromParams, SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
-    ToolRefParams, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST,
-    PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SYNC_RESUME_FROM, THREAD_ARCHIVE,
-    THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_STATE, TOOLS_CONNECT,
-    TOOLS_DISCONNECT, TOOLS_LIST,
+    ToolRefParams, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS,
+    HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PERMISSION_REPLY,
+    SESSION_CANCEL, SESSION_PROMPT, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
+    THREAD_OPEN, THREAD_REOPEN, THREAD_STATE, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 use super::HostSession;
 
@@ -116,6 +117,33 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: ToolRefParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.tools_disconnect(params)?)
+        }
+        FOLDER_LIST => {
+            session.require_hello()?;
+            to_value(session.folder_list()?)
+        }
+        FOLDER_REGISTER => {
+            session.require_hello()?;
+            let params: FolderRegisterParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.folder_register(params)?)
+        }
+        FOLDER_UPDATE => {
+            session.require_hello()?;
+            let params: FolderUpdateParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.folder_update(params)?)
+        }
+        FOLDER_FORGET => {
+            session.require_hello()?;
+            let params: FolderRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.folder_forget(params)?)
+        }
+        GITHUB_STATUS => {
+            session.require_hello()?;
+            let params: GithubStatusParams = parse_params_or_default(request.params.as_ref())?;
+            to_value(session.github_status(params)?)
         }
         SYNC_RESUME_FROM => {
             session.require_hello()?;
