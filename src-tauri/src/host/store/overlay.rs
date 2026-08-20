@@ -17,7 +17,7 @@ use super::{
 const THREAD_COLUMNS: &str = "id, folder_id, bot_id, harness_id, acp_session_id, \
      native_session_ref, cwd, runtime_json, title, state, fold_policy, last_stop_reason, \
      last_error, preview, worktree_path, created_at, updated_at, folded_at, resurfaced_at, \
-     archived_at, deleted_at, resurfaced_reason";
+     archived_at, deleted_at, resurfaced_reason, repo_root, repo, forge_host, branch, host_id";
 
 const RUN_COLUMNS: &str = "id, thread_id, seq, kind, state, trigger_json, error, \
      started_at, ended_at, created_at, acp_session_id";
@@ -36,11 +36,16 @@ pub fn insert_thread(conn: &Connection, new: &NewThread) -> Result<ThreadRow, St
     }
     validate_runtime_json(&new.runtime_json)?;
     let now = now_utc();
+    // The repo columns are written by the same INSERT as the thread, never by
+    // a follow-up UPDATE: a thread that exists for even one crash-width moment
+    // without knowing which checkout it belongs to is a thread that has to
+    // guess afterwards (setup-porting §19).
     conn.execute(
         "INSERT INTO threads (
             id, folder_id, bot_id, harness_id, cwd, runtime_json, title,
-            state, fold_policy, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', ?8, ?9, ?9)",
+            state, fold_policy, created_at, updated_at,
+            repo_root, repo, forge_host, branch, host_id
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?14)",
         params![
             new.id,
             new.folder_id,
@@ -50,7 +55,12 @@ pub fn insert_thread(conn: &Connection, new: &NewThread) -> Result<ThreadRow, St
             new.runtime_json,
             new.title,
             new.fold_policy,
-            now
+            now,
+            new.repo.repo_root,
+            new.repo.repo,
+            new.repo.forge_host,
+            new.repo.branch,
+            new.repo.host_id,
         ],
     )?;
     get_thread(conn, &new.id)?.ok_or_else(|| StoreError::NotFound(new.id.clone()))
@@ -74,6 +84,27 @@ pub fn list_threads_by_state(conn: &Connection, state: &str) -> Result<Vec<Threa
     ))?;
     let rows = stmt
         .query_map([state], map_thread)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// The rows the sidebar draws under a folder (#16).
+///
+/// `folded` and `archived` are absent on purpose: fold's promise is that the
+/// row goes away and comes back through the Inbox, so a folder listing that
+/// still showed it would break the one gesture the product is built around.
+pub fn list_folder_threads(
+    conn: &Connection,
+    folder_id: &str,
+) -> Result<Vec<ThreadRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {THREAD_COLUMNS} FROM threads
+         WHERE folder_id = ?1 AND deleted_at IS NULL
+           AND state IN ('active', 'resurfaced')
+         ORDER BY updated_at DESC"
+    ))?;
+    let rows = stmt
+        .query_map([folder_id], map_thread)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
@@ -239,6 +270,19 @@ pub fn transcript_after(
         .query_map(params![thread_id, seq], map_transcript)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// The highest `seq` this thread has on disk, or 0 for a thread with no
+/// transcript. Asked separately from [`transcript_after`] because a caller
+/// that is already up to date reads no rows and still has to be told where the
+/// log ends (#14).
+pub fn transcript_head(conn: &Connection, thread_id: &str) -> Result<i64, StoreError> {
+    let head = conn.query_row(
+        "SELECT COALESCE(MAX(seq), 0) FROM transcript_events WHERE thread_id = ?1",
+        [thread_id],
+        |row| row.get(0),
+    )?;
+    Ok(head)
 }
 
 pub fn insert_inbox_event(

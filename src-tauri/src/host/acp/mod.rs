@@ -41,8 +41,11 @@ impl HostSession {
         let thread_id = params.thread_id.clone();
         // Before anything is spawned: a turn already in flight owns this
         // session, and starting a second one loses whichever result comes back
-        // second (#15).
-        self.refuse_overlapping_run(&thread_id)?;
+        // second (#15). What happens instead is the client's call — refuse,
+        // queue, or interrupt — and #14 owns that fork (`transcript::queue`).
+        if let Some(queued) = self.intercept_in_flight(&params)? {
+            return Ok(queued);
+        }
         self.ensure_connection(&params)?;
         let cwd = self.resolve_cwd(&params)?;
         let existing = self
@@ -80,6 +83,11 @@ impl HostSession {
             self.connections.remove(&thread_id);
             return Err(err);
         }
+        // The user's own words go into the transcript here, as the ACP
+        // `user_message_chunk` an agent would have sent. Without it a reopened
+        // thread replays the agent's half of a conversation and none of the
+        // human's — the transcript overlay has to be the whole exchange (#14).
+        self.record_user_prompt(&thread_id, &params.content);
         // The run ledger opens here, not when the first chunk arrives: the turn
         // exists from the moment the agent accepted the prompt, and a crash
         // before any output still has to show up as a run that failed (#15).
@@ -89,6 +97,8 @@ impl HostSession {
             thread_id,
             acp_session_id: session_id,
             accepted: true,
+            queued: false,
+            queue_position: None,
         })
     }
 
@@ -301,8 +311,8 @@ impl HostSession {
     fn handle_inbound(&mut self, thread_id: &str, event: Inbound) {
         match event {
             Inbound::Update(acp) => {
-                self.persist_transcript(thread_id, "session/update", &acp);
-                self.notify_session_update(thread_id, acp.clone());
+                let seq = self.persist_transcript_event(thread_id, "session/update", &acp);
+                self.notify_session_update_at(thread_id, acp.clone(), seq);
                 // After the stream, so a client sees the chunk that ended the
                 // turn before it sees the Inbox card the turn produced.
                 self.lifecycle_on_update(thread_id, &acp);
@@ -314,7 +324,7 @@ impl HostSession {
                     .or_else(|| params.get("toolCall").cloned())
                     .unwrap_or_else(|| params.clone());
                 let options = params.get("options").cloned().unwrap_or_else(|| json!([]));
-                self.persist_transcript(thread_id, "session/request_permission", &params);
+                self.persist_transcript_event(thread_id, "session/request_permission", &params);
                 // Wait for Inbox is a host-side permission policy on a folded
                 // thread (#5): reads are answered here, everything else still
                 // reaches the human.
@@ -360,8 +370,12 @@ impl HostSession {
                     "stopReason": stop_reason,
                     "result": result,
                 });
-                self.persist_transcript(thread_id, "session/prompt", &acp);
-                self.notify_session_update(thread_id, acp);
+                // Labelled by the ACP message it came from — this payload was
+                // synthesized from the *prompt response* — while the payload
+                // itself stays `session/update`-shaped so one reducer replays
+                // every row (#14).
+                let seq = self.persist_transcript_event(thread_id, "session/prompt", &acp);
+                self.notify_session_update_at(thread_id, acp, seq);
                 // The completion signal, and the authoritative one: ACP puts
                 // the stop reason on the prompt *response*. Ending the turn
                 // straight from here rather than through a synthesized
@@ -371,6 +385,10 @@ impl HostSession {
                 // adapter that does report a stop reason gets there first; the
                 // ledger transition is idempotent and this is then a no-op.
                 self.lifecycle_on_turn_end(thread_id, stop_reason.as_deref());
+                // The turn is over, so the session is free: anything the user
+                // said while it was busy goes out now, in the order they said
+                // it (#14 steer-vs-redispatch).
+                self.drain_prompt_queue(thread_id);
             }
             Inbound::Closed { error } => {
                 if let Some(err) = &error {
@@ -378,20 +396,9 @@ impl HostSession {
                 }
                 let _ = self.cancel_pending_permissions(thread_id, "adapter closed");
                 self.connections.remove(thread_id);
+                self.drop_prompt_queue(thread_id, "the adapter stopped");
                 self.lifecycle_on_adapter_closed(thread_id, error.as_deref());
             }
-        }
-    }
-
-    fn persist_transcript(&self, thread_id: &str, method: &str, payload: &Value) {
-        let Some(store) = &self.store else {
-            return;
-        };
-        let Ok(json) = serde_json::to_string(payload) else {
-            return;
-        };
-        if let Err(err) = store.append_transcript(thread_id, method, &json) {
-            eprintln!("failed to persist transcript for {thread_id}: {err}");
         }
     }
 
