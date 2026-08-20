@@ -32,6 +32,7 @@ mod servers;
 mod testing;
 
 use std::collections::{BTreeSet, HashMap};
+use std::path::PathBuf;
 
 use serde_json::Value;
 
@@ -96,11 +97,17 @@ impl HostSession {
             });
         }
 
+        // The grant is per provider, so it is requested per provider: this one
+        // consent is what Calendar and Drive will be handed too, and a token
+        // minted with only Gmail's scopes and only Gmail's audience is a chip
+        // that says connected over a server that refuses every call.
+        let (scopes, resources) = provider_grant_shape(provider.id);
         let flow = ConnectFlow::start(ConnectRequest {
             tool_id: entry.id.to_string(),
             provider,
             server_url: (*url).to_string(),
-            scopes: entry.scopes.iter().map(|s| (*s).to_string()).collect(),
+            resources,
+            scopes,
             config_dir: self.data_dir.clone(),
         })
         .map_err(RpcError::Internal)?;
@@ -162,23 +169,45 @@ impl HostSession {
             .iter()
             .filter_map(|entry| entry.provider.map(|p| p.id))
             .collect();
-        let mut credentials: HashMap<&'static str, Result<String, String>> = HashMap::new();
+        let mut grants: HashMap<&'static str, Result<Grant, String>> = HashMap::new();
         for provider in providers {
-            credentials.insert(provider, self.bearer_for(provider));
+            grants.insert(provider, self.bearer_for(provider));
         }
 
-        let profile_root = self.data_dir.as_ref().map(|dir| dir.join(PROFILE_DIR));
+        // Claimed before the plan is built, because a profile directory is a
+        // lock and the answer depends on which other threads are live.
+        let mut profiles: HashMap<&'static str, Result<PathBuf, String>> = HashMap::new();
+        for entry in &entries {
+            if entry.profile_flag().is_some() {
+                profiles.insert(entry.id, self.claim_profile(thread_id, entry));
+            }
+        }
+
         let plan = servers::plan(
             entries.iter().copied(),
             |entry| match entry.provider {
                 None => Credential::None,
-                Some(provider) => match credentials.get(provider.id) {
-                    Some(Ok(header)) => Credential::Bearer(header),
+                Some(provider) => match grants.get(provider.id) {
+                    // A provider grant covers the provider, so it can still be
+                    // short of what one chip needs — an older consent, or a
+                    // user who unticked a scope on the provider's own screen.
+                    // Passing the bearer anyway would be a server whose every
+                    // call fails on insufficient scope.
+                    Some(Ok(grant)) => match missing_scope(entry, &grant.scopes) {
+                        None => Credential::Bearer(&grant.header),
+                        Some(scope) => Credential::Missing(format!(
+                            "the {} grant does not cover {scope}, which {} needs",
+                            provider.label, entry.label
+                        )),
+                    },
                     Some(Err(reason)) => Credential::Missing(reason.clone()),
                     None => Credential::Missing(format!("{} is not connected", entry.label)),
                 },
             },
-            profile_root.as_deref(),
+            |entry| match profiles.get(entry.id) {
+                Some(claim) => claim.clone(),
+                None => Err(format!("{} was not offered a profile", entry.label)),
+            },
             super::harness::resolve_command,
         );
 
@@ -215,8 +244,8 @@ impl HostSession {
             .unwrap_or_default()
     }
 
-    /// A live `Authorization` header for a provider, refreshing if it is time.
-    fn bearer_for(&mut self, provider: &str) -> Result<String, String> {
+    /// A live grant for a provider, refreshing if it is time.
+    fn bearer_for(&mut self, provider: &str) -> Result<Grant, String> {
         let label = provider_label(provider);
         let Some(store) = self.store.as_ref() else {
             return Err(format!("{label} is not connected"));
@@ -230,7 +259,7 @@ impl HostSession {
             .map_err(|_| format!("{label}'s saved grant is unreadable"))?;
 
         if !bundle.needs_refresh(chrono::Utc::now()) {
-            return Ok(bundle.authorization_header());
+            return Ok(Grant::from(&bundle));
         }
         match oauth::refresh(&http::CurlClient, &bundle) {
             Ok(fresh) => {
@@ -238,16 +267,62 @@ impl HostSession {
                 store
                     .refresh_tool_grant(secrets, provider, fresh.expires_at.as_deref(), &json)
                     .map_err(|e| e.to_string())?;
-                Ok(fresh.authorization_header())
+                Ok(Grant::from(&fresh))
             }
-            Err(err) => {
-                // The grant is gone, not merely stale: say so on the chip
-                // rather than sending an expired bearer and blaming the tool.
+            // The provider said no: the grant is gone, not merely stale, and
+            // the tokens go with it so the chip offers Connect rather than
+            // sending a bearer that will be refused for the rest of the day.
+            Err(err) if err.is_grant_refusal() => {
                 let reason = format!("{label} needs to be reconnected: {err}");
                 let _ = store.expire_tool_grant(secrets, provider, &reason);
                 Err(reason)
             }
+            // Nobody said no — the request never got an answer. Expiring here
+            // would delete the refresh token, so a Wi-Fi blip or an hour of
+            // provider downtime would cost the user a full re-consent (and,
+            // for Google and Slack, their own `oauth_clients.json` again).
+            // The row carries the reason and the vault keeps the grant, so the
+            // next prompt simply tries the refresh again.
+            Err(err) => {
+                let reason = format!("{label} could not be refreshed: {err}");
+                let _ = store.fail_tool_connection(provider, &reason);
+                Err(reason)
+            }
         }
+    }
+
+    /// Claim the JaBot-owned profile directory a local MCP server locks.
+    ///
+    /// `--user-data-dir` is a Chromium profile lock, not a preference: a
+    /// second Playwright MCP pointed at the same directory dies inside the
+    /// adapter, and JaBot runs one adapter per live thread with Browser chipped
+    /// on three seeded bots, so overlapping runs are the normal case
+    /// (`mcp-and-tools.md`: "One profile lock at a time"). The lease belongs to
+    /// whichever thread still has an adapter — read off `connections` rather
+    /// than tracked separately, because a lease that outlived the process it
+    /// described would lock the tool out for the rest of the session.
+    fn claim_profile(&mut self, thread_id: &str, entry: &ToolEntry) -> Result<PathBuf, String> {
+        let root = self
+            .data_dir
+            .as_ref()
+            .ok_or_else(|| {
+                format!(
+                    "{} needs a profile directory this host does not have",
+                    entry.label
+                )
+            })?
+            .join(PROFILE_DIR);
+        if let Some(holder) = self.mcp_profiles.get(entry.id) {
+            if holder != thread_id && self.connections.contains_key(holder) {
+                return Err(format!(
+                    "{} is in use by another thread: its profile takes one process at a time",
+                    entry.label
+                ));
+            }
+        }
+        self.mcp_profiles
+            .insert(entry.id.to_string(), thread_id.to_string());
+        Ok(root.join(entry.id))
     }
 
     /// Commit finished OAuth flows. Called from every tools method and from
@@ -353,13 +428,27 @@ impl HostSession {
                 account = row.account.clone();
                 expires_at = row.expires_at.clone();
                 match row.status.as_str() {
-                    "connected" => {
-                        status = ToolConnectionStatus::Connected;
-                        detail = Some(match &row.account {
-                            Some(account) => format!("Connected as {account}"),
-                            None => format!("Connected to {}", provider.label),
-                        });
-                    }
+                    // Connected to the *provider* is not the same as connected
+                    // for this chip. Saying "Connected as you@example.com" on
+                    // Calendar when the grant only carries Gmail's scopes is a
+                    // trust claim the row cannot support, and the bot editor is
+                    // exactly where a user decides what a bot can reach.
+                    "connected" => match missing_scope(entry, &granted_scopes(row)) {
+                        None => {
+                            status = ToolConnectionStatus::Connected;
+                            detail = Some(match &row.account {
+                                Some(account) => format!("Connected as {account}"),
+                                None => format!("Connected to {}", provider.label),
+                            });
+                        }
+                        Some(scope) => {
+                            status = ToolConnectionStatus::NeedsAuth;
+                            detail = Some(format!(
+                                "{} is connected, but not for {scope} — reconnect to add it",
+                                provider.label
+                            ));
+                        }
+                    },
                     "error" => {
                         status = ToolConnectionStatus::Error;
                         detail = row.last_error.clone();
@@ -393,6 +482,76 @@ impl HostSession {
             docs_url: entry.docs_url.to_string(),
         }
     }
+}
+
+/// A usable provider grant: the header to send, and what it is good for.
+///
+/// The scopes travel with the header because the two are only meaningful
+/// together — a bearer alone cannot say which of the provider's chips it can
+/// actually serve.
+struct Grant {
+    header: String,
+    scopes: Vec<String>,
+}
+
+/// Derived `Debug` would print the bearer, and this value exists to be put in
+/// a `Result` that a failed `expect` renders. Same rule as [`TokenBundle`].
+impl std::fmt::Debug for Grant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Grant")
+            .field("header", &"<redacted>")
+            .field("scopes", &self.scopes)
+            .finish()
+    }
+}
+
+impl From<&TokenBundle> for Grant {
+    fn from(bundle: &TokenBundle) -> Self {
+        Self {
+            header: bundle.authorization_header(),
+            scopes: bundle.scopes.clone(),
+        }
+    }
+}
+
+/// What one consent has to ask for to cover a provider: the union of every
+/// sibling chip's scopes, and every sibling MCP URL as an RFC 8707 `resource`.
+///
+/// Catalog order, deduplicated — a provider that repeats a scope across chips
+/// (Google's `drive.file` in two products, say) would otherwise send it twice.
+fn provider_grant_shape(provider_id: &str) -> (Vec<String>, Vec<String>) {
+    let mut scopes: Vec<String> = Vec::new();
+    let mut resources: Vec<String> = Vec::new();
+    for entry in catalog::entries_for_provider(provider_id) {
+        for scope in entry.scopes {
+            let scope = (*scope).to_string();
+            if !scopes.contains(&scope) {
+                scopes.push(scope);
+            }
+        }
+        if let Transport::Http { url } = &entry.transport {
+            let url = (*url).to_string();
+            if !resources.contains(&url) {
+                resources.push(url);
+            }
+        }
+    }
+    (scopes, resources)
+}
+
+/// The first scope this entry needs that the grant does not carry.
+fn missing_scope(entry: &ToolEntry, granted: &[String]) -> Option<&'static str> {
+    entry
+        .scopes
+        .iter()
+        .copied()
+        .find(|scope| !granted.iter().any(|granted| granted == scope))
+}
+
+/// A row's `scopes_json`. Unreadable JSON reads as an empty grant rather than
+/// an error: the honest answer to "what does this cover" is then "nothing".
+fn granted_scopes(row: &ToolConnectionRow) -> Vec<String> {
+    serde_json::from_str(&row.scopes_json).unwrap_or_default()
 }
 
 fn entry_or_invalid(tool_id: &str) -> Result<&'static ToolEntry, RpcError> {
@@ -457,18 +616,29 @@ mod tests {
                 runtime_json: r#"{"command":"claude-agent-acp"}"#.into(),
                 title: "t".into(),
                 fold_policy: "default".into(),
+                repo: Default::default(),
             })
             .expect("thread");
     }
 
     /// Run a whole Google grant through the host: real flow, real consent on a
     /// local authorization server, real commit into the vault and the store.
-    fn connect_google(session: &mut HostSession, auth: &LocalAuthServer, consent: bool) {
+    ///
+    /// `scopes` is what the consent is asked for, which is the whole question
+    /// behind who ends up connected — the local server does not narrow it, so
+    /// the grant carries exactly this.
+    fn connect_google_for(
+        session: &mut HostSession,
+        auth: &LocalAuthServer,
+        scopes: Vec<String>,
+        consent: bool,
+    ) {
         let flow = ConnectFlow::start(ConnectRequest {
             tool_id: "gmail".into(),
             provider: catalog::GOOGLE,
             server_url: auth.mcp_url(),
-            scopes: vec!["gmail.compose".into()],
+            resources: vec![auth.mcp_url()],
+            scopes,
             config_dir: session.data_dir.clone(),
         })
         .expect("flow");
@@ -492,8 +662,36 @@ mod tests {
         }
     }
 
-    fn connect_gmail(session: &mut HostSession, auth: &LocalAuthServer) {
-        connect_google(session, auth, true);
+    /// The stored Google grant, read the way the host reads it. Field access
+    /// rather than `store()` so the vault can be borrowed mutably alongside.
+    fn grant_json(session: &HostSession) -> Option<String> {
+        session
+            .store
+            .as_ref()
+            .expect("store")
+            .get_tool_grant(&session.secrets, "google")
+            .expect("read the grant")
+    }
+
+    fn stored_bundle(session: &HostSession) -> TokenBundle {
+        serde_json::from_str(&grant_json(session).expect("a grant")).expect("a bundle")
+    }
+
+    fn store_bundle(session: &mut HostSession, bundle: &TokenBundle) {
+        let json = serde_json::to_string(bundle).expect("serialise");
+        session
+            .store
+            .as_ref()
+            .expect("store")
+            .refresh_tool_grant(&mut session.secrets, "google", None, &json)
+            .expect("stamp the grant");
+    }
+
+    /// Consent to what `tools/connect` actually asks for: the union across
+    /// Gmail, Calendar and Drive, because there is one Google login.
+    fn connect_google(session: &mut HostSession, auth: &LocalAuthServer) {
+        let (scopes, _) = provider_grant_shape("google");
+        connect_google_for(session, auth, scopes, true);
     }
 
     /// Host-selected MCP has to be the *only* MCP a session sees (#10,
@@ -553,7 +751,7 @@ mod tests {
     fn a_session_only_gets_the_tools_its_bot_allowlists() {
         let (mut session, _dir) = host();
         let auth = LocalAuthServer::start();
-        connect_gmail(&mut session, &auth);
+        connect_google(&mut session, &auth);
 
         // Inbox Mgr allowlists gmail; Scheduler allowlists calendar. Both draw
         // on the one Google grant, so this is enforcement and not just auth.
@@ -595,6 +793,7 @@ mod tests {
                 runtime_json: r#"{"command":"claude-agent-acp"}"#.into(),
                 title: "t".into(),
                 fold_policy: "default".into(),
+                repo: Default::default(),
             })
             .unwrap();
         assert_eq!(
@@ -625,7 +824,7 @@ mod tests {
     fn a_completed_grant_connects_every_tool_that_shares_it() {
         let (mut session, _dir) = host();
         let auth = LocalAuthServer::start();
-        connect_gmail(&mut session, &auth);
+        connect_google(&mut session, &auth);
 
         let tools = session.tools_list().unwrap().tools;
         for id in ["gmail", "calendar", "drive"] {
@@ -647,12 +846,132 @@ mod tests {
         assert!(row.secret_ref_id.is_some(), "the row points at the vault");
     }
 
+    /// The consent has to be asked for on behalf of every chip the grant will
+    /// serve, or the other two are connected in name only.
+    #[test]
+    fn one_consent_asks_for_every_scope_and_resource_the_provider_serves() {
+        let (scopes, resources) = provider_grant_shape("google");
+        for entry in catalog::entries_for_provider("google") {
+            for scope in entry.scopes {
+                assert!(
+                    scopes.contains(&(*scope).to_string()),
+                    "{} needs {scope}",
+                    entry.id
+                );
+            }
+            let Transport::Http { url } = &entry.transport else {
+                unreachable!("every Google entry is a remote server")
+            };
+            assert!(resources.contains(&(*url).to_string()), "{}", entry.id);
+        }
+        assert_eq!(resources.len(), 3, "one resource per Google MCP server");
+
+        // A provider with one chip asks for one resource and nothing extra.
+        let (notion_scopes, notion_resources) = provider_grant_shape("notion");
+        assert!(notion_scopes.is_empty());
+        assert_eq!(notion_resources, vec!["https://mcp.notion.com/mcp"]);
+    }
+
+    /// The dishonest state this guards against: a grant that only covers Gmail
+    /// lighting up Calendar and Drive, and then handing them a bearer their
+    /// server will refuse on every call.
+    #[test]
+    fn a_grant_that_misses_a_chips_scopes_does_not_connect_that_chip() {
+        let (mut session, _dir) = host();
+        let auth = LocalAuthServer::start();
+        let gmail_only: Vec<String> = catalog::find("gmail")
+            .unwrap()
+            .scopes
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        connect_google_for(&mut session, &auth, gmail_only, true);
+
+        let tools = session.tools_list().unwrap().tools;
+        let gmail = tools.iter().find(|t| t.id == "gmail").unwrap();
+        assert_eq!(gmail.status, ToolConnectionStatus::Connected);
+
+        for id in ["calendar", "drive"] {
+            let tool = tools.iter().find(|t| t.id == id).unwrap();
+            assert_eq!(tool.status, ToolConnectionStatus::NeedsAuth, "{id}");
+            let detail = tool.detail.as_deref().expect("a reason");
+            assert!(detail.contains("reconnect"), "{id}: {detail}");
+        }
+
+        // And the session is denied the server, not given a dead one.
+        open_thread(&session, "t-sched", "sched");
+        assert_eq!(
+            session.mcp_servers_for_thread("t-sched"),
+            serde_json::json!([])
+        );
+        open_thread(&session, "t-inbox", "inboxm");
+        let inbox = session.mcp_servers_for_thread("t-inbox");
+        assert_eq!(inbox.as_array().unwrap().len(), 1);
+    }
+
+    /// A refresh that never reached the provider must not cost the user their
+    /// grant: the refresh token stays in the vault so the next prompt can try
+    /// again, and only the chip carries the bad news.
+    #[test]
+    fn a_refresh_that_could_not_be_delivered_keeps_the_grant() {
+        let (mut session, _dir) = host();
+        let auth = LocalAuthServer::start();
+        connect_google(&mut session, &auth);
+
+        // Age the access token out and point the refresh at a port nobody is
+        // listening on — the offline case, without unplugging the test host.
+        let mut bundle = stored_bundle(&session);
+        bundle.expires_at = Some("2020-01-01T00:00:00Z".into());
+        bundle.token_endpoint = "http://127.0.0.1:1/token".into();
+        store_bundle(&mut session, &bundle);
+
+        let reason = session.bearer_for("google").unwrap_err();
+        assert!(reason.contains("could not be refreshed"), "{reason}");
+
+        // The refresh token is still there, which is the whole point.
+        let kept = stored_bundle(&session);
+        assert_eq!(kept.refresh_token, bundle.refresh_token);
+        assert!(kept.refresh_token.is_some());
+
+        let tools = session.tools_list().unwrap().tools;
+        let gmail = tools.iter().find(|t| t.id == "gmail").unwrap();
+        assert_eq!(gmail.status, ToolConnectionStatus::Error);
+        assert_eq!(gmail.detail.as_deref(), Some(reason.as_str()));
+    }
+
+    /// A provider that actually refuses the refresh is the other half: that
+    /// grant is dead, and keeping the tokens would mean sending a bearer the
+    /// provider has already said no to.
+    #[test]
+    fn a_refused_refresh_expires_the_grant() {
+        let (mut session, _dir) = host();
+        let auth = LocalAuthServer::start();
+        connect_google(&mut session, &auth);
+
+        // A token endpoint that answers 400 `invalid_grant`, which is what a
+        // revoked grant gets back and the only answer that may destroy one.
+        let mut bundle = stored_bundle(&session);
+        bundle.expires_at = Some("2020-01-01T00:00:00Z".into());
+        bundle.token_endpoint = auth.refusing_token_endpoint();
+        store_bundle(&mut session, &bundle);
+
+        let reason = session.bearer_for("google").unwrap_err();
+        assert!(reason.contains("needs to be reconnected"), "{reason}");
+        assert!(
+            grant_json(&session).is_none(),
+            "a refused grant keeps no tokens"
+        );
+        let tools = session.tools_list().unwrap().tools;
+        let gmail = tools.iter().find(|t| t.id == "gmail").unwrap();
+        assert_eq!(gmail.status, ToolConnectionStatus::NeedsAuth);
+    }
+
     /// Disconnecting is per provider, and it takes the tokens with it.
     #[test]
     fn disconnecting_gmail_disconnects_the_whole_google_grant() {
         let (mut session, _dir) = host();
         let auth = LocalAuthServer::start();
-        connect_gmail(&mut session, &auth);
+        connect_google(&mut session, &auth);
 
         let result = session
             .tools_disconnect(ToolRefParams {
@@ -691,7 +1010,8 @@ mod tests {
         let auth = LocalAuthServer::start();
         auth.disable_dynamic_registration();
 
-        connect_google(&mut session, &auth, false);
+        let (scopes, _) = provider_grant_shape("google");
+        connect_google_for(&mut session, &auth, scopes, false);
 
         let tools = session.tools_list().unwrap().tools;
         let gmail = tools.iter().find(|t| t.id == "gmail").unwrap();
@@ -705,6 +1025,55 @@ mod tests {
             session.mcp_servers_for_thread("t-inbox"),
             serde_json::json!([])
         );
+    }
+
+    /// A Chromium `--user-data-dir` takes one process at a time, and three
+    /// seeded bots chip Browser, so two live threads asking for it at once is
+    /// the ordinary case rather than an edge one. The second must be told no
+    /// here, where it becomes a skip with a reason, instead of inside the
+    /// adapter as a profile-lock crash.
+    #[test]
+    fn one_browser_profile_is_held_by_one_live_thread_at_a_time() {
+        let (mut session, _dir) = host();
+        let browser = catalog::find("browser").expect("browser");
+
+        let first = session
+            .claim_profile("t-research", browser)
+            .expect("the first claim");
+        // The same thread re-claiming — a respawned adapter — keeps its own.
+        assert_eq!(
+            session.claim_profile("t-research", browser).unwrap(),
+            first,
+            "a thread does not lock itself out"
+        );
+
+        // With a live adapter behind the lease, nobody else may have it.
+        session
+            .connections
+            .insert("t-research".into(), idle_adapter(&session));
+        let refused = session
+            .claim_profile("t-talent", browser)
+            .expect_err("the profile is taken");
+        assert!(refused.contains("in use by another thread"), "{refused}");
+
+        // When that thread's adapter is gone, so is its claim on the profile.
+        session.connections.remove("t-research");
+        assert_eq!(session.claim_profile("t-talent", browser).unwrap(), first);
+    }
+
+    /// A process that holds stdin open and answers nothing: enough to stand
+    /// for a live adapter without pretending to speak ACP.
+    fn idle_adapter(session: &HostSession) -> crate::host::acp::AcpConnection {
+        let runtime =
+            crate::host::acp::HarnessRuntime::from_runtime_json("idle", r#"{"command":"cat"}"#)
+                .expect("runtime");
+        crate::host::acp::AcpConnection::spawn(
+            &runtime,
+            None,
+            &session.log_dir.join("idle.log"),
+            std::sync::Arc::clone(&session.wake),
+        )
+        .expect("spawn")
     }
 
     #[test]
