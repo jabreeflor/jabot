@@ -1,0 +1,109 @@
+name: Release
+
+# Tag -> build -> sign -> notarize -> publish, in one job on one runner.
+#
+# It is one job and not a matrix because the artifact is a universal binary:
+# tauri-action expands a single universal `.app.tar.gz` into both the
+# `darwin-aarch64` and `darwin-x86_64` entries of `latest.json`, which is what
+# the updater plugin actually looks up (it has no `darwin-universal` fallback).
+# Two per-arch jobs racing to merge the same `latest.json` asset buys nothing.
+#
+# Everything secret comes from repository secrets. The runbook for creating
+# them, cutting a release, and verifying notarization is docs/packaging.md.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# A re-pushed tag must not race the first run into the same GitHub Release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    permissions:
+      # tauri-action creates the release and uploads the bundles.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both failures below are cheap to detect and expensive to hit late: the
+      # pubkey is only decoded after the whole app has compiled, and a version
+      # mismatch produces a `latest.json` whose `version` disagrees with the
+      # tag, so installed copies never see the update.
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          conf_version="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+          if [[ "$tag_version" != "$conf_version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match tauri.conf.json version $conf_version"
+            exit 1
+          fi
+          pubkey="$(node -p 'require("./src-tauri/tauri.conf.json").plugins.updater.pubkey')"
+          if [[ "$pubkey" == REPLACE_ME* ]]; then
+            echo "::error::plugins.updater.pubkey is still the placeholder — see docs/packaging.md"
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # `--target universal-apple-darwin` lipos one build of each.
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      # The bundler does the whole macOS pipeline itself once these env vars are
+      # present: it imports APPLE_CERTIFICATE into a throwaway keychain, checks
+      # the certificate against APPLE_SIGNING_IDENTITY, codesigns the .app and
+      # every nested executable with entitlements.plist and hardened runtime,
+      # then submits to notarytool and staples the ticket. No `security
+      # create-keychain` dance — that is the Tauri v1 recipe and it greps for an
+      # "Apple Development" identity, which is the wrong certificate type for
+      # Developer ID distribution.
+      #
+      # TAURI_SIGNING_* is the separate Ed25519 (minisign) keypair the updater
+      # uses. It is unrelated to Apple signing and cannot be turned off.
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: JaBot ${{ github.ref_name }}
+          releaseBody: |
+            macOS 13+, Apple Silicon and Intel. Download the `.dmg`.
+
+            Installed copies update themselves from `latest.json` in this
+            release once it is published.
+          # Draft, because publishing is what points
+          # `releases/latest/download/latest.json` at this build — every
+          # existing install starts updating the moment a human hits Publish.
+          releaseDraft: true
+          prerelease: false
+          # `createUpdaterArtifacts` lives here rather than in tauri.conf.json
+          # so that an unsigned `tauri build` (the CI bundle job, or a laptop)
+          # still works: with it on, the bundler hard-errors unless
+          # TAURI_SIGNING_PRIVATE_KEY is set.
+          args: >-
+            --target universal-apple-darwin
+            --config {"bundle":{"createUpdaterArtifacts":true}}

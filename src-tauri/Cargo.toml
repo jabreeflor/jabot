@@ -28,6 +28,11 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", default-features = false, features = ["apple-native"] }
+# Ships the update check against the signed release feed configured in
+# tauri.conf.json. macOS-only alongside keyring so the Linux e2e build of
+# jabot-hostd does not pay for reqwest. See docs/packaging.md for the one line
+# of Builder setup this still needs in lib.rs.
+tauri-plugin-updater = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

@@ -1,0 +1,50 @@
+/*
+ * Right-click menu on a thread row. Positioned in JS because it follows the
+ * pointer; clamped by the component so it never opens off-screen.
+ */
+
+.ctx-menu {
+  position: fixed;
+  z-index: 300;
+  background: var(--raise2);
+  border: 1px solid var(--edge-menu);
+  border-radius: 13px;
+  padding: 5px;
+  min-width: 180px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+.ctx-menu button {
+  display: flex;
+  width: 100%;
+  gap: 9px;
+  align-items: center;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  padding: var(--sp-3) 11px;
+  border-radius: 9px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ctx-menu button:hover {
+  background: var(--raise);
+}
+
+.ctx-menu button.danger {
+  color: var(--danger);
+}
+
+.ctx-menu button svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.ctx-menu .sep {
+  height: 1px;
+  background: var(--edge-menu);
+  margin: var(--sp-1) var(--sp-2);
+}

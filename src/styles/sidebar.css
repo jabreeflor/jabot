@@ -36,6 +36,26 @@
   cursor: text;
 }
 
+.sidebar-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  font-size: var(--fs-ui);
+}
+
+.sidebar-search input::placeholder {
+  color: var(--faint);
+}
+
+/* The whole field lights up, not just the text cursor's box. */
+.sidebar-search .field:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 .sidebar-search svg {
   flex: none;
   width: 14px;
@@ -247,6 +267,7 @@
 }
 
 .folder-toggle .name {
+  text-transform: uppercase;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
