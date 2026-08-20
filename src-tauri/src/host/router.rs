@@ -12,9 +12,9 @@ use super::protocol::methods::{
     ThreadOpenParams, ThreadRefParams, ThreadTranscriptParams, ToolRefParams, CREW_CREATE,
     CREW_LIST, CREW_REMOVE, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
     FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
-    INBOX_LIST, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SYNC_RESUME_FROM, THREAD_ARCHIVE,
-    THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_STATE, THREAD_TRANSCRIPT,
-    TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    INBOX_LIST, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS,
+    SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
+    THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 use super::HostSession;
 
@@ -89,6 +89,16 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: ThreadRefParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.thread_state(params)?)
+        }
+        THREAD_RESUME => {
+            session.require_hello()?;
+            let params: ThreadRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_resume(params)?)
+        }
+        SUPERVISOR_STATUS => {
+            session.require_hello()?;
+            to_value(session.supervisor_status()?)
         }
         THREAD_TRANSCRIPT => {
             session.require_hello()?;

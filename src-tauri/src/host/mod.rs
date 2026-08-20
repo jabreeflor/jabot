@@ -5,6 +5,7 @@
 
 mod acp;
 mod crew;
+mod git;
 mod harness;
 mod identity;
 mod lifecycle;
@@ -15,6 +16,7 @@ mod repo;
 mod router;
 mod seq;
 mod store;
+mod supervisor;
 mod tools;
 mod transcript;
 
@@ -22,6 +24,8 @@ mod transcript;
 pub use acp::AdapterWake;
 #[allow(unused_imports)]
 pub use crew::{is_known_tool, BOT_COLORS, HOST_TOOLS};
+#[allow(unused_imports)]
+pub use git::{Release, ThreadWorktree};
 #[allow(unused_imports)]
 pub use harness::{catalog::HarnessDescriptor, doctor::ProbeHost, resolve_command};
 #[allow(unused_imports)]
@@ -41,21 +45,24 @@ pub use protocol::{
     FolderThreadView, FolderView, GithubStatusResult, HarnessCardView, HarnessDoctorResult,
     HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams, HelloResult,
     JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, PromptMode,
-    QueuedPromptView, RequestId, ResurfaceReason, RpcError, StoreStatus, ThreadStateResult,
-    ThreadTranscriptParams, ThreadTranscriptResult, ToolCardView, ToolConnectResult,
-    ToolConnectionStatus, ToolDisconnectResult, ToolListResult, ToolRefParams, ToolTransport,
-    TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE,
-    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR,
-    HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE,
-    JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION,
-    SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
-    THREAD_OPEN, THREAD_REOPEN, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
+    QueuedPromptView, RequestId, ResumeOutcome, ResurfaceReason, RpcError, StoreStatus,
+    SupervisorStatusResult, ThreadResumeResult, ThreadStateResult, ThreadTranscriptParams,
+    ThreadTranscriptResult, ToolCardView, ToolConnectResult, ToolConnectionStatus,
+    ToolDisconnectResult, ToolListResult, ToolRefParams, ToolTransport, TranscriptEventView,
+    CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST,
+    FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH,
+    HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
+    PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT,
+    SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
+    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
     TOOLS_LIST,
 };
 #[allow(unused_imports)]
 pub use repo::{gh::GhAuth, git::RepoProbe, origin::Origin};
 #[allow(unused_imports)]
 pub use store::{NewFolder, NewThread, Secrets, Store, StoreError, ThreadRepo, ThreadRow};
+#[allow(unused_imports)]
+pub use supervisor::{ResumeReadiness, Supervisor, DEFAULT_SLEEP_GAP};
 #[allow(unused_imports)]
 pub use tools::catalog::CATALOG as TOOL_CATALOG;
 
@@ -73,6 +80,7 @@ use protocol::methods::{
     ResumeFromParams, ResumeFromResult, SessionUpdateParams,
 };
 use seq::SeqStore;
+use supervisor::Supervisor as SupervisorState;
 
 /// Process placement. In-process until a second client exists (#4).
 pub const HOST_MODE: &str = "in-process";
@@ -110,6 +118,8 @@ pub struct HostSession {
     /// the agent, so nothing durable should claim it has.
     prompt_queue: HashMap<String, VecDeque<transcript::queue::QueuedPrompt>>,
     lifecycle: LifecycleState,
+    /// Keep-alive, resume, and what this launch found on the ledger (#21).
+    supervisor: SupervisorState,
 }
 
 impl HostSession {
@@ -139,6 +149,16 @@ impl HostSession {
         // may open a thread on one before anything asks for the catalog, and
         // `threads.harness_id` is a foreign key.
         session.sync_harness_catalog();
+        // Before anything can ask. A client that says hello and immediately
+        // lists the Inbox has to see the same answer as one that connects an
+        // hour later — and until this runs, the ledger still claims runs are
+        // in flight for a process that no longer exists (#21).
+        session.reconcile_boot();
+        // After the ledger, because the sweep asks the store which threads
+        // still claim a tree — and before anything can open a new one, so a
+        // directory left by the last launch is collected rather than colliding
+        // with the thread that reuses its path (#23).
+        session.sweep_worktrees();
         session
     }
 
@@ -170,6 +190,7 @@ impl HostSession {
             mcp_profiles: HashMap::new(),
             prompt_queue: HashMap::new(),
             lifecycle: LifecycleState::from_env(),
+            supervisor: SupervisorState::from_env(),
         }
     }
 

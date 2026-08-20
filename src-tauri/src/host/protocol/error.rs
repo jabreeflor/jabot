@@ -20,6 +20,7 @@ pub const STORE_UNAVAILABLE: i64 = -32007;
 pub const RUN_IN_FLIGHT: i64 = -32008;
 pub const FOLDER_EXISTS: i64 = -32009;
 pub const CHIEF_REQUIRED: i64 = -32010;
+pub const WORKTREE_FAILED: i64 = -32011;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -80,6 +81,17 @@ pub enum RpcError {
     /// other bot is the user's to remove (#6, #17).
     #[error("Chief cannot be removed")]
     ChiefRequired { bot_id: String },
+    /// The thread's worktree could not be created (#23). A refusal rather than
+    /// a quiet fall back to the folder's own checkout: the fallback is two
+    /// agents and a human editing one directory, which is the failure this
+    /// costs the most to debug. New Chat holds the draft and offers "work in
+    /// my current folder" as the deliberate way through.
+    #[error("could not create a worktree for {thread_id}: {detail}")]
+    WorktreeFailed {
+        thread_id: String,
+        path: Option<String>,
+        detail: String,
+    },
 }
 
 impl RpcError {
@@ -101,6 +113,7 @@ impl RpcError {
             Self::RunInFlight { .. } => RUN_IN_FLIGHT,
             Self::FolderExists { .. } => FOLDER_EXISTS,
             Self::ChiefRequired { .. } => CHIEF_REQUIRED,
+            Self::WorktreeFailed { .. } => WORKTREE_FAILED,
         }
     }
 
@@ -149,6 +162,15 @@ impl RpcError {
                 "path": path,
             })),
             Self::ChiefRequired { bot_id } => Some(serde_json::json!({ "botId": bot_id })),
+            Self::WorktreeFailed {
+                thread_id,
+                path,
+                detail,
+            } => Some(serde_json::json!({
+                "threadId": thread_id,
+                "path": path,
+                "detail": detail,
+            })),
             _ => None,
         }
     }
