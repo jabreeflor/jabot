@@ -220,6 +220,32 @@ impl Store {
         overlay::transition_thread(&self.conn, id, from, to, reason)
     }
 
+    /// Atomic resurface — see [`overlay::resurface_thread`].
+    #[allow(clippy::too_many_arguments)]
+    pub fn resurface_thread(
+        &self,
+        id: &str,
+        from: &str,
+        reason: &str,
+        kind: &str,
+        title: &str,
+        summary: &str,
+        payload_json: Option<&str>,
+        run_id: Option<&str>,
+    ) -> Result<(ThreadRow, InboxEventRow), StoreError> {
+        overlay::resurface_thread(
+            &self.conn,
+            id,
+            from,
+            reason,
+            kind,
+            title,
+            summary,
+            payload_json,
+            run_id,
+        )
+    }
+
     pub fn tombstone_thread(&self, id: &str) -> Result<ThreadRow, StoreError> {
         overlay::tombstone_thread(&self.conn, id)
     }

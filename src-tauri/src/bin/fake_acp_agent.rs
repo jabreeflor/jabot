@@ -3,6 +3,11 @@
 //! Modes (first arg):
 //! - `echo` (default): initialize, session/new, stream one agent chunk, return
 //! - `permission`: request `session/request_permission` before completing
+//! - `read-permission`: same, but a `read` tool call — the one kind Wait for
+//!   Inbox is allowed to answer on the user's behalf
+//! - `hang`: stream a chunk and then go silent forever, so the idle-timeout
+//!   backstop has something real to fire on
+//! - `fail`: return a non-`end_turn` stop reason
 //! - `grandchild`: spawn a `sleep` grandchild in the same process group
 
 use std::io::{self, BufRead, Write};
@@ -88,31 +93,45 @@ fn main() {
                         "content": { "type": "text", "text": "hello from fake-acp" }
                     }),
                 );
-                if mode == "permission" {
-                    request(
+                match mode.as_str() {
+                    "permission" | "read-permission" => {
+                        let (title, kind) = if mode == "read-permission" {
+                            ("Read src/auth.ts", "read")
+                        } else {
+                            ("Run ls", "execute")
+                        };
+                        request(
+                            &mut stdout,
+                            serde_json::json!(9001),
+                            "session/request_permission",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "toolCall": {
+                                    "toolCallId": "call-1",
+                                    "title": title,
+                                    "kind": kind
+                                },
+                                "options": [
+                                    { "optionId": "allow_once", "name": "Allow", "kind": "allow_once" },
+                                    { "optionId": "reject_once", "name": "Deny", "kind": "reject_once" }
+                                ]
+                            }),
+                        );
+                        pending_prompt_id = id;
+                    }
+                    // Never answers. The turn stays open and the host has to
+                    // notice the silence on its own.
+                    "hang" => {}
+                    "fail" => reply(
                         &mut stdout,
-                        serde_json::json!(9001),
-                        "session/request_permission",
-                        serde_json::json!({
-                            "sessionId": session_id,
-                            "toolCall": {
-                                "toolCallId": "call-1",
-                                "title": "Run ls",
-                                "kind": "execute"
-                            },
-                            "options": [
-                                { "optionId": "allow_once", "name": "Allow", "kind": "allow_once" },
-                                { "optionId": "reject_once", "name": "Deny", "kind": "reject_once" }
-                            ]
-                        }),
-                    );
-                    pending_prompt_id = id;
-                } else {
-                    reply(
+                        id,
+                        serde_json::json!({ "stopReason": "max_tokens" }),
+                    ),
+                    _ => reply(
                         &mut stdout,
                         id,
                         serde_json::json!({ "stopReason": "end_turn" }),
-                    );
+                    ),
                 }
             }
             "session/cancel" => {

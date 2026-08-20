@@ -605,6 +605,13 @@ impl HostSession {
         }
     }
 
+    /// The stuck backstop's threshold. `resurface.md` starts it at ten minutes
+    /// and says to make it a setting; this is that setting's entry point, and
+    /// what a test uses to watch a real timeout fire in milliseconds.
+    pub fn set_idle_timeout(&mut self, timeout: Duration) {
+        self.lifecycle.idle_timeout = timeout;
+    }
+
     pub(crate) fn acp_state(&self, thread_id: &str) -> AcpState {
         self.lifecycle
             .get(thread_id)
@@ -649,39 +656,6 @@ impl HostSession {
         Ok(updated)
     }
 
-    /// Persist-then-notify, in that order and never the other one.
-    ///
-    /// Returns `false` when the thread is not somewhere a resurface applies —
-    /// an `active` thread finishing a turn is the common case and is not an
-    /// error. A `StoreError` is: the card did not land, so nothing is told.
-    fn resurface(
-        &mut self,
-        thread_id: &str,
-        reason: ResurfaceReason,
-    ) -> Result<Option<ThreadRow>, RpcError> {
-        let Some(row) = self.lifecycle_thread(thread_id)? else {
-            return Ok(None);
-        };
-        let from = effective_state(&row);
-        let current_reason = row
-            .resurfaced_reason
-            .as_deref()
-            .and_then(ResurfaceReason::parse);
-        if state::next_state(from, ThreadAction::Resurface(reason), current_reason).is_err() {
-            return Ok(None);
-        }
-        let store = self.store_or_err()?;
-        let updated = store
-            .transition_thread(
-                thread_id,
-                from.as_str(),
-                ThreadState::Resurfaced.as_str(),
-                Some(reason.as_str()),
-            )
-            .map_err(store_error)?;
-        Ok(Some(updated))
-    }
-
     fn try_resurface(
         &mut self,
         thread_id: &str,
@@ -695,8 +669,15 @@ impl HostSession {
         }
     }
 
-    /// The whole persist-then-notify sequence: overlay row, then Inbox card,
-    /// then — only if both landed — the notification.
+    /// Persist, then notify — in that order and never the other one.
+    ///
+    /// The overlay state and the Inbox card land together in one transaction;
+    /// `inbox/resurface` is queued only after that returns. A notification that
+    /// never reaches a client therefore loses nothing, and a store failure
+    /// tells nobody a thread came back when it did not.
+    ///
+    /// Returns `false` when the thread is not somewhere a resurface applies —
+    /// an `active` thread finishing a turn is the common case, not an error.
     fn resurface_and_notify(
         &mut self,
         thread_id: &str,
@@ -704,19 +685,29 @@ impl HostSession {
         summary: &str,
         run_id: Option<&str>,
     ) -> Result<bool, RpcError> {
-        let Some(row) = self.resurface(thread_id, reason)? else {
+        let Some(row) = self.lifecycle_thread(thread_id)? else {
             return Ok(false);
         };
+        let from = effective_state(&row);
+        let current_reason = row
+            .resurfaced_reason
+            .as_deref()
+            .and_then(ResurfaceReason::parse);
+        if state::next_state(from, ThreadAction::Resurface(reason), current_reason).is_err() {
+            return Ok(false);
+        }
         let title = resurface::card_title(&row.title, reason);
         let payload = json!({ "reason": reason.as_str() });
         self.store_or_err()?
-            .insert_inbox_event(
+            .resurface_thread(
                 thread_id,
-                run_id,
+                from.as_str(),
+                reason.as_str(),
                 resurface::inbox_kind(reason),
                 &title,
                 summary,
                 Some(&payload.to_string()),
+                run_id,
             )
             .map_err(store_error)?;
         self.notify_inbox_resurface(thread_id, reason);

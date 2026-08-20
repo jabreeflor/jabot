@@ -526,3 +526,42 @@ pub fn get_session_receipt(
     .optional()
     .map_err(Into::into)
 }
+
+/// The resurface write: overlay state and Inbox card, or neither.
+///
+/// Both rows land in one transaction so a client can never be told a thread
+/// came back without the card that says why still being on disk — and so a
+/// failure part-way through does not leave a resurfaced thread with no Inbox
+/// row to open. The notification is emitted by the caller, strictly after this
+/// returns `Ok` (#15, persist-then-notify).
+#[allow(clippy::too_many_arguments)]
+pub fn resurface_thread(
+    conn: &Connection,
+    id: &str,
+    from: &str,
+    reason: &str,
+    kind: &str,
+    title: &str,
+    summary: &str,
+    payload_json: Option<&str>,
+    run_id: Option<&str>,
+) -> Result<(ThreadRow, InboxEventRow), StoreError> {
+    let tx = conn.unchecked_transaction()?;
+    let now = now_utc();
+    let changed = tx.execute(
+        "UPDATE threads SET
+            state = 'resurfaced',
+            resurfaced_reason = ?3,
+            resurfaced_at = ?4,
+            updated_at = ?4
+         WHERE id = ?1 AND state = ?2 AND deleted_at IS NULL",
+        params![id, from, reason, now],
+    )?;
+    if changed == 0 {
+        return Err(StoreError::NotFound(id.into()));
+    }
+    let event = insert_inbox_event(&tx, id, run_id, kind, title, summary, payload_json)?;
+    let row = get_thread(&tx, id)?.ok_or_else(|| StoreError::NotFound(id.into()))?;
+    tx.commit()?;
+    Ok((row, event))
+}
