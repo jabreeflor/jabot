@@ -19,6 +19,7 @@ export const THREAD_REOPEN = "thread/reopen";
 export const THREAD_ARCHIVE = "thread/archive";
 export const THREAD_DELETE = "thread/delete";
 export const THREAD_STATE = "thread/state";
+export const THREAD_TRANSCRIPT = "thread/transcript";
 export const INBOX_RESURFACE = "inbox/resurface";
 export const INBOX_LIST = "inbox/list";
 export const HARNESS_LIST = "harness/list";
@@ -31,6 +32,10 @@ export const FOLDER_REGISTER = "folder/register";
 export const FOLDER_UPDATE = "folder/update";
 export const FOLDER_FORGET = "folder/forget";
 export const GITHUB_STATUS = "github/status";
+export const CREW_LIST = "crew/list";
+export const CREW_CREATE = "crew/create";
+export const CREW_UPDATE = "crew/update";
+export const CREW_REMOVE = "crew/remove";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 
 export type RequestId = number | string | null;
@@ -154,9 +159,21 @@ export interface RuntimeSpec {
   installHint?: string;
 }
 
+/**
+ * Steer vs redispatch (#14): what a prompt does to a thread that is already
+ * busy. ACP has no mid-turn steering primitive — one turn per session, and the
+ * stop reason comes back on the response — so the honest choices are to wait
+ * for the turn or to end it first.
+ *
+ * `reject` is the default on the wire as well as in the host: a client that
+ * has not been taught about the queue cannot grow one by accident.
+ */
+export type PromptMode = "reject" | "queue" | "interrupt";
+
 export interface PromptParams {
   threadId: string;
   content: unknown;
+  mode?: PromptMode;
   cwd?: string;
   harnessId?: string;
   runtime?: RuntimeSpec;
@@ -165,7 +182,45 @@ export interface PromptParams {
 export interface PromptResult {
   threadId: string;
   acpSessionId: string;
+  /** The agent has it. False with `queued` means it is only held. */
   accepted: boolean;
+  queued?: boolean;
+  /** 1 = next out. Only meaningful while `queued`. */
+  queuePosition?: number;
+}
+
+export interface ThreadTranscriptParams {
+  threadId: string;
+  /** Exclusive: only rows above this `seq`. */
+  afterSeq?: number;
+  /** Newest-N window, still returned oldest-first. */
+  limit?: number;
+}
+
+/** One `transcript_events` row: the ACP notification exactly as it arrived, so
+    a replay and the live stream reduce through the same mapper. */
+export interface TranscriptEventView {
+  seq: number;
+  method: string;
+  payload: unknown;
+  createdAt: string;
+}
+
+/** A prompt the user has sent that the agent has not been given yet. */
+export interface QueuedPromptView {
+  position: number;
+  content: unknown;
+  queuedAt: string;
+}
+
+export interface ThreadTranscriptResult {
+  threadId: string;
+  /** The log's head, whether or not it is in `events`. A live client applies
+      notifications whose `transcriptSeq` is above this and drops the rest. */
+  headSeq: number;
+  events: TranscriptEventView[];
+  truncated: boolean;
+  queued: QueuedPromptView[];
 }
 
 export interface SessionCancelResult {
@@ -567,6 +622,97 @@ export interface GithubStatusResult {
   ghPath?: string;
 }
 
+/** A `bots` row as the crew grid and the bot editor see it (#17).
+ *
+ * `tools` is the parsed allowlist, not the stored JSON text. The editor **is**
+ * this record: what it saves is what the next session is spawned with. */
+export interface BotView {
+  botId: string;
+  name: string;
+  /** A colour token the renderer can render — `BotColor` in `components/types`.
+      The host keeps the vocabulary closed, so this cast is safe. */
+  color: string;
+  /** Persona / system prompt, also mirrored to `instructions.md` in the bot's
+      memory directory where the session can read it. */
+  instructions: string;
+  /** MCP catalog ids, plus host-tool ids for Chief (#6, #18). */
+  tools: string[];
+  harnessId: string;
+  /** Exactly one bot has this, it is seeded, and `crew/remove` refuses it. */
+  isChief: boolean;
+  /** Which pack's fields were copied when this bot was added. History, not a
+      link: nothing ever reads back through it. */
+  templateId?: string;
+  /** The bot's own directory — `instructions.md`, `MEMORY.md`, and the cwd a
+      worker's standing thread runs in. Absent on a host with no data dir. */
+  memoryDir?: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** A shipped template pack: a bot record without an identity (#6). Adding one
+    copies these fields; there is no live link back. */
+export interface BotTemplateView {
+  templateId: string;
+  name: string;
+  color: string;
+  instructions: string;
+  tools: string[];
+  harnessId: string;
+}
+
+/** One of Chief's host tools (#6). Not MCP, so not in `tools/list` — but the
+    crew grid still has to name it rather than print `handoff_to_bot`. */
+export interface CrewHostToolView {
+  id: string;
+  label: string;
+  blurb: string;
+}
+
+export interface CrewListResult {
+  bots: BotView[];
+  templates: BotTemplateView[];
+  hostTools: CrewHostToolView[];
+}
+
+/** Add a bot. Every field is optional: a `templateId` supplies whatever the
+    caller does not, and the result is a snapshot either way. */
+export interface CrewCreateParams {
+  templateId?: string;
+  name?: string;
+  color?: string;
+  instructions?: string;
+  tools?: string[];
+  harnessId?: string;
+}
+
+/** A patch: an omitted field is left alone, so changing a harness cannot
+    silently discard the instructions the user typed. */
+export interface CrewUpdateParams {
+  botId: string;
+  name?: string;
+  color?: string;
+  instructions?: string;
+  tools?: string[];
+  harnessId?: string;
+}
+
+export interface CrewRefParams {
+  botId: string;
+}
+
+/** Removing a bot takes the row, never the directory: its markdown memory
+    outlives it, the same way forgetting a folder leaves the checkout alone. */
+export interface CrewRemoveResult {
+  botId: string;
+  removed: boolean;
+  /** Threads that lost their bot and kept everything else — their cwd,
+      harness and runtime were stamped on them at spawn. */
+  detachedThreads: number;
+  memoryDir?: string;
+}
+
 export interface PermissionReplyParams {
   requestId: string;
   deviceId: string;
@@ -599,6 +745,11 @@ export interface Envelope {
 
 export interface SessionUpdateParams extends Envelope {
   acp: unknown;
+  /** Where this event landed in `transcript_events`. `seq` on the envelope
+      orders notifications; this orders the durable log, and only this one can
+      be compared with `thread/transcript`'s `headSeq`. Absent on a host with
+      no store — which is also a host with nothing to hydrate from. */
+  transcriptSeq?: number;
 }
 
 export interface PermissionAskParams extends Envelope {
@@ -637,4 +788,7 @@ export const RPC_ERROR = {
   /** This directory, or the checkout it belongs to, is already a folder (#16).
       `data.folderId` is the one that already has it. */
   FOLDER_EXISTS: -32009,
+  /** Chief is the one crew seat the product assumes exists (#6, #17).
+      `data.botId` is the bot that was refused. */
+  CHIEF_REQUIRED: -32010,
 } as const;
