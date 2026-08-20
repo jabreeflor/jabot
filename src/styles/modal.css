@@ -69,6 +69,14 @@
   border-color: var(--dim);
 }
 
+/* What the host said went wrong — the only place a registration failure can
+   be read, since the modal stays open on error rather than losing the form. */
+.modal-error {
+  margin-top: 14px;
+  color: var(--red);
+  font-size: var(--fs-meta);
+}
+
 .modal .macts {
   display: flex;
   justify-content: flex-end;

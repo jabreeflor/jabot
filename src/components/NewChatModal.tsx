@@ -16,6 +16,7 @@ export function NewChatModal({
   folders,
   defaultFolderId = null,
   defaultHarnessId,
+  error = null,
   onStart,
   onCancel,
 }: {
@@ -23,6 +24,9 @@ export function NewChatModal({
   folders: readonly Folder[];
   defaultFolderId?: string | null;
   defaultHarnessId?: string;
+  /** Why the last attempt did not start a session. The card stays open holding
+      the draft, because a refused spawn is something to fix and retry. */
+  error?: string | null;
   onStart: (draft: NewChatDraft) => void;
   onCancel: () => void;
 }) {
@@ -66,6 +70,12 @@ export function NewChatModal({
         placeholder="e.g. Add dark mode to settings"
         onChange={(event) => setTask(event.target.value)}
       />
+
+      {error && (
+        <p className="modal-error" role="alert">
+          {error}
+        </p>
+      )}
 
       <div className="macts">
         <button type="button" className="btn" onClick={onCancel}>

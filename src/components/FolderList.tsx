@@ -8,6 +8,10 @@
 //!
 //! Folded threads are not listed at all. That is the promise fold makes: the
 //! row goes away and comes back through the Inbox.
+//!
+//! A folder whose directory is not a git checkout is badged rather than hidden:
+//! it runs threads perfectly well and only the PR view has nothing to say about
+//! it (folders-and-auth.md).
 
 import { useState } from "react";
 
@@ -47,6 +51,10 @@ export function FolderList({
                 type="button"
                 className="folder-toggle"
                 aria-expanded={open}
+                // The registered directory, and the repo it turned out to be —
+                // the two things a folder row cannot show but a user picking
+                // between two checkouts of the same project needs.
+                title={folder.repo ? `${folder.path} · ${folder.repo}` : folder.path}
                 onClick={() =>
                   setCollapsed((current) =>
                     open
@@ -58,6 +66,13 @@ export function FolderList({
                 <ChevronDownIcon className="chev" />
                 <FolderIcon />
                 <span className="name">{folder.name}</span>
+                {/* Only when the host has actually looked: `undefined` is "not
+                    asked yet", and a badge for that would be a lie. */}
+                {folder.isGit === false && (
+                  <span className="folder-badge" title="Not a git repo — threads run here, pull requests do not">
+                    no git
+                  </span>
+                )}
                 {!open && <span className="count">{folder.threads.length}</span>}
               </button>
               <button
