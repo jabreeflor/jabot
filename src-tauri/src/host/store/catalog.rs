@@ -6,31 +6,49 @@ use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use super::error::StoreError;
-use super::models::{BotRow, FolderRow, HarnessRow};
+use super::models::{BotRow, FolderPatch, FolderRow, HarnessRow, NewFolder};
 use super::{env_key_looks_secret, map_bot, map_folder, map_harness, now_utc};
 
-pub fn insert_folder(
-    conn: &Connection,
-    name: &str,
-    path: &str,
-    sort_order: i64,
-) -> Result<FolderRow, StoreError> {
-    if name.trim().is_empty() || path.trim().is_empty() {
+/// Column order for [`map_folder`], in one place so a new column lands in every
+/// read at once (same reason `overlay.rs` keeps `THREAD_COLUMNS`).
+const FOLDER_COLUMNS: &str = "id, name, path, sort_order, created_at, updated_at, repo_root, \
+     origin_url, forge_host, repo_owner, repo_name, default_branch, setup_command, \
+     files_to_copy_json";
+
+pub fn insert_folder(conn: &Connection, new: &NewFolder) -> Result<FolderRow, StoreError> {
+    if new.name.trim().is_empty() || new.path.trim().is_empty() {
         return Err(StoreError::invalid("folder name and path are required"));
     }
+    serde_json::from_str::<Vec<String>>(&new.files_to_copy_json)?;
     let id = Uuid::new_v4().to_string();
     let now = now_utc();
     conn.execute(
-        "INSERT INTO folders (id, name, path, sort_order, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-        params![id, name, path, sort_order, now],
+        "INSERT INTO folders (
+            id, name, path, sort_order, created_at, updated_at, repo_root, origin_url,
+            forge_host, repo_owner, repo_name, default_branch, setup_command, files_to_copy_json
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            id,
+            new.name,
+            new.path,
+            new.sort_order,
+            now,
+            new.repo_root,
+            new.origin_url,
+            new.forge_host,
+            new.repo_owner,
+            new.repo_name,
+            new.default_branch,
+            new.setup_command,
+            new.files_to_copy_json,
+        ],
     )?;
     get_folder(conn, &id)?.ok_or_else(|| StoreError::NotFound(id))
 }
 
 pub fn get_folder(conn: &Connection, id: &str) -> Result<Option<FolderRow>, StoreError> {
     conn.query_row(
-        "SELECT id, name, path, sort_order, created_at, updated_at FROM folders WHERE id = ?1",
+        &format!("SELECT {FOLDER_COLUMNS} FROM folders WHERE id = ?1"),
         [id],
         map_folder,
     )
@@ -38,15 +56,123 @@ pub fn get_folder(conn: &Connection, id: &str) -> Result<Option<FolderRow>, Stor
     .map_err(Into::into)
 }
 
+/// The two ways a directory is already registered: it is the same path, or it
+/// is a different path inside the same checkout. Both have to be found *before*
+/// an insert, so the answer is "here is the folder you already have" rather
+/// than a unique-constraint failure the user cannot act on.
+pub fn find_folder_by_path(conn: &Connection, path: &str) -> Result<Option<FolderRow>, StoreError> {
+    conn.query_row(
+        &format!("SELECT {FOLDER_COLUMNS} FROM folders WHERE path = ?1"),
+        [path],
+        map_folder,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+pub fn find_folder_by_repo_root(
+    conn: &Connection,
+    repo_root: &str,
+) -> Result<Option<FolderRow>, StoreError> {
+    conn.query_row(
+        &format!("SELECT {FOLDER_COLUMNS} FROM folders WHERE repo_root = ?1"),
+        [repo_root],
+        map_folder,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
 pub fn list_folders(conn: &Connection) -> Result<Vec<FolderRow>, StoreError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, name, path, sort_order, created_at, updated_at
-         FROM folders ORDER BY sort_order, name",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {FOLDER_COLUMNS} FROM folders ORDER BY sort_order, name"
+    ))?;
     let rows = stmt
         .query_map([], map_folder)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// Where a new folder goes in the sidebar: after the ones already there.
+pub fn next_folder_sort_order(conn: &Connection) -> Result<i64, StoreError> {
+    conn.query_row(
+        "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM folders",
+        [],
+        |row| row.get(0),
+    )
+    .map_err(Into::into)
+}
+
+/// Rename, edit the setup script, or re-record what git says today. Each
+/// column moves only when the patch names it — a rename must not silently
+/// clear the setup command the user wrote last week.
+pub fn update_folder(
+    conn: &Connection,
+    id: &str,
+    patch: &FolderPatch,
+) -> Result<FolderRow, StoreError> {
+    if let Some(name) = &patch.name {
+        if name.trim().is_empty() {
+            return Err(StoreError::invalid("folder name must be non-empty"));
+        }
+    }
+    if let Some(files) = &patch.files_to_copy_json {
+        serde_json::from_str::<Vec<String>>(files)?;
+    }
+    let now = now_utc();
+    let repo = patch.repo.clone().unwrap_or_default();
+    let changed = conn.execute(
+        "UPDATE folders SET
+            name = COALESCE(?2, name),
+            setup_command = CASE WHEN ?3 THEN ?4 ELSE setup_command END,
+            files_to_copy_json = COALESCE(?5, files_to_copy_json),
+            repo_root = CASE WHEN ?6 THEN ?7 ELSE repo_root END,
+            origin_url = CASE WHEN ?6 THEN ?8 ELSE origin_url END,
+            forge_host = CASE WHEN ?6 THEN ?9 ELSE forge_host END,
+            repo_owner = CASE WHEN ?6 THEN ?10 ELSE repo_owner END,
+            repo_name = CASE WHEN ?6 THEN ?11 ELSE repo_name END,
+            default_branch = CASE WHEN ?6 THEN ?12 ELSE default_branch END,
+            updated_at = ?13
+         WHERE id = ?1",
+        params![
+            id,
+            patch.name,
+            patch.setup_command.is_some(),
+            patch.setup_command.clone().flatten(),
+            patch.files_to_copy_json,
+            patch.repo.is_some(),
+            repo.repo_root,
+            repo.origin_url,
+            repo.forge_host,
+            repo.repo_owner,
+            repo.repo_name,
+            repo.default_branch,
+            now,
+        ],
+    )?;
+    if changed == 0 {
+        return Err(StoreError::NotFound(id.into()));
+    }
+    get_folder(conn, id)?.ok_or_else(|| StoreError::NotFound(id.into()))
+}
+
+/// Forget a folder without touching the directory it points at.
+///
+/// The threads survive: `threads.folder_id` is `ON DELETE SET NULL`, and each
+/// row already carries its own `cwd`, `repo_root` and `repo` from spawn — so a
+/// session started here keeps working in the checkout it was started in, and
+/// keeps saying which repo that is, after the sidebar row is gone.
+pub fn delete_folder(conn: &Connection, id: &str) -> Result<usize, StoreError> {
+    let detached: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM threads WHERE folder_id = ?1 AND deleted_at IS NULL",
+        [id],
+        |row| row.get(0),
+    )?;
+    let changed = conn.execute("DELETE FROM folders WHERE id = ?1", [id])?;
+    if changed == 0 {
+        return Err(StoreError::NotFound(id.into()));
+    }
+    Ok(detached as usize)
 }
 
 pub fn list_harnesses(conn: &Connection) -> Result<Vec<HarnessRow>, StoreError> {

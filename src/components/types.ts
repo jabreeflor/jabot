@@ -88,6 +88,15 @@ export interface Folder {
   id: string;
   name: string;
   path: string;
+  /** Where a thread in this folder starts: the repository root when there is
+      one, else the registered path. The host resolves it, so New Chat passes
+      it straight through to `thread/open` (#16, and #23 swaps in a worktree). */
+  cwd?: string;
+  /** False for a directory git does not claim — a folder that works for
+      threads and has no PR surface. `undefined` means not asked yet. */
+  isGit?: boolean;
+  /** `owner/name` from `origin`, when there is one. */
+  repo?: string;
 }
 
 /** The sidebar needs each folder with its threads — the join #16 will do. */

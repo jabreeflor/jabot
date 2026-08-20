@@ -3,6 +3,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+  FOLDER_FORGET,
+  FOLDER_LIST,
+  FOLDER_REGISTER,
+  FOLDER_UPDATE,
+  GITHUB_STATUS,
   HARNESS_DOCTOR,
   HARNESS_LIST,
   HOST_HEALTH,
@@ -24,6 +29,14 @@ import {
   TOOLS_CONNECT,
   TOOLS_DISCONNECT,
   TOOLS_LIST,
+  type FolderForgetResult,
+  type FolderListResult,
+  type FolderRefParams,
+  type FolderRegisterParams,
+  type FolderUpdateParams,
+  type FolderView,
+  type GithubStatusParams,
+  type GithubStatusResult,
   type HarnessDoctorParams,
   type HarnessDoctorResult,
   type HarnessListResult,
@@ -190,6 +203,34 @@ export class HostClient {
   /** Forget the grant behind this tool — and every tool that shared it. */
   async disconnectTool(params: ToolRefParams): Promise<ToolDisconnectResult> {
     return this.request<ToolDisconnectResult>(TOOLS_DISCONNECT, params);
+  }
+
+  /** Every registered folder with the threads the sidebar draws under it —
+      the join the host owns, so the renderer never assembles one (#16). */
+  async listFolders(): Promise<FolderListResult> {
+    return this.request<FolderListResult>(FOLDER_LIST);
+  }
+
+  /** Register a directory. Throws `FOLDER_EXISTS` when this checkout is
+      already a folder; `data.folderId` is the one that already has it. */
+  async registerFolder(params: FolderRegisterParams): Promise<FolderView> {
+    return this.request<FolderView>(FOLDER_REGISTER, params);
+  }
+
+  /** Rename, edit the setup script or files-to-copy, or re-probe git. */
+  async updateFolder(params: FolderUpdateParams): Promise<FolderView> {
+    return this.request<FolderView>(FOLDER_UPDATE, params);
+  }
+
+  /** Remove the sidebar row. Never the directory, never the threads. */
+  async forgetFolder(params: FolderRefParams): Promise<FolderForgetResult> {
+    return this.request<FolderForgetResult>(FOLDER_FORGET, params);
+  }
+
+  /** Whether the host can act as the user on GitHub, and as whom. Never
+      carries a token: MVP auth is the user's own `gh` login (#16). */
+  async githubStatus(params: GithubStatusParams = {}): Promise<GithubStatusResult> {
+    return this.request<GithubStatusResult>(GITHUB_STATUS, params);
   }
 
   async replyPermission(params: PermissionReplyParams): Promise<void> {

@@ -2,6 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
+/// One registered local directory (#16) — not a group of repos, and not a
+/// remote. `repo_root` is `None` for a directory git does not claim: such a
+/// folder still runs threads, it just has no PR surface.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FolderRow {
@@ -11,6 +14,58 @@ pub struct FolderRow {
     pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
+    pub repo_root: Option<String>,
+    pub origin_url: Option<String>,
+    pub forge_host: Option<String>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub default_branch: Option<String>,
+    /// Run once in a fresh worktree before the agent starts (#23 consumes it).
+    pub setup_command: Option<String>,
+    /// Gitignored files a worktree needs copied in — `.env` and friends.
+    pub files_to_copy_json: String,
+}
+
+/// What `folder/register` writes. The git columns come from probing the
+/// directory once, at registration, rather than on every read: a sidebar that
+/// shells out to git per render is a sidebar that stutters.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewFolder {
+    pub name: String,
+    pub path: String,
+    pub sort_order: i64,
+    pub repo_root: Option<String>,
+    pub origin_url: Option<String>,
+    pub forge_host: Option<String>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub default_branch: Option<String>,
+    pub setup_command: Option<String>,
+    pub files_to_copy_json: String,
+}
+
+/// A field-by-field patch: `None` leaves the column alone, which is what lets
+/// a rename and a setup-script edit be the same method.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderPatch {
+    pub name: Option<String>,
+    pub setup_command: Option<Option<String>>,
+    pub files_to_copy_json: Option<String>,
+    /// A re-probe: origin and default branch as git answers today.
+    pub repo: Option<FolderRepoPatch>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderRepoPatch {
+    pub repo_root: Option<String>,
+    pub origin_url: Option<String>,
+    pub forge_host: Option<String>,
+    pub repo_owner: Option<String>,
+    pub repo_name: Option<String>,
+    pub default_branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -71,6 +126,14 @@ pub struct ThreadRow {
     /// Why the thread came back. `failed` and `stuck` are deliberately
     /// distinct: one needs a retry, the other needs patience or a cancel.
     pub resurfaced_reason: Option<String>,
+    /// Where the thread lives, stamped at spawn and never re-derived
+    /// (setup-porting §19). These outlive the folder they were copied from.
+    pub repo_root: Option<String>,
+    /// `owner/name`, as `gh` spells it.
+    pub repo: Option<String>,
+    pub forge_host: Option<String>,
+    pub branch: Option<String>,
+    pub host_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -84,6 +147,23 @@ pub struct NewThread {
     pub runtime_json: String,
     pub title: String,
     pub fold_policy: String,
+    /// Where this thread works, resolved once at spawn (setup-porting §19).
+    #[serde(default)]
+    pub repo: ThreadRepo,
+}
+
+/// The repo half of a spawn record. Every field is optional because a thread
+/// with no folder — a bot's standing thread in its memory directory — is a
+/// thread with no repo, and that is a legal answer rather than a missing one.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadRepo {
+    pub repo_root: Option<String>,
+    /// `owner/name`.
+    pub repo: Option<String>,
+    pub forge_host: Option<String>,
+    pub branch: Option<String>,
+    pub host_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
