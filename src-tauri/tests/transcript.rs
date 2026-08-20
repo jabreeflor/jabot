@@ -267,6 +267,19 @@ fn a_queued_prompt_is_sent_when_the_turn_in_flight_ends() {
     assert_eq!(said, vec!["first", "second"]);
     assert!(settled["queued"].as_array().unwrap().is_empty());
 
+    // And the dispatched one says it came off the queue. A client mirrors
+    // `queued` — the queue is RAM and nothing else reports it — so without
+    // this marker its "N messages waiting" strip has no event to shrink on
+    // and stays up over a prompt the agent has already been given.
+    let dispatched: Vec<bool> = settled["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["payload"]["sessionUpdate"] == "user_message_chunk")
+        .map(|e| e["payload"]["jabot"]["event"] == "prompt_dispatched")
+        .collect();
+    assert_eq!(dispatched, vec![false, true]);
+
     // Two turns, two runs — never one run collecting both outcomes (#15).
     let state = host.ok(THREAD_STATE, json!({ "threadId": "t-queue" }));
     assert_eq!(state["runs"].as_array().unwrap().len(), 2);
