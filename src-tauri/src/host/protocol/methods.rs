@@ -25,6 +25,8 @@ pub const THREAD_ARCHIVE: &str = "thread/archive";
 pub const THREAD_DELETE: &str = "thread/delete";
 pub const THREAD_STATE: &str = "thread/state";
 pub const THREAD_TRANSCRIPT: &str = "thread/transcript";
+pub const THREAD_RESUME: &str = "thread/resume";
+pub const SUPERVISOR_STATUS: &str = "supervisor/status";
 pub const INBOX_RESURFACE: &str = "inbox/resurface";
 pub const HARNESS_LIST: &str = "harness/list";
 pub const HARNESS_DOCTOR: &str = "harness/doctor";
@@ -72,6 +74,8 @@ pub const CLIENT_METHODS: &[&str] = &[
     CREW_UPDATE,
     CREW_REMOVE,
     THREAD_TRANSCRIPT,
+    THREAD_RESUME,
+    SUPERVISOR_STATUS,
 ];
 
 pub const HOST_NOTIFICATIONS: &[&str] = &[
@@ -380,6 +384,16 @@ pub struct ThreadOpenParams {
     pub bot_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fold_policy: Option<FoldPolicy>,
+    /// Work in the folder's own checkout instead of a fresh worktree (#23).
+    /// The advanced opt-out, never the default: two threads sharing the user's
+    /// tree is the collision worktrees exist to prevent, so this is the New
+    /// Chat toggle "work in my current folder" and nothing sets it implicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_checkout: Option<bool>,
+    /// What the thread's branch starts from — a branch, tag or sha. Default is
+    /// `origin/<default branch>`, never the user's possibly-dirty `HEAD`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -426,6 +440,133 @@ pub struct ProcessView {
     pub connected: bool,
     pub acp_state: String,
     pub pending_permissions: usize,
+    /// The adapter's pid while one is attached. Diagnostic only — nothing
+    /// durable is keyed on it, because decision #4's durability *is* resume
+    /// and a pid does not survive a lid close.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    /// Could `thread/resume` put this conversation back? True needs a stored
+    /// session, a receipt that still matches, and a `cwd` that still exists.
+    pub resumable: bool,
+    /// Fields that have moved since the session was created, by wire name.
+    /// Non-empty means the stored session is not this job any more, so the
+    /// next prompt starts a new one (#15's fingerprint, #21's check).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drift: Vec<String>,
+}
+
+/// What `thread/resume` managed to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResumeOutcome {
+    /// The adapter was still there; nothing needed restoring.
+    Live,
+    /// ACP `session/resume` — context back, no replay.
+    Resumed,
+    /// ACP `session/load` — the agent replayed its history to us.
+    Loaded,
+    /// The receipt no longer matches; resuming would continue a different job.
+    Drifted,
+    /// This thread has never had an ACP session to resume.
+    NoSession,
+    /// The adapter speaks neither `session/resume` nor `session/load`.
+    Unsupported,
+    /// The directory the session was created in is gone.
+    CwdMissing,
+}
+
+impl ResumeOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Live => "live",
+            Self::Resumed => "resumed",
+            Self::Loaded => "loaded",
+            Self::Drifted => "drifted",
+            Self::NoSession => "no_session",
+            Self::Unsupported => "unsupported",
+            Self::CwdMissing => "cwd_missing",
+        }
+    }
+
+    /// Is there a usable session on the other end when this comes back?
+    pub fn is_attached(self) -> bool {
+        matches!(self, Self::Live | Self::Resumed | Self::Loaded)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadResumeResult {
+    pub thread_id: String,
+    /// True only when a conversation is attached — `outcome` says which way.
+    pub resumed: bool,
+    pub outcome: ResumeOutcome,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub drift: Vec<String>,
+    /// One sentence a client can show. Present whenever the outcome is not a
+    /// plain success, because "we could not resume" without a reason is the
+    /// answer that sends a user to the wrong fix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// The thread as it stands afterwards, so a resume is one round trip.
+    pub state: ThreadStateResult,
+}
+
+/// One adapter the supervisor is currently holding open.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveAdapterView {
+    pub thread_id: String,
+    pub pid: u32,
+    pub harness_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
+    pub acp_state: String,
+    /// Milliseconds since the adapter last said anything.
+    pub idle_ms: u64,
+    pub pending_permissions: usize,
+    /// Which adapter processes may be shared (#13). Two live threads with the
+    /// same key are two threads that could have been one process; today they
+    /// are not, and this is what says so out loud.
+    pub profile_key: String,
+}
+
+/// What the boot pass did to one run left open by a host that stopped.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BootNoteView {
+    pub thread_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    /// The run state the previous host left behind.
+    pub was: String,
+    /// What it was moved to. Always terminal: nothing is reporting on it.
+    pub now: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resurfaced_as: Option<ResurfaceReason>,
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SupervisorStatusResult {
+    pub host_id: String,
+    /// When this host process came up. Every `boot` note below belongs to it.
+    pub booted_at: String,
+    pub live_adapters: Vec<LiveAdapterView>,
+    /// The reconciliation this launch performed. RAM, and rightly so: it
+    /// describes what *this* process found, and the durable half of it is
+    /// already in `runs` and `inbox_events`.
+    pub boot: Vec<BootNoteView>,
+    /// Grace before an idle adapter on a thread nobody is watching is closed.
+    /// Zero means eviction is off.
+    pub idle_evict_after_ms: u64,
+    /// Unaccounted wall time that counts as a machine sleep.
+    pub sleep_gap_threshold_ms: u64,
+    /// Sleeps this host has noticed since it started.
+    pub sleeps_observed: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -451,6 +592,12 @@ pub struct ThreadStateResult {
     pub forge_host: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
+    /// The host-owned worktree this thread works in (#23), when it has one.
+    /// Absent for every thread that is not a code thread — a worker's standing
+    /// thread, a folder that is not a checkout — and absent again once the
+    /// thread has been archived or deleted and its tree collected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
     /// Which machine opened it. One host in MVP1; recorded so a second one
     /// never has to guess (remote-and-mobile).
     #[serde(skip_serializing_if = "Option::is_none")]
