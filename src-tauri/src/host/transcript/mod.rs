@@ -43,6 +43,18 @@ const DEFAULT_LIMIT: usize = 1_000;
 /// replay from `session/load` reduce through the same mapper.
 pub(crate) const USER_MESSAGE_CHUNK: &str = "user_message_chunk";
 
+/// The `jabot.event` marker on a prompt that came off the queue.
+///
+/// A client draws a "waiting" strip from [`ThreadTranscriptResult::queued`]
+/// and keeps its own copy of it, because the queue is RAM and no notification
+/// reports it. When the host drains one, the only thing the client sees is an
+/// ordinary `user_message_chunk` — indistinguishable from the echo of a prompt
+/// it sent itself — so its strip would stay up over a message that has in fact
+/// been delivered, and the "Send now" button on that strip would go on
+/// cancelling turns the stale entry has nothing to do with. This says which
+/// bubbles are a queue leaving, so the mirror can shrink with it.
+pub(crate) const PROMPT_DISPATCHED: &str = "prompt_dispatched";
+
 impl HostSession {
     /// Replay a thread's transcript from the store.
     ///
@@ -88,6 +100,9 @@ impl HostSession {
             events,
             truncated,
             queued: self.queued_prompts(&params.thread_id),
+            run_state: self
+                .open_run(&params.thread_id)
+                .map(|(_, state)| state.as_str().to_string()),
         })
     }
 
@@ -97,10 +112,29 @@ impl HostSession {
     /// queue has not been said to the agent yet, and a transcript that claims
     /// otherwise is one the user cannot trust about what the agent was told.
     pub(crate) fn record_user_prompt(&mut self, thread_id: &str, content: &Value) {
-        let acp = json!({
+        self.record_prompt_event(thread_id, content, false);
+    }
+
+    /// The same, for a prompt the queue just handed to the agent.
+    ///
+    /// Carries [`PROMPT_DISPATCHED`] so a client mirroring the queue knows
+    /// this bubble *is* the head of it, rather than a message on top of it.
+    pub(crate) fn record_queued_prompt_dispatched(&mut self, thread_id: &str, content: &Value) {
+        self.record_prompt_event(thread_id, content, true);
+    }
+
+    fn record_prompt_event(&mut self, thread_id: &str, content: &Value, from_queue: bool) {
+        let mut acp = json!({
             "sessionUpdate": USER_MESSAGE_CHUNK,
             "content": { "type": "text", "text": prompt_text(content) },
         });
+        // Beside the ACP shape, never inside it: the payload has to stay
+        // something the same reducer maps whether it came from us or from an
+        // adapter, and a client that has never heard of `jabot` still draws
+        // the bubble.
+        if from_queue {
+            acp["jabot"] = json!({ "event": PROMPT_DISPATCHED });
+        }
         let seq = self.persist_transcript_event(thread_id, "session/update", &acp);
         self.notify_session_update_at(thread_id, acp, seq);
     }
@@ -292,6 +326,71 @@ mod tests {
         assert_eq!(replay.events.len(), 1);
         assert_eq!(replay.events[0].seq, streamed);
         assert_eq!(replay.events[0].payload["content"]["text"], "ship it");
+    }
+
+    /// A view that mounts mid-turn cannot find the turn in the replay: the
+    /// last row of a live turn and the last row of one whose host died under
+    /// it are the same row. So the ledger's answer rides along with the rows
+    /// it has to agree with, and it stops the moment the run does.
+    #[test]
+    fn the_replay_reports_a_run_that_is_still_open() {
+        let (_dir, mut session) = persistent_host();
+        open_thread(&mut session, "t-open");
+        let params = || ThreadTranscriptParams {
+            thread_id: "t-open".into(),
+            after_seq: None,
+            limit: None,
+        };
+        assert_eq!(
+            session.thread_transcript(params()).unwrap().run_state,
+            None,
+            "a thread that has never run is not busy"
+        );
+
+        session.record_user_prompt("t-open", &json!("go"));
+        session.lifecycle_run_started("t-open", "sess-1");
+        assert_eq!(
+            session
+                .thread_transcript(params())
+                .unwrap()
+                .run_state
+                .as_deref(),
+            Some("running"),
+        );
+
+        session.lifecycle_on_turn_end("t-open", Some("end_turn"));
+        assert_eq!(
+            session.thread_transcript(params()).unwrap().run_state,
+            None,
+            "a finished run is not an open one, whatever it finished as"
+        );
+    }
+
+    /// The marker a client's queue mirror shrinks on. A dispatched prompt and
+    /// a fresh one are the same bubble otherwise, which leaves the "N messages
+    /// waiting" strip up over a message the agent has already been given.
+    #[test]
+    fn only_a_prompt_off_the_queue_says_it_was_dispatched() {
+        let (_dir, mut session) = persistent_host();
+        open_thread(&mut session, "t-mark");
+        session.record_user_prompt("t-mark", &json!("first"));
+        session.record_queued_prompt_dispatched("t-mark", &json!("second"));
+
+        let replay = session
+            .thread_transcript(ThreadTranscriptParams {
+                thread_id: "t-mark".into(),
+                after_seq: None,
+                limit: None,
+            })
+            .unwrap();
+        let events = &replay.events;
+        assert_eq!(events[0].payload["content"]["text"], "first");
+        assert!(events[0].payload.get("jabot").is_none());
+        assert_eq!(events[1].payload["content"]["text"], "second");
+        assert_eq!(events[1].payload["jabot"]["event"], PROMPT_DISPATCHED);
+        // Still an ACP `user_message_chunk`: a client that has never heard of
+        // the marker draws exactly the bubble it drew before.
+        assert_eq!(events[1].payload["sessionUpdate"], USER_MESSAGE_CHUNK);
     }
 
     #[test]

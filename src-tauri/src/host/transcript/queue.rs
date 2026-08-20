@@ -122,7 +122,9 @@ impl HostSession {
             self.drop_prompt_queue(thread_id, "the adapter stopped accepting prompts");
             return;
         }
-        self.record_user_prompt(thread_id, &next.content);
+        // Marked as a dispatch off the queue: this is the only signal a client
+        // gets that its "waiting" strip just got one shorter.
+        self.record_queued_prompt_dispatched(thread_id, &next.content);
         self.lifecycle_run_started(thread_id, &session_id);
     }
 
@@ -164,6 +166,19 @@ impl HostSession {
                 content: prompt.content.clone(),
                 queued_at: prompt.queued_at.clone(),
             })
+            .collect()
+    }
+
+    /// Every thread holding at least one undelivered prompt.
+    ///
+    /// The supervisor needs this to find queues on threads whose adapter is
+    /// gone; iterating live connections cannot see them, because the whole
+    /// problem is that there is no connection left.
+    pub(crate) fn queued_thread_ids(&self) -> Vec<String> {
+        self.prompt_queue
+            .iter()
+            .filter(|(_, queue)| !queue.is_empty())
+            .map(|(thread_id, _)| thread_id.clone())
             .collect()
     }
 
