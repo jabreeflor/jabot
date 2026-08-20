@@ -32,6 +32,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::git;
+use super::permission::Withdrawal as PermissionWithdrawal;
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
     FoldPolicy, InboxEventView, InboxListParams, InboxListResult, ProcessView, ReceiptView,
@@ -933,13 +934,21 @@ impl HostSession {
     }
 
     /// Archive and delete both stop the work: answer outstanding permissions
-    /// as cancelled, close the run, and drop the adapter.
+    /// as cancelled, give up on anything the user had queued, close the run,
+    /// and drop the adapter.
     ///
-    /// `session/close` is not sent because the ACP layer does not speak it yet
-    /// (#21 owns resume and close); killing the process group is what we have,
-    /// and it is what quit already does.
+    /// D-006 recorded that `session/close` was not sent here because the ACP
+    /// layer had no close. It has one now, and `drop_adapter` sends it before
+    /// it kills the group (#21).
     fn close_out(&mut self, thread_id: &str, why: &str) {
-        let _ = self.cancel_pending_permissions(thread_id, why);
+        self.withdraw_pending_permissions(thread_id, why, PermissionWithdrawal::Cancelled);
+        // The user's undelivered words, before the adapter that was going to
+        // receive them goes away. The queue is keyed on the thread and would
+        // outlive both the adapter and this state, so a reopened thread would
+        // hold every later prompt behind a message no agent will ever read —
+        // and nothing drains a queue on a thread with no connection. The
+        // `prompt_dropped` rows are where the words went (#14).
+        self.drop_prompt_queue(thread_id, &format!("the thread was {why}"));
         // Archive is one of the two actions on a resurfaced card, and it hides
         // the thread from the Inbox for good (`state-machine.md`: archived is
         // Sidebar hidden / Inbox hidden). A badge for a thread the user has
@@ -1130,7 +1139,10 @@ fn effective_state(row: &ThreadRow) -> ThreadState {
     ThreadState::parse(&row.state).unwrap_or(ThreadState::Active)
 }
 
-fn permission_kind(subject: &Value) -> Option<String> {
+/// The ACP tool kind an ask is about, when the agent named one. Shared with
+/// the broker (#20), which stores it on the request record so the fold policy
+/// and a reopened card read the same word.
+pub(crate) fn permission_kind(subject: &Value) -> Option<String> {
     subject
         .get("kind")
         .or_else(|| subject.get("toolCall").and_then(|tc| tc.get("kind")))
