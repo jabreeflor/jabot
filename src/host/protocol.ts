@@ -103,9 +103,35 @@ export interface HealthResult {
   storeError?: string;
 }
 
+export interface RuntimeSpec {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  installHint?: string;
+}
+
 export interface PromptParams {
   threadId: string;
   content: unknown;
+  cwd?: string;
+  harnessId?: string;
+  runtime?: RuntimeSpec;
+}
+
+export interface PromptResult {
+  threadId: string;
+  acpSessionId: string;
+  accepted: boolean;
+}
+
+export interface SessionCancelResult {
+  threadId: string;
+  cancelled: boolean;
+}
+
+export interface PermissionReplyResult {
+  requestId: string;
+  delivered: boolean;
 }
 
 export interface SessionCancelParams {
@@ -177,4 +203,5 @@ export const RPC_ERROR = {
   UNIMPLEMENTED: -32001,
   HELLO_REQUIRED: -32002,
   UNPAIRED_DEVICE: -32003,
+  HARNESS_UNAVAILABLE: -32004,
 } as const;

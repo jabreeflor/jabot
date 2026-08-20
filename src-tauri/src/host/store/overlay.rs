@@ -65,6 +65,26 @@ pub fn list_threads_by_state(conn: &Connection, state: &str) -> Result<Vec<Threa
     Ok(rows)
 }
 
+pub fn set_thread_acp_session(
+    conn: &Connection,
+    id: &str,
+    acp_session_id: &str,
+) -> Result<ThreadRow, StoreError> {
+    if acp_session_id.trim().is_empty() {
+        return Err(StoreError::invalid("acp_session_id is required"));
+    }
+    let now = now_utc();
+    let changed = conn.execute(
+        "UPDATE threads SET acp_session_id = ?2, updated_at = ?3
+         WHERE id = ?1 AND deleted_at IS NULL",
+        params![id, acp_session_id, now],
+    )?;
+    if changed == 0 {
+        return Err(StoreError::NotFound(id.into()));
+    }
+    get_thread(conn, id)?.ok_or_else(|| StoreError::NotFound(id.into()))
+}
+
 pub fn set_thread_state(conn: &Connection, id: &str, state: &str) -> Result<ThreadRow, StoreError> {
     match state {
         "active" | "folded" | "resurfaced" | "archived" => {}

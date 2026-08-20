@@ -34,3 +34,40 @@ planned behaviour changed.
 entrypoint over the in-process session; the shipping app still runs the host
 inside the Tauri binary as decided. It does, however, prove the socket-shaped
 claim in #4 — the same frames work off-process today.
+
+---
+
+## D-002 — #10 was already implemented in an open PR; merged instead of rebuilt
+
+**Plan:** #10 (ACP client + adapter subprocess supervision) was an open issue
+to implement.
+
+**Found:** PR #36 (`cursor/harness-adapter-acp-e50f`, opened by another agent
+before this session) already implements it — 1,843 lines across 19 files:
+`host/acp/{connection,mod,runtime,spawn,wake}.rs`, a `fake_acp_agent` test
+binary, and `tests/acp_adapter.rs`.
+
+**Done:** Merged that branch into this one rather than writing a competing
+implementation. Three conflicts, all additive, resolved as unions:
+
+- `host/mod.rs` — both branches widened the protocol re-export list
+- `store/overlay.rs` — their `set_thread_acp_session` alongside existing code
+- `lib.rs` — both branches independently made the same non-macOS
+  `window`/`api` fix
+
+**Why:** Two implementations of the same issue would conflict on every file
+#13, #20, and #21 need. Merging keeps the author's work and its history.
+
+**Consequence:** If PR #36 is revised before it merges, this branch has to take
+the update. If it merges to main first, this merge is already in the ancestry
+and is a no-op.
+
+### D-002a — fixed a false-negative in the merged tests
+
+`kill_group_reaps_grandchild` failed on merge. The production code is correct:
+`ps` shows the group-killed grandchild as `Z`, reparented to a PID 1 that does
+not reap it. The test's `process_alive` used `kill -0`, which **succeeds for a
+zombie** — so it reported a corpse as alive and failed correct code. Any
+environment whose init does not reap promptly (most containers, including the
+new Linux CI job) would hit this. Replaced the check with a process-state query
+that treats `Z` as gone.

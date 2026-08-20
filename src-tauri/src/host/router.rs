@@ -34,19 +34,19 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             session.require_hello()?;
             let params: PromptParams = parse_params(request.params.as_ref())?;
             params.validate()?;
-            unimplemented_method(SESSION_PROMPT)
+            to_value(session.session_prompt(params)?)
         }
         SESSION_CANCEL => {
             session.require_hello()?;
             let params: SessionCancelParams = parse_params(request.params.as_ref())?;
             params.validate()?;
-            unimplemented_method(SESSION_CANCEL)
+            to_value(session.session_cancel(params)?)
         }
         PERMISSION_REPLY => {
             session.require_hello()?;
             let params: PermissionReplyParams = parse_params(request.params.as_ref())?;
             params.validate()?;
-            unimplemented_method(PERMISSION_REPLY)
+            to_value(session.permission_reply(params)?)
         }
         THREAD_FOLD => {
             session.require_hello()?;

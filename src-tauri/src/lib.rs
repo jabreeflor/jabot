@@ -5,9 +5,16 @@
 
 pub mod host;
 
-use std::sync::Mutex;
+pub use host::{
+    HostSession, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NewThread, RequestId, Store,
+    StoreError, ThreadRow, HOST_HELLO, PERMISSION_ASK, PERMISSION_REPLY, PERMISSION_RESOLVED,
+    PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
+};
 
-use host::{HostSession, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse};
+use std::sync::Mutex;
+use std::time::Duration;
+
+use host::AdapterWake;
 use tauri::{Emitter, Manager, State, WindowEvent};
 
 struct HostState(Mutex<HostSession>);
@@ -21,6 +28,7 @@ fn host_rpc(
 ) -> JsonRpcResponse {
     let mut session = state.0.lock().unwrap_or_else(|e| e.into_inner());
     let response = session.handle_request(request);
+    session.pump_acp();
     let outbound = session.take_outbound();
     drop(session);
     for notification in outbound {
@@ -51,11 +59,36 @@ fn load_session(app: &tauri::AppHandle) -> HostSession {
     }
 }
 
+fn spawn_acp_pump(app: tauri::AppHandle, wake: std::sync::Arc<AdapterWake>) {
+    std::thread::Builder::new()
+        .name("jabot-acp-pump".into())
+        .spawn(move || loop {
+            wake.wait_timeout(Duration::from_millis(250));
+            let Some(state) = app.try_state::<HostState>() else {
+                break;
+            };
+            let mut session = match state.0.lock() {
+                Ok(s) => s,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            session.pump_acp();
+            let outbound = session.take_outbound();
+            drop(session);
+            for notification in outbound {
+                emit_host_notification(&app, &notification);
+            }
+        })
+        .expect("acp pump thread");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            app.manage(HostState(Mutex::new(load_session(app.handle()))));
+            let session = load_session(app.handle());
+            let wake = session.adapter_wake();
+            app.manage(HostState(Mutex::new(session)));
+            spawn_acp_pump(app.handle().clone(), wake);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![host_rpc])
@@ -91,6 +124,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<HostState>() {
                     if let Ok(mut session) = state.0.lock() {
+                        session.shutdown_adapters();
                         session.checkpoint_store();
                     }
                 }
