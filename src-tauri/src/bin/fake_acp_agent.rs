@@ -22,6 +22,18 @@
 //! - `grandchild`: spawn a `sleep` grandchild in the same process group
 //! - `old-acp`: answer `initialize` with a protocol version older than the
 //!   host speaks, so the Doctor's deep probe has a real outdated adapter
+//! - `resumable`: advertise `sessionCapabilities.resume` + `close` and answer
+//!   `session/resume` and `session/close` — an adapter the supervisor can hand
+//!   a session back to instead of starting a new one (#21)
+//! - `loadable`: advertise `loadSession` only, and answer `session/load` by
+//!   replaying two messages the way a real agent replays its history
+//! - `v2-cancel`: hold the turn open, and end it on `session/cancel` with an
+//!   idle `state_update` carrying the stop reason and **no** prompt response —
+//!   the ACP v2 completion shape, and the one where a turn ends without the
+//!   response the v1 path hangs its bookkeeping on
+//! - `orphan-stdout`: fork a grandchild that inherits stdout, then exit —
+//!   a dead adapter whose stdout pipe never closes, so EOF never comes and
+//!   only reaping the pid can tell the host the session is gone
 
 use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
@@ -83,7 +95,13 @@ fn main() {
                 id,
                 serde_json::json!({
                     "protocolVersion": if mode == "old-acp" { 0 } else { 1 },
-                    "agentCapabilities": { "loadSession": false },
+                    "agentCapabilities": {
+                        "loadSession": mode == "loadable",
+                        "sessionCapabilities": {
+                            "resume": mode == "resumable",
+                            "close": mode == "resumable"
+                        }
+                    },
                     "agentInfo": { "name": "fake-acp-agent", "version": "0.0.0" },
                     "authMethods": []
                 }),
@@ -100,6 +118,36 @@ fn main() {
                     serde_json::json!({ "sessionId": "sess-fake-1" }),
                 );
             }
+            "session/resume" => {
+                // The host must send back the session it stored, the same
+                // absolute cwd, and the same MCP list; a test reads this line.
+                eprintln!("session_resume={}", msg["params"]);
+                session_id = msg["params"]["sessionId"].as_str().map(str::to_string);
+                reply(&mut stdout, id, serde_json::json!({}));
+            }
+            "session/load" => {
+                eprintln!("session_load={}", msg["params"]);
+                session_id = msg["params"]["sessionId"].as_str().map(str::to_string);
+                // A load replays history *before* the response lands. That
+                // ordering is the whole reason the host has to decide what to
+                // do with the replay rather than just persisting it.
+                for text in ["replayed one", "replayed two"] {
+                    notify(
+                        &mut stdout,
+                        "session/update",
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": { "type": "text", "text": text }
+                        }),
+                    );
+                }
+                reply(&mut stdout, id, serde_json::json!({}));
+            }
+            "session/close" => {
+                eprintln!("session_close={}", msg["params"]);
+                reply(&mut stdout, id, serde_json::json!({}));
+            }
             "session/prompt" => {
                 notify(
                     &mut stdout,
@@ -111,6 +159,17 @@ fn main() {
                     }),
                 );
                 match mode.as_str() {
+                    // Die with the pipe still open: the grandchild inherits
+                    // stdout, so the host's reader never sees EOF and only a
+                    // waitpid can notice the adapter is a corpse.
+                    "orphan-stdout" => {
+                        let _ = Command::new("sleep")
+                            .arg("120")
+                            .stdin(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn();
+                        std::process::exit(0);
+                    }
                     // One turn carrying every shape the chat has to draw.
                     "tools" => {
                         notify(
@@ -216,7 +275,7 @@ fn main() {
                     // notice the silence on its own.
                     "hang" => {}
                     // Holds the turn open, but ends it when told to.
-                    "cancellable" => pending_prompt_id = id,
+                    "cancellable" | "v2-cancel" => pending_prompt_id = id,
                     // Quiet long enough to be called stuck, then finishes
                     // anyway — the agent was slow, not wedged.
                     "late-end" => {
@@ -257,6 +316,21 @@ fn main() {
             }
             "session/cancel" => {
                 eprintln!("cancelled");
+                if mode == "v2-cancel" {
+                    // v2 reports completion as a state change, not as the
+                    // prompt response. The response never comes.
+                    pending_prompt_id = None;
+                    notify(
+                        &mut stdout,
+                        "session/update",
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "sessionUpdate": "state_update",
+                            "sessionState": "idle",
+                            "stopReason": "cancelled"
+                        }),
+                    );
+                }
                 if mode == "cancellable" {
                     if let Some(id) = pending_prompt_id.take() {
                         reply(

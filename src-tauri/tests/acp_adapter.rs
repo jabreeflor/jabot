@@ -327,6 +327,7 @@ fn persists_acp_session_id_on_thread() {
             runtime_json: runtime,
             title: "Stored thread".into(),
             fold_policy: "default".into(),
+            worktree_path: None,
             repo: ThreadRepo::default(),
         })
         .unwrap();
