@@ -198,3 +198,46 @@ into the payload.
 notification noise budget that goes with them, and boot reconciliation of the
 process layer (#21 — after a restart every thread reports `acpState: unknown`
 until something resumes it, which is the honest answer).
+
+---
+
+## D-007 — #13: what the harness catalog built, and what it declared instead of building
+
+**Plan:** #13 asks for the Buzz three-tier catalog, a Doctor that says *why* a
+harness is not ready, the GUI-launch PATH fix, and "one long-lived ACP process
+per Hermes profile (not per chat); multiplex via ACP sessions."
+
+**Built:** tiers 1–3 in `host/harness/` (compiled-in cards and presets, tier-3
+JSON under `<data dir>/custom_harnesses/`), a concurrent Doctor with six
+distinct failure statuses, and PATH augmentation used by both the probe and
+every adapter spawn.
+
+**1. Process pooling per Hermes profile is declared, not implemented.** The
+catalog carries `sessionScope` (`thread` | `profile`) and
+`HarnessDescriptor::profile_key`, and both reach the wire — so a client can
+already see that Hermes chats belong on one process. The supervisor still keys
+`HostSession.connections` by `thread_id`, so today each Hermes chat gets its own
+process. Pooling means one connection carrying several ACP sessions, which
+changes how permission requests and `session/update` are routed back to a
+thread — that routing is #21's (session supervisor, keep-alive, resume), and
+doing it here would have rewritten the map #15 and #10 both hold. The catalog
+half is done so #21 does not have to guess which harnesses may share.
+
+**2. `AdapterOutdated` needs the deep probe.** A binary's own `--version` says
+nothing about which ACP it speaks, and no research source gives a minimum
+version per adapter. `harness/doctor { deep: true }` spawns each ready adapter,
+runs ACP `initialize`, compares the answer with the version the host speaks, and
+kills it. The shallow default never reports outdated, because it cannot know.
+
+**3. The renderer still reads its harness list from `mock-host.ts`.** The host
+now serves `harness/list` and `harness/doctor`, and `HostClient` calls both, but
+wiring the picker to live data belongs with the rest of the mock-to-host swap
+(#17/#22). The drift guard in `src/__tests__/mock-host.test.ts` was widened
+instead: every card the mock offers must match the Rust catalog's id, label,
+blurb, and accent exactly.
+
+**4. No new migration.** `harnesses` already had every column a catalog row
+needs. Tier and card copy live in the compiled catalog and in the user's own
+JSON, which stay the source of truth; the table holds only what
+`threads.harness_id` must point at. A row is never deleted when a tier-3 file
+disappears — that would take the threads that used it along with it.

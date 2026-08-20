@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
     CatalogIssue, HarnessDoctorParams, HarnessDoctorResult, HarnessListResult, HarnessReport,
-    HarnessStatus, RuntimeSpec,
+    HarnessStatus, HarnessTier, RuntimeSpec,
 };
 use super::HostSession;
 use catalog::HarnessDescriptor;
@@ -107,11 +107,12 @@ impl HostSession {
     /// appearing in the catalog.
     pub(crate) fn sync_harness_catalog(&mut self) {
         let (descriptors, _) = self.harness_catalog_with_issues();
+        self.register_custom_harnesses(&descriptors);
+    }
+
+    fn register_custom_harnesses(&self, descriptors: &[HarnessDescriptor]) {
         let Some(store) = &self.store else { return };
-        for descriptor in descriptors
-            .iter()
-            .filter(|d| d.tier == super::protocol::methods::HarnessTier::Custom)
-        {
+        for descriptor in descriptors.iter().filter(|d| d.tier == HarnessTier::Custom) {
             let launch = descriptor.primary();
             if let Err(err) = store.upsert_custom_harness(
                 &descriptor.id,
@@ -138,15 +139,7 @@ impl HostSession {
         if let Some(dir) = self.custom_harness_dir() {
             let (loaded, found) = custom::load_dir(dir);
             issues = found;
-            for entry in loaded {
-                for warning in entry.warnings {
-                    issues.push(CatalogIssue {
-                        file: format!("{}.json", entry.descriptor.id),
-                        reason: warning,
-                    });
-                }
-                descriptors.push(entry.descriptor);
-            }
+            descriptors.extend(loaded);
         }
         (descriptors, issues)
     }
@@ -165,7 +158,10 @@ impl HostSession {
     /// never waits on a vendor CLI. Readiness is `harness/doctor`.
     pub fn harness_list(&mut self) -> Result<HarnessListResult, RpcError> {
         let (descriptors, issues) = self.harness_catalog_with_issues();
-        self.sync_harness_catalog();
+        // Listing is also the refresh: a file dropped in since the last call
+        // becomes a row here, so the id the picker just offered is an id
+        // `thread/open` can accept.
+        self.register_custom_harnesses(&descriptors);
         Ok(HarnessListResult {
             harnesses: descriptors.iter().map(HarnessDescriptor::card).collect(),
             issues,

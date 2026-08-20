@@ -58,9 +58,10 @@ pub struct Loaded {
 }
 
 /// Read every `*.json` in `dir`. Invalid files are skipped and reported —
-/// one bad file must not hide the rest of the catalog.
-pub fn load_dir(dir: &Path) -> (Vec<Loaded>, Vec<CatalogIssue>) {
-    let mut loaded: Vec<Loaded> = Vec::new();
+/// one bad file must not hide the rest of the catalog. Warnings from files
+/// that did load are reported the same way, against the file they came from.
+pub fn load_dir(dir: &Path) -> (Vec<HarnessDescriptor>, Vec<CatalogIssue>) {
+    let mut loaded: Vec<HarnessDescriptor> = Vec::new();
     let mut issues: Vec<CatalogIssue> = Vec::new();
     let Ok(entries) = std::fs::read_dir(dir) else {
         return (loaded, issues);
@@ -91,17 +92,20 @@ pub fn load_dir(dir: &Path) -> (Vec<Loaded>, Vec<CatalogIssue>) {
         };
         match parse(&raw) {
             Ok(entry) => {
-                if loaded
-                    .iter()
-                    .any(|l| l.descriptor.id == entry.descriptor.id)
-                {
+                if loaded.iter().any(|d| d.id == entry.descriptor.id) {
                     issues.push(CatalogIssue {
                         file: name,
                         reason: format!("duplicate harness id {}", entry.descriptor.id),
                     });
                     continue;
                 }
-                loaded.push(entry);
+                for warning in entry.warnings {
+                    issues.push(CatalogIssue {
+                        file: name.clone(),
+                        reason: warning,
+                    });
+                }
+                loaded.push(entry.descriptor);
             }
             Err(reason) => issues.push(CatalogIssue { file: name, reason }),
         }
@@ -306,10 +310,33 @@ mod tests {
 
         let (loaded, issues) = load_dir(dir.path());
         assert_eq!(loaded.len(), 1);
-        assert_eq!(loaded[0].descriptor.id, "good");
+        assert_eq!(loaded[0].id, "good");
         assert_eq!(issues.len(), 2);
         assert_eq!(issues[0].file, "b-broken.json");
         assert!(issues[1].reason.contains("reserved"));
+    }
+
+    /// A warning is reported against the file it came from, so the user knows
+    /// which one to edit.
+    #[test]
+    fn a_dropped_env_key_is_reported_against_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("sneaky.json"),
+            file(json!({
+                "id": "sneaky",
+                "label": "Sneaky",
+                "command": "sneaky-acp",
+                "env": { "JABOT_IDLE_TIMEOUT_MS": "1" }
+            })),
+        )
+        .unwrap();
+
+        let (loaded, issues) = load_dir(dir.path());
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].file, "sneaky.json");
+        assert!(issues[0].reason.contains("JABOT_IDLE_TIMEOUT_MS"));
     }
 
     #[test]
