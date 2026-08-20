@@ -10,16 +10,14 @@ mod runtime;
 mod spawn;
 mod wake;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
-use uuid::Uuid;
 
-use super::lifecycle;
+use super::permission::Withdrawal;
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
-    PermissionReplyParams, PermissionReplyResult, PromptParams, PromptResult, SessionCancelParams,
-    SessionCancelResult,
+    PromptParams, PromptResult, ResurfaceReason, SessionCancelParams, SessionCancelResult,
 };
 use super::HostSession;
 use runtime::ProbeResult;
@@ -28,12 +26,6 @@ pub(crate) use connection::{AcpConnection, Inbound};
 /// The Doctor's deep probe spawns an adapter the same way a session does (#13).
 pub(crate) use runtime::HarnessRuntime;
 pub use wake::AdapterWake;
-
-#[derive(Debug)]
-pub(crate) struct PendingPermission {
-    thread_id: String,
-    acp_id: super::protocol::jsonrpc::RequestId,
-}
 
 impl HostSession {
     pub fn session_prompt(&mut self, params: PromptParams) -> Result<PromptResult, RpcError> {
@@ -45,12 +37,27 @@ impl HostSession {
         if let Some(queued) = self.intercept_in_flight(&params)? {
             return Ok(queued);
         }
-        self.ensure_connection(&params)?;
-        let cwd = self.resolve_cwd(&params)?;
+        // Read before anything is spawned, because whether a session already
+        // exists is what decides the next question. A freshly spawned
+        // connection never has one, so asking first is the same answer.
         let existing = self
             .connections
             .get(&thread_id)
             .and_then(|conn| conn.session_id.clone());
+        let cwd = self.resolve_cwd(&params)?;
+        if existing.is_none() && !Path::new(&cwd).is_dir() {
+            // `keep-alive.md`'s resume recipe, applied to the path a user
+            // actually takes after a restart — reopen the thread and type.
+            // `thread/resume` already refuses a vanished folder; without the
+            // same refusal here the spawner would silently drop `current_dir`
+            // and hand the agent JaBot's own directory, then `session/new`
+            // would overwrite the receipt and put the real conversation out of
+            // reach. Refusing before either happens is the whole point.
+            let detail = format!("{cwd} is gone");
+            self.try_resurface(&thread_id, ResurfaceReason::Failed, &detail, None);
+            return Err(RpcError::CwdMissing { thread_id, cwd });
+        }
+        self.ensure_connection(&params)?;
         let session_id = match existing {
             Some(id) => id,
             None => {
@@ -120,9 +127,9 @@ impl HostSession {
         // `cancelled` before `session/cancel`". An agent blocked on a
         // permission it never gets an answer to has no reason to act on the
         // cancel, so answering first is what actually unblocks the turn.
-        // `cancel_pending_permissions` borrows self, so the connection is
+        // `withdraw_pending_permissions` borrows self, so the connection is
         // re-fetched after it rather than held across the call.
-        self.cancel_pending_permissions(&thread_id, "session/cancel")?;
+        self.withdraw_pending_permissions(&thread_id, "session/cancel", Withdrawal::Cancelled);
         let Some(conn) = self.connections.get_mut(&thread_id) else {
             return Err(RpcError::Internal(format!(
                 "no live adapter for thread {thread_id}"
@@ -133,54 +140,6 @@ impl HostSession {
         Ok(SessionCancelResult {
             thread_id,
             cancelled: true,
-        })
-    }
-
-    pub fn permission_reply(
-        &mut self,
-        params: PermissionReplyParams,
-    ) -> Result<PermissionReplyResult, RpcError> {
-        let pending = self
-            .pending_permissions
-            .remove(&params.request_id)
-            .ok_or_else(|| {
-                RpcError::InvalidParams(format!(
-                    "unknown permission requestId {}",
-                    params.request_id
-                ))
-            })?;
-        let outcome = if params.cancelled.unwrap_or(false) {
-            json!({ "outcome": { "outcome": "cancelled" } })
-        } else {
-            json!({
-                "outcome": {
-                    "outcome": "selected",
-                    "optionId": params.option_id
-                }
-            })
-        };
-        let Some(conn) = self.connections.get_mut(&pending.thread_id) else {
-            return Err(RpcError::Internal(format!(
-                "no live adapter for thread {}",
-                pending.thread_id
-            )));
-        };
-        conn.respond(pending.acp_id, outcome)?;
-        let device_id = params.device_id.clone();
-        self.notify_permission_resolved(
-            &pending.thread_id,
-            &params.request_id,
-            &device_id,
-            params.option_id.clone(),
-            params.cancelled,
-        );
-        self.lifecycle_on_permission_answered(
-            &pending.thread_id,
-            params.cancelled.unwrap_or(false),
-        );
-        Ok(PermissionReplyResult {
-            request_id: params.request_id,
-            delivered: true,
         })
     }
 
@@ -206,10 +165,13 @@ impl HostSession {
         self.supervisor_tick();
     }
 
+    /// Quit, in the sense decision #4 settled: kill the children, keep the
+    /// question. An ask the user never answered stays `pending` on disk so the
+    /// next launch can put it back in front of them (#20, #21).
     pub fn shutdown_adapters(&mut self) {
         let ids: Vec<String> = self.connections.keys().cloned().collect();
         for id in &ids {
-            let _ = self.cancel_pending_permissions(id, "host shutdown");
+            self.withdraw_pending_permissions(id, "host shutdown", Withdrawal::Abandoned);
         }
         for (_, mut conn) in self.connections.drain() {
             conn.kill();
@@ -224,15 +186,6 @@ impl HostSession {
         self.connections.len()
     }
 
-    /// Outstanding `session/request_permission` calls on a thread. The
-    /// lifecycle layer asks because a blocked thread is Needs you, never stuck.
-    pub(crate) fn pending_permission_count(&self, thread_id: &str) -> usize {
-        self.pending_permissions
-            .values()
-            .filter(|pending| pending.thread_id == thread_id)
-            .count()
-    }
-
     /// An adapter is no longer there: EOF on its stdout, or the supervisor's
     /// keep-alive probe reaping a pid whose stdout nobody ever closed.
     ///
@@ -244,7 +197,7 @@ impl HostSession {
         if let Some(err) = error {
             eprintln!("adapter for {thread_id} closed: {err}");
         }
-        let _ = self.cancel_pending_permissions(thread_id, "adapter closed");
+        self.withdraw_pending_permissions(thread_id, "adapter closed", Withdrawal::Cancelled);
         self.connections.remove(thread_id);
         self.drop_prompt_queue(thread_id, "the adapter stopped");
         self.lifecycle_on_adapter_closed(thread_id, error);
@@ -355,46 +308,7 @@ impl HostSession {
                 self.lifecycle_on_update(thread_id, &acp);
             }
             Inbound::Permission { acp_id, params } => {
-                let subject = params
-                    .get("subject")
-                    .cloned()
-                    .or_else(|| params.get("toolCall").cloned())
-                    .unwrap_or_else(|| params.clone());
-                let options = params.get("options").cloned().unwrap_or_else(|| json!([]));
-                self.persist_transcript_event(thread_id, "session/request_permission", &params);
-                // Wait for Inbox is a host-side permission policy on a folded
-                // thread (#5): reads are answered here, everything else still
-                // reaches the human.
-                match self.lifecycle_permission_policy(thread_id, &subject, &options) {
-                    lifecycle::PermissionDisposition::AutoAllow { option_id } => {
-                        if let Some(conn) = self.connections.get_mut(thread_id) {
-                            let _ = conn.respond(
-                                acp_id,
-                                json!({
-                                    "outcome": { "outcome": "selected", "optionId": option_id }
-                                }),
-                            );
-                        }
-                        self.lifecycle_record_auto_allow(thread_id, &subject, &option_id);
-                    }
-                    lifecycle::PermissionDisposition::Ask => {
-                        let request_id = Uuid::new_v4().to_string();
-                        self.pending_permissions.insert(
-                            request_id.clone(),
-                            PendingPermission {
-                                thread_id: thread_id.to_string(),
-                                acp_id,
-                            },
-                        );
-                        self.notify_permission_ask(
-                            thread_id,
-                            &request_id,
-                            subject.clone(),
-                            options,
-                        );
-                        self.lifecycle_on_permission_pending(thread_id, &subject);
-                    }
-                }
+                self.open_permission_request(thread_id, acp_id, &params)
             }
             Inbound::PromptResult(result) => {
                 let stop_reason = result
@@ -429,35 +343,6 @@ impl HostSession {
             }
             Inbound::Closed { error } => self.on_adapter_gone(thread_id, error.as_deref()),
         }
-    }
-
-    pub(crate) fn cancel_pending_permissions(
-        &mut self,
-        thread_id: &str,
-        _reason: &str,
-    ) -> Result<(), RpcError> {
-        let ids: Vec<String> = self
-            .pending_permissions
-            .iter()
-            .filter(|(_, pending)| pending.thread_id == thread_id)
-            .map(|(id, _)| id.clone())
-            .collect();
-        for request_id in ids {
-            if let Some(pending) = self.pending_permissions.remove(&request_id) {
-                if let Some(conn) = self.connections.get_mut(thread_id) {
-                    let _ = conn.respond(
-                        pending.acp_id,
-                        json!({ "outcome": { "outcome": "cancelled" } }),
-                    );
-                }
-                let device = self
-                    .connected_device_id
-                    .clone()
-                    .unwrap_or_else(|| "host".into());
-                self.notify_permission_resolved(thread_id, &request_id, &device, None, Some(true));
-            }
-        }
-        Ok(())
     }
 }
 

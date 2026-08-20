@@ -29,13 +29,20 @@
 //! branch before the tree goes ([`worktree::save_uncommitted`]). JaBot never
 //! deletes that branch. So the honest answer to "what happens to my
 //! uncommitted changes when I archive" is: they become a commit you can check
-//! out, and if that commit cannot be made, the tree is kept instead. Fold keeps
-//! the tree untouched — resume needs the same `cwd`.
+//! out, and if that commit cannot be made, the tree is kept instead. Which
+//! branch holds it is the save's answer, not this module's assumption — an
+//! agent that left `HEAD` detached gets a rescue branch planted at the commit,
+//! and the row is repointed at it so reopen restores the tree that has the
+//! work. Fold keeps the tree untouched — resume needs the same `cwd`.
 //!
 //! **A tree left behind is a bug, so boot sweeps.** A host killed between
 //! `worktree add` and the INSERT, or between archive and removal, leaves a
 //! directory under our root that no thread claims. [`HostSession::sweep_worktrees`]
 //! runs at startup, saves anything uncommitted in such a tree, and collects it.
+//! "No thread claims it" is a fact read out of the store, so a boot that cannot
+//! read the store sweeps nothing at all: the app deliberately keeps running with
+//! a broken `jabot.sqlite`, and that is the last boot that should be allowed to
+//! delete a checkout.
 //!
 //! One thing to know about the cost: [`setup::apply`] runs the folder's setup
 //! command synchronously, so `thread/open` on a folder configured with
@@ -201,7 +208,21 @@ impl HostSession {
             .map(PathBuf::from)
             .or_else(|| worktree::repo_root_of(&path));
         match release_at(repo_root.as_deref(), &path, thread_id, mode) {
-            Ok(()) => {
+            Ok(saved) => {
+                // The save may have landed on a branch other than the one the
+                // row was stamped with — the agent moved HEAD inside the tree.
+                // The row has to follow it, or reopen restores a checkout of
+                // the branch that does *not* have the work.
+                if let Some(saved) = saved.filter(|s| row.branch.as_deref() != Some(&s.branch)) {
+                    eprintln!(
+                        "{thread_id} saved its work on {} rather than {}",
+                        saved.branch,
+                        row.branch.as_deref().unwrap_or("no branch")
+                    );
+                    if let Err(err) = store.set_thread_branch(thread_id, &saved.branch) {
+                        eprintln!("failed to record the branch for {thread_id}: {err}");
+                    }
+                }
                 // The column means "a host-owned tree exists here". Clearing it
                 // is what stops the next boot's sweep, and every later reader,
                 // from believing in a directory that is gone.
@@ -304,7 +325,12 @@ impl HostSession {
         if !root.is_dir() {
             return;
         }
-        let live = self.live_worktree_paths();
+        // Not `unwrap_or_default()`: "I could not read the store" and "no
+        // thread claims anything" have to stay different answers, because the
+        // second one authorises deleting every tree under the root.
+        let Some(live) = self.live_worktree_paths() else {
+            return;
+        };
         for folder_dir in sub_dirs(&root) {
             for tree in sub_dirs(&folder_dir) {
                 if live.contains(&canonical(&tree)) {
@@ -316,7 +342,7 @@ impl HostSession {
                     .unwrap_or_default();
                 let repo_root = worktree::repo_root_of(&tree);
                 match release_at(repo_root.as_deref(), &tree, &thread_id, Release::Archived) {
-                    Ok(()) => eprintln!("swept an unclaimed worktree at {}", tree.display()),
+                    Ok(_) => eprintln!("swept an unclaimed worktree at {}", tree.display()),
                     Err(detail) => {
                         eprintln!(
                             "could not sweep the worktree at {}: {detail}",
@@ -333,21 +359,27 @@ impl HostSession {
 
     /// Every path a thread still claims. Archived and deleted rows are absent
     /// on purpose: their trees are the sweep's to collect if a release failed.
-    fn live_worktree_paths(&self) -> HashSet<PathBuf> {
-        let Some(store) = self.store.as_ref() else {
-            return HashSet::new();
-        };
+    ///
+    /// `None` is not "nothing is claimed" — it is "I cannot tell", and the
+    /// sweep must not run on it. `HostSession::load` deliberately survives a
+    /// store that would not open (`storeError` on hello, no crash), so a corrupt
+    /// or unmigratable `jabot.sqlite` reaches here with every live thread's tree
+    /// on disk and no rows to prove it. Deleting them would be the boot where
+    /// the user most needs their state left alone.
+    fn live_worktree_paths(&self) -> Option<HashSet<PathBuf>> {
+        let store = self.store.as_ref()?;
         match store.list_worktree_threads() {
-            Ok(rows) => rows
-                .into_iter()
-                .filter_map(|row| row.worktree_path)
-                .map(|path| canonical(Path::new(&path)))
-                .collect(),
+            Ok(rows) => Some(
+                rows.into_iter()
+                    .filter_map(|row| row.worktree_path)
+                    .map(|path| canonical(Path::new(&path)))
+                    .collect(),
+            ),
             Err(err) => {
                 // A sweep that cannot read the store must not decide every tree
                 // is an orphan.
                 eprintln!("skipping the worktree sweep: {err}");
-                HashSet::new()
+                None
             }
         }
     }
@@ -372,6 +404,9 @@ impl HostSession {
 
 /// Save, unlock, remove, prune — the whole cleanup, without a `HostSession`.
 ///
+/// `Ok(Some(_))` carries the commit the save made and the branch now holding
+/// it, because the branch is not always the one the caller expected.
+///
 /// `Err` means the tree is still there, and the caller must keep believing in
 /// it. That is the safe direction: a retained tree costs disk and shows up in
 /// the next sweep, while a forgotten one is a leak nothing will ever collect.
@@ -380,7 +415,7 @@ fn release_at(
     path: &Path,
     thread_id: &str,
     mode: Release,
-) -> Result<(), String> {
+) -> Result<Option<worktree::Saved>, String> {
     if !path.exists() {
         // Already gone — the user deleted it by hand, most likely. Prune the
         // stale `$GIT_DIR/worktrees` metadata so a later `add` at the same path
@@ -388,33 +423,44 @@ fn release_at(
         if let Some(root) = repo_root {
             let _ = worktree::remove(root, path, true);
         }
-        return Ok(());
+        return Ok(None);
     }
     let Some(root) = repo_root else {
         return Err("the repository this worktree belongs to could not be found".to_string());
     };
-    match worktree::save_uncommitted(path, thread_id) {
-        Ok(Some(sha)) => eprintln!("saved uncommitted work in {} as {sha}", path.display()),
-        Ok(None) => {}
+    let saved = match worktree::save_uncommitted(path, thread_id) {
+        Ok(saved) => {
+            if let Some(saved) = saved.as_ref() {
+                eprintln!(
+                    "saved uncommitted work in {} as {} on {}",
+                    path.display(),
+                    saved.sha,
+                    saved.branch
+                );
+            }
+            saved
+        }
         Err(err) => {
             if !mode.force() {
                 // Archive is not a destructive gesture. If the work cannot be
-                // committed, the tree stays and the user still has it.
+                // committed — or committed but not anchored to a ref that will
+                // outlive the tree — the tree stays and the user still has it.
                 return Err(format!("uncommitted work could not be saved: {err}"));
             }
             eprintln!(
                 "deleting {} with work that could not be saved: {err}",
                 path.display()
             );
+            None
         }
-    }
+    };
     worktree::remove(root, path, mode.force()).map_err(|err| err.to_string())?;
     // `git worktree remove` takes the directory with it; anything left is a
     // file git did not consider its own.
     if path.exists() {
         let _ = std::fs::remove_dir_all(path);
     }
-    Ok(())
+    Ok(saved)
 }
 
 fn sub_dirs(dir: &Path) -> Vec<PathBuf> {
@@ -756,6 +802,82 @@ mod tests {
         let root = fx.repo.path().to_string_lossy().into_owned();
         let show = worktree::testing::show(&root, &plan.branch, "unsaved.txt");
         assert_eq!(show.trim(), "mid-flight");
+    }
+
+    #[test]
+    fn archiving_a_detached_tree_saves_the_work_where_reopening_will_find_it() {
+        let mut fx = fixture(None, json!([]));
+        let thread = fx.open("t-detached", json!({}));
+        let tree = path_of(&thread, "worktreePath");
+        let opened_on = thread["branch"].as_str().unwrap().to_string();
+        // What an agent leaves behind after `git checkout <sha>`, `git bisect`,
+        // or a rebase that stopped on a conflict: HEAD is on no branch at all,
+        // so a commit made here is held only by the tree that is about to go.
+        testing::run(&tree, &["checkout", "--detach", "HEAD"]);
+        std::fs::write(tree.join("important.txt"), "an hour of work").unwrap();
+
+        let archived = ok(
+            &mut fx.session,
+            THREAD_ARCHIVE,
+            json!({ "threadId": "t-detached" }),
+        );
+        assert_eq!(archived["state"], "archived");
+        assert!(!tree.exists());
+
+        // A branch holds it — not the one the thread was opened on, and the row
+        // says so rather than going on naming a branch without the work.
+        let holding = fx.state("t-detached")["branch"]
+            .as_str()
+            .expect("a branch")
+            .to_string();
+        assert_ne!(holding, opened_on);
+        let root = fx.repo.path().to_string_lossy().into_owned();
+        assert_eq!(
+            worktree::testing::show(&root, &holding, "important.txt").trim(),
+            "an hour of work"
+        );
+
+        // And the promise the whole policy rests on: reopening gives it back.
+        let reopened = ok(
+            &mut fx.session,
+            THREAD_REOPEN,
+            json!({ "threadId": "t-detached" }),
+        );
+        assert_eq!(path_of(&reopened, "worktreePath"), tree);
+        assert_eq!(
+            std::fs::read_to_string(tree.join("important.txt")).unwrap(),
+            "an hour of work"
+        );
+    }
+
+    #[test]
+    fn a_boot_that_cannot_read_the_store_sweeps_nothing() {
+        let mut fx = fixture(None, json!([]));
+        let tree = path_of(&fx.open("t-live", json!({})), "worktreePath");
+        std::fs::write(tree.join("half-done.rs"), "fn main() {}").unwrap();
+
+        // Close the store, then leave something no `Store::open` will accept —
+        // a corrupt file, a half-written restore, a migration that fails.
+        // `HostSession::load` survives all of those on purpose (`storeError` on
+        // hello, no crash), so the sweep runs with no rows to tell it which
+        // directories are claimed.
+        fx.session = HostSession::ephemeral();
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(fx.data_dir.join(format!("jabot.sqlite{suffix}")));
+        }
+        std::fs::write(fx.data_dir.join("jabot.sqlite"), b"not a database").unwrap();
+
+        let session = HostSession::load(&fx.data_dir);
+        assert!(session.store.is_none(), "the store should not have opened");
+        // "I cannot read the store" is not "nothing is claimed". A boot where
+        // the database is broken is the boot where the user most needs the
+        // checkouts left alone — the disk they cost is recovered by the next
+        // healthy sweep.
+        assert!(tree.exists(), "a live thread's checkout was swept");
+        assert_eq!(
+            std::fs::read_to_string(tree.join("half-done.rs")).unwrap(),
+            "fn main() {}"
+        );
     }
 
     #[test]
