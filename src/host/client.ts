@@ -3,6 +3,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+  CREW_CREATE,
+  CREW_LIST,
+  CREW_REMOVE,
+  CREW_UPDATE,
   FOLDER_FORGET,
   FOLDER_LIST,
   FOLDER_REGISTER,
@@ -26,9 +30,16 @@ import {
   THREAD_OPEN,
   THREAD_REOPEN,
   THREAD_STATE,
+  THREAD_TRANSCRIPT,
   TOOLS_CONNECT,
   TOOLS_DISCONNECT,
   TOOLS_LIST,
+  type BotView,
+  type CrewCreateParams,
+  type CrewListResult,
+  type CrewRefParams,
+  type CrewRemoveResult,
+  type CrewUpdateParams,
   type FolderForgetResult,
   type FolderListResult,
   type FolderRefParams,
@@ -51,6 +62,7 @@ import {
   type JsonRpcResponse,
   type PermissionReplyParams,
   type PromptParams,
+  type PromptResult,
   type ResumeFromParams,
   type ResumeFromResult,
   type SessionCancelParams,
@@ -58,6 +70,8 @@ import {
   type ThreadOpenParams,
   type ThreadRefParams,
   type ThreadStateResult,
+  type ThreadTranscriptParams,
+  type ThreadTranscriptResult,
   type ToolConnectResult,
   type ToolDisconnectResult,
   type ToolListResult,
@@ -138,12 +152,24 @@ export class HostClient {
     return this.request<HealthResult>(HOST_HEALTH);
   }
 
-  async prompt(params: PromptParams): Promise<void> {
-    await this.request(SESSION_PROMPT, params);
+  /**
+   * Send a turn. Throws `RUN_IN_FLIGHT` when one is already running unless
+   * `mode` says what to do instead — `queue` holds it until the turn ends,
+   * `interrupt` cancels the turn and then sends it (#14).
+   */
+  async prompt(params: PromptParams): Promise<PromptResult> {
+    return this.request<PromptResult>(SESSION_PROMPT, params);
   }
 
   async cancel(params: SessionCancelParams): Promise<void> {
     await this.request(SESSION_CANCEL, params);
+  }
+
+  /** Replay a thread from our own store — never from harness JSONL (#14). */
+  async threadTranscript(
+    params: ThreadTranscriptParams,
+  ): Promise<ThreadTranscriptResult> {
+    return this.request<ThreadTranscriptResult>(THREAD_TRANSCRIPT, params);
   }
 
   /** New Chat. Idempotent — reopening the same id returns the same thread. */
@@ -203,6 +229,29 @@ export class HostClient {
   /** Forget the grant behind this tool — and every tool that shared it. */
   async disconnectTool(params: ToolRefParams): Promise<ToolDisconnectResult> {
     return this.request<ToolDisconnectResult>(TOOLS_DISCONNECT, params);
+  }
+
+  /** The crew, the shipped templates, and Chief's host tools — everything the
+      Crew view and the bot editor draw, in one answer (#17). */
+  async listCrew(): Promise<CrewListResult> {
+    return this.request<CrewListResult>(CREW_LIST);
+  }
+
+  /** Add a bot. `templateId` copies a shipped pack's fields into the new row;
+      it is a snapshot, so editing the bot later is unaffected by the pack. */
+  async createBot(params: CrewCreateParams = {}): Promise<BotView> {
+    return this.request<BotView>(CREW_CREATE, params);
+  }
+
+  /** Save the editor. An omitted field is left alone. */
+  async updateBot(params: CrewUpdateParams): Promise<BotView> {
+    return this.request<BotView>(CREW_UPDATE, params);
+  }
+
+  /** Remove a bot. Throws `CHIEF_REQUIRED` for Chief; every other bot goes,
+      and its threads and its memory directory stay. */
+  async removeBot(params: CrewRefParams): Promise<CrewRemoveResult> {
+    return this.request<CrewRemoveResult>(CREW_REMOVE, params);
   }
 
   /** Every registered folder with the threads the sidebar draws under it —

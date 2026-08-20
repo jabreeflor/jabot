@@ -34,6 +34,21 @@
   font-size: var(--fs-meta);
 }
 
+/* The status line is a live reading once a thread is streaming (#14): a stop
+   reason, or the agent's own plan position. Same three tones as the sidebar's
+   pip, so "running" means the same colour wherever it is read. */
+.chat-head .status[data-tone="running"] {
+  color: var(--amber);
+}
+
+.chat-head .status[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.chat-head .status[data-tone="bad"] {
+  color: var(--danger);
+}
+
 /* The 🖥 affordance. MVP1 only ever has one host, but the button exists so
    picking a host later is not a new piece of chrome. */
 .host-picker {
@@ -269,4 +284,57 @@
 
 .round-btn:hover {
   color: var(--ink);
+}
+
+/* Queued follow-ups (#14).
+ *
+ * ACP cannot inject a message into a turn that is already running, so what you
+ * type while the agent is working is *held* — and the difference between held
+ * and delivered has to be visible, or the UI is indistinguishable from one
+ * that dropped it. "Send now" stops the turn, which is what lets the queue go.
+ */
+.queued {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-meta);
+  color: var(--dim);
+}
+
+.queued-count {
+  color: var(--amber);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.queued-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+
+.queued .btn {
+  flex: none;
+}
+
+/* A host error on this thread. Loud enough to read, quiet enough not to be a
+   modal: the transcript above it is still the thing you are looking at. */
+.chat-error {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-meta);
+  color: var(--red);
+}
+
+/* Stop, in the mic's place while a turn is running. */
+.round-btn.stop {
+  color: var(--amber);
+  font-size: 13px;
 }
