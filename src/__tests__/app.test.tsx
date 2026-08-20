@@ -185,6 +185,38 @@ describe("App", () => {
     expect(screen.getByLabelText("Message Chief")).toHaveValue("");
   });
 
+  it("clears the answered card out of the transcript", async () => {
+    await renderApp();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Keep watching" }),
+    );
+
+    // Resolved only fades it; if nothing removes it the card keeps its box and
+    // its place in the accessibility tree forever.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Keep watching" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/Est. 40 min/)).not.toBeInTheDocument();
+  });
+
+  it("leaves an unsent draft behind when I switch conversations", async () => {
+    await renderApp();
+
+    await userEvent.type(
+      screen.getByLabelText("Message Chief"),
+      "rm -rf prod",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Writer" }));
+
+    expect(screen.getByLabelText("Message Writer")).toHaveValue("");
+
+    await userEvent.click(screen.getByRole("button", { name: "Chief" }));
+    expect(screen.getByLabelText("Message Chief")).toHaveValue("");
+  });
+
   it("adds a bot from a template and shows it in the crew", async () => {
     await renderApp();
 

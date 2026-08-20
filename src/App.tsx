@@ -306,7 +306,7 @@ function MainView({
       if (!bot) return <div className="view" />;
       return (
         <ChatView
-          key={bot.id}
+
           bot={bot}
           host={host}
           items={state.transcripts[bot.id] ?? []}

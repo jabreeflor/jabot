@@ -48,10 +48,9 @@ describe("the seed", () => {
   });
 
   it("offers only harnesses the store can spawn", () => {
-    const seed = readFileSync(
-      new URL("../../src-tauri/src/host/store/seed.rs", import.meta.url),
-      "utf8",
-    );
+    // Read from the repo root: vitest runs there, and the point of the test is
+    // that this list and the store's cannot drift apart unnoticed.
+    const seed = readFileSync("src-tauri/src/host/store/seed.rs", "utf8");
     const builtins = [...seed.matchAll(/BuiltinHarness \{\s*id: "([^"]+)"/g)].map(
       (match) => match[1],
     );
