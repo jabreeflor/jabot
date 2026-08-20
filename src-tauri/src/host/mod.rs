@@ -4,19 +4,24 @@
 //! session — Tauri IPC now, Unix socket later, same messages.
 
 mod acp;
+mod crew;
 mod harness;
 mod identity;
 mod lifecycle;
 mod log;
 mod procgroup;
 mod protocol;
+mod repo;
 mod router;
 mod seq;
 mod store;
 mod tools;
+mod transcript;
 
 #[allow(unused_imports)]
 pub use acp::AdapterWake;
+#[allow(unused_imports)]
+pub use crew::{is_known_tool, BOT_COLORS, HOST_TOOLS};
 #[allow(unused_imports)]
 pub use harness::{catalog::HarnessDescriptor, doctor::ProbeHost, resolve_command};
 #[allow(unused_imports)]
@@ -30,19 +35,27 @@ pub use lifecycle::{
 };
 #[allow(unused_imports)]
 pub use protocol::{
-    decode_frame, decode_frames, encode_frame, DeviceInfo, DeviceRole, Envelope, HarnessCardView,
-    HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams,
-    HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
-    JsonRpcResponse, RequestId, ResurfaceReason, RpcError, StoreStatus, ThreadStateResult,
-    ToolCardView, ToolConnectResult, ToolConnectionStatus, ToolDisconnectResult, ToolListResult,
-    ToolRefParams, ToolTransport, CLIENT_METHODS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH,
-    HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
-    PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT,
-    SESSION_UPDATE, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
-    THREAD_STATE, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    decode_frame, decode_frames, encode_frame, BotTemplateView, BotView, CrewCreateParams,
+    CrewHostToolView, CrewListResult, CrewRefParams, CrewRemoveResult, CrewUpdateParams,
+    DeviceInfo, DeviceRole, Envelope, FolderForgetResult, FolderListResult, FolderOriginView,
+    FolderThreadView, FolderView, GithubStatusResult, HarnessCardView, HarnessDoctorResult,
+    HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams, HelloResult,
+    JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, PromptMode,
+    QueuedPromptView, RequestId, ResurfaceReason, RpcError, StoreStatus, ThreadStateResult,
+    ThreadTranscriptParams, ThreadTranscriptResult, ToolCardView, ToolConnectResult,
+    ToolConnectionStatus, ToolDisconnectResult, ToolListResult, ToolRefParams, ToolTransport,
+    TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE,
+    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR,
+    HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE,
+    JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION,
+    SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
+    THREAD_OPEN, THREAD_REOPEN, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
+    TOOLS_LIST,
 };
 #[allow(unused_imports)]
-pub use store::{NewThread, Secrets, Store, StoreError, ThreadRow};
+pub use repo::{gh::GhAuth, git::RepoProbe, origin::Origin};
+#[allow(unused_imports)]
+pub use store::{NewFolder, NewThread, Secrets, Store, StoreError, ThreadRepo, ThreadRow};
 #[allow(unused_imports)]
 pub use tools::catalog::CATALOG as TOOL_CATALOG;
 
@@ -88,6 +101,14 @@ pub struct HostSession {
     /// consent window does not survive a quit, and pretending otherwise would
     /// leave a chip saying "connecting" after a restart.
     connect_flows: HashMap<String, tools::ConnectFlow>,
+    /// Which thread holds each JaBot-owned MCP profile directory, by catalog
+    /// id. A `--user-data-dir` is a lock — one Playwright process at a time —
+    /// so this is a lease, not a cache (#18).
+    mcp_profiles: HashMap<String, String>,
+    /// Prompts held for a turn already in flight, oldest first (#14). RAM, in
+    /// the same spirit as `connections`: a queued prompt has not been said to
+    /// the agent, so nothing durable should claim it has.
+    prompt_queue: HashMap<String, VecDeque<transcript::queue::QueuedPrompt>>,
     lifecycle: LifecycleState,
 }
 
@@ -146,6 +167,8 @@ impl HostSession {
             custom_harness_dir: None,
             data_dir: None,
             connect_flows: HashMap::new(),
+            mcp_profiles: HashMap::new(),
+            prompt_queue: HashMap::new(),
             lifecycle: LifecycleState::from_env(),
         }
     }
@@ -261,12 +284,27 @@ impl HostSession {
     }
 
     pub fn notify_session_update(&mut self, thread_id: &str, acp: Value) -> u64 {
+        self.notify_session_update_at(thread_id, acp, None)
+    }
+
+    /// The same notification, stamped with the `transcript_events` row this
+    /// event landed in (#14). A client hydrating from `thread/transcript`
+    /// compares that seq against the head it was given to know whether a live
+    /// event is one it has already replayed; the envelope `seq` cannot answer
+    /// that, because it counts permission and resurface events too.
+    pub fn notify_session_update_at(
+        &mut self,
+        thread_id: &str,
+        acp: Value,
+        transcript_seq: Option<i64>,
+    ) -> u64 {
         let seq = self.seq.next(thread_id);
         let params = SessionUpdateParams {
             host_id: self.identity.host_id.clone(),
             thread_id: thread_id.to_string(),
             seq,
             acp,
+            transcript_seq,
         };
         self.push_logged(thread_id, protocol::SESSION_UPDATE, params);
         seq
@@ -630,7 +668,7 @@ mod tests {
         let response = session.handle_request(req(1, HOST_HELLO, None));
         let value = result_value(&response);
         assert_eq!(value["store"]["journalMode"], "wal");
-        assert_eq!(value["store"]["schemaVersion"], 3);
+        assert_eq!(value["store"]["schemaVersion"], 4);
         assert_eq!(value["store"]["botCount"], 6);
         // Three shipped cards plus the two presets, all seeded as rows so a
         // thread can name any of them (#13).
