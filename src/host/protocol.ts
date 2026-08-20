@@ -12,6 +12,7 @@ export const SESSION_CANCEL = "session/cancel";
 export const SESSION_UPDATE = "session/update";
 export const PERMISSION_ASK = "permission/ask";
 export const PERMISSION_REPLY = "permission/reply";
+export const PERMISSION_PENDING = "permission/pending";
 export const PERMISSION_RESOLVED = "permission/resolved";
 export const THREAD_FOLD = "thread/fold";
 export const THREAD_OPEN = "thread/open";
@@ -223,6 +224,11 @@ export interface ThreadTranscriptResult {
   events: TranscriptEventView[];
   truncated: boolean;
   queued: QueuedPromptView[];
+  /** The thread's *open* run, if it has one; absent once it ended. The replay
+      is history and cannot say whether the turn it stops in is still going, so
+      the ledger's answer travels with it — that is what lets a view mounted
+      mid-turn offer Stop instead of reporting the previous turn's outcome. */
+  runState?: RunLedgerState;
 }
 
 export interface SessionCancelResult {
@@ -230,9 +236,49 @@ export interface SessionCancelResult {
   cancelled: boolean;
 }
 
+/**
+ * What became of one answer.
+ *
+ * `delivered` is the load-bearing field and it is not always `true`: an ask
+ * whose adapter died — or whose host was quit and restarted — is still
+ * answerable and still recorded, but there is no live ACP call left to hand
+ * the answer to.
+ */
 export interface PermissionReplyResult {
   requestId: string;
   delivered: boolean;
+  /** Already resolved before this call — a second click, or one that raced the
+      turn being cancelled. The fields below then describe what the *first*
+      resolution decided, not what this call asked for. */
+  alreadyAnswered: boolean;
+  optionId?: string;
+  cancelled: boolean;
+}
+
+/** An ask nobody has answered yet (#20). */
+export interface PendingPermissionView {
+  requestId: string;
+  threadId: string;
+  title: string;
+  kind?: string;
+  /** The ACP `toolCall` (or whole request) the agent sent, verbatim. */
+  subject: unknown;
+  /** The ACP options the agent offered, verbatim. A client renders these and
+      nothing else: the host never invents an option the agent did not offer. */
+  options: unknown;
+  createdAt: string;
+  /** No live adapter call is waiting on this one — the host that took the ask
+      is gone. Answering records the decision; the agent never hears it. */
+  stale: boolean;
+}
+
+export interface PermissionPendingParams {
+  /** One thread, or every thread when absent. */
+  threadId?: string;
+}
+
+export interface PermissionPendingResult {
+  requests: PendingPermissionView[];
 }
 
 export interface SessionCancelParams {
@@ -895,4 +941,9 @@ export const RPC_ERROR = {
       opened at all. New Chat keeps the draft: the way through is a different
       base ref, or `useCheckout` to work in the folder itself. */
   WORKTREE_FAILED: -32011,
+  /** The thread's working directory is gone — unmounted, moved, or a worktree
+      removed under a folded thread (#21). `session/prompt` refuses rather than
+      spawning the agent in whatever directory JaBot itself was launched from.
+      `data.cwd` is the path that is missing. */
+  CWD_MISSING: -32012,
 } as const;
