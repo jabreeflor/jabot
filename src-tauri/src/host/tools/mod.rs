@@ -616,6 +616,7 @@ mod tests {
                 runtime_json: r#"{"command":"claude-agent-acp"}"#.into(),
                 title: "t".into(),
                 fold_policy: "default".into(),
+                worktree_path: None,
                 repo: Default::default(),
             })
             .expect("thread");
@@ -793,6 +794,7 @@ mod tests {
                 runtime_json: r#"{"command":"claude-agent-acp"}"#.into(),
                 title: "t".into(),
                 fold_policy: "default".into(),
+                worktree_path: None,
                 repo: Default::default(),
             })
             .unwrap();
