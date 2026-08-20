@@ -35,10 +35,31 @@ pub enum OAuthError {
     Discovery(String),
     /// The provider answered, and said no. Its own words, because ours would
     /// be a guess: `invalid_grant` and `access_denied` need different fixes.
+    /// The status rides along because it is the only part of the answer that
+    /// says whether the grant is dead or the provider is merely having a bad
+    /// minute — see [`OAuthError::is_grant_refusal`].
     #[error("{provider} refused the request: {detail}")]
-    Provider { provider: String, detail: String },
+    Provider {
+        provider: String,
+        status: u16,
+        detail: String,
+    },
     #[error("{0}")]
     Protocol(String),
+}
+
+impl OAuthError {
+    /// True only when the provider itself rejected the grant.
+    ///
+    /// This is the one question that may cost a user their refresh token, so
+    /// it answers narrowly. RFC 6749 §5.2 gives 400 for `invalid_grant` and
+    /// 400/401 for `invalid_client` — a grant that will never work again.
+    /// Everything else is a failure to get an answer, not an answer: a 429, a
+    /// 503, a token endpoint behind a captive portal, curl not on PATH. Those
+    /// grants are still good and must survive to the next attempt.
+    pub fn is_grant_refusal(&self) -> bool {
+        matches!(self, Self::Provider { status, .. } if matches!(status, 400 | 401))
+    }
 }
 
 /// What RFC 8414 metadata tells us about an authorization server.
@@ -133,7 +154,11 @@ pub struct TokenBundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<String>,
     pub token_endpoint: String,
-    pub resource: String,
+    /// Every MCP server this grant is audience-bound to (RFC 8707). A list
+    /// rather than one URL because one provider grant serves every chip that
+    /// shares it, and a token bound to Gmail's URL alone is one the Calendar
+    /// server is entitled to refuse.
+    pub resources: Vec<String>,
     /// Which account the human authorised, for the chip to show. Display only
     /// — nothing is authorised on the strength of it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -257,6 +282,7 @@ pub fn register_client(
     if !response.is_success() {
         return Err(OAuthError::Provider {
             provider: server.issuer.clone(),
+            status: response.status,
             detail: error_detail(&response.body, response.status),
         });
     }
@@ -278,8 +304,10 @@ pub struct GrantContext<'a> {
     pub client: &'a OAuthClient,
     pub redirect_uri: &'a str,
     pub scopes: &'a [String],
-    /// The MCP server this grant is for (RFC 8707 `resource`).
-    pub resource: &'a str,
+    /// Every MCP server this grant is for (RFC 8707 `resource`, which §2
+    /// allows to repeat). All of them, not just the one whose chip was
+    /// clicked: the grant is per provider, so the audience must be too.
+    pub resources: &'a [String],
 }
 
 /// The URL to open in the user's browser.
@@ -297,10 +325,12 @@ pub fn authorize_url(
         ("state", state.to_string()),
         ("code_challenge", pkce.challenge.clone()),
         ("code_challenge_method", "S256".into()),
-        // RFC 8707: name the MCP server this grant is for, so a token minted
-        // for Gmail cannot be replayed against another resource.
-        ("resource", ctx.resource.to_string()),
     ];
+    // RFC 8707: name the MCP servers this grant is for, so a token minted for
+    // one provider's servers cannot be replayed against another's.
+    for resource in ctx.resources {
+        params.push(("resource", resource.clone()));
+    }
     if !ctx.scopes.is_empty() {
         params.push(("scope", ctx.scopes.join(" ")));
     }
@@ -334,8 +364,10 @@ pub fn exchange_code(
         ("redirect_uri", ctx.redirect_uri.to_string()),
         ("client_id", ctx.client.client_id.clone()),
         ("code_verifier", pkce.verifier.clone()),
-        ("resource", ctx.resource.to_string()),
     ];
+    for resource in ctx.resources {
+        form.push(("resource", resource.clone()));
+    }
     if let Some(secret) = &ctx.client.secret {
         form.push(("client_secret", secret.clone()));
     }
@@ -343,6 +375,7 @@ pub fn exchange_code(
     if !response.is_success() {
         return Err(OAuthError::Provider {
             provider: server.issuer.clone(),
+            status: response.status,
             detail: error_detail(&response.body, response.status),
         });
     }
@@ -350,7 +383,7 @@ pub fn exchange_code(
         &response.body,
         ctx.client,
         &server.token_endpoint,
-        ctx.resource,
+        ctx.resources,
         ctx.scopes,
         None,
     )
@@ -370,8 +403,10 @@ pub fn refresh(http: &dyn HttpClient, bundle: &TokenBundle) -> Result<TokenBundl
         ("grant_type", "refresh_token".into()),
         ("refresh_token", refresh_token.to_string()),
         ("client_id", client.client_id.clone()),
-        ("resource", bundle.resource.clone()),
     ];
+    for resource in &bundle.resources {
+        form.push(("resource", resource.clone()));
+    }
     if let Some(secret) = &client.secret {
         form.push(("client_secret", secret.clone()));
     }
@@ -379,6 +414,7 @@ pub fn refresh(http: &dyn HttpClient, bundle: &TokenBundle) -> Result<TokenBundl
     if !response.is_success() {
         return Err(OAuthError::Provider {
             provider: bundle.client_id.clone(),
+            status: response.status,
             detail: error_detail(&response.body, response.status),
         });
     }
@@ -386,7 +422,7 @@ pub fn refresh(http: &dyn HttpClient, bundle: &TokenBundle) -> Result<TokenBundl
         &response.body,
         &client,
         &bundle.token_endpoint,
-        &bundle.resource,
+        &bundle.resources,
         &bundle.scopes,
         bundle.refresh_token.as_deref(),
     )
@@ -399,7 +435,7 @@ fn parse_token_response(
     raw: &str,
     client: &OAuthClient,
     token_endpoint: &str,
-    resource: &str,
+    resources: &[String],
     requested_scopes: &[String],
     previous_refresh: Option<&str>,
 ) -> Result<TokenBundle, OAuthError> {
@@ -430,7 +466,7 @@ fn parse_token_response(
         client_id: client.client_id.clone(),
         client_secret: client.secret.clone(),
         token_endpoint: token_endpoint.to_string(),
-        resource: resource.to_string(),
+        resources: resources.to_vec(),
         account: string(&value, "id_token")
             .as_deref()
             .and_then(id_token_email),
@@ -571,9 +607,13 @@ mod tests {
     }
 
     #[test]
-    fn authorize_url_carries_pkce_state_and_resource() {
+    fn authorize_url_carries_pkce_state_and_every_resource() {
         let pkce = Pkce::generate();
         let scopes = vec!["https://www.googleapis.com/auth/gmail.compose".to_string()];
+        let resources = vec![
+            "https://gmailmcp.googleapis.com/mcp/v1".to_string(),
+            "https://calendarmcp.googleapis.com/mcp/v1".to_string(),
+        ];
         let client = client();
         let url = authorize_url(
             &server(),
@@ -581,7 +621,7 @@ mod tests {
                 client: &client,
                 redirect_uri: "http://127.0.0.1:49152/callback",
                 scopes: &scopes,
-                resource: "https://gmailmcp.googleapis.com/mcp/v1",
+                resources: &resources,
             },
             "state-123",
             &pkce,
@@ -594,7 +634,10 @@ mod tests {
         assert!(url.contains(&format!("code_challenge={}", pkce.challenge)));
         assert!(url.contains("state=state-123"));
         assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A49152%2Fcallback"));
+        // Both, not just the first: the grant has to work against every MCP
+        // server the provider serves, and RFC 8707 §2 lets `resource` repeat.
         assert!(url.contains("resource=https%3A%2F%2Fgmailmcp.googleapis.com%2Fmcp%2Fv1"));
+        assert!(url.contains("resource=https%3A%2F%2Fcalendarmcp.googleapis.com%2Fmcp%2Fv1"));
         assert!(url.contains("access_type=offline"));
         // The verifier is the half that must never leave the host.
         assert!(!url.contains(&pkce.verifier));
@@ -640,7 +683,7 @@ mod tests {
             r#"{"access_token":"new-access","token_type":"Bearer","expires_in":3599}"#,
             &client(),
             "https://auth.example.com/token",
-            "https://mcp.example.com/mcp",
+            &["https://mcp.example.com/mcp".to_string()],
             &["scope-a".into()],
             Some("keep-me"),
         )
@@ -659,7 +702,7 @@ mod tests {
             r#"{"access_token":"a","token_type":"Bearer","scope":"read write"}"#,
             &client(),
             "https://auth.example.com/token",
-            "https://mcp.example.com/mcp",
+            &["https://mcp.example.com/mcp".to_string()],
             &["read".into(), "write".into(), "admin".into()],
             None,
         )
@@ -676,7 +719,7 @@ mod tests {
             r#"{"access_token":"a","token_type":"Bearer","expires_in":10}"#,
             &client(),
             "https://auth.example.com/token",
-            "https://mcp.example.com/mcp",
+            &["https://mcp.example.com/mcp".to_string()],
             &[],
             None,
         )
@@ -694,7 +737,7 @@ mod tests {
             r#"{"error":"invalid_grant"}"#,
             &client(),
             "https://auth.example.com/token",
-            "https://mcp.example.com/mcp",
+            &["https://mcp.example.com/mcp".to_string()],
             &[],
             None,
         )
@@ -718,6 +761,34 @@ mod tests {
         assert_eq!(error_detail("<html>nope</html>", 503), "HTTP 503");
     }
 
+    /// The one classification that can cost a user their refresh token. A
+    /// provider that never answered has not refused anything, and treating
+    /// its silence as a refusal turns a Wi-Fi blip into a re-consent.
+    #[test]
+    fn only_a_provider_refusal_counts_as_a_dead_grant() {
+        let refusal = |status| OAuthError::Provider {
+            provider: "https://auth.example.com".into(),
+            status,
+            detail: "invalid_grant".into(),
+        };
+        assert!(refusal(400).is_grant_refusal());
+        assert!(refusal(401).is_grant_refusal());
+
+        // Rate limited, down, or misrouted: the grant is untouched by any of
+        // these, and it has to still be there when the provider comes back.
+        for status in [429, 500, 502, 503, 504, 404] {
+            assert!(!refusal(status).is_grant_refusal(), "HTTP {status}");
+        }
+        assert!(!OAuthError::Http(HttpError::Transport {
+            method: "POST",
+            url: "https://auth.example.com/token".into(),
+            detail: "could not resolve host".into(),
+        })
+        .is_grant_refusal());
+        assert!(!OAuthError::Discovery("no metadata".into()).is_grant_refusal());
+        assert!(!OAuthError::Protocol("token response is not JSON".into()).is_grant_refusal());
+    }
+
     /// A grant is the one thing in this host that must not turn up in a log
     /// line, and `{:?}` is how it would.
     #[test]
@@ -731,7 +802,7 @@ mod tests {
             client_id: "client-1".into(),
             client_secret: None,
             token_endpoint: "https://auth.example.com/token".into(),
-            resource: "https://mcp.example.com/mcp".into(),
+            resources: vec!["https://mcp.example.com/mcp".into()],
             account: Some("you@example.com".into()),
         };
         let rendered = format!("{bundle:?}");
@@ -755,7 +826,7 @@ mod tests {
             &raw,
             &client(),
             "https://auth.example.com/token",
-            "https://mcp.example.com/mcp",
+            &["https://mcp.example.com/mcp".to_string()],
             &[],
             None,
         )
@@ -767,7 +838,7 @@ mod tests {
             r#"{"access_token":"a","token_type":"Bearer"}"#,
             &client(),
             "https://auth.example.com/token",
-            "https://mcp.example.com/mcp",
+            &["https://mcp.example.com/mcp".to_string()],
             &[],
             None,
         )
