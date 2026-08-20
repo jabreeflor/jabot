@@ -129,6 +129,10 @@ impl HostSession {
                 runtime_json,
                 title: params.title.clone(),
                 fold_policy: params.fold_policy.unwrap_or_default().as_str().to_string(),
+                // Where this thread works, resolved now and written with the
+                // row (#16, setup-porting §19). Opening is the only moment the
+                // answer is knowable without guessing.
+                repo: self.thread_repo_record(params.folder_id.as_deref(), &params.cwd),
             };
             self.store_or_err()?
                 .insert_thread(&new)
@@ -232,6 +236,11 @@ impl HostSession {
                 .as_deref()
                 .and_then(ResurfaceReason::parse),
             cwd: row.cwd.clone(),
+            repo_root: row.repo_root.clone(),
+            repo: row.repo.clone(),
+            forge_host: row.forge_host.clone(),
+            branch: row.branch.clone(),
+            host_id: row.host_id.clone(),
             harness_id: row.harness_id.clone(),
             folder_id: row.folder_id.clone(),
             bot_id: row.bot_id.clone(),
