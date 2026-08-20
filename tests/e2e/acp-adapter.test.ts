@@ -219,10 +219,16 @@ describe("adapter streaming", () => {
     const { host, hello } = await connected();
     await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-stream"));
 
+    // Seq 1 is the host's own echo of the prompt: #14 writes the user's words
+    // into the transcript as an ACP `user_message_chunk`, so the agent's first
+    // chunk is the second event on the thread rather than the first.
+    const echo = await host.waitFor(isUpdate("t-stream", "user_message_chunk"));
+    expect(updateOf(echo).seq).toBe(1);
+
     const chunk = await host.waitFor(isUpdate("t-stream", "agent_message_chunk"));
     expect(updateOf(chunk).hostId).toBe(hello.hostId);
     expect(updateOf(chunk).threadId).toBe("t-stream");
-    expect(updateOf(chunk).seq).toBe(1);
+    expect(updateOf(chunk).seq).toBe(2);
     expect(JSON.stringify(acpOf(chunk))).toContain("hello from fake-acp");
 
     // The turn ending is itself an update, so the client learns idle without
@@ -275,18 +281,22 @@ describe("adapter streaming", () => {
   it("replays through sync/resumeFrom exactly what a disconnected client missed", async () => {
     const { host, client } = await connected();
     await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-resume"));
+    const echo = await host.waitFor(isUpdate("t-resume", "user_message_chunk"));
     const chunk = await host.waitFor(isUpdate("t-resume", "agent_message_chunk"));
     const idle = await host.waitFor(isUpdate("t-resume", "state_update"));
 
     const missedAll = await client.resumeFrom({ threadId: "t-resume", seq: 0 });
     expect(missedAll.headSeq).toBe(updateOf(idle).seq);
+    // The prompt echo is on the thread's event log like anything else, so a
+    // client that missed the whole turn is replayed the whole turn (#14).
     expect(missedAll.events.map((e) => e.seq)).toEqual([
+      updateOf(echo).seq,
       updateOf(chunk).seq,
       updateOf(idle).seq,
     ]);
     // A reconnecting client must get the same envelope it would have received
     // live, or the transcript it rebuilds is a different one.
-    expect(missedAll.events[0].params).toEqual(chunk.params);
+    expect(missedAll.events[1].params).toEqual(chunk.params);
 
     const missedTail = await client.resumeFrom({
       threadId: "t-resume",
