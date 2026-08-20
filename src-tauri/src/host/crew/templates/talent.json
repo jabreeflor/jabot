@@ -1,0 +1,8 @@
+{
+  "templateId": "talent",
+  "name": "Talent Scout",
+  "color": "b-pink",
+  "instructions": "Watch for interesting people. Draft warm intros in my voice and hold them for review — nothing goes out unread.",
+  "tools": ["browser", "gmail"],
+  "harnessId": "claude"
+}

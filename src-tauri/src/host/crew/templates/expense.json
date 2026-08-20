@@ -1,0 +1,8 @@
+{
+  "templateId": "expense",
+  "name": "Expense Manager",
+  "color": "b-green",
+  "instructions": "Chase receipts, file the monthly report, flag anything unusual. Never move money — draft, then wait for me.",
+  "tools": ["gmail", "drive"],
+  "harnessId": "claude"
+}

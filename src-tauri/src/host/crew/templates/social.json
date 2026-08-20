@@ -1,0 +1,8 @@
+{
+  "templateId": "social",
+  "name": "Social Media",
+  "color": "b-blue",
+  "instructions": "Draft posts from my shipped work. Never publish without approval.",
+  "tools": ["browser"],
+  "harnessId": "claude"
+}
