@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 
 use jabot_lib::host::{
     HostSession, JsonRpcRequest, JsonRpcResponse, RequestId, SessionFingerprint, HOST_HELLO,
-    INBOX_LIST, SESSION_PROMPT, THREAD_ARCHIVE, THREAD_FOLD, THREAD_OPEN, THREAD_RESUME,
-    THREAD_STATE, THREAD_TRANSCRIPT,
+    INBOX_LIST, SESSION_PROMPT, THREAD_ARCHIVE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
+    THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT,
 };
 use serde_json::{json, Value};
 
@@ -390,6 +390,96 @@ fn a_resume_into_a_folder_that_is_gone_is_refused_and_says_so() {
     assert_eq!(refused["state"]["resurfacedReason"], "failed");
     assert_eq!(kinds(&host.inbox())[0], "failed");
     assert_eq!(host.session.live_adapter_count(), 0);
+}
+
+#[test]
+fn a_prompt_into_a_folder_that_is_gone_is_refused_before_anything_is_spawned() {
+    let mut host = Host::start();
+    let cwd = host.dir.path().join("checkout");
+    std::fs::create_dir_all(&cwd).unwrap();
+    host.ok(
+        THREAD_OPEN,
+        json!({
+            "threadId": "t-typed",
+            "title": "Auth migration",
+            "cwd": cwd.to_string_lossy(),
+            "harnessId": "claude",
+            "runtime": { "command": fake_agent(), "args": ["resumable"] }
+        }),
+    );
+    host.prompt("t-typed");
+    host.settle("t-typed", |s| s["latestRun"]["state"] == "succeeded");
+    let session_before = host.state("t-typed")["session"]["acpSessionId"].clone();
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-typed" }));
+    host.restart();
+
+    std::fs::remove_dir_all(&cwd).unwrap();
+
+    // The path a user actually takes after a restart is not `thread/resume` —
+    // it is reopening the thread and typing. Refusing only the explicit resume
+    // would leave this one spawning the adapter in JaBot's own directory and
+    // minting a new session over the receipt.
+    let refused = host.call(
+        SESSION_PROMPT,
+        json!({ "threadId": "t-typed", "content": "carry on" }),
+    );
+    let error = refused
+        .error
+        .expect("a prompt into a missing folder must fail");
+    assert_eq!(error.data.as_ref().unwrap()["cwd"], *cwd.to_string_lossy());
+    assert_eq!(host.session.live_adapter_count(), 0);
+
+    // The receipt still points at the conversation that is really there, so
+    // the thread is recoverable the moment the checkout comes back.
+    let state = host.state("t-typed");
+    assert_eq!(state["session"]["acpSessionId"], session_before);
+    assert_eq!(state["resurfacedReason"], "failed");
+    assert_eq!(kinds(&host.inbox())[0], "failed");
+}
+
+#[test]
+fn archiving_a_thread_with_a_queued_prompt_does_not_strand_it() {
+    let mut host = Host::start();
+    host.open_thread("t-archived-queue", Some("hang"));
+    host.prompt("t-archived-queue");
+    host.settle("t-archived-queue", |s| s["latestRun"]["state"] == "running");
+
+    let queued = host.ok(
+        SESSION_PROMPT,
+        json!({
+            "threadId": "t-archived-queue",
+            "content": "and also rename the module",
+            "mode": "queue"
+        }),
+    );
+    assert_eq!(queued["queued"], true);
+
+    host.ok(THREAD_ARCHIVE, json!({ "threadId": "t-archived-queue" }));
+
+    // Archive takes the adapter away, so the held prompt can never be
+    // delivered. Saying so is the only honest end for the user's words.
+    let transcript = host.ok(THREAD_TRANSCRIPT, json!({ "threadId": "t-archived-queue" }));
+    assert!(
+        transcript.to_string().contains("prompt_dropped"),
+        "the queued prompt vanished without a word: {transcript}"
+    );
+    assert!(transcript["queued"].as_array().unwrap().is_empty());
+
+    // And the thread is usable again. A queue that outlived the adapter would
+    // hold every later prompt behind a message no agent will ever read, and
+    // nothing drains a queue on a thread with no connection.
+    host.ok(THREAD_REOPEN, json!({ "threadId": "t-archived-queue" }));
+    let sent = host.ok(
+        SESSION_PROMPT,
+        json!({ "threadId": "t-archived-queue", "content": "still here?" }),
+    );
+    assert_eq!(sent["accepted"], true);
+    // `queued` is omitted when false, so absent is the "it went straight to
+    // the agent" answer.
+    assert!(
+        sent["queued"].is_null(),
+        "still held behind a queue: {sent}"
+    );
 }
 
 #[test]

@@ -17,14 +17,22 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { Transcript } from "../components/Transcript";
-import type { HostClient, JsonRpcNotification, PromptParams } from "../host";
-import { SESSION_UPDATE } from "../host";
+import type {
+  HostClient,
+  JsonRpcNotification,
+  PendingPermissionView,
+  PermissionReplyParams,
+  PromptParams,
+  ThreadTranscriptResult,
+} from "../host";
+import { PERMISSION_ASK, PERMISSION_RESOLVED, SESSION_UPDATE } from "../host";
 import { LiveThreadView } from "../views/ThreadView";
 import {
   EMPTY_STREAM,
   applyAcpEvent,
   diffStat,
   hydrate,
+  markPromptQueued,
   markPromptSent,
   streamStatus,
   type ThreadStream,
@@ -231,6 +239,82 @@ describe("ACP → transcript", () => {
     expect(ended.items.every((item) => item.kind !== "sys")).toBe(true);
   });
 
+  /**
+   * The turn the renderer did not start. `busy` used to be raised only by our
+   * own `send`, so a queue drain — or anything already running when the view
+   * mounted — drew no Stop button, streamed into a bubble marked
+   * `streaming: false`, and left the header reporting the *previous* turn's
+   * outcome while the agent was mid-sentence.
+   */
+  it("treats fresh agent output after a stop reason as a new turn", () => {
+    const ended = applyAcpEvent(markPromptSent(feed([text("first turn")])), {
+      sessionUpdate: "state_update",
+      sessionState: "idle",
+      stopReason: "end_turn",
+    });
+    expect(streamStatus(ended, { label: "idle", tone: "quiet" }).label).toBe("done");
+
+    const again = applyAcpEvent(ended, text("actually, one more thing"));
+    expect(again.busy).toBe(true);
+    expect(again.lastStopReason).toBeNull();
+    expect(streamStatus(again, { label: "idle", tone: "quiet" })).toEqual({
+      label: "running",
+      tone: "running",
+    });
+    expect(last(again.items)).toMatchObject({ kind: "agent", streaming: true });
+  });
+
+  /** A tool call is agent output too, and so is a plan. */
+  it("reopens the turn on a tool call the renderer did not ask for", () => {
+    const idle = applyAcpEvent(EMPTY_STREAM, {
+      sessionUpdate: "state_update",
+      sessionState: "idle",
+      stopReason: "end_turn",
+    });
+    const working = applyAcpEvent(idle, {
+      sessionUpdate: "tool_call",
+      toolCallId: "c1",
+      kind: "execute",
+      title: "npm test",
+      status: "in_progress",
+    });
+    expect(working.busy).toBe(true);
+    expect(working.lastStopReason).toBeNull();
+  });
+
+  /**
+   * The host drains its queue as an ordinary `user_message_chunk`, so without
+   * a marker the "N messages waiting" strip has nothing to shrink on: it
+   * stayed up over a prompt that had in fact been delivered, and its "Send
+   * now" button then cancelled whatever unrelated turn was in flight.
+   */
+  it("shortens the waiting strip when the host dispatches a queued prompt", () => {
+    const waiting = markPromptQueued(
+      markPromptQueued(EMPTY_STREAM, "first follow-up"),
+      "second follow-up",
+    );
+    expect(waiting.queued).toEqual(["first follow-up", "second follow-up"]);
+
+    const sent = applyAcpEvent(waiting, {
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: "first follow-up" },
+      jabot: { event: "prompt_dispatched" },
+    });
+    expect(sent.queued).toEqual(["second follow-up"]);
+    expect(sent.busy).toBe(true);
+    expect(last(sent.items)).toMatchObject({
+      kind: "user",
+      text: "first follow-up",
+    });
+
+    // An unmarked prompt is someone typing, not the queue moving.
+    const typed = applyAcpEvent(sent, {
+      sessionUpdate: "user_message_chunk",
+      content: { type: "text", text: "and one more" },
+    });
+    expect(typed.queued).toEqual(["second follow-up"]);
+  });
+
   it("says so when a queued prompt is never going to be sent", () => {
     const stream = applyAcpEvent(EMPTY_STREAM, {
       sessionUpdate: "state_update",
@@ -265,6 +349,10 @@ describe("hydrate", () => {
       events,
       truncated: false,
       queued: [],
+      // What the real host reports for a thread whose turn is still going —
+      // which is the only situation in which live copies of replayed events
+      // can still be arriving.
+      runState: "running",
     });
     expect(hydrated.items).toHaveLength(2);
     expect(hydrated.headSeq).toBe(2);
@@ -292,6 +380,61 @@ describe("hydrate", () => {
     expect(hydrated.headSeq).toBe(900);
     expect(hydrated.queued).toEqual(["and then deploy"]);
   });
+
+  /**
+   * The replay cannot answer "is this turn still going?" — the last row of a
+   * live turn and the last row of one whose host died under it are the same
+   * row. So the run ledger comes with it, and it is the ledger that decides.
+   */
+  it("seeds the turn in flight from the run the replay arrives with", () => {
+    const events = [
+      { seq: 1, method: SESSION_UPDATE, createdAt: "", payload: text("half a sen") },
+    ];
+    const mid = hydrate({
+      threadId: "t1",
+      headSeq: 1,
+      events,
+      truncated: false,
+      queued: [],
+      runState: "running",
+    });
+    expect(mid.busy).toBe(true);
+    expect(streamStatus(mid, { label: "idle", tone: "quiet" }).label).toBe("running");
+    expect(mid.items[0]).toMatchObject({ kind: "agent", streaming: true });
+  });
+
+  /**
+   * The same rows over a run that has ended. The bubble must stop claiming to
+   * be mid-type, or a thread the host died under blinks a caret forever.
+   */
+  it("does not call a dead turn a running one", () => {
+    const dead = hydrate({
+      threadId: "t1",
+      headSeq: 2,
+      events: [
+        { seq: 1, method: SESSION_UPDATE, createdAt: "", payload: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "go" } } },
+        { seq: 2, method: SESSION_UPDATE, createdAt: "", payload: text("half a sen") },
+      ],
+      truncated: false,
+      queued: [],
+    });
+    expect(dead.busy).toBe(false);
+    expect(dead.items[1]).toMatchObject({ kind: "agent", streaming: false });
+  });
+
+  /**
+   * A prompt sent while the read was in flight started a turn the host had
+   * not opened a run for when it answered. The optimistic `busy` wins, or the
+   * Stop button the user is looking at disappears under them.
+   */
+  it("does not undo a turn started while it was loading", () => {
+    const sending = markPromptSent(EMPTY_STREAM);
+    const hydrated = hydrate(
+      { threadId: "t1", headSeq: 0, events: [], truncated: false, queued: [] },
+      sending,
+    );
+    expect(hydrated.busy).toBe(true);
+  });
 });
 
 // ---- the live view --------------------------------------------------------
@@ -314,15 +457,26 @@ const HARNESSES: HarnessCard[] = [
 const HOST: HostTarget = { hostId: "h1", name: "This Mac", reachable: true };
 
 /**
- * A stand-in host that behaves like the real one on the two points this view
+ * A stand-in host that behaves like the real one on the points this view
  * depends on: it persists before it answers (so a prompt shows up in the next
- * transcript read), and it refuses nothing that it queued.
+ * transcript read), it refuses nothing that it queued, and its permission
+ * broker resolves each request exactly once — a second answer comes back
+ * saying what the first one decided rather than reaching the agent twice
+ * (#20). A mock that answered twice would let a bug through that the real host
+ * refuses to have.
  */
-function stubHost() {
+function stubHost(
+  replay: Partial<ThreadTranscriptResult> = {},
+  pending: PendingPermissionView[] = [],
+) {
   const handlers = new Set<(n: JsonRpcNotification) => void>();
   const prompts: PromptParams[] = [];
   const cancel = vi.fn(async () => {});
   let busy = false;
+  const resolved = new Map<string, { optionId?: string; delivered: boolean }>();
+  const stale = new Set(
+    pending.filter((request) => request.stale).map((r) => r.requestId),
+  );
 
   const client = {
     onNotification: (handler: (n: JsonRpcNotification) => void) => {
@@ -345,7 +499,46 @@ function stubHost() {
       ],
       truncated: false,
       queued: [],
+      // Like the host: an open run is reported while there is one, and a
+      // thread whose last turn ended reports nothing at all.
+      ...replay,
     })),
+    deviceId: "dev-1",
+    pendingPermissions: vi.fn(async () => ({
+      requests: pending.filter((request) => !resolved.has(request.requestId)),
+    })),
+    replyPermission: vi.fn(async (params: PermissionReplyParams) => {
+      const already = resolved.get(params.requestId);
+      if (already) {
+        return {
+          requestId: params.requestId,
+          delivered: already.delivered,
+          alreadyAnswered: true,
+          optionId: already.optionId,
+          cancelled: already.optionId === undefined,
+        };
+      }
+      // An ask whose adapter is gone is answerable and undeliverable — the
+      // whole reason the record outlives the process.
+      const delivered = !stale.has(params.requestId);
+      resolved.set(params.requestId, { optionId: params.optionId, delivered });
+      notify(PERMISSION_RESOLVED, {
+        hostId: "h1",
+        threadId: THREAD.id,
+        seq: 99,
+        requestId: params.requestId,
+        deviceId: params.deviceId,
+        optionId: params.optionId,
+        cancelled: params.cancelled,
+      });
+      return {
+        requestId: params.requestId,
+        delivered,
+        alreadyAnswered: false,
+        optionId: params.optionId,
+        cancelled: params.cancelled === true,
+      };
+    }),
     prompt: vi.fn(async (params: PromptParams) => {
       prompts.push(params);
       const queued = busy;
@@ -361,28 +554,52 @@ function stubHost() {
     cancel,
   } as unknown as HostClient;
 
+  function notify(method: string, params: unknown) {
+    act(() => {
+      for (const handler of handlers) {
+        handler({ jsonrpc: "2.0", method, params });
+      }
+    });
+  }
+
   return {
     client,
     prompts,
     cancel,
+    replyPermission: client.replyPermission,
     setBusy: (value: boolean) => {
       busy = value;
     },
+    /** Somebody else answered — another window, or the turn being cancelled. */
+    resolve(requestId: string) {
+      resolved.set(requestId, { optionId: undefined, delivered: true });
+      notify(PERMISSION_RESOLVED, {
+        hostId: "h1",
+        threadId: THREAD.id,
+        seq: 98,
+        requestId,
+        deviceId: "dev-2",
+        cancelled: true,
+      });
+    },
+    /** The host's `permission/ask`, as the broker emits it. */
+    ask(requestId: string, subject: unknown, options: unknown) {
+      notify(PERMISSION_ASK, {
+        hostId: "h1",
+        threadId: THREAD.id,
+        seq: 42,
+        requestId,
+        subject,
+        options,
+      });
+    },
     emit(acp: unknown, transcriptSeq: number) {
-      act(() => {
-        for (const handler of handlers) {
-          handler({
-            jsonrpc: "2.0",
-            method: SESSION_UPDATE,
-            params: {
-              hostId: "h1",
-              threadId: THREAD.id,
-              seq: transcriptSeq,
-              transcriptSeq,
-              acp,
-            },
-          });
-        }
+      notify(SESSION_UPDATE, {
+        hostId: "h1",
+        threadId: THREAD.id,
+        seq: transcriptSeq,
+        transcriptSeq,
+        acp,
       });
     },
   };
@@ -459,6 +676,80 @@ describe("LiveThreadView", () => {
     // "Send now" ends the turn in flight, which is what lets the queue go.
     await userEvent.click(screen.getByRole("button", { name: "Send now" }));
     expect(host.cancel).toHaveBeenCalledWith({ threadId: THREAD.id });
+
+    // And then the turn really ends and the host sends what it was holding.
+    // The strip has to come down here: left up, it describes a message that
+    // has already been delivered, and its "Send now" button goes on cancelling
+    // turns that have nothing to do with it.
+    host.emit(
+      { sessionUpdate: "state_update", sessionState: "idle", stopReason: "cancelled" },
+      2,
+    );
+    host.emit(
+      {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "and roll it back if the tests fail" },
+        jabot: { event: "prompt_dispatched" },
+      },
+      3,
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText("1 message waiting")).toBeNull(),
+    );
+    // It started a turn, so the header says so and Stop is back.
+    expect(screen.getByText("running")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+  });
+
+  /**
+   * Reopening a thread remounts this hook with an empty stream, so nothing in
+   * the events can say a turn is already in flight — the replay ends the same
+   * way whether the agent is still typing or stopped last week. The run the
+   * transcript arrives with is what makes Stop reachable at all here.
+   */
+  it("offers Stop for a turn that was already running when it mounted", async () => {
+    const host = stubHost({
+      headSeq: 3,
+      runState: "running",
+      events: [
+        {
+          seq: 1,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: "start the migration" },
+          },
+        },
+        {
+          seq: 2,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: {
+            sessionUpdate: "state_update",
+            sessionState: "idle",
+            stopReason: "end_turn",
+          },
+        },
+        { seq: 3, method: SESSION_UPDATE, createdAt: "", payload: text("on the guard now") },
+      ],
+    });
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    await screen.findByText("on the guard now");
+
+    // Not "done" — that was the turn before this one.
+    expect(screen.getByText("running")).toBeInTheDocument();
+    const stop = screen.getByRole("button", { name: "Stop" });
+    await userEvent.click(stop);
+    expect(host.cancel).toHaveBeenCalledWith({ threadId: THREAD.id });
   });
 
   it("offers Stop while a turn is running and not before", async () => {
@@ -487,5 +778,143 @@ describe("LiveThreadView", () => {
       expect(screen.queryByRole("button", { name: "Stop" })).toBeNull(),
     );
     expect(screen.getByText("cancelled")).toBeInTheDocument();
+  });
+});
+
+// ---- permission cards (#20) -----------------------------------------------
+
+const EXECUTE = {
+  toolCallId: "call-1",
+  title: "Run ls",
+  kind: "execute",
+  rawInput: { command: "ls -la" },
+};
+
+const OPTIONS = [
+  { optionId: "allow_once", name: "Allow", kind: "allow_once" },
+  { optionId: "reject_once", name: "Deny", kind: "reject_once" },
+];
+
+const askedBefore = (overrides: Partial<PendingPermissionView> = {}): PendingPermissionView => ({
+  requestId: "req-1",
+  threadId: THREAD.id,
+  title: "Run ls",
+  kind: "execute",
+  subject: EXECUTE,
+  options: OPTIONS,
+  createdAt: "2026-08-20T09:00:00.000Z",
+  stale: true,
+  ...overrides,
+});
+
+function renderThread(host: ReturnType<typeof stubHost>) {
+  render(
+    <LiveThreadView
+      client={host.client}
+      thread={THREAD}
+      harnesses={HARNESSES}
+      host={HOST}
+    />,
+  );
+}
+
+describe("permission prompts", () => {
+  it("draws the agent's own options and sends back the one that was pressed", async () => {
+    const host = stubHost();
+    renderThread(host);
+    await screen.findByText("start the migration");
+
+    host.ask("req-1", EXECUTE, OPTIONS);
+
+    expect(await screen.findByText("Run ls")).toBeInTheDocument();
+    // The command, not a paraphrase: what the user is agreeing to has to be
+    // on the card.
+    expect(screen.getByText(/ls -la/)).toBeInTheDocument();
+    expect(screen.getByText("execute")).toBeInTheDocument();
+
+    const allow = screen.getByRole("button", { name: "Allow" });
+    // And nothing the agent did not offer.
+    expect(screen.getByRole("button", { name: "Deny" })).toBeInTheDocument();
+    await userEvent.click(allow);
+
+    expect(host.replyPermission).toHaveBeenCalledWith({
+      requestId: "req-1",
+      deviceId: "dev-1",
+      optionId: "allow_once",
+    });
+    // Answered means answered: the buttons stop being a way to send a second
+    // decision the moment the first one is in flight.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Allow" })).toBeDisabled(),
+    );
+  });
+
+  it("does not answer twice when the card is clicked twice", async () => {
+    const host = stubHost();
+    renderThread(host);
+    await screen.findByText("start the migration");
+    host.ask("req-1", EXECUTE, OPTIONS);
+    const allow = await screen.findByRole("button", { name: "Allow" });
+
+    await userEvent.click(allow);
+    // The second click lands on the same button before anything re-renders it
+    // away. Nothing may reach the host a second time.
+    await userEvent.click(allow);
+
+    expect(host.replyPermission).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks the card when the answer came from somewhere else", async () => {
+    const host = stubHost();
+    renderThread(host);
+    await screen.findByText("start the migration");
+    host.ask("req-1", EXECUTE, OPTIONS);
+    await screen.findByRole("button", { name: "Allow" });
+
+    // Another window, another device, or the turn being cancelled under it —
+    // the host says so with `permission/resolved` and this card is history.
+    act(() => {
+      host.resolve("req-1");
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Allow" })).toBeDisabled(),
+    );
+    expect(host.replyPermission).not.toHaveBeenCalled();
+  });
+
+  it("asks again after a restart, and says the answer is only recorded", async () => {
+    const host = stubHost({}, [askedBefore()]);
+    renderThread(host);
+
+    // Nothing in the transcript replay carries this: the ask is a row in the
+    // broker's ledger, and reopening the thread is what puts it back on screen.
+    expect(await screen.findByText("Run ls")).toBeInTheDocument();
+    expect(screen.getByText(/JaBot restarted/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Allow" }));
+
+    expect(host.replyPermission).toHaveBeenCalledWith({
+      requestId: "req-1",
+      deviceId: "dev-1",
+      optionId: "allow_once",
+    });
+    // The agent that asked is gone, and the card must not pretend otherwise.
+    expect(
+      await screen.findByText(/message the thread to pick the work back up/),
+    ).toBeInTheDocument();
+  });
+
+  it("draws one card when the live ask repeats the one it hydrated", async () => {
+    const host = stubHost({}, [askedBefore({ stale: false })]);
+    renderThread(host);
+    await screen.findByText("Run ls");
+
+    // The same request arriving both ways is one question, not two.
+    host.ask("req-1", EXECUTE, OPTIONS);
+
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Allow" })).toHaveLength(1),
+    );
   });
 });
