@@ -6,16 +6,19 @@ use serde_json::Value;
 use super::protocol::error::RpcError;
 use super::protocol::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use super::protocol::methods::{
-    CrewCreateParams, CrewRefParams, CrewUpdateParams, FolderRefParams, FolderRegisterParams,
-    FolderUpdateParams, GithubStatusParams, HarnessDoctorParams, HelloParams, InboxListParams,
-    PermissionPendingParams, PermissionReplyParams, PromptParams, ResumeFromParams,
-    SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
-    ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE,
-    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR,
-    HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PERMISSION_PENDING, PERMISSION_REPLY,
-    SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE,
-    THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME, THREAD_STATE,
-    THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    ChiefInvokeParams, CrewCreateParams, CrewRefParams, CrewUpdateParams, FolderRefParams,
+    FolderRegisterParams, FolderUpdateParams, GithubStatusParams, HarnessDoctorParams, HelloParams,
+    InboxListParams, PermissionPendingParams, PermissionReplyParams, PromptParams,
+    ResumeFromParams, ScheduleCreateParams, ScheduleListParams, ScheduleRefParams,
+    ScheduleUpdateParams, SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
+    ThreadTranscriptParams, ToolRefParams, CHIEF_INVOKE, CHIEF_TOOLS, CREW_CREATE, CREW_LIST,
+    CREW_REMOVE, CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
+    FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
+    INBOX_LIST, PERMISSION_PENDING, PERMISSION_REPLY, SCHEDULE_CREATE, SCHEDULE_LIST,
+    SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE, SESSION_CANCEL, SESSION_PROMPT,
+    SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
+    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
+    TOOLS_LIST,
 };
 use super::HostSession;
 
@@ -185,6 +188,51 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: CrewRefParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.crew_remove(params)?)
+        }
+        CREW_THREAD => {
+            session.require_hello()?;
+            let params: CrewRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.crew_thread(params)?)
+        }
+        SCHEDULE_LIST => {
+            session.require_hello()?;
+            let params: ScheduleListParams = parse_params_or_default(request.params.as_ref())?;
+            to_value(session.schedule_list(params)?)
+        }
+        SCHEDULE_CREATE => {
+            session.require_hello()?;
+            let params: ScheduleCreateParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.schedule_create(params)?)
+        }
+        SCHEDULE_UPDATE => {
+            session.require_hello()?;
+            let params: ScheduleUpdateParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.schedule_update(params)?)
+        }
+        SCHEDULE_REMOVE => {
+            session.require_hello()?;
+            let params: ScheduleRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.schedule_remove(params)?)
+        }
+        SCHEDULE_RUN => {
+            session.require_hello()?;
+            let params: ScheduleRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.schedule_run(params)?)
+        }
+        CHIEF_TOOLS => {
+            session.require_hello()?;
+            to_value(session.chief_tools()?)
+        }
+        CHIEF_INVOKE => {
+            session.require_hello()?;
+            let params: ChiefInvokeParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.chief_invoke(params)?)
         }
         GITHUB_STATUS => {
             session.require_hello()?;

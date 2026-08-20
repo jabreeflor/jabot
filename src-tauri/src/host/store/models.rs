@@ -356,3 +356,116 @@ pub struct StoreStatus {
     pub harness_count: i64,
     pub bot_count: i64,
 }
+
+/// One routed job, as `handoff_to_bot` recorded it (#24).
+///
+/// Written before the receiving bot is prompted, so a handoff whose delivery
+/// fails is still a handoff that happened. `from_*` are optional because the
+/// user can drive the same host action directly, and because removing a bot
+/// must not delete the history of the work it routed.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffRow {
+    pub id: String,
+    pub from_thread_id: Option<String>,
+    pub from_bot_id: Option<String>,
+    pub to_thread_id: String,
+    pub to_bot_id: Option<String>,
+    pub task: String,
+    pub delivered: bool,
+    pub detail: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewHandoff {
+    pub from_thread_id: Option<String>,
+    pub from_bot_id: Option<String>,
+    pub to_thread_id: String,
+    pub to_bot_id: Option<String>,
+    pub task: String,
+}
+
+/// One recurring job (#25).
+///
+/// `next_fire_at` is the armed slot in UTC and the whole of the missed-fire
+/// policy: on a running host it stays within one cron step of now, and on one
+/// that was closed it is exactly as stale as the app was absent. `catch_up`
+/// says what that staleness means — one fire for the oldest missed slot, or
+/// none at all.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRow {
+    pub id: String,
+    pub bot_id: String,
+    pub name: String,
+    pub cron: String,
+    pub prompt: String,
+    pub enabled: bool,
+    pub catch_up: bool,
+    pub next_fire_at: Option<String>,
+    pub last_fired_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewSchedule {
+    pub bot_id: String,
+    pub name: String,
+    pub cron: String,
+    pub prompt: String,
+    pub enabled: bool,
+    pub catch_up: bool,
+    pub next_fire_at: Option<String>,
+}
+
+/// A partial save. Every field is `None` for "leave it alone", which is what
+/// lets the enable toggle be one call that cannot accidentally rewrite a cron.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulePatch {
+    pub name: Option<String>,
+    pub cron: Option<String>,
+    pub prompt: Option<String>,
+    pub enabled: Option<bool>,
+    pub catch_up: Option<bool>,
+    /// `Some(None)` disarms; `Some(Some(t))` arms for `t`.
+    pub next_fire_at: Option<Option<String>>,
+}
+
+/// One fire, written before the bot is prompted.
+///
+/// `outcome` is `None` while the run is still going. `delivered_at` is the
+/// durable half of "this fire reached the Inbox once" — a fact that has to
+/// survive the quit a half-finished fire would otherwise be lost to.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleFireRow {
+    pub id: String,
+    pub schedule_id: String,
+    pub thread_id: Option<String>,
+    pub run_id: Option<String>,
+    pub due_at: String,
+    pub fired_at: String,
+    pub caught_up: bool,
+    pub skipped: i64,
+    pub transcript_seq: i64,
+    pub outcome: Option<String>,
+    pub detail: Option<String>,
+    pub inbox_event_id: Option<String>,
+    pub delivered_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewScheduleFire {
+    pub schedule_id: String,
+    pub thread_id: Option<String>,
+    pub due_at: String,
+    pub caught_up: bool,
+    pub skipped: i64,
+    pub transcript_seq: i64,
+}
