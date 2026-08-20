@@ -103,13 +103,33 @@ impl Store {
         catalog::list_folders(&self.conn)
     }
 
-    pub fn insert_folder(
+    pub fn insert_folder(&self, new: &NewFolder) -> Result<FolderRow, StoreError> {
+        catalog::insert_folder(&self.conn, new)
+    }
+
+    pub fn find_folder_by_path(&self, path: &str) -> Result<Option<FolderRow>, StoreError> {
+        catalog::find_folder_by_path(&self.conn, path)
+    }
+
+    pub fn find_folder_by_repo_root(
         &self,
-        name: &str,
-        path: &str,
-        sort_order: i64,
-    ) -> Result<FolderRow, StoreError> {
-        catalog::insert_folder(&self.conn, name, path, sort_order)
+        repo_root: &str,
+    ) -> Result<Option<FolderRow>, StoreError> {
+        catalog::find_folder_by_repo_root(&self.conn, repo_root)
+    }
+
+    pub fn next_folder_sort_order(&self) -> Result<i64, StoreError> {
+        catalog::next_folder_sort_order(&self.conn)
+    }
+
+    pub fn update_folder(&self, id: &str, patch: &FolderPatch) -> Result<FolderRow, StoreError> {
+        catalog::update_folder(&self.conn, id, patch)
+    }
+
+    /// Forget the folder, keep the directory — see [`catalog::delete_folder`].
+    /// Returns how many live threads lost their folder.
+    pub fn delete_folder(&self, id: &str) -> Result<usize, StoreError> {
+        catalog::delete_folder(&self.conn, id)
     }
 
     pub fn list_harnesses(&self) -> Result<Vec<HarnessRow>, StoreError> {
@@ -144,6 +164,24 @@ impl Store {
         catalog::get_bot(&self.conn, id)
     }
 
+    pub fn insert_bot(&self, new: &NewBot) -> Result<BotRow, StoreError> {
+        catalog::insert_bot(&self.conn, new)
+    }
+
+    pub fn next_bot_sort_order(&self) -> Result<i64, StoreError> {
+        catalog::next_bot_sort_order(&self.conn)
+    }
+
+    pub fn update_bot(&self, id: &str, patch: &BotPatch) -> Result<BotRow, StoreError> {
+        catalog::update_bot(&self.conn, id, patch)
+    }
+
+    /// Remove a bot, keep its threads — see [`catalog::delete_bot`]. Returns
+    /// how many live threads lost their owner.
+    pub fn delete_bot(&self, id: &str) -> Result<usize, StoreError> {
+        catalog::delete_bot(&self.conn, id)
+    }
+
     pub fn insert_thread(&self, new: &NewThread) -> Result<ThreadRow, StoreError> {
         overlay::insert_thread(&self.conn, new)
     }
@@ -162,6 +200,11 @@ impl Store {
 
     pub fn list_threads_by_state(&self, state: &str) -> Result<Vec<ThreadRow>, StoreError> {
         overlay::list_threads_by_state(&self.conn, state)
+    }
+
+    /// The sidebar's rows for one folder — see [`overlay::list_folder_threads`].
+    pub fn list_folder_threads(&self, folder_id: &str) -> Result<Vec<ThreadRow>, StoreError> {
+        overlay::list_folder_threads(&self.conn, folder_id)
     }
 
     pub fn set_thread_state(&self, id: &str, state: &str) -> Result<ThreadRow, StoreError> {
@@ -693,6 +736,14 @@ pub(crate) fn map_folder(row: &Row<'_>) -> rusqlite::Result<FolderRow> {
         sort_order: row.get(3)?,
         created_at: row.get(4)?,
         updated_at: row.get(5)?,
+        repo_root: row.get(6)?,
+        origin_url: row.get(7)?,
+        forge_host: row.get(8)?,
+        repo_owner: row.get(9)?,
+        repo_name: row.get(10)?,
+        default_branch: row.get(11)?,
+        setup_command: row.get(12)?,
+        files_to_copy_json: row.get(13)?,
     })
 }
 
@@ -751,6 +802,11 @@ pub(crate) fn map_thread(row: &Row<'_>) -> rusqlite::Result<ThreadRow> {
         archived_at: row.get(19)?,
         deleted_at: row.get(20)?,
         resurfaced_reason: row.get(21)?,
+        repo_root: row.get(22)?,
+        repo: row.get(23)?,
+        forge_host: row.get(24)?,
+        branch: row.get(25)?,
+        host_id: row.get(26)?,
     })
 }
 
@@ -868,6 +924,16 @@ mod tests {
             runtime_json: sample_runtime(),
             title: "Auth migration".into(),
             fold_policy: "default".into(),
+            repo: ThreadRepo::default(),
+        }
+    }
+
+    fn sample_folder(name: &str, path: &str) -> NewFolder {
+        NewFolder {
+            name: name.into(),
+            path: path.into(),
+            files_to_copy_json: "[]".into(),
+            ..NewFolder::default()
         }
     }
 
@@ -880,7 +946,9 @@ mod tests {
             "claude-agent-acp"
         );
         assert!(store.get_bot("chief").unwrap().unwrap().is_chief);
-        let folder = store.insert_folder("App", "/repos/app", 0).unwrap();
+        let folder = store
+            .insert_folder(&sample_folder("App", "/repos/app"))
+            .unwrap();
         assert_eq!(
             store.get_folder(&folder.id).unwrap().unwrap().path,
             "/repos/app"
@@ -903,7 +971,7 @@ mod tests {
     fn open_uses_wal_and_seeds_catalog() {
         let (store, _dir) = open_store();
         assert_eq!(store.journal_mode().unwrap(), "wal");
-        assert_eq!(store.schema_version().unwrap(), 3);
+        assert_eq!(store.schema_version().unwrap(), 4);
         // Both compiled-in tiers land as rows, because `threads.harness_id`
         // is a foreign key and a preset has to be nameable by a thread (#13).
         let harnesses = store.list_harnesses().unwrap();
@@ -959,8 +1027,12 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, StoreError::Invalid(_)), "{err}");
 
-        store.insert_folder("App", "/repos/app", 0).unwrap();
-        let dup = store.insert_folder("App 2", "/repos/app", 1).unwrap_err();
+        store
+            .insert_folder(&sample_folder("App", "/repos/app"))
+            .unwrap();
+        let dup = store
+            .insert_folder(&sample_folder("App 2", "/repos/app"))
+            .unwrap_err();
         assert!(matches!(dup, StoreError::Invalid(_)), "{dup}");
 
         store
