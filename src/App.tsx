@@ -1,10 +1,11 @@
 //! The app shell: sidebar, one main view, and the overlays that float over both.
 //!
 //! Two data sources meet here and they are deliberately separate. The *real*
-//! host connection (#8) supplies who and where the host is, and — since #16 —
-//! the registered folders and the threads inside them. The rest still comes
-//! from `mock-host`, and swapping it for host RPC is what #14, #17, #22 and #28
-//! each do for their slice.
+//! host connection (#8) supplies who and where the host is, the registered
+//! folders and the threads inside them (#16), and the crew, its templates, the
+//! tool chips and the harness cards (#17). The rest still comes from
+//! `mock-host`, and swapping it for host RPC is what #14, #22 and #28 each do
+//! for their slice.
 //!
 //! Where the two meet, the host wins *once it has answered*. A `null` folder
 //! list is "the host has not said yet" — a preview build, a unit test, a host
@@ -33,18 +34,22 @@ import {
   type MenuPosition,
 } from "./components/ThreadContextMenu";
 import type {
+  Bot,
   BotDraft,
+  HarnessCard,
   HostTarget,
   NewChatDraft,
   Selection,
   ThreadSummary,
+  ToolOption,
 } from "./components/types";
+import { useCrew } from "./views/crew";
 import { allThreads, useFolders } from "./views/folders";
 import { ChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
 import { PullRequestsView } from "./views/PullRequestsView";
-import { ThreadView } from "./views/ThreadView";
+import { LiveThreadView, ThreadView } from "./views/ThreadView";
 import {
   BOT_TEMPLATES,
   HARNESSES,
@@ -78,11 +83,21 @@ function App() {
   const [newChat, setNewChat] = useState<NewChatState>({ open: false });
   const [newChatError, setNewChatError] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>({ open: false });
+  const [editorError, setEditorError] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState>(null);
   const [leaving, setLeaving] = useState<readonly string[]>([]);
   const [addFolder, setAddFolder] = useState(false);
   const { client, hello, hostError, connecting } = useHost();
   const registered = useFolders(client);
+  const crew = useCrew(client);
+  // The host wins once it has answered, per source. A crew of `null` is "not
+  // asked yet" — a preview build or a unit test — and the fixtures stand in;
+  // a real answer always has Chief in it.
+  const bots = crew.bots ?? state.bots;
+  const templates = crew.templates ?? BOT_TEMPLATES;
+  const toolChips = crew.tools ?? TOOL_CATALOG;
+  const hostToolChips = crew.hostTools ?? HOST_TOOLS;
+  const harnesses = crew.harnesses ?? HARNESSES;
   // Registered folders replace the fixtures the moment the host answers; the
   // threads inside them are real rows, so the main pane has to be able to find
   // one that the mock reducer has never heard of.
@@ -155,10 +170,45 @@ function App() {
     setSelection({ view: "thread", threadId });
   }
 
+  /** The editor *is* the record (#17), so a save is a host call and the modal
+      stays open until the host has taken it. */
   function saveBot(draft: BotDraft) {
     if (!editor.open) return;
+    if (crew.bots) {
+      setEditorError(null);
+      crew
+        .save(editor.botId, draft)
+        .then(() => closeEditor())
+        .catch((err) => setEditorError(formatError(err)));
+      return;
+    }
     dispatch({ type: "saveBot", botId: editor.botId, draft });
+    closeEditor();
+  }
+
+  /** Remove from the grid or from inside the editor. Chief is refused by the
+      host; the UI hides the button, and this is what happens if it ever does
+      not. */
+  function removeBot(botId: string, fromEditor: boolean) {
+    if (crew.bots) {
+      setEditorError(null);
+      crew
+        .remove(botId)
+        .then(() => {
+          if (fromEditor) closeEditor();
+        })
+        .catch((err) => {
+          if (fromEditor) setEditorError(formatError(err));
+        });
+      return;
+    }
+    dispatch({ type: "removeBot", botId });
+    if (fromEditor) closeEditor();
+  }
+
+  function closeEditor() {
     setEditor({ open: false });
+    setEditorError(null);
   }
 
   const host: HostTarget = {
@@ -168,7 +218,7 @@ function App() {
   };
   const editingBot =
     editor.open && editor.botId
-      ? (state.bots.find((bot) => bot.id === editor.botId) ?? null)
+      ? (bots.find((bot) => bot.id === editor.botId) ?? null)
       : null;
 
   return (
@@ -176,7 +226,7 @@ function App() {
       <div className="titlebar-drag" data-tauri-drag-region />
 
       <Sidebar
-        bots={state.bots}
+        bots={bots}
         folders={folders}
         foldersEmpty={registered.folders?.length === 0}
         onAddFolder={client ? () => setAddFolder(true) : undefined}
@@ -198,7 +248,11 @@ function App() {
 
       <main className="main">
         <MainView
+          client={client}
           state={state}
+          bots={bots}
+          tools={[...toolChips, ...hostToolChips]}
+          harnesses={harnesses}
           hostThreads={hostThreads}
           selection={selection}
           host={host}
@@ -214,7 +268,7 @@ function App() {
           }}
           onEditBot={(botId) => setEditor({ open: true, botId })}
           onAddBot={() => setEditor({ open: true, botId: null })}
-          onRemoveBot={(botId) => dispatch({ type: "removeBot", botId })}
+          onRemoveBot={(botId) => removeBot(botId, false)}
         />
       </main>
 
@@ -229,7 +283,7 @@ function App() {
 
       {newChat.open && (
         <NewChatModal
-          harnesses={HARNESSES}
+          harnesses={harnesses}
           folders={registered.folders ?? state.folders}
           defaultFolderId={newChat.folderId}
           error={newChatError}
@@ -244,15 +298,13 @@ function App() {
       {editor.open && (
         <BotEditorModal
           bot={editingBot}
-          templates={BOT_TEMPLATES}
-          tools={TOOL_CATALOG}
-          harnesses={HARNESSES}
+          templates={templates}
+          tools={toolChips}
+          harnesses={harnesses}
+          error={editorError}
           onSave={saveBot}
-          onRemove={(botId) => {
-            dispatch({ type: "removeBot", botId });
-            setEditor({ open: false });
-          }}
-          onCancel={() => setEditor({ open: false })}
+          onRemove={(botId) => removeBot(botId, true)}
+          onCancel={closeEditor}
         />
       )}
 
@@ -289,7 +341,11 @@ function App() {
  * in whichever session you opened next.
  */
 function MainView({
+  client,
   state,
+  bots,
+  tools,
+  harnesses,
   hostThreads,
   selection,
   host,
@@ -301,7 +357,16 @@ function MainView({
   onAddBot,
   onRemoveBot,
 }: {
+  /** Present once the host has answered. A thread the host owns is rendered
+      live — hydrated from `thread/transcript` and streamed from there (#14). */
+  client: HostClient | null;
   state: MockState;
+  /** The crew, host-owned once `crew/list` has answered (#17). */
+  bots: readonly Bot[];
+  /** Every chip a crew card may have to name: the MCP catalog plus Chief's
+      host tools, which are in no `tools/list`. */
+  tools: readonly ToolOption[];
+  harnesses: readonly HarnessCard[];
   /** Rows the host owns. Looked up before the fixtures, because a folder the
       host registered lists threads the mock reducer has never heard of. */
   hostThreads: readonly ThreadSummary[];
@@ -319,9 +384,9 @@ function MainView({
     case "crew":
       return (
         <CrewView
-          bots={state.bots}
-          harnesses={HARNESSES}
-          tools={[...TOOL_CATALOG, ...HOST_TOOLS]}
+          bots={bots}
+          harnesses={harnesses}
+          tools={tools}
           onEdit={onEditBot}
           onAdd={onAddBot}
           onRemove={onRemoveBot}
@@ -343,9 +408,22 @@ function MainView({
         />
       );
     case "thread": {
+      const hostThread = hostThreads.find((t) => t.id === selection.threadId);
+      // A real row gets the real transcript. The fixtures keep the mock
+      // reducer, so the shell still renders before a host has answered.
+      if (client && hostThread) {
+        return (
+          <LiveThreadView
+            key={hostThread.id}
+            client={client}
+            thread={hostThread}
+            harnesses={harnesses}
+            host={host}
+          />
+        );
+      }
       const thread =
-        hostThreads.find((t) => t.id === selection.threadId) ??
-        state.threads.find((t) => t.id === selection.threadId);
+        hostThread ?? state.threads.find((t) => t.id === selection.threadId);
       // A deleted thread is not an error state — the Inbox is where work goes.
       if (!thread) {
         return (
@@ -362,7 +440,7 @@ function MainView({
         <ThreadView
           key={thread.id}
           thread={thread}
-          harnesses={HARNESSES}
+          harnesses={harnesses}
           host={host}
           items={state.transcripts[thread.id] ?? []}
           onSend={(text) => onSend(thread.id, text)}
@@ -373,7 +451,7 @@ function MainView({
       );
     }
     case "bot": {
-      const bot = state.bots.find((b) => b.id === selection.botId);
+      const bot = bots.find((b) => b.id === selection.botId);
       if (!bot) return <div className="view" />;
       return (
         <ChatView
