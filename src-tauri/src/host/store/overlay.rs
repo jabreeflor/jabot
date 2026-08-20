@@ -148,6 +148,32 @@ pub fn set_thread_worktree(
     get_thread(conn, id)?.ok_or_else(|| StoreError::NotFound(id.to_string()))
 }
 
+/// Point a thread at the branch that actually holds its work.
+///
+/// The branch is chosen by the INSERT like the path is, and normally never
+/// changes. The exception is the one archive discovers: the agent moved `HEAD`
+/// inside the tree, so the save landed somewhere other than `jabot/<id>` and
+/// the tree's own `HEAD` is about to be deleted with it (#23). A row still
+/// naming the original branch would have a reopen restore a checkout without
+/// the work in it, and nothing would say so.
+pub fn set_thread_branch(
+    conn: &Connection,
+    id: &str,
+    branch: &str,
+) -> Result<ThreadRow, StoreError> {
+    if branch.trim().is_empty() {
+        return Err(StoreError::invalid("branch is required"));
+    }
+    let changed = conn.execute(
+        "UPDATE threads SET branch = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, branch, now_utc()],
+    )?;
+    if changed == 0 {
+        return Err(StoreError::NotFound(id.to_string()));
+    }
+    get_thread(conn, id)?.ok_or_else(|| StoreError::NotFound(id.to_string()))
+}
+
 pub fn set_thread_acp_session(
     conn: &Connection,
     id: &str,

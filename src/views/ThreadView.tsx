@@ -9,9 +9,10 @@
 //! [`ThreadView`] stays presentational — items in, callbacks out — and
 //! [`LiveThreadView`] is the one that talks to the host: it hydrates the
 //! transcript from SQLite, folds `session/update` into it as the turn runs,
-//! and wires the send box to `session/prompt` and Stop to `session/cancel`
-//! (#14). The split is what lets the shell keep rendering fixtures before a
-//! host has answered, and what keeps the chat testable without one.
+//! wires the send box to `session/prompt` and Stop to `session/cancel` (#14),
+//! and answers the permission cards the broker raises on it (#20). The split
+//! is what lets the shell keep rendering fixtures before a host has answered,
+//! and what keeps the chat testable without one.
 
 import { Conversation } from "../components/Conversation";
 import { HarnessChip } from "../components/HarnessChip";
@@ -105,7 +106,7 @@ export function LiveThreadView({
   host: HostTarget;
   onPickHost?: (hostId: string) => void;
 }) {
-  const { stream, error, send, cancel } = useThreadTranscript(
+  const { stream, error, send, cancel, answer } = useThreadTranscript(
     client,
     thread.id,
   );
@@ -117,6 +118,9 @@ export function LiveThreadView({
       host={host}
       items={stream.items}
       onSend={send}
+      // The buttons on a permission card are the agent's own ACP options, and
+      // this is what carries the one the user pressed back to it (#20).
+      onAction={answer}
       onPickHost={onPickHost}
       status={streamStatus(stream, threadStatus(thread))}
       busy={stream.busy}

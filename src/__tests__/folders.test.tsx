@@ -212,6 +212,10 @@ describe("App, once the host has answered", () => {
         truncated: false,
         queued: [],
       })),
+      // And it asks the broker what the agent is still waiting on (#20) — a
+      // thread reopened after a quit draws that card from here, not from the
+      // transcript.
+      pendingPermissions: vi.fn(async () => ({ requests: [] })),
     } as unknown as HostClient;
   }
 
