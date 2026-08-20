@@ -24,7 +24,7 @@
 //! GitHub auth is [`gh`] — the user's existing CLI login, read on demand, never
 //! persisted. No JaBot GitHub App for MVP.
 
-mod exec;
+pub(super) mod exec;
 pub mod gh;
 pub mod git;
 pub mod origin;
@@ -579,8 +579,17 @@ mod tests {
         assert_eq!(thread["repo"], "jabreeflor/jabot");
         assert_eq!(thread["forgeHost"], "github.com");
         assert_eq!(thread["repoRoot"], folder["repoRoot"]);
-        assert_eq!(thread["branch"], "main");
         assert_eq!(thread["hostId"], session.identity.host_id);
+        // `repoRoot` is the user's checkout; `cwd` is the thread's own worktree
+        // on its own branch (#23). The two must not be the same directory, or
+        // the next thread in this folder would be editing these files.
+        assert_eq!(thread["branch"], "jabot/t-repo");
+        assert_eq!(thread["cwd"], thread["worktreePath"]);
+        assert_ne!(thread["cwd"], folder["cwd"]);
+        assert_eq!(
+            std::fs::canonicalize(thread["repoRoot"].as_str().unwrap()).unwrap(),
+            std::fs::canonicalize(repo.path()).unwrap()
+        );
 
         // The folder lists the thread it now owns.
         let listed = ok(&mut session, FOLDER_LIST, json!({}));
@@ -610,7 +619,10 @@ mod tests {
         );
         assert!(after["folderId"].is_null());
         assert_eq!(after["repo"], "jabreeflor/jabot");
-        assert_eq!(after["cwd"], folder["cwd"]);
+        // Forgetting the folder does not move the thread's cwd, and does not
+        // take its worktree: the spawn record is the thread's, not the row's.
+        assert_eq!(after["cwd"], thread["cwd"]);
+        assert_eq!(after["worktreePath"], thread["worktreePath"]);
     }
 
     #[test]
