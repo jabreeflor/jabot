@@ -200,6 +200,18 @@ describe("App, once the host has answered", () => {
       disconnect: vi.fn(),
       listFolders,
       openThread,
+      // Selecting a host-owned thread now renders it live (#14): it hydrates
+      // from `thread/transcript` and subscribes for `session/update`. A stub
+      // without these is a host the renderer cannot talk to at all, so the
+      // stub grows them rather than the app checking whether they exist.
+      onNotification: vi.fn(() => () => {}),
+      threadTranscript: vi.fn(async () => ({
+        threadId: "t-new",
+        headSeq: 0,
+        events: [],
+        truncated: false,
+        queued: [],
+      })),
     } as unknown as HostClient;
   }
 
