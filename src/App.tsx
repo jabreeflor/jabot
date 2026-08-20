@@ -1,16 +1,30 @@
 //! The app shell: sidebar, one main view, and the overlays that float over both.
 //!
 //! Two data sources meet here and they are deliberately separate. The *real*
-//! host connection (#8) supplies who and where the host is — that seam is live
-//! today. Everything the views render comes from `mock-host`, and swapping it
-//! for host RPC is what #14, #16, #17, #22 and #28 each do for their slice.
+//! host connection (#8) supplies who and where the host is, and — since #16 —
+//! the registered folders and the threads inside them. The rest still comes
+//! from `mock-host`, and swapping it for host RPC is what #14, #17, #22 and #28
+//! each do for their slice.
+//!
+//! Where the two meet, the host wins *once it has answered*. A `null` folder
+//! list is "the host has not said yet" — a preview build, a unit test, a host
+//! still starting — and the shell keeps its fixtures rather than blanking the
+//! sidebar. An empty list is an answer, and an empty sidebar is the right
+//! picture of a fresh install.
 //!
 //! Navigation, overlay state, and the leave animation live here because they are
 //! the only state that spans the sidebar and the main pane.
 
 import { useEffect, useReducer, useRef, useState } from "react";
 
-import { connectHost, type HelloResult, HostRpcError } from "./host";
+import {
+  connectHost,
+  type FolderRegisterParams,
+  type HelloResult,
+  type HostClient,
+  HostRpcError,
+} from "./host";
+import { AddFolderModal } from "./components/AddFolderModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
 import { Sidebar } from "./components/Sidebar";
@@ -25,6 +39,7 @@ import type {
   Selection,
   ThreadSummary,
 } from "./components/types";
+import { allThreads, useFolders } from "./views/folders";
 import { ChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
@@ -61,10 +76,18 @@ function App() {
     botId: "chief",
   });
   const [newChat, setNewChat] = useState<NewChatState>({ open: false });
+  const [newChatError, setNewChatError] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>({ open: false });
   const [menu, setMenu] = useState<MenuState>(null);
   const [leaving, setLeaving] = useState<readonly string[]>([]);
-  const { hello, hostError, connecting } = useHost();
+  const [addFolder, setAddFolder] = useState(false);
+  const { client, hello, hostError, connecting } = useHost();
+  const registered = useFolders(client);
+  // Registered folders replace the fixtures the moment the host answers; the
+  // threads inside them are real rows, so the main pane has to be able to find
+  // one that the mock reducer has never heard of.
+  const folders = registered.folders ?? sidebarFolders(state);
+  const hostThreads = registered.folders ? allThreads(registered.folders) : [];
 
   const timers = useRef<number[]>([]);
   useEffect(() => {
@@ -104,6 +127,28 @@ function App() {
   }
 
   function startThread(draft: NewChatDraft) {
+    const folder = folders.find((f) => f.id === draft.folderId);
+    // A registered folder is the host's, and so is the thread started in it:
+    // `thread/open` is what stamps the row with its cwd and its repo (#16).
+    if (client && registered.folders && folder) {
+      setNewChatError(null);
+      client
+        .openThread({
+          title: draft.task,
+          cwd: folder.cwd ?? folder.path,
+          harnessId: draft.harnessId,
+          folderId: folder.id,
+        })
+        .then((thread) => {
+          registered.reload();
+          setNewChat({ open: false });
+          setSelection({ view: "thread", threadId: thread.threadId });
+        })
+        // The card stays open holding the draft: a refused spawn is something
+        // to fix and retry, not a reason to lose what the user typed.
+        .catch((err) => setNewChatError(formatError(err)));
+      return;
+    }
     const threadId = nextThreadId(state);
     dispatch({ type: "startThread", draft });
     setNewChat({ open: false });
@@ -132,7 +177,9 @@ function App() {
 
       <Sidebar
         bots={state.bots}
-        folders={sidebarFolders(state)}
+        folders={folders}
+        foldersEmpty={registered.folders?.length === 0}
+        onAddFolder={client ? () => setAddFolder(true) : undefined}
         selection={selection}
         inboxCount={needsYouCount(state)}
         openPrCount={openPrCount(state)}
@@ -152,6 +199,7 @@ function App() {
       <main className="main">
         <MainView
           state={state}
+          hostThreads={hostThreads}
           selection={selection}
           host={host}
           onSelect={setSelection}
@@ -170,13 +218,26 @@ function App() {
         />
       </main>
 
+      {addFolder && (
+        <AddFolderModal
+          onRegister={(params: FolderRegisterParams) =>
+            registered.register(params)
+          }
+          onCancel={() => setAddFolder(false)}
+        />
+      )}
+
       {newChat.open && (
         <NewChatModal
           harnesses={HARNESSES}
-          folders={state.folders}
+          folders={registered.folders ?? state.folders}
           defaultFolderId={newChat.folderId}
+          error={newChatError}
           onStart={startThread}
-          onCancel={() => setNewChat({ open: false })}
+          onCancel={() => {
+            setNewChat({ open: false });
+            setNewChatError(null);
+          }}
         />
       )}
 
@@ -229,6 +290,7 @@ function App() {
  */
 function MainView({
   state,
+  hostThreads,
   selection,
   host,
   onSelect,
@@ -240,6 +302,9 @@ function MainView({
   onRemoveBot,
 }: {
   state: MockState;
+  /** Rows the host owns. Looked up before the fixtures, because a folder the
+      host registered lists threads the mock reducer has never heard of. */
+  hostThreads: readonly ThreadSummary[];
   selection: Selection;
   host: HostTarget;
   onSelect: (selection: Selection) => void;
@@ -278,7 +343,9 @@ function MainView({
         />
       );
     case "thread": {
-      const thread = state.threads.find((t) => t.id === selection.threadId);
+      const thread =
+        hostThreads.find((t) => t.id === selection.threadId) ??
+        state.threads.find((t) => t.id === selection.threadId);
       // A deleted thread is not an error state — the Inbox is where work goes.
       if (!thread) {
         return (
@@ -327,6 +394,7 @@ function MainView({
  * the whole of its relationship with the host until the feature issues land.
  */
 function useHost() {
+  const [client, setClient] = useState<HostClient | null>(null);
   const [hello, setHello] = useState<HelloResult | null>(null);
   const [hostError, setHostError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(true);
@@ -343,6 +411,10 @@ function useHost() {
         }
         disconnect = () => client.disconnect();
         setHello(result);
+        // Kept so the feature slices can call the host directly. The identity
+        // is stable for the life of the connection, which is what lets it be an
+        // effect dependency without re-fetching on every render.
+        setClient(client);
       })
       .catch((err) => {
         if (!cancelled) setHostError(formatError(err));
@@ -354,10 +426,11 @@ function useHost() {
     return () => {
       cancelled = true;
       disconnect?.();
+      setClient(null);
     };
   }, []);
 
-  return { hello, hostError, connecting };
+  return { client, hello, hostError, connecting };
 }
 
 function hostLine(

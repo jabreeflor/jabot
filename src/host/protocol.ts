@@ -26,6 +26,11 @@ export const HARNESS_DOCTOR = "harness/doctor";
 export const TOOLS_LIST = "tools/list";
 export const TOOLS_CONNECT = "tools/connect";
 export const TOOLS_DISCONNECT = "tools/disconnect";
+export const FOLDER_LIST = "folder/list";
+export const FOLDER_REGISTER = "folder/register";
+export const FOLDER_UPDATE = "folder/update";
+export const FOLDER_FORGET = "folder/forget";
+export const GITHUB_STATUS = "github/status";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 
 export type RequestId = number | string | null;
@@ -239,6 +244,18 @@ export interface ThreadStateResult {
   foldPolicy: FoldPolicy;
   resurfacedReason?: ResurfaceReason;
   cwd: string;
+  /** The spawn record (#16, setup-porting §19): where this thread works,
+      stamped when it was opened and never re-derived. It outlives the folder it
+      was copied from — a thread whose folder has been forgotten still knows its
+      checkout. */
+  repoRoot?: string;
+  /** `owner/name`. */
+  repo?: string;
+  forgeHost?: string;
+  branch?: string;
+  /** Which machine opened it. One host in MVP1; recorded so a second never
+      has to guess. */
+  hostId?: string;
   harnessId: string;
   folderId?: string;
   botId?: string;
@@ -438,6 +455,118 @@ export interface ToolDisconnectResult {
   affects: string[];
 }
 
+/** A folder's `origin`, split the way `gh` splits it (#16). Absent when the
+    directory has no remote, or one no forge claims — both still work as
+    folders; only the PR surface skips them. */
+export interface FolderOriginView {
+  url: string;
+  /** `github.com`, a GHES hostname, `gitlab.com`. Never assumed. */
+  host: string;
+  owner: string;
+  name: string;
+  /** `owner/name` — one spelling for `gh --repo`, `thread_prs.repo` and the PR
+      view, so they cannot disagree about what this repository is called. */
+  repo: string;
+}
+
+/** A sidebar row under a folder: the `threads` columns the list needs, plus
+    the state of the latest run. */
+export interface FolderThreadView {
+  threadId: string;
+  folderId?: string;
+  botId?: string;
+  harnessId: string;
+  title: string;
+  state: ThreadOverlayState;
+  foldPolicy: FoldPolicy;
+  runState?: RunLedgerState;
+  preview?: string;
+}
+
+/** One registered local directory (#16) — a repo, not a group of them. */
+export interface FolderView {
+  folderId: string;
+  /** Ours to display and rename. The directory keeps its own name. */
+  name: string;
+  path: string;
+  /** What a thread in this folder starts in: the repository root when there is
+      one, else the registered path. Resolved by the host so the renderer does
+      not re-derive the rule, and so #23 has one thing to swap for a worktree. */
+  cwd: string;
+  repoRoot?: string;
+  /** False for a directory git does not claim. Legal: threads run, the PR view
+      skips it, and the sidebar says so. */
+  isGit: boolean;
+  origin?: FolderOriginView;
+  defaultBranch?: string;
+  /** Optional per-folder setup for a fresh worktree (#23 runs it). */
+  setupCommand?: string;
+  /** Gitignored files a fresh worktree needs — `.env` and friends (#23). */
+  filesToCopy: string[];
+  sortOrder: number;
+  /** Active and resurfaced threads only: a folded thread is not listed, which
+      is the promise fold makes. */
+  threads: FolderThreadView[];
+}
+
+export interface FolderListResult {
+  folders: FolderView[];
+}
+
+/** Register a directory the user picked. The host probes git once, here. */
+export interface FolderRegisterParams {
+  /** Absolute, or `~`-relative. The host canonicalises it. */
+  path: string;
+  /** Defaults to the directory's basename, and stays editable after. */
+  name?: string;
+  setupCommand?: string;
+  filesToCopy?: string[];
+}
+
+/** A patch: an omitted field is left alone, an empty `setupCommand` clears it. */
+export interface FolderUpdateParams {
+  folderId: string;
+  name?: string;
+  setupCommand?: string;
+  filesToCopy?: string[];
+  /** Ask git again — a remote added or re-pointed since registration. */
+  refresh?: boolean;
+}
+
+export interface FolderRefParams {
+  folderId: string;
+}
+
+/** Forgetting a folder removes the sidebar row, never the directory. */
+export interface FolderForgetResult {
+  folderId: string;
+  forgotten: boolean;
+  /** Threads that lost their folder and kept everything else — their cwd and
+      their repo were stamped on them at spawn. */
+  detachedThreads: number;
+}
+
+export interface GithubStatusParams {
+  /** Defaults to `github.com`. GHES folders pass their `origin` host. */
+  host?: string;
+}
+
+/** Whether the host can act as the user on GitHub, and as whom.
+ *
+ * There is no token here and there never will be: MVP auth is the user's own
+ * `gh` login, read on demand by the host (#16). `installed` and `authenticated`
+ * are separate because they have different remedies. */
+export interface GithubStatusResult {
+  installed: boolean;
+  authenticated: boolean;
+  host: string;
+  account?: string;
+  detail: string;
+  remedy?: string;
+  /** Where `gh` resolved from, so "it works in my terminal" is comparable. */
+  ghPath?: string;
+}
+
 export interface PermissionReplyParams {
   requestId: string;
   deviceId: string;
@@ -505,4 +634,7 @@ export const RPC_ERROR = {
   STORE_UNAVAILABLE: -32007,
   /** A prompt arrived while the thread's run was still in flight (#15). */
   RUN_IN_FLIGHT: -32008,
+  /** This directory, or the checkout it belongs to, is already a folder (#16).
+      `data.folderId` is the one that already has it. */
+  FOLDER_EXISTS: -32009,
 } as const;
