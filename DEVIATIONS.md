@@ -100,3 +100,55 @@ fix them out of zone — it wrote the cases against the intended behaviour and
 
 This is the argument for D-001 in one paragraph: the in-process Rust tests all
 passed against both defects.
+
+---
+
+## D-004 — #11: departures from the prototype, and why
+
+`prototypes/jabot-classic.html` is the visual contract, but it disagrees with
+the settled decisions in several places. Where they conflict, the decisions won.
+
+| # | Prototype / plan said | Built instead | Why |
+|---|---|---|---|
+| 1 | — | `tauri.conf.json` untouched for chrome | The scaffold already shipped `titleBarStyle: Overlay` + `hiddenTitle`, so only the fake traffic lights needed removing |
+| 2 | Keeps a sleeping thread row in its folder | Folded threads leave the sidebar entirely | Decision #5: "Fold = hide from sidebar". The prototype contradicted itself — its own Wait-for-Inbox handler removed the row |
+| 3 | Fold increments the Inbox badge | Badge counts needs-you cards only | Decision #5: fold is visibility, not a notification. The prototype's own initial state agreed — badge "2" against two NEEDS YOU rows |
+| 4 | Decorative search box | Search really filters folders and threads | No issue owns search; a control that does nothing is worse than ten lines that work. Easy to drop |
+| 5 | Host picker in the chat header only | Also in the code-thread header | A thread is arguably the thing a second host would run. Trivial to remove |
+| 6 | `[kind, html]` tuples with embedded markup | Per-tool-call items matching ACP `session/update`; grouping into one visual toolblock is a render concern | The prototype's shape cannot receive real ACP events |
+| 7 | No harness picker in the bot editor | Bot / BotTemplate / BotDraft carry `harnessId` | Decision #6 — beyond the prototype, but the settled contract #17 will store |
+
+`src/views/mock-host.ts` is a reducer rather than a fixture: each action maps
+1:1 onto the host call that will replace it, so #14/#15/#17/#22/#26 swap the
+reducer for real calls without reshaping the views.
+
+Deliberately not built: the permission prompt UI (#20). The `notice` transcript
+variant is shaped for it and says so, but no permission card exists.
+
+## D-005 — #12: `bundle.targets` must include `app`, not just `dmg`
+
+**Escalated by the implementer, and worth reading before anyone "tidies" it.**
+
+`bundle.targets` changed from `["dmg"]` to `["app", "dmg"]`. In
+`tauri-bundler`, the macOS updater archive is only emitted when the plain
+`app` target is in the list. With `["dmg"]` alone the build **succeeds**, logs
+one easily-missed warning, and publishes a release containing no
+`.app.tar.gz` — an update feed nobody can update from. Reverting that list to
+just `dmg` silently breaks updates for every installed copy. Documented in
+`docs/packaging.md` so the next reader does not undo it.
+
+Two further consequences of #12 worth recording:
+
+- `createUpdaterArtifacts` stays `false` in `tauri.conf.json` and is merged in
+  at release time via `--config`. With it on, `tauri build` hard-errors unless
+  `TAURI_SIGNING_PRIVATE_KEY` is set, which would break every unsigned build —
+  including CI's `bundle` job and anyone building on a laptop.
+- **The first release run will fail by design**, at the preflight step, until
+  the maintainer replaces the `REPLACE_ME__…` updater pubkey. That is
+  deliberate: the alternative was committing a fabricated key that looks real.
+  The failure is loud, immediate, and self-documenting.
+
+The signing and notarization path has never been executed — there are no Apple
+credentials here and the tooling is macOS-only. Its correctness rests on
+reading the `tauri-bundler`, `tauri-cli`, updater-plugin and `tauri-action`
+sources, not on running it.
