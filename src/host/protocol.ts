@@ -20,6 +20,8 @@ export const THREAD_ARCHIVE = "thread/archive";
 export const THREAD_DELETE = "thread/delete";
 export const THREAD_STATE = "thread/state";
 export const THREAD_TRANSCRIPT = "thread/transcript";
+export const THREAD_RESUME = "thread/resume";
+export const SUPERVISOR_STATUS = "supervisor/status";
 export const INBOX_RESURFACE = "inbox/resurface";
 export const INBOX_LIST = "inbox/list";
 export const HARNESS_LIST = "harness/list";
@@ -258,6 +260,13 @@ export interface ThreadOpenParams {
   folderId?: string;
   botId?: string;
   foldPolicy?: FoldPolicy;
+  /** Work in the folder's own checkout instead of a fresh worktree (#23). The
+      advanced opt-out, never the default: two threads sharing the user's tree is
+      the collision worktrees exist to prevent. */
+  useCheckout?: boolean;
+  /** What the thread's branch starts from — a branch, tag or sha. Default is
+      `origin/<default branch>`, never the user's possibly-dirty `HEAD`. */
+  baseRef?: string;
 }
 
 export interface RunView {
@@ -290,6 +299,91 @@ export interface ProcessView {
   connected: boolean;
   acpState: AcpState;
   pendingPermissions: number;
+  /** The adapter's pid while one is attached. Diagnostic only — decision #4's
+      durability is resume, and a pid does not survive a lid close. */
+  pid?: number;
+  /** Could `thread/resume` put this conversation back? Needs a stored session,
+      a receipt that still matches, and a `cwd` that still exists (#21). */
+  resumable: boolean;
+  /** Fields that have moved since the session was created, by wire name.
+      Non-empty means the stored session is no longer this job, so the next
+      prompt starts a new one instead of continuing someone else's. */
+  drift?: string[];
+}
+
+/** What `thread/resume` managed to do. */
+export type ResumeOutcome =
+  /** The adapter was still there; nothing needed restoring. */
+  | "live"
+  /** ACP `session/resume` — context back, no replay. */
+  | "resumed"
+  /** ACP `session/load` — the agent replayed its history to us. */
+  | "loaded"
+  /** The receipt no longer matches; resuming would continue a different job. */
+  | "drifted"
+  /** This thread has never had an ACP session to resume. */
+  | "no_session"
+  /** The adapter speaks neither `session/resume` nor `session/load`. */
+  | "unsupported"
+  /** The directory the session was created in is gone. */
+  | "cwd_missing";
+
+export interface ThreadResumeResult {
+  threadId: string;
+  /** True only when a conversation is attached — `outcome` says which way. */
+  resumed: boolean;
+  outcome: ResumeOutcome;
+  acpSessionId?: string;
+  drift?: string[];
+  /** One sentence to show. Present whenever the outcome is not a plain
+      success: "could not resume" with no reason sends users to the wrong fix. */
+  detail?: string;
+  /** The thread as it stands afterwards, so a resume is one round trip. */
+  state: ThreadStateResult;
+}
+
+/** One adapter the supervisor is holding open. */
+export interface LiveAdapterView {
+  threadId: string;
+  pid: number;
+  harnessId: string;
+  acpSessionId?: string;
+  acpState: AcpState;
+  /** Milliseconds since the adapter last said anything. */
+  idleMs: number;
+  pendingPermissions: number;
+  /** Which adapter processes may be shared (#13). Two live threads with the
+      same key could have been one process; today they are not, and this says
+      so out loud rather than implying pooling that does not exist. */
+  profileKey: string;
+}
+
+/** What the boot pass did to one run left open by a host that stopped. */
+export interface BootNoteView {
+  threadId: string;
+  runId?: string;
+  /** The run state the previous host left behind. */
+  was: RunLedgerState;
+  /** What it was moved to. Always terminal: nothing is reporting on it. */
+  now: RunLedgerState;
+  resurfacedAs?: ResurfaceReason;
+  detail: string;
+}
+
+export interface SupervisorStatusResult {
+  hostId: string;
+  /** When this host process came up. Every `boot` note belongs to it. */
+  bootedAt: string;
+  liveAdapters: LiveAdapterView[];
+  /** The reconciliation this launch performed — RAM, and rightly so: its
+      durable half is already in `runs` and `inbox_events`. */
+  boot: BootNoteView[];
+  /** Grace before an idle adapter on an unwatched thread is closed. 0 = off. */
+  idleEvictAfterMs: number;
+  /** Unaccounted wall time that counts as a machine sleep. */
+  sleepGapThresholdMs: number;
+  /** Sleeps this host has noticed since it started. */
+  sleepsObserved: number;
 }
 
 export interface ThreadStateResult {
@@ -308,6 +402,12 @@ export interface ThreadStateResult {
   repo?: string;
   forgeHost?: string;
   branch?: string;
+  /** The host-owned git worktree this thread works in (#23), when it has one.
+      Absent for every thread that is not a code thread — a worker's standing
+      thread, a folder that is not a checkout, the "use my own checkout" opt-out
+      — and absent again once the thread has been archived or deleted and its
+      tree collected. */
+  worktreePath?: string;
   /** Which machine opened it. One host in MVP1; recorded so a second never
       has to guess. */
   hostId?: string;
@@ -791,4 +891,8 @@ export const RPC_ERROR = {
   /** Chief is the one crew seat the product assumes exists (#6, #17).
       `data.botId` is the bot that was refused. */
   CHIEF_REQUIRED: -32010,
+  /** The thread's worktree could not be created (#23), so the thread was not
+      opened at all. New Chat keeps the draft: the way through is a different
+      base ref, or `useCheckout` to work in the folder itself. */
+  WORKTREE_FAILED: -32011,
 } as const;

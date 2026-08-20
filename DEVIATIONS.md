@@ -716,3 +716,98 @@ backstop.
 - **A UI for any of it.** `thread/resume`, `process.resumable`, `process.drift`
   and `supervisor/status` are on the wire and unused by the renderer. The Inbox
   and thread views are #22's.
+
+---
+
+## D-012 — #23: the worktree policy, and what happens to uncommitted work
+
+**Plan:** `worktrees.md` specifies a host-owned `git worktree` per concurrent
+code thread, created on spawn and cleaned up on Delete or on Archive-after-
+merge, with a per-folder setup script and files-to-copy (#16 already stores
+both). The cleanup table says "Unlock + `remove --force` after confirm if
+dirty/unpushed" for Delete, and leaves Archive at "Remove worktree".
+
+**Built:** `src-tauri/src/host/git/` — `worktree.rs` (add / lock / status /
+save / remove / restore / prune, over the real `git`), `setup.rs`
+(files-to-copy, `.worktreeinclude`, the setup command), and `mod.rs` (the
+`HostSession` integration and the boot sweep). `thread/open` provisions the
+tree **before** the row is inserted, so `cwd`, `branch` and `worktree_path` are
+written by the same INSERT as the rest of the spawn record (#16's rule, kept).
+`thread/archive` and `thread/delete` release it; `thread/fold` does not.
+`threads.worktree_path` was already in migration 0001, so there is no new
+migration. Two fields on the wire (`useCheckout`, `baseRef` on
+`ThreadOpenParams`; `worktreePath` on `ThreadStateResult`), one new error code
+(`WORKTREE_FAILED`, −32011), and no new methods.
+
+**Why, and the five places this departs from the plan:**
+
+**1. Uncommitted work is committed, not confirmed away.** The research assumes
+a confirmation dialog — Conductor and Claude Code both prompt on exit. The host
+has no prompt surface for cleanup (permission prompts are ACP's, and a thread
+being archived has no adapter left to ask through), so a confirm would have to
+be invented in the renderer and then trusted by the host. Instead **archive and
+delete both run `git add -A` + `commit` on the thread's own `jabot/<id>` branch
+first**, with `user.name`/`user.email` overridden, `--no-verify` and
+`--no-gpg-sign` — a machine with no git identity, a failing `pre-commit`, or a
+GPG key that wants a passphrase must not be able to turn "save this" into "lose
+this". So the honest answer to *what happens to uncommitted changes when a
+thread is archived*: they become one commit, on a branch JaBot never deletes,
+recoverable with `git checkout jabot/<id>`. Ignored files (`node_modules`, the
+copied `.env`) are not preserved — they were put there by setup, not by the
+agent, and they are re-created by setup next time. If the commit **cannot** be
+made, archive keeps the tree rather than removing it, and says so in the log;
+delete forces, because delete is the user saying they meant it.
+
+**2. The `jabot/<id>` branch outlives the thread, including a deleted one.**
+The research leaves branch deletion to `gh pr merge -d` or a later sweep, and
+this goes one step further: nothing here ever deletes a branch. A branch costs
+a ref; it is also the only copy of anything the agent never pushed.
+
+**3. Reopen restores what archive removed — an edge the research does not
+cover.** `archived → active` is a legal transition in #15's table (kept for
+#21's resume). Removing the tree on archive would otherwise leave that
+transition pointing an adapter at a directory that no longer exists, so
+`thread/reopen` re-adds the tree at the same path on the same branch and runs
+setup again. Three guards make it a restore rather than an invention: the cwd
+must be under our worktree root, must currently be missing, and the branch must
+be one we minted.
+
+**4. The setup command runs synchronously, and blocks the request.** A folder
+configured with `npm ci` makes `thread/open` take as long as `npm ci` does
+(capped at `SETUP_TIMEOUT`, five minutes). This is deliberate — an agent must
+not start work in a half-built tree — but it is a real cost: the host handles
+one request at a time, so New Chat spins for the duration. The alternative is a
+"preparing" thread state plus a notification, which is protocol and renderer
+surface nothing draws yet. Setup *failing* is not spawn failing: the tree
+exists, the thread is the user's to prompt, and the incomplete report is logged.
+
+**5. No `git fetch` before branching.** The research says "from `origin/<default>`
+(fetch if stale)". Resolution is `origin/<default>` → `<default>` → `HEAD`, all
+local. A fetch on every spawn adds a network round trip to New Chat and can
+fail or hang on a credential helper for a repository the user has not
+authenticated; a slightly stale base is a rebase, while a hung spawn is a
+frozen app. `baseRef` is the explicit way to name something else, and a ref
+that does not resolve refuses the spawn instead of silently using `HEAD`.
+
+**Also decided rather than deferred:** a worktree is created for a thread whose
+**folder is a git repository** and nothing else — a worker's standing thread has
+no folder and gets none (decision #6), a folder that is not a checkout gets
+none, and a repository with no commits gets none (there is no base to branch
+from and nothing to collide over). Failing to create one **refuses the spawn**
+rather than falling back to the shared checkout, since that fallback is exactly
+the collision the issue exists to remove; `useCheckout: true` is the deliberate
+way to work in the user's own tree.
+
+### What #23 did not build
+
+- **A renderer surface.** `useCheckout` and `baseRef` are on the wire and
+  unused: New Chat has no "work in my current folder" toggle and no base-branch
+  picker, and no view shows `worktreePath`. #11's `NewChatDraft` is unchanged.
+- **A Repair action.** The boot sweep collects trees nobody claims, and the
+  research's "offer Repair in folder settings" would be the same code behind a
+  button; there is no folder-settings surface to put it on yet.
+- **A disk cap.** Cursor's max-count sweep is explicitly not-MVP in the
+  research, and it is not here. Nothing auto-deletes a tree on age or count —
+  only on archive, on delete, and on being unclaimed at boot.
+- **PR-aware archive.** "Archive after merged" is #28's knowledge; archive here
+  cleans up whether or not a PR merged.

@@ -23,12 +23,14 @@ import {
   PROTOCOL_VERSION,
   SESSION_CANCEL,
   SESSION_PROMPT,
+  SUPERVISOR_STATUS,
   SYNC_RESUME_FROM,
   THREAD_ARCHIVE,
   THREAD_DELETE,
   THREAD_FOLD,
   THREAD_OPEN,
   THREAD_REOPEN,
+  THREAD_RESUME,
   THREAD_STATE,
   THREAD_TRANSCRIPT,
   TOOLS_CONNECT,
@@ -66,9 +68,11 @@ import {
   type ResumeFromParams,
   type ResumeFromResult,
   type SessionCancelParams,
+  type SupervisorStatusResult,
   type ThreadFoldParams,
   type ThreadOpenParams,
   type ThreadRefParams,
+  type ThreadResumeResult,
   type ThreadStateResult,
   type ThreadTranscriptParams,
   type ThreadTranscriptResult,
@@ -196,6 +200,23 @@ export class HostClient {
 
   async threadState(params: ThreadRefParams): Promise<ThreadStateResult> {
     return this.request<ThreadStateResult>(THREAD_STATE, params);
+  }
+
+  /**
+   * Put a thread's ACP session back after a quit, a crash, or a lid close.
+   *
+   * Never `session/new`: that orphans the conversation. `outcome` says how far
+   * it got — `resumed` / `loaded` attached it, `drifted` means the harness,
+   * model, cwd, tools or permission mode moved and the stored session is no
+   * longer this job, `cwd_missing` means the folder is gone.
+   */
+  async resumeThread(params: ThreadRefParams): Promise<ThreadResumeResult> {
+    return this.request<ThreadResumeResult>(THREAD_RESUME, params);
+  }
+
+  /** What the supervisor is holding open, and what it reconciled at boot. */
+  async supervisorStatus(): Promise<SupervisorStatusResult> {
+    return this.request<SupervisorStatusResult>(SUPERVISOR_STATUS);
   }
 
   async inbox(params: InboxListParams = {}): Promise<InboxListResult> {

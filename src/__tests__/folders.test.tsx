@@ -310,6 +310,9 @@ describe("App, once the host has answered", () => {
           connected: false,
           acpState: "unknown" as const,
           pendingPermissions: 0,
+          // A thread with no session and no receipt: nothing to resume, which
+          // is what the real host answers for a row `thread/open` just made.
+          resumable: false,
         },
         runs: [],
         unread: 0,
