@@ -17,6 +17,7 @@ pub const SESSION_CANCEL: &str = "session/cancel";
 pub const SESSION_UPDATE: &str = "session/update";
 pub const PERMISSION_ASK: &str = "permission/ask";
 pub const PERMISSION_REPLY: &str = "permission/reply";
+pub const PERMISSION_PENDING: &str = "permission/pending";
 pub const PERMISSION_RESOLVED: &str = "permission/resolved";
 pub const THREAD_FOLD: &str = "thread/fold";
 pub const THREAD_OPEN: &str = "thread/open";
@@ -51,6 +52,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     SESSION_PROMPT,
     SESSION_CANCEL,
     PERMISSION_REPLY,
+    PERMISSION_PENDING,
     THREAD_FOLD,
     THREAD_OPEN,
     THREAD_REOPEN,
@@ -288,6 +290,17 @@ pub struct ThreadTranscriptResult {
     /// Prompts held for the turn in flight, oldest first. Supervisor RAM, so
     /// this is empty after a restart — the same answer the run ledger gives.
     pub queued: Vec<QueuedPromptView>,
+    /// The thread's *open* run, if it has one (`queued`, `running` or
+    /// `needs_you`); absent once it ended, whatever it ended as.
+    ///
+    /// A client that mounts mid-turn cannot get this from `events`. The replay
+    /// is history, and history cannot say whether the turn it stops in is
+    /// still going — the last row of a live turn and the last row of a turn
+    /// that died with its host look identical. So the ledger's answer travels
+    /// with the replay it has to agree with, read in the same call, and a
+    /// reopened thread offers Stop for work that is genuinely still running.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_state: Option<String>,
 }
 
 /// A prompt the user has sent that the agent has not been given yet.
@@ -307,11 +320,61 @@ pub struct SessionCancelResult {
     pub cancelled: bool,
 }
 
+/// What became of one answer.
+///
+/// `delivered` is the load-bearing field and it is not always `true`: an ask
+/// whose adapter died — or whose host was quit and restarted — is still
+/// answerable, and the answer is still recorded, but there is no live ACP call
+/// left to hand it to. Saying so is the difference between a UI that tells the
+/// user the agent was told and one that tells the truth.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionReplyResult {
     pub request_id: String,
     pub delivered: bool,
+    /// This request was already resolved before the call — a second click, or
+    /// a click that raced the adapter dying. The fields below then describe
+    /// what the *first* resolution decided, not what this call asked for.
+    pub already_answered: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option_id: Option<String>,
+    pub cancelled: bool,
+}
+
+/// An ask nobody has answered yet, as a client draws it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingPermissionView {
+    pub request_id: String,
+    pub thread_id: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// The ACP `toolCall` (or whole request) the agent sent, verbatim.
+    pub subject: Value,
+    /// The ACP options the agent offered, verbatim. A client renders these and
+    /// nothing else: the host never invents an option the agent did not offer.
+    pub options: Value,
+    pub created_at: String,
+    /// No live adapter call is waiting on this one. The host that took the ask
+    /// is gone, so answering records the decision and the agent never hears
+    /// it — reopening the thread and prompting again is what continues the
+    /// work (`state-machine.md`, and #21's boot reconciliation).
+    pub stale: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionPendingParams {
+    /// One thread, or every thread when absent — the Inbox wants all of them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionPendingResult {
+    pub requests: Vec<PendingPermissionView>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
