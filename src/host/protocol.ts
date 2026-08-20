@@ -14,14 +14,48 @@ export const PERMISSION_ASK = "permission/ask";
 export const PERMISSION_REPLY = "permission/reply";
 export const PERMISSION_RESOLVED = "permission/resolved";
 export const THREAD_FOLD = "thread/fold";
+export const THREAD_OPEN = "thread/open";
+export const THREAD_REOPEN = "thread/reopen";
+export const THREAD_ARCHIVE = "thread/archive";
+export const THREAD_DELETE = "thread/delete";
+export const THREAD_STATE = "thread/state";
 export const INBOX_RESURFACE = "inbox/resurface";
+export const INBOX_LIST = "inbox/list";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 
 export type RequestId = number | string | null;
 
 export type DeviceRole = "full" | "approver";
 
-export type ResurfaceReason = "done" | "failed" | "needs_you";
+/** Why a folded thread came back. `failed` (retry) and `stuck` (wait or
+    cancel, process still alive) are deliberately not the same card. */
+export type ResurfaceReason = "done" | "failed" | "stuck" | "needs_you";
+
+/** `threads.state`, plus the `deleted` tombstone the UI never lists. */
+export type ThreadOverlayState =
+  | "active"
+  | "folded"
+  | "resurfaced"
+  | "archived"
+  | "deleted";
+
+/** "Wait for Inbox" is a permission policy on a folded thread — auto-allow
+    reads, still ask for execute and delete — not a fifth overlay state. */
+export type FoldPolicy = "default" | "wait_for_inbox";
+
+/** The process axis, reported next to the overlay state and never folded into
+    it: a folded thread that is still `running` is the whole feature. */
+export type AcpState = "running" | "idle" | "requires_action" | "unknown";
+
+export type RunLedgerState =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "timed_out"
+  | "lost"
+  | "needs_you";
 
 export interface JsonRpcError {
   code: number;
@@ -140,6 +174,117 @@ export interface SessionCancelParams {
 
 export interface ThreadFoldParams {
   threadId: string;
+  /** Omitted keeps the thread's current policy. */
+  policy?: FoldPolicy;
+}
+
+/** Every lifecycle method that only needs to name a thread. */
+export interface ThreadRefParams {
+  threadId: string;
+}
+
+/** New Chat: the edge into the state machine. Idempotent. */
+export interface ThreadOpenParams {
+  threadId?: string;
+  title: string;
+  cwd: string;
+  harnessId: string;
+  runtime?: RuntimeSpec;
+  folderId?: string;
+  botId?: string;
+  foldPolicy?: FoldPolicy;
+}
+
+export interface RunView {
+  id: string;
+  seq: number;
+  kind: string;
+  state: RunLedgerState;
+  error?: string;
+  acpSessionId?: string;
+  startedAt?: string;
+  endedAt?: string;
+  createdAt: string;
+}
+
+/** The receipt #21 compares against on resume; `fingerprint` is the cheap
+    equality check and the fields beside it say what drifted. */
+export interface ReceiptView {
+  acpSessionId: string;
+  nativeSessionRef?: string;
+  harnessId: string;
+  model?: string;
+  cwd: string;
+  tools: string[];
+  permissionMode: string;
+  fingerprint: string;
+  updatedAt: string;
+}
+
+export interface ProcessView {
+  connected: boolean;
+  acpState: AcpState;
+  pendingPermissions: number;
+}
+
+export interface ThreadStateResult {
+  threadId: string;
+  title: string;
+  state: ThreadOverlayState;
+  foldPolicy: FoldPolicy;
+  resurfacedReason?: ResurfaceReason;
+  cwd: string;
+  harnessId: string;
+  folderId?: string;
+  botId?: string;
+  acpSessionId?: string;
+  lastStopReason?: string;
+  lastError?: string;
+  foldedAt?: string;
+  resurfacedAt?: string;
+  archivedAt?: string;
+  deletedAt?: string;
+  process: ProcessView;
+  latestRun?: RunView;
+  runs: RunView[];
+  receipt?: ReceiptView;
+  unread: number;
+}
+
+export interface InboxListParams {
+  limit?: number;
+  includeDismissed?: boolean;
+}
+
+export interface InboxEventView {
+  id: string;
+  threadId: string;
+  threadTitle: string;
+  threadState: ThreadOverlayState;
+  kind: string;
+  title: string;
+  summary: string;
+  runId?: string;
+  payload?: unknown;
+  createdAt: string;
+  readAt?: string;
+  dismissedAt?: string;
+}
+
+/** Still Sleeping is a projection of `threads.state = folded`, not an event. */
+export interface SleepingThreadView {
+  threadId: string;
+  title: string;
+  foldPolicy: FoldPolicy;
+  foldedAt?: string;
+  runState?: RunLedgerState;
+  acpState: AcpState;
+}
+
+export interface InboxListResult {
+  events: InboxEventView[];
+  sleeping: SleepingThreadView[];
+  unread: number;
 }
 
 export interface PermissionReplyParams {
@@ -204,4 +349,7 @@ export const RPC_ERROR = {
   HELLO_REQUIRED: -32002,
   UNPAIRED_DEVICE: -32003,
   HARNESS_UNAVAILABLE: -32004,
+  ILLEGAL_TRANSITION: -32005,
+  THREAD_NOT_FOUND: -32006,
+  STORE_UNAVAILABLE: -32007,
 } as const;

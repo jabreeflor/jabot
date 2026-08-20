@@ -5,7 +5,10 @@ use rusqlite::Connection;
 use super::error::StoreError;
 use super::now_utc;
 
-const MIGRATIONS: &[(i32, &str)] = &[(1, include_str!("migrations/0001_init.sql"))];
+const MIGRATIONS: &[(i32, &str)] = &[
+    (1, include_str!("migrations/0001_init.sql")),
+    (2, include_str!("migrations/0002_lifecycle.sql")),
+];
 
 pub fn migrate(conn: &mut Connection) -> Result<i32, StoreError> {
     let mut current = schema_version(conn)?;
@@ -61,8 +64,8 @@ mod tests {
     fn migrate_is_idempotent() {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", true).unwrap();
-        assert_eq!(migrate(&mut conn).unwrap(), 1);
-        assert_eq!(migrate(&mut conn).unwrap(), 1);
+        assert_eq!(migrate(&mut conn).unwrap(), 2);
+        assert_eq!(migrate(&mut conn).unwrap(), 2);
         let tables: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'threads'",

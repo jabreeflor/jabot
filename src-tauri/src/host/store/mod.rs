@@ -209,6 +209,108 @@ impl Store {
         )
     }
 
+    /// Guarded overlay transition — see [`overlay::transition_thread`].
+    pub fn transition_thread(
+        &self,
+        id: &str,
+        from: &str,
+        to: &str,
+        reason: Option<&str>,
+    ) -> Result<ThreadRow, StoreError> {
+        overlay::transition_thread(&self.conn, id, from, to, reason)
+    }
+
+    pub fn tombstone_thread(&self, id: &str) -> Result<ThreadRow, StoreError> {
+        overlay::tombstone_thread(&self.conn, id)
+    }
+
+    pub fn set_thread_fold_policy(
+        &self,
+        id: &str,
+        fold_policy: &str,
+    ) -> Result<ThreadRow, StoreError> {
+        overlay::set_thread_fold_policy(&self.conn, id, fold_policy)
+    }
+
+    pub fn set_thread_stop(
+        &self,
+        id: &str,
+        stop_reason: Option<&str>,
+        error: Option<&str>,
+    ) -> Result<(), StoreError> {
+        overlay::set_thread_stop(&self.conn, id, stop_reason, error)
+    }
+
+    pub fn set_run_acp_session(&self, id: &str, acp_session_id: &str) -> Result<(), StoreError> {
+        overlay::set_run_acp_session(&self.conn, id, acp_session_id)
+    }
+
+    pub fn get_run(&self, id: &str) -> Result<Option<RunRow>, StoreError> {
+        overlay::get_run(&self.conn, id)
+    }
+
+    pub fn list_runs(&self, thread_id: &str) -> Result<Vec<RunRow>, StoreError> {
+        overlay::list_runs(&self.conn, thread_id)
+    }
+
+    pub fn latest_run(&self, thread_id: &str) -> Result<Option<RunRow>, StoreError> {
+        overlay::latest_run(&self.conn, thread_id)
+    }
+
+    pub fn list_inbox_events(
+        &self,
+        limit: i64,
+        include_dismissed: bool,
+    ) -> Result<Vec<InboxEventRow>, StoreError> {
+        overlay::list_inbox_events(&self.conn, limit, include_dismissed)
+    }
+
+    pub fn count_unread_inbox(&self, thread_id: Option<&str>) -> Result<i64, StoreError> {
+        overlay::count_unread_inbox(&self.conn, thread_id)
+    }
+
+    pub fn mark_inbox_event_read(&self, id: &str) -> Result<(), StoreError> {
+        overlay::mark_inbox_event_read(&self.conn, id)
+    }
+
+    pub fn mark_inbox_read(&self, thread_id: &str) -> Result<usize, StoreError> {
+        overlay::mark_inbox_read(&self.conn, thread_id)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_session_receipt(
+        &self,
+        thread_id: &str,
+        acp_session_id: &str,
+        native_session_ref: Option<&str>,
+        harness_id: &str,
+        model: Option<&str>,
+        cwd: &str,
+        tools_json: &str,
+        permission_mode: &str,
+        fingerprint: &str,
+    ) -> Result<SessionReceiptRow, StoreError> {
+        overlay::upsert_session_receipt(
+            &self.conn,
+            thread_id,
+            acp_session_id,
+            native_session_ref,
+            harness_id,
+            model,
+            cwd,
+            tools_json,
+            permission_mode,
+            fingerprint,
+        )
+    }
+
+    pub fn get_session_receipt(
+        &self,
+        thread_id: &str,
+    ) -> Result<Option<SessionReceiptRow>, StoreError> {
+        overlay::get_session_receipt(&self.conn, thread_id)
+    }
+
     /// Store secret bytes in the vault; SQLite keeps only the pointer.
     pub fn put_secret(
         &self,
@@ -424,6 +526,7 @@ pub(crate) fn map_thread(row: &Row<'_>) -> rusqlite::Result<ThreadRow> {
         resurfaced_at: row.get(18)?,
         archived_at: row.get(19)?,
         deleted_at: row.get(20)?,
+        resurfaced_reason: row.get(21)?,
     })
 }
 
@@ -439,6 +542,7 @@ pub(crate) fn map_run(row: &Row<'_>) -> rusqlite::Result<RunRow> {
         started_at: row.get(7)?,
         ended_at: row.get(8)?,
         created_at: row.get(9)?,
+        acp_session_id: row.get(10)?,
     })
 }
 
@@ -464,6 +568,22 @@ pub(crate) fn map_inbox_event(row: &Row<'_>) -> rusqlite::Result<InboxEventRow> 
         created_at: row.get(7)?,
         read_at: row.get(8)?,
         dismissed_at: row.get(9)?,
+    })
+}
+
+pub(crate) fn map_receipt(row: &Row<'_>) -> rusqlite::Result<SessionReceiptRow> {
+    Ok(SessionReceiptRow {
+        thread_id: row.get(0)?,
+        acp_session_id: row.get(1)?,
+        native_session_ref: row.get(2)?,
+        harness_id: row.get(3)?,
+        model: row.get(4)?,
+        cwd: row.get(5)?,
+        tools_json: row.get(6)?,
+        permission_mode: row.get(7)?,
+        fingerprint: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }
 
@@ -544,7 +664,7 @@ mod tests {
     fn open_uses_wal_and_seeds_catalog() {
         let (store, _dir) = open_store();
         assert_eq!(store.journal_mode().unwrap(), "wal");
-        assert_eq!(store.schema_version().unwrap(), 1);
+        assert_eq!(store.schema_version().unwrap(), 2);
         let harnesses = store.list_harnesses().unwrap();
         assert_eq!(harnesses.len(), 3);
         assert!(harnesses.iter().all(|h| h.is_builtin));

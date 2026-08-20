@@ -14,6 +14,9 @@ pub const UNIMPLEMENTED: i64 = -32001;
 pub const HELLO_REQUIRED: i64 = -32002;
 pub const UNPAIRED_DEVICE: i64 = -32003;
 pub const HARNESS_UNAVAILABLE: i64 = -32004;
+pub const ILLEGAL_TRANSITION: i64 = -32005;
+pub const THREAD_NOT_FOUND: i64 = -32006;
+pub const STORE_UNAVAILABLE: i64 = -32007;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -40,6 +43,19 @@ pub enum RpcError {
         command: String,
         install_hint: Option<String>,
     },
+    /// The state machine refused the move. Never a silent no-op: a fold that
+    /// quietly did nothing would leave the sidebar and the store disagreeing
+    /// about whether the user's work disappeared (#15).
+    #[error("cannot {action} a {from} thread")]
+    IllegalTransition {
+        thread_id: String,
+        from: String,
+        action: String,
+    },
+    #[error("no such thread: {0}")]
+    ThreadNotFound(String),
+    #[error("this host has no store; lifecycle state cannot be persisted")]
+    StoreUnavailable,
 }
 
 impl RpcError {
@@ -55,6 +71,9 @@ impl RpcError {
             Self::HelloRequired => HELLO_REQUIRED,
             Self::UnpairedDevice => UNPAIRED_DEVICE,
             Self::HarnessUnavailable { .. } => HARNESS_UNAVAILABLE,
+            Self::IllegalTransition { .. } => ILLEGAL_TRANSITION,
+            Self::ThreadNotFound(_) => THREAD_NOT_FOUND,
+            Self::StoreUnavailable => STORE_UNAVAILABLE,
         }
     }
 
@@ -76,6 +95,18 @@ impl RpcError {
             } => Some(serde_json::json!({
                 "command": command,
                 "installHint": install_hint,
+            })),
+            Self::IllegalTransition {
+                thread_id,
+                from,
+                action,
+            } => Some(serde_json::json!({
+                "threadId": thread_id,
+                "from": from,
+                "action": action,
+            })),
+            Self::ThreadNotFound(thread_id) => Some(serde_json::json!({
+                "threadId": thread_id,
             })),
             _ => None,
         }

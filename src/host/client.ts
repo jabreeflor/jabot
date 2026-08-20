@@ -6,19 +6,27 @@ import {
   HOST_HEALTH,
   HOST_HELLO,
   HOST_RPC_EVENT,
+  INBOX_LIST,
   JSONRPC_VERSION,
   PERMISSION_REPLY,
   PROTOCOL_VERSION,
   SESSION_CANCEL,
   SESSION_PROMPT,
   SYNC_RESUME_FROM,
+  THREAD_ARCHIVE,
+  THREAD_DELETE,
   THREAD_FOLD,
+  THREAD_OPEN,
+  THREAD_REOPEN,
+  THREAD_STATE,
   type HealthResult,
   type HelloParams,
   type HelloResult,
   type JsonRpcError,
   type JsonRpcNotification,
   type JsonRpcRequest,
+  type InboxListParams,
+  type InboxListResult,
   type JsonRpcResponse,
   type PermissionReplyParams,
   type PromptParams,
@@ -26,6 +34,9 @@ import {
   type ResumeFromResult,
   type SessionCancelParams,
   type ThreadFoldParams,
+  type ThreadOpenParams,
+  type ThreadRefParams,
+  type ThreadStateResult,
 } from "./protocol";
 
 export class HostRpcError extends Error {
@@ -110,8 +121,34 @@ export class HostClient {
     await this.request(SESSION_CANCEL, params);
   }
 
-  async fold(params: ThreadFoldParams): Promise<void> {
-    await this.request(THREAD_FOLD, params);
+  /** New Chat. Idempotent — reopening the same id returns the same thread. */
+  async openThread(params: ThreadOpenParams): Promise<ThreadStateResult> {
+    return this.request<ThreadStateResult>(THREAD_OPEN, params);
+  }
+
+  /** Hide the thread and keep the subprocess. Never closes the ACP session. */
+  async fold(params: ThreadFoldParams): Promise<ThreadStateResult> {
+    return this.request<ThreadStateResult>(THREAD_FOLD, params);
+  }
+
+  async reopenThread(params: ThreadRefParams): Promise<ThreadStateResult> {
+    return this.request<ThreadStateResult>(THREAD_REOPEN, params);
+  }
+
+  async archiveThread(params: ThreadRefParams): Promise<ThreadStateResult> {
+    return this.request<ThreadStateResult>(THREAD_ARCHIVE, params);
+  }
+
+  async deleteThread(params: ThreadRefParams): Promise<ThreadStateResult> {
+    return this.request<ThreadStateResult>(THREAD_DELETE, params);
+  }
+
+  async threadState(params: ThreadRefParams): Promise<ThreadStateResult> {
+    return this.request<ThreadStateResult>(THREAD_STATE, params);
+  }
+
+  async inbox(params: InboxListParams = {}): Promise<InboxListResult> {
+    return this.request<InboxListResult>(INBOX_LIST, params);
   }
 
   async replyPermission(params: PermissionReplyParams): Promise<void> {

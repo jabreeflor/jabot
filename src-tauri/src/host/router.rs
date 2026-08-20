@@ -6,9 +6,10 @@ use serde_json::Value;
 use super::protocol::error::RpcError;
 use super::protocol::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use super::protocol::methods::{
-    HelloParams, PermissionReplyParams, PromptParams, ResumeFromParams, SessionCancelParams,
-    ThreadFoldParams, HOST_HEALTH, HOST_HELLO, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT,
-    SYNC_RESUME_FROM, THREAD_FOLD,
+    HelloParams, InboxListParams, PermissionReplyParams, PromptParams, ResumeFromParams,
+    SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams, HOST_HEALTH,
+    HOST_HELLO, INBOX_LIST, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SYNC_RESUME_FROM,
+    THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_STATE,
 };
 use super::HostSession;
 
@@ -52,7 +53,42 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             session.require_hello()?;
             let params: ThreadFoldParams = parse_params(request.params.as_ref())?;
             params.validate()?;
-            unimplemented_method(THREAD_FOLD)
+            to_value(session.thread_fold(params)?)
+        }
+        THREAD_OPEN => {
+            session.require_hello()?;
+            let params: ThreadOpenParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_open(params)?)
+        }
+        THREAD_REOPEN => {
+            session.require_hello()?;
+            let params: ThreadRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_reopen(params)?)
+        }
+        THREAD_ARCHIVE => {
+            session.require_hello()?;
+            let params: ThreadRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_archive(params)?)
+        }
+        THREAD_DELETE => {
+            session.require_hello()?;
+            let params: ThreadRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_delete(params)?)
+        }
+        THREAD_STATE => {
+            session.require_hello()?;
+            let params: ThreadRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_state(params)?)
+        }
+        INBOX_LIST => {
+            session.require_hello()?;
+            let params: InboxListParams = parse_params_or_default(request.params.as_ref())?;
+            to_value(session.inbox_list(params)?)
         }
         SYNC_RESUME_FROM => {
             session.require_hello()?;
@@ -62,10 +98,6 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
         }
         _ => Err(RpcError::MethodNotFound),
     }
-}
-
-fn unimplemented_method(method: &'static str) -> Result<Value, RpcError> {
-    Err(RpcError::Unimplemented(method))
 }
 
 fn parse_params<T: DeserializeOwned>(params: Option<&Value>) -> Result<T, RpcError> {

@@ -5,6 +5,7 @@
 
 mod acp;
 mod identity;
+mod lifecycle;
 mod log;
 mod protocol;
 mod router;
@@ -16,12 +17,21 @@ pub use acp::AdapterWake;
 #[allow(unused_imports)]
 pub use identity::{DeviceRecord, HostIdentity};
 #[allow(unused_imports)]
+pub use lifecycle::{
+    ledger::RunState,
+    process::AcpState,
+    receipt::{drift, DriftField, SessionFingerprint},
+    state::ThreadState,
+};
+#[allow(unused_imports)]
 pub use protocol::{
     decode_frame, decode_frames, encode_frame, DeviceInfo, DeviceRole, Envelope, HealthResult,
     HelloParams, HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
-    JsonRpcResponse, RequestId, ResurfaceReason, RpcError, StoreStatus, CLIENT_METHODS,
-    HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_REPLY,
-    PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
+    JsonRpcResponse, RequestId, ResurfaceReason, RpcError, StoreStatus, ThreadStateResult,
+    CLIENT_METHODS, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE,
+    JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION,
+    SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
+    THREAD_OPEN, THREAD_REOPEN, THREAD_STATE,
 };
 #[allow(unused_imports)]
 pub use store::{NewThread, Secrets, Store, StoreError, ThreadRow};
@@ -33,6 +43,7 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use identity::HostIdentity as Identity;
+use lifecycle::LifecycleState;
 use log::EventLog;
 use protocol::methods::{
     InboxResurfaceParams, LoggedEvent, PermissionAskParams, PermissionResolvedParams,
@@ -57,6 +68,7 @@ pub struct HostSession {
     pending_permissions: HashMap<String, acp::PendingPermission>,
     wake: Arc<acp::AdapterWake>,
     log_dir: PathBuf,
+    lifecycle: LifecycleState,
 }
 
 impl HostSession {
@@ -104,6 +116,7 @@ impl HostSession {
             pending_permissions: HashMap::new(),
             wake: acp::AdapterWake::new(),
             log_dir,
+            lifecycle: LifecycleState::from_env(),
         }
     }
 
@@ -587,7 +600,7 @@ mod tests {
         let response = session.handle_request(req(1, HOST_HELLO, None));
         let value = result_value(&response);
         assert_eq!(value["store"]["journalMode"], "wal");
-        assert_eq!(value["store"]["schemaVersion"], 1);
+        assert_eq!(value["store"]["schemaVersion"], 2);
         assert_eq!(value["store"]["botCount"], 6);
         assert_eq!(value["store"]["harnessCount"], 3);
         let backend = value["store"]["secretsBackend"].as_str().unwrap();

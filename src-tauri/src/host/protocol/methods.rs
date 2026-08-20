@@ -19,7 +19,13 @@ pub const PERMISSION_ASK: &str = "permission/ask";
 pub const PERMISSION_REPLY: &str = "permission/reply";
 pub const PERMISSION_RESOLVED: &str = "permission/resolved";
 pub const THREAD_FOLD: &str = "thread/fold";
+pub const THREAD_OPEN: &str = "thread/open";
+pub const THREAD_REOPEN: &str = "thread/reopen";
+pub const THREAD_ARCHIVE: &str = "thread/archive";
+pub const THREAD_DELETE: &str = "thread/delete";
+pub const THREAD_STATE: &str = "thread/state";
 pub const INBOX_RESURFACE: &str = "inbox/resurface";
+pub const INBOX_LIST: &str = "inbox/list";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
 pub const CLIENT_METHODS: &[&str] = &[
@@ -29,6 +35,12 @@ pub const CLIENT_METHODS: &[&str] = &[
     SESSION_CANCEL,
     PERMISSION_REPLY,
     THREAD_FOLD,
+    THREAD_OPEN,
+    THREAD_REOPEN,
+    THREAD_ARCHIVE,
+    THREAD_DELETE,
+    THREAD_STATE,
+    INBOX_LIST,
     SYNC_RESUME_FROM,
 ];
 
@@ -178,10 +190,207 @@ pub struct SessionCancelParams {
     pub thread_id: String,
 }
 
+/// `threads.fold_policy`. "Wait for Inbox" is a permission policy on a folded
+/// thread — auto-allow reads, still ask for execute and delete — not a fifth
+/// overlay state (#5).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FoldPolicy {
+    #[default]
+    Default,
+    WaitForInbox,
+}
+
+impl FoldPolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::WaitForInbox => "wait_for_inbox",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Self {
+        match raw {
+            "wait_for_inbox" => Self::WaitForInbox,
+            _ => Self::Default,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadFoldParams {
     pub thread_id: String,
+    /// Omitted keeps whatever policy the thread already has: "Disappear until
+    /// done" and "Wait for Inbox" are the same fold with different quietness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<FoldPolicy>,
+}
+
+/// Every lifecycle method that only needs to name a thread.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadRefParams {
+    pub thread_id: String,
+}
+
+/// New Chat: the edge into the state machine. Idempotent — opening a thread
+/// that already exists returns it rather than starting a second one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadOpenParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    pub title: String,
+    pub cwd: String,
+    pub harness_id: String,
+    /// Snapshot of `{ command, args, env }` for this thread (#6). Without it
+    /// the harness catalog row is used as-is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<RuntimeSpec>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fold_policy: Option<FoldPolicy>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunView {
+    pub id: String,
+    pub seq: i64,
+    pub kind: String,
+    pub state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ended_at: Option<String>,
+    pub created_at: String,
+}
+
+/// The receipt #21 compares against on resume. `fingerprint` is the cheap
+/// equality check; the fields beside it say what drifted when it fails.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReceiptView {
+    pub acp_session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_session_ref: Option<String>,
+    pub harness_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    pub cwd: String,
+    pub tools: Vec<String>,
+    pub permission_mode: String,
+    pub fingerprint: String,
+    pub updated_at: String,
+}
+
+/// The process axis, reported next to the overlay state and never folded into
+/// it: a folded thread that is still `running` is the whole feature.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessView {
+    pub connected: bool,
+    pub acp_state: String,
+    pub pending_permissions: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadStateResult {
+    pub thread_id: String,
+    pub title: String,
+    pub state: String,
+    pub fold_policy: FoldPolicy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resurfaced_reason: Option<ResurfaceReason>,
+    pub cwd: String,
+    pub harness_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folder_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acp_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_stop_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folded_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resurfaced_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<String>,
+    pub process: ProcessView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_run: Option<RunView>,
+    pub runs: Vec<RunView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub receipt: Option<ReceiptView>,
+    pub unread: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_dismissed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxEventView {
+    pub id: String,
+    pub thread_id: String,
+    pub thread_title: String,
+    pub thread_state: String,
+    pub kind: String,
+    pub title: String,
+    pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<Value>,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dismissed_at: Option<String>,
+}
+
+/// Still Sleeping is a projection of `threads.state = folded`, not an event —
+/// folding writes no card, because the thread row already says it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SleepingThreadView {
+    pub thread_id: String,
+    pub title: String,
+    pub fold_policy: FoldPolicy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub folded_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_state: Option<String>,
+    pub acp_state: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxListResult {
+    pub events: Vec<InboxEventView>,
+    pub sleeping: Vec<SleepingThreadView>,
+    pub unread: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -263,12 +472,37 @@ pub struct PermissionResolvedParams {
     pub cancelled: Option<bool>,
 }
 
+/// Why a folded thread came back. `failed` and `stuck` are distinct on purpose:
+/// a failure wants a retry, a stall wants patience or a cancel, and the process
+/// behind a `stuck` card is deliberately still alive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ResurfaceReason {
     Done,
     Failed,
+    Stuck,
     NeedsYou,
+}
+
+impl ResurfaceReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Done => "done",
+            Self::Failed => "failed",
+            Self::Stuck => "stuck",
+            Self::NeedsYou => "needs_you",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "done" => Some(Self::Done),
+            "failed" => Some(Self::Failed),
+            "stuck" => Some(Self::Stuck),
+            "needs_you" => Some(Self::NeedsYou),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -295,6 +529,24 @@ impl SessionCancelParams {
 impl ThreadFoldParams {
     pub fn validate(&self) -> Result<(), super::error::RpcError> {
         require_non_empty(&self.thread_id, "threadId")
+    }
+}
+
+impl ThreadRefParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")
+    }
+}
+
+impl ThreadOpenParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.title, "title")?;
+        require_non_empty(&self.cwd, "cwd")?;
+        require_non_empty(&self.harness_id, "harnessId")?;
+        if let Some(id) = &self.thread_id {
+            require_non_empty(id, "threadId")?;
+        }
+        Ok(())
     }
 }
 

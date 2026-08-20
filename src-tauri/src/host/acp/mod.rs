@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use super::lifecycle;
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
     PermissionReplyParams, PermissionReplyResult, PromptParams, PromptResult, SessionCancelParams,
@@ -63,6 +64,10 @@ impl HostSession {
             self.connections.remove(&thread_id);
             return Err(err);
         }
+        // The run ledger opens here, not when the first chunk arrives: the turn
+        // exists from the moment the agent accepted the prompt, and a crash
+        // before any output still has to show up as a run that failed (#15).
+        self.lifecycle_run_started(&thread_id, &session_id);
         self.pump_acp();
         Ok(PromptResult {
             thread_id,
@@ -145,6 +150,10 @@ impl HostSession {
             params.option_id.clone(),
             params.cancelled,
         );
+        self.lifecycle_on_permission_answered(
+            &pending.thread_id,
+            params.cancelled.unwrap_or(false),
+        );
         Ok(PermissionReplyResult {
             request_id: params.request_id,
             delivered: true,
@@ -164,6 +173,9 @@ impl HostSession {
                 self.handle_inbound(&thread_id, event);
             }
         }
+        // The stuck backstop needs a clock, and this is the only thing the host
+        // runs on a timer. It is a comparison per live thread.
+        self.lifecycle_tick();
     }
 
     pub fn shutdown_adapters(&mut self) {
@@ -182,6 +194,23 @@ impl HostSession {
 
     pub fn live_adapter_count(&self) -> usize {
         self.connections.len()
+    }
+
+    /// Outstanding `session/request_permission` calls on a thread. The
+    /// lifecycle layer asks because a blocked thread is Needs you, never stuck.
+    pub(crate) fn pending_permission_count(&self, thread_id: &str) -> usize {
+        self.pending_permissions
+            .values()
+            .filter(|pending| pending.thread_id == thread_id)
+            .count()
+    }
+
+    /// Drop a thread's adapter. Archive and delete both end the process; the
+    /// ACP layer has no `session/close` yet (#21), so the process group is it.
+    pub(crate) fn drop_adapter(&mut self, thread_id: &str) {
+        if let Some(mut conn) = self.connections.remove(thread_id) {
+            conn.kill();
+        }
     }
 
     fn ensure_connection(&mut self, params: &PromptParams) -> Result<(), RpcError> {
@@ -257,17 +286,12 @@ impl HostSession {
         match event {
             Inbound::Update(acp) => {
                 self.persist_transcript(thread_id, "session/update", &acp);
-                self.notify_session_update(thread_id, acp);
+                self.notify_session_update(thread_id, acp.clone());
+                // After the stream, so a client sees the chunk that ended the
+                // turn before it sees the Inbox card the turn produced.
+                self.lifecycle_on_update(thread_id, &acp);
             }
             Inbound::Permission { acp_id, params } => {
-                let request_id = Uuid::new_v4().to_string();
-                self.pending_permissions.insert(
-                    request_id.clone(),
-                    PendingPermission {
-                        thread_id: thread_id.to_string(),
-                        acp_id,
-                    },
-                );
                 let subject = params
                     .get("subject")
                     .cloned()
@@ -275,7 +299,39 @@ impl HostSession {
                     .unwrap_or_else(|| params.clone());
                 let options = params.get("options").cloned().unwrap_or_else(|| json!([]));
                 self.persist_transcript(thread_id, "session/request_permission", &params);
-                self.notify_permission_ask(thread_id, &request_id, subject, options);
+                // Wait for Inbox is a host-side permission policy on a folded
+                // thread (#5): reads are answered here, everything else still
+                // reaches the human.
+                match self.lifecycle_permission_policy(thread_id, &subject, &options) {
+                    lifecycle::PermissionDisposition::AutoAllow { option_id } => {
+                        if let Some(conn) = self.connections.get_mut(thread_id) {
+                            let _ = conn.respond(
+                                acp_id,
+                                json!({
+                                    "outcome": { "outcome": "selected", "optionId": option_id }
+                                }),
+                            );
+                        }
+                        self.lifecycle_record_auto_allow(thread_id, &subject, &option_id);
+                    }
+                    lifecycle::PermissionDisposition::Ask => {
+                        let request_id = Uuid::new_v4().to_string();
+                        self.pending_permissions.insert(
+                            request_id.clone(),
+                            PendingPermission {
+                                thread_id: thread_id.to_string(),
+                                acp_id,
+                            },
+                        );
+                        self.notify_permission_ask(
+                            thread_id,
+                            &request_id,
+                            subject.clone(),
+                            options,
+                        );
+                        self.lifecycle_on_permission_pending(thread_id, &subject);
+                    }
+                }
             }
             Inbound::PromptResult(result) => {
                 let acp = json!({
@@ -285,14 +341,19 @@ impl HostSession {
                     "result": result,
                 });
                 self.persist_transcript(thread_id, "session/prompt", &acp);
-                self.notify_session_update(thread_id, acp);
+                self.notify_session_update(thread_id, acp.clone());
+                // v1 completion. A v2 adapter also sends `state_update`; the
+                // ledger transition is idempotent so whichever lands first wins
+                // and the other is a no-op.
+                self.lifecycle_on_update(thread_id, &acp);
             }
             Inbound::Closed { error } => {
-                if let Some(err) = error {
+                if let Some(err) = &error {
                     eprintln!("adapter for {thread_id} closed: {err}");
                 }
                 let _ = self.cancel_pending_permissions(thread_id, "adapter closed");
                 self.connections.remove(thread_id);
+                self.lifecycle_on_adapter_closed(thread_id, error.as_deref());
             }
         }
     }
@@ -309,7 +370,7 @@ impl HostSession {
         }
     }
 
-    fn cancel_pending_permissions(
+    pub(crate) fn cancel_pending_permissions(
         &mut self,
         thread_id: &str,
         _reason: &str,

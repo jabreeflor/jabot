@@ -68,6 +68,9 @@ pub struct ThreadRow {
     pub resurfaced_at: Option<String>,
     pub archived_at: Option<String>,
     pub deleted_at: Option<String>,
+    /// Why the thread came back. `failed` and `stuck` are deliberately
+    /// distinct: one needs a retry, the other needs patience or a cancel.
+    pub resurfaced_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -96,6 +99,9 @@ pub struct RunRow {
     pub started_at: Option<String>,
     pub ended_at: Option<String>,
     pub created_at: String,
+    /// The ACP session this run executed on. Sequential runs share one until a
+    /// resume mints a new session id.
+    pub acp_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -121,6 +127,25 @@ pub struct InboxEventRow {
     pub created_at: String,
     pub read_at: Option<String>,
     pub dismissed_at: Option<String>,
+}
+
+/// What a session was spawned with, so a later resume can tell whether the
+/// world moved under it (#21). Persisted, not held in RAM — an in-memory map
+/// is exactly the drift bug this table exists to avoid.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionReceiptRow {
+    pub thread_id: String,
+    pub acp_session_id: String,
+    pub native_session_ref: Option<String>,
+    pub harness_id: String,
+    pub model: Option<String>,
+    pub cwd: String,
+    pub tools_json: String,
+    pub permission_mode: String,
+    pub fingerprint: String,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
