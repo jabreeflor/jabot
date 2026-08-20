@@ -1,0 +1,388 @@
+/*
+ * The sidebar: crew above, code below, me at the bottom.
+ *
+ * Bots are a strip of faces because there are few of them and they are chosen
+ * by recognition. Code threads are rows inside folder containers because there
+ * are many and they are chosen by name. That contrast is the whole navigation
+ * model, so the two halves deliberately do not share a row style.
+ */
+
+.sidebar {
+  width: var(--sidebar-w);
+  flex: none;
+  background: var(--side);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--titlebar-h);
+}
+
+.sidebar-search {
+  padding: var(--sp-4) 14px var(--sp-4);
+}
+
+.sidebar-search .field {
+  background: var(--raise);
+  border: 0;
+  border-radius: var(--r-md);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--faint);
+  font-size: var(--fs-ui);
+  text-align: left;
+  cursor: text;
+}
+
+.sidebar-search svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--sp-3);
+}
+
+.section-header {
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  font-weight: 600;
+  letter-spacing: var(--track-caps);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3);
+  display: flex;
+  align-items: center;
+}
+
+/* ---- bot strip ---- */
+
+.chief-row {
+  display: flex;
+  justify-content: center;
+  padding: 2px var(--sp-2) var(--sp-2);
+}
+
+.bot-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 62px);
+  gap: var(--sp-3) 18px;
+  padding: 2px var(--sp-2) var(--sp-4);
+  justify-content: center;
+}
+
+.bot-tile {
+  flex: none;
+  width: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  padding: var(--sp-2) 0;
+  border: 0;
+  background: none;
+  border-radius: var(--r-lg);
+  color: inherit;
+  --blob-size: 44px;
+}
+
+.bot-tile:hover {
+  background: var(--raise2);
+}
+
+.bot-tile small {
+  color: var(--dim);
+  font-size: var(--fs-caps);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.bot-tile[aria-current="true"] {
+  background: var(--raise2);
+}
+
+.bot-tile[aria-current="true"] .blob,
+.bot-tile[aria-current="true"] .cluster {
+  box-shadow:
+    0 0 0 2px var(--side),
+    0 0 0 4px var(--ink);
+}
+
+.bot-tile[aria-current="true"] small {
+  color: var(--ink);
+}
+
+.chief-row .bot-tile {
+  width: 76px;
+  --blob-size: 54px;
+}
+
+/* ---- code rows ---- */
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--line);
+  margin: var(--sp-2) 2px var(--sp-1);
+}
+
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3);
+  border: 0;
+  width: 100%;
+  background: none;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  color: var(--ink);
+  font-size: var(--fs-ui);
+  font-weight: 500;
+  text-align: left;
+}
+
+.nav-row:hover {
+  background: var(--raise2);
+}
+
+.nav-row[aria-current="true"] {
+  background: var(--raise);
+}
+
+.nav-row .ic {
+  width: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+}
+
+.nav-row .ic svg {
+  width: 17px;
+  height: 17px;
+}
+
+.nav-row:hover .ic,
+.nav-row[aria-current="true"] .ic {
+  color: var(--ink);
+}
+
+.nav-row .badge {
+  margin-left: auto;
+  background: var(--red);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: var(--r-pill);
+  min-width: 19px;
+  text-align: center;
+  padding: 1px var(--sp-2);
+}
+
+.nav-row .count {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: var(--fs-meta);
+  font-weight: 400;
+}
+
+/* ---- folders ---- */
+
+.folder {
+  background: var(--raise2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-lg);
+  margin: var(--sp-3) var(--sp-1) 0;
+  padding: var(--sp-1);
+  overflow: hidden;
+}
+
+.folder-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 7px var(--sp-3);
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.folder-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.folder-toggle svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.folder-toggle .chev {
+  width: 11px;
+  height: 11px;
+  color: var(--faint);
+  transition: transform 0.15s;
+}
+
+.folder-toggle[aria-expanded="false"] .chev {
+  transform: rotate(-90deg);
+}
+
+.folder-toggle .name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-toggle .count {
+  margin-left: auto;
+  color: var(--faint);
+  font-weight: 400;
+}
+
+.folder-add {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--faint);
+  cursor: pointer;
+  font: 15px/1 var(--font-ui);
+  padding: 0;
+}
+
+.folder-add:hover {
+  background: var(--raise);
+  color: var(--ink);
+}
+
+.thread-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: var(--sp-3) var(--sp-3);
+  margin: 0 2px 2px;
+  width: calc(100% - 4px);
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: var(--fs-body);
+  color: var(--ink);
+  background: var(--side);
+  text-align: left;
+  transition:
+    opacity var(--t-exit),
+    transform var(--t-exit);
+}
+
+.thread-row:hover {
+  background: var(--raise);
+}
+
+.thread-row[aria-current="true"] {
+  background: var(--raise);
+}
+
+/* Leaving rows slide out — folding a thread should look like it went
+   somewhere, not like it was deleted. */
+.thread-row.leaving {
+  opacity: 0;
+  transform: translateX(-20px);
+  pointer-events: none;
+}
+
+.thread-row .title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-row .state {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 11.5px;
+  flex: none;
+}
+
+.thread-row .pip {
+  font-size: var(--fs-caps);
+  flex: none;
+  color: var(--faint);
+}
+
+.thread-row .pip.running {
+  color: var(--amber);
+}
+
+.thread-row .pip.ok {
+  color: var(--ok);
+}
+
+.thread-row .pip.bad {
+  color: var(--danger);
+}
+
+/* ---- me ---- */
+
+.me-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.me-row .av {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--raise);
+  color: var(--dim);
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-caps);
+  font-weight: 600;
+  flex: none;
+}
+
+.me-row .who {
+  min-width: 0;
+}
+
+.me-row .name {
+  font-size: var(--fs-ui);
+}
+
+.me-row .host {
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.me-row .host.bad {
+  color: var(--red);
+}

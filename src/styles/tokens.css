@@ -1,17 +1,101 @@
+/*
+ * Design tokens lifted from prototypes/jabot-classic.html.
+ *
+ * The prototype's `:root` block *is* the brand, so its names survive verbatim
+ * (--ink, --dim, --faint, --raise, --raise2, --bub-me…). Everything below the
+ * original block is a token for a value the prototype repeated inline —
+ * hairline borders, the ok/danger greens and reds, harness accent dots, the
+ * type ramp, spacing, radii. Naming them here is what stops the port from
+ * scattering #37373A across nine stylesheets.
+ *
+ * Only tokens, the reset, and element defaults live here. Layout belongs to
+ * the stylesheet of the component that owns it.
+ */
+
 :root {
+  /* surfaces */
   --win: #1c1c1e;
   --side: #1c1c1e;
   --chat: #151516;
   --raise: #2a2a2c;
   --raise2: #232325;
+
+  /* text */
   --ink: #f2f2f2;
   --dim: #98989e;
   --faint: #6e6e73;
+
+  /* bubbles — cream for me, graphite for the bot (iMessage grammar) */
   --bub-bot: #2c2c2e;
   --bub-me: #f1f1ec;
   --bub-me-ink: #1c1c1e;
+
+  /* status */
   --amber: #e8a33d;
   --red: #ff453a;
+  --ok: #5dbb6e;
+  --danger: #e8695d;
+  --violet: #a78bfa;
+
+  /* edges — the prototype's raw hex borders, in order of prominence */
+  --line: #000000;
+  --edge: #303033;
+  --edge-strong: #37373a;
+  --edge-menu: #3a3a3e;
+
+  /* toolblocks sit *below* the chat ground, not above it */
+  --sunk: #101012;
+  --sunk-edge: #2c2c2f;
+
+  /* harness accents — the dot on a New Chat card and the header chip */
+  --h-claude: #d97757;
+  --h-codex: #5dbb6e;
+  --h-pi: #a78bfa;
+  --h-custom: #e8a33d;
+
+  /* type */
+  --font-ui:
+    -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --fs-caps: 11px;
+  --fs-meta: 12.5px;
+  --fs-body: 13.5px;
+  --fs-ui: 14px;
+  --fs-chat: 14.5px;
+  --fs-title: 15px;
+  --fs-h1: 22px;
+  --lh-ui: 1.45;
+  --lh-chat: 1.5;
+  --lh-mono: 1.7;
+  --track-caps: 0.1em;
+
+  /* spacing */
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 12px;
+  --sp-5: 16px;
+  --sp-6: 24px;
+
+  /* frame */
+  --sidebar-w: 310px;
+  --thread-max: 760px;
+  --page-max: 680px;
+  --titlebar-h: 28px;
+  --traffic-lights-w: 78px;
+
+  /* radii */
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-modal: 20px;
+  --r-bubble: 18px;
+  --r-tail: 6px;
+  --r-pill: 99px;
+
+  /* motion — rows and cards leave, they do not blink out */
+  --t-exit: 0.4s;
 }
 
 *,
@@ -31,135 +115,27 @@ body {
   background: var(--chat);
   color: var(--ink);
   overflow: hidden;
-  font:
-    14px/1.45 -apple-system,
-    "SF Pro Text",
-    "Helvetica Neue",
-    system-ui,
-    sans-serif;
+  font: var(--fs-ui) / var(--lh-ui) var(--font-ui);
   -webkit-font-smoothing: antialiased;
 }
 
-.app-shell {
-  display: flex;
-  height: 100%;
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
-.titlebar-drag {
-  position: fixed;
-  top: 0;
-  left: 78px;
-  right: 0;
-  height: 28px;
-  z-index: 100;
+/* Every focusable control in the app gets the same ring. The prototype only
+   remembered this on buttons it happened to test with a keyboard. */
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
-.sidebar {
-  width: 310px;
-  flex: none;
-  background: var(--side);
-  border-right: 1px solid #000;
-  display: flex;
-  flex-direction: column;
-  padding-top: 28px;
-}
-
-.sidebar-header {
-  padding: 16px 16px 10px;
-  display: flex;
-  align-items: center;
-}
-
-.sidebar-title {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.sidebar-placeholder {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--faint);
-  font-size: 13px;
-  padding: 24px;
-  text-align: center;
-}
-
-.main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: var(--chat);
-  padding-top: 28px;
-}
-
-.main-header {
-  padding: 16px 24px 12px;
-  border-bottom: 1px solid #000;
-}
-
-.main-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.main-content {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-.scaffold-card {
-  background: var(--raise2);
-  border: 1px solid #303033;
-  border-radius: 16px;
-  padding: 24px 28px;
-  max-width: 480px;
-  width: 100%;
-}
-
-.scaffold-card h2 {
-  font-size: 18px;
-  margin-bottom: 8px;
-}
-
-.scaffold-card p {
-  color: var(--dim);
-  margin-bottom: 16px;
-  line-height: 1.5;
-}
-
-.host-info {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
-  background: var(--raise);
-  border-radius: 10px;
-  padding: 12px 14px;
-  color: var(--faint);
-}
-
-.host-info dt {
-  color: var(--dim);
-  display: inline;
-}
-
-.host-info dd {
-  display: inline;
-  margin: 0 0 0 6px;
-  color: var(--ink);
-}
-
-.host-info dd::after {
-  content: "";
-  display: block;
-  margin-bottom: 6px;
-}
-
-.host-info dd:last-child::after {
-  margin-bottom: 0;
+code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
 }
 
 @media (prefers-reduced-motion: reduce) {
