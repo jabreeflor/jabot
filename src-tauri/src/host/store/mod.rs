@@ -809,6 +809,144 @@ mod tests {
     }
 
     #[test]
+    fn a_guarded_transition_refuses_a_stale_from_state() {
+        let (store, _dir) = open_store();
+        store.insert_thread(&sample_thread("t-guard")).unwrap();
+        store
+            .transition_thread("t-guard", "active", "folded", None)
+            .unwrap();
+
+        // A second caller that still believes the thread is active must lose,
+        // rather than dragging it back out of the state it already reached.
+        let stale = store
+            .transition_thread("t-guard", "active", "archived", None)
+            .unwrap_err();
+        assert!(matches!(stale, StoreError::NotFound(_)), "{stale}");
+        assert_eq!(
+            store.get_thread("t-guard").unwrap().unwrap().state,
+            "folded"
+        );
+    }
+
+    #[test]
+    fn a_resurface_writes_the_state_and_the_card_or_neither() {
+        let (store, _dir) = open_store();
+        store.insert_thread(&sample_thread("t-atomic")).unwrap();
+        store
+            .transition_thread("t-atomic", "active", "folded", None)
+            .unwrap();
+
+        // A run id that does not exist trips the foreign key *after* the state
+        // has already been updated inside the transaction. If the two writes
+        // were not one unit, the thread would be left claiming it resurfaced
+        // with no Inbox card to open.
+        let err = store
+            .resurface_thread(
+                "t-atomic",
+                "folded",
+                "done",
+                "done",
+                "Auth migration finished",
+                "finished",
+                None,
+                Some("no-such-run"),
+            )
+            .unwrap_err();
+        assert!(matches!(err, StoreError::Invalid(_)), "{err}");
+        assert_eq!(
+            store.get_thread("t-atomic").unwrap().unwrap().state,
+            "folded"
+        );
+        assert!(store.list_inbox_events(10, true).unwrap().is_empty());
+
+        let run = store.insert_run("t-atomic", "prompt", None).unwrap();
+        let (thread, event) = store
+            .resurface_thread(
+                "t-atomic",
+                "folded",
+                "done",
+                "done",
+                "Auth migration finished",
+                "finished",
+                None,
+                Some(&run.id),
+            )
+            .unwrap();
+        assert_eq!(thread.state, "resurfaced");
+        assert_eq!(thread.resurfaced_reason.as_deref(), Some("done"));
+        assert!(thread.resurfaced_at.is_some());
+        assert_eq!(event.kind, "done");
+        assert_eq!(store.count_unread_inbox(None).unwrap(), 1);
+        store.mark_inbox_read("t-atomic").unwrap();
+        assert_eq!(store.count_unread_inbox(None).unwrap(), 0);
+    }
+
+    #[test]
+    fn a_run_that_resumes_drops_the_end_time_it_never_earned() {
+        let (store, _dir) = open_store();
+        store.insert_thread(&sample_thread("t-resume")).unwrap();
+        let run = store.insert_run("t-resume", "prompt", None).unwrap();
+        store.set_run_state(&run.id, "running", None).unwrap();
+        store.set_run_acp_session(&run.id, "sess-1").unwrap();
+
+        // needs_you stamps an end time because the run stopped producing...
+        let paused = store.set_run_state(&run.id, "needs_you", None).unwrap();
+        assert!(paused.ended_at.is_some());
+        // ...but answering the permission puts the same run back to work, and
+        // a run that is running has not ended.
+        let resumed = store.set_run_state(&run.id, "running", None).unwrap();
+        assert!(resumed.ended_at.is_none());
+        assert_eq!(resumed.acp_session_id.as_deref(), Some("sess-1"));
+        assert_eq!(store.latest_run("t-resume").unwrap().unwrap().id, run.id);
+    }
+
+    #[test]
+    fn a_session_receipt_is_one_row_per_thread() {
+        let (store, _dir) = open_store();
+        store.insert_thread(&sample_thread("t-receipt")).unwrap();
+        store
+            .upsert_session_receipt(
+                "t-receipt",
+                "sess-1",
+                None,
+                "claude",
+                Some("sonnet"),
+                "/repos/app",
+                r#"["github"]"#,
+                "default",
+                "aaaa0000aaaa0000",
+            )
+            .unwrap();
+        // A re-spawn replaces it: the live session is the only one a resume
+        // can attach to, so a stale receipt would point at nothing.
+        let respawned = store
+            .upsert_session_receipt(
+                "t-receipt",
+                "sess-2",
+                Some("claude-uuid"),
+                "claude",
+                Some("sonnet"),
+                "/repos/app",
+                r#"["github"]"#,
+                "wait_for_inbox",
+                "bbbb1111bbbb1111",
+            )
+            .unwrap();
+        assert_eq!(respawned.acp_session_id, "sess-2");
+        assert_eq!(respawned.permission_mode, "wait_for_inbox");
+        assert_eq!(respawned.native_session_ref.as_deref(), Some("claude-uuid"));
+        assert_eq!(respawned.created_at, respawned.updated_at);
+        assert_eq!(
+            store
+                .get_session_receipt("t-receipt")
+                .unwrap()
+                .unwrap()
+                .fingerprint,
+            "bbbb1111bbbb1111"
+        );
+    }
+
+    #[test]
     fn secrets_live_in_vault_not_sqlite() {
         let (store, _dir) = open_store();
         let mut secrets = Secrets::memory();

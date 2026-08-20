@@ -685,6 +685,11 @@ impl HostSession {
         summary: &str,
         run_id: Option<&str>,
     ) -> Result<bool, RpcError> {
+        // A host with no store has no overlay to resurface into — the ACP
+        // tests run that way. Not applicable, not a failure to report.
+        if self.store.is_none() {
+            return Ok(false);
+        }
         let Some(row) = self.lifecycle_thread(thread_id)? else {
             return Ok(false);
         };
