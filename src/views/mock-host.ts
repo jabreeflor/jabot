@@ -67,16 +67,26 @@ export const HARNESSES: readonly HarnessCard[] = [
   },
 ];
 
-/** MCP catalog ids a bot can be allowed to use (#18). */
+/**
+ * The MCP catalog a bot can be allowed to use (#18), with the statuses a fresh
+ * install really has: nothing signed in yet, and the two entries that need no
+ * grant — Terminal, which is the harness's own `execute`, and the local
+ * browser server — already usable. The live values come from `tools/list`.
+ */
 export const TOOL_CATALOG: readonly ToolOption[] = [
-  { id: "gmail", label: "Gmail" },
-  { id: "calendar", label: "Calendar" },
-  { id: "github", label: "GitHub" },
-  { id: "terminal", label: "Terminal" },
-  { id: "browser", label: "Browser" },
-  { id: "notion", label: "Notion" },
-  { id: "drive", label: "Drive" },
-  { id: "slack", label: "Slack" },
+  { id: "gmail", label: "Gmail", status: "needs_auth" },
+  { id: "calendar", label: "Calendar", status: "needs_auth" },
+  { id: "github", label: "GitHub", status: "needs_auth" },
+  {
+    id: "terminal",
+    label: "Terminal",
+    status: "connected",
+    detail: "Runs through the harness. Every command asks first.",
+  },
+  { id: "browser", label: "Browser", status: "connected" },
+  { id: "notion", label: "Notion", status: "needs_auth" },
+  { id: "drive", label: "Drive", status: "needs_auth" },
+  { id: "slack", label: "Slack", status: "needs_auth" },
 ];
 
 /** Chief's extra host tools (#6). Not MCP, so not offered to other bots. */

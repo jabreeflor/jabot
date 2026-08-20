@@ -64,6 +64,24 @@ describe("BotEditorModal", () => {
     ).toHaveAttribute("aria-pressed", "true");
   });
 
+  /**
+   * A chip carries two independent facts: whether this bot may use the tool,
+   * and whether the tool is connected at all (#18). The second must not change
+   * what the button is called, or the first becomes unclickable by name.
+   */
+  it("shows connection state without renaming the tool chip", () => {
+    renderEditor({ bot: WRITER });
+
+    const gmail = screen.getByRole("button", { name: "Gmail" });
+    expect(gmail).toHaveAttribute("data-status", "needs_auth");
+    expect(gmail).toHaveAttribute("title", "Gmail is not connected yet");
+
+    // Terminal needs no grant: it is the harness's own execute tool.
+    const terminal = screen.getByRole("button", { name: "Terminal" });
+    expect(terminal).toHaveAttribute("data-status", "connected");
+    expect(terminal.getAttribute("title")).toContain("asks first");
+  });
+
   it("saves the edits, including a changed harness", async () => {
     const props = renderEditor({ bot: WRITER });
 
