@@ -3,7 +3,7 @@
 //! The webview talks JSON-RPC to these commands and events, never to ACP
 //! stdio. The message types are the future Unix-socket / WebSocket frames.
 
-mod host;
+pub mod host;
 
 use std::sync::Mutex;
 
@@ -69,6 +69,11 @@ pub fn run() {
                     if let Err(err) = window.hide() {
                         eprintln!("failed to hide main window: {err}");
                     }
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    // Non-macOS closes for real; nothing to intercept.
+                    let _ = (window, api);
                 }
             }
         })

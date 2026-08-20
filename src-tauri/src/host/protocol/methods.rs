@@ -323,3 +323,55 @@ mod tests {
         assert!(params.validate().is_err());
     }
 }
+
+#[cfg(test)]
+mod envelope_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Every host → client notification must carry the same envelope
+    /// (`hostId`, `threadId`, `seq`) so a reconnecting client can order and
+    /// attribute events without knowing the method. `Envelope` is that
+    /// contract; this test is what keeps the concrete params structs honest
+    /// against it.
+    #[test]
+    fn every_notification_params_carries_the_envelope() {
+        let session_update = serde_json::to_value(SessionUpdateParams {
+            host_id: "host-1".into(),
+            thread_id: "thread-1".into(),
+            seq: 7,
+            acp: json!({ "sessionUpdate": "agent_message_chunk" }),
+        })
+        .unwrap();
+
+        let permission_ask = serde_json::to_value(PermissionAskParams {
+            host_id: "host-1".into(),
+            thread_id: "thread-1".into(),
+            seq: 8,
+            request_id: "perm-1".into(),
+            subject: json!({}),
+            options: json!([]),
+        })
+        .unwrap();
+
+        let inbox_resurface = serde_json::to_value(InboxResurfaceParams {
+            host_id: "host-1".into(),
+            thread_id: "thread-1".into(),
+            seq: 9,
+            reason: ResurfaceReason::NeedsYou,
+        })
+        .unwrap();
+
+        for (label, params) in [
+            ("session/update", session_update),
+            ("permission/ask", permission_ask),
+            ("inbox/resurface", inbox_resurface),
+        ] {
+            let envelope: Envelope = serde_json::from_value(params)
+                .unwrap_or_else(|e| panic!("{label} is missing envelope fields: {e}"));
+            assert_eq!(envelope.host_id, "host-1", "{label}");
+            assert_eq!(envelope.thread_id, "thread-1", "{label}");
+            assert!(envelope.seq > 0, "{label}");
+        }
+    }
+}

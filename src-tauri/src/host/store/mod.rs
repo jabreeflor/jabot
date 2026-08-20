@@ -73,9 +73,9 @@ impl Store {
         let harness_count: i64 =
             self.conn
                 .query_row("SELECT COUNT(*) FROM harnesses", [], |row| row.get(0))?;
-        let bot_count: i64 =
-            self.conn
-                .query_row("SELECT COUNT(*) FROM bots", [], |row| row.get(0))?;
+        let bot_count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM bots", [], |row| row.get(0))?;
         Ok(StoreStatus {
             path: self.path.display().to_string(),
             schema_version: self.schema_version()?,
@@ -88,7 +88,8 @@ impl Store {
     }
 
     pub fn checkpoint(&self) -> Result<(), StoreError> {
-        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        self.conn
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
         let marker = unclean_marker(&self.path);
         if marker.exists() {
             std::fs::remove_file(marker)?;
@@ -579,9 +580,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, StoreError::Invalid(_)), "{err}");
 
-        store
-            .insert_folder("App", "/repos/app", 0)
-            .unwrap();
+        store.insert_folder("App", "/repos/app", 0).unwrap();
         let dup = store.insert_folder("App 2", "/repos/app", 1).unwrap_err();
         assert!(matches!(dup, StoreError::Invalid(_)), "{dup}");
 
@@ -642,7 +641,14 @@ mod tests {
         assert_eq!(replay[0].seq, 2);
 
         let event = store
-            .insert_inbox_event("t1", Some(&run.id), "done", "Auth migration", "PR ready", None)
+            .insert_inbox_event(
+                "t1",
+                Some(&run.id),
+                "done",
+                "Auth migration",
+                "PR ready",
+                None,
+            )
             .unwrap();
         assert_eq!(event.kind, "done");
         assert!(event.read_at.is_none());

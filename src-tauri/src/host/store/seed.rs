@@ -55,7 +55,8 @@ const SEED_BOTS: &[SeedBot] = &[
         id: "chief",
         name: "Chief",
         color: "b-teal",
-        instructions: "Route work across the crew. Fold long tasks away, surface only what matters.",
+        instructions:
+            "Route work across the crew. Fold long tasks away, surface only what matters.",
         tools_json: r#"["handoff_to_bot","spawn_code_session","fold_thread","list_crew_status"]"#,
         is_chief: 1,
         sort_order: 0,

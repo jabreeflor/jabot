@@ -7,18 +7,34 @@ on:
     branches: [main]
 
 jobs:
-  frontend:
+  # The full pipeline — typecheck, unit, fmt, clippy, rust tests, and the
+  # TypeScript-against-real-Rust-host e2e suite. Runs on Linux because it does
+  # not need a webview: `jabot-hostd` is the host without the window.
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libsoup-3.0-dev
       - run: npm ci
-      - run: npm run build
+      - run: ./scripts/verify.sh
 
-  rust-host:
+  # The thing users actually install. macOS-only because that is the target.
+  bundle:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +43,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - run: npm ci
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npm run tauri build

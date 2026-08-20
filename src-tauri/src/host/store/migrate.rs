@@ -45,11 +45,10 @@ pub fn schema_version(conn: &Connection) -> Result<i32, StoreError> {
     if exists == 0 {
         return Ok(0);
     }
-    let version: Option<i32> = conn.query_row(
-        "SELECT MAX(version) FROM schema_migrations",
-        [],
-        |row| row.get(0),
-    )?;
+    let version: Option<i32> =
+        conn.query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })?;
     Ok(version.unwrap_or(0))
 }
 

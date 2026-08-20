@@ -14,10 +14,10 @@ mod store;
 pub use identity::{DeviceRecord, HostIdentity};
 #[allow(unused_imports)]
 pub use protocol::{
-    decode_frame, encode_frame, DeviceInfo, DeviceRole, HealthResult, HelloParams, HelloResult,
-    JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId,
-    ResurfaceReason, RpcError, StoreStatus, CLIENT_METHODS, HOST_HEALTH, HOST_HELLO,
-    HOST_NOTIFICATIONS, JSONRPC_VERSION, PROTOCOL_VERSION,
+    decode_frame, decode_frames, encode_frame, DeviceInfo, DeviceRole, Envelope, HealthResult,
+    HelloParams, HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
+    JsonRpcResponse, RequestId, ResurfaceReason, RpcError, StoreStatus, CLIENT_METHODS,
+    HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, JSONRPC_VERSION, PROTOCOL_VERSION,
 };
 #[allow(unused_imports)]
 pub use store::{Secrets, Store, StoreError};

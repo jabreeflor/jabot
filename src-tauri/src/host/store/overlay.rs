@@ -5,13 +5,13 @@ use uuid::Uuid;
 
 use super::error::StoreError;
 use super::models::{InboxEventRow, NewThread, RunRow, ThreadRow, TranscriptEventRow};
-use super::{
-    map_inbox_event, map_run, map_thread, map_transcript, now_utc, validate_runtime_json,
-};
+use super::{map_inbox_event, map_run, map_thread, map_transcript, now_utc, validate_runtime_json};
 
 pub fn insert_thread(conn: &Connection, new: &NewThread) -> Result<ThreadRow, StoreError> {
     if new.id.trim().is_empty() || new.title.trim().is_empty() || new.cwd.trim().is_empty() {
-        return Err(StoreError::invalid("thread id, title, and cwd are required"));
+        return Err(StoreError::invalid(
+            "thread id, title, and cwd are required",
+        ));
     }
     validate_runtime_json(&new.runtime_json)?;
     let now = now_utc();
@@ -49,10 +49,7 @@ pub fn get_thread(conn: &Connection, id: &str) -> Result<Option<ThreadRow>, Stor
     .map_err(Into::into)
 }
 
-pub fn list_threads_by_state(
-    conn: &Connection,
-    state: &str,
-) -> Result<Vec<ThreadRow>, StoreError> {
+pub fn list_threads_by_state(conn: &Connection, state: &str) -> Result<Vec<ThreadRow>, StoreError> {
     let mut stmt = conn.prepare(
         "SELECT id, folder_id, bot_id, harness_id, acp_session_id, native_session_ref,
                 cwd, runtime_json, title, state, fold_policy, last_stop_reason, last_error,
@@ -68,11 +65,7 @@ pub fn list_threads_by_state(
     Ok(rows)
 }
 
-pub fn set_thread_state(
-    conn: &Connection,
-    id: &str,
-    state: &str,
-) -> Result<ThreadRow, StoreError> {
+pub fn set_thread_state(conn: &Connection, id: &str, state: &str) -> Result<ThreadRow, StoreError> {
     match state {
         "active" | "folded" | "resurfaced" | "archived" => {}
         _ => return Err(StoreError::invalid(format!("invalid thread state {state}"))),
@@ -140,8 +133,8 @@ pub fn set_run_state(
     error: Option<&str>,
 ) -> Result<RunRow, StoreError> {
     match state {
-        "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out"
-        | "lost" | "needs_you" => {}
+        "queued" | "running" | "succeeded" | "failed" | "cancelled" | "timed_out" | "lost"
+        | "needs_you" => {}
         _ => return Err(StoreError::invalid(format!("invalid run state {state}"))),
     }
     let now = now_utc();
@@ -223,8 +216,8 @@ pub fn insert_inbox_event(
     payload_json: Option<&str>,
 ) -> Result<InboxEventRow, StoreError> {
     match kind {
-        "folded" | "done" | "failed" | "needs_you" | "judgment_call" | "permission"
-        | "lost" | "stuck" => {}
+        "folded" | "done" | "failed" | "needs_you" | "judgment_call" | "permission" | "lost"
+        | "stuck" => {}
         _ => return Err(StoreError::invalid(format!("invalid inbox kind {kind}"))),
     }
     if title.trim().is_empty() {
@@ -236,7 +229,16 @@ pub fn insert_inbox_event(
         "INSERT INTO inbox_events (
             id, thread_id, run_id, kind, title, summary, payload_json, created_at
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![id, thread_id, run_id, kind, title, summary, payload_json, now],
+        params![
+            id,
+            thread_id,
+            run_id,
+            kind,
+            title,
+            summary,
+            payload_json,
+            now
+        ],
     )?;
     conn.query_row(
         "SELECT id, thread_id, run_id, kind, title, summary, payload_json,

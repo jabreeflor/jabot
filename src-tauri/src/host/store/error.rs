@@ -30,7 +30,9 @@ impl From<rusqlite::Error> for StoreError {
     fn from(err: rusqlite::Error) -> Self {
         match err {
             rusqlite::Error::QueryReturnedNoRows => Self::NotFound("row".into()),
-            rusqlite::Error::SqliteFailure(info, message) if info.code == ErrorCode::ConstraintViolation => {
+            rusqlite::Error::SqliteFailure(info, message)
+                if info.code == ErrorCode::ConstraintViolation =>
+            {
                 Self::Invalid(message.unwrap_or_else(|| format!("{:?}", info.code)))
             }
             other => Self::Sqlite(other),
