@@ -10,14 +10,15 @@
  * Stopping the host really does end its adapters (`shutdown_adapters` on the
  * way out), so "restart" here is Cmd-Q and relaunch, not a reconnect.
  */
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { HostClient } from "../../src/host/client";
+import { HostClient, HostRpcError } from "../../src/host/client";
 import {
+  RPC_ERROR,
   SUPERVISOR_STATUS,
   THREAD_RESUME,
   type InboxListResult,
@@ -204,6 +205,38 @@ describe("resume", () => {
     expect(refused.resumed).toBe(false);
     expect(refused.drift).toEqual(["permissionMode"]);
     // Nothing was spawned to hold a session it must not have been given.
+    expect((await second.client.supervisorStatus()).liveAdapters).toEqual([]);
+  });
+
+  it("refuses a prompt into a folder that is gone rather than starting over", async () => {
+    const dataDir = ownDataDir();
+    const cwd = path.join(dataDir, "checkout");
+    mkdirSync(cwd);
+    const first = await connected({ dataDir });
+    await openThread(first.client, "t-gone", "resumable", cwd);
+    await first.client.prompt({ threadId: "t-gone", content: "hi" });
+    await settle(first.client, "t-gone", (s) => s.latestRun?.state === "succeeded");
+    await first.client.fold({ threadId: "t-gone" });
+    await first.host.stop();
+
+    rmSync(cwd, { recursive: true, force: true });
+
+    // Reopening the thread and typing is the path a user actually takes after
+    // a restart, and it has to refuse for the same reason `thread/resume`
+    // does: an adapter spawned here inherits JaBot's own directory, and the
+    // `session/new` that follows overwrites the receipt.
+    const second = await connected({ dataDir });
+    const failure = await second.client
+      .prompt({ threadId: "t-gone", content: "carry on" })
+      .catch((err: unknown) => err);
+    expect(failure).toBeInstanceOf(HostRpcError);
+    expect((failure as HostRpcError).code).toBe(RPC_ERROR.CWD_MISSING);
+
+    const state = await second.client.threadState({ threadId: "t-gone" });
+    // Still the conversation that is really there, so the thread comes back
+    // the moment the checkout does.
+    expect(state.acpSessionId).toBe("sess-fake-1");
+    expect(state.resurfacedReason).toBe("failed");
     expect((await second.client.supervisorStatus()).liveAdapters).toEqual([]);
   });
 

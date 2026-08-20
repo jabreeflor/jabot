@@ -206,7 +206,7 @@ describe("transcript overlay", () => {
 
 describe("steer vs redispatch", () => {
   it("queues a follow-up and sends it when the turn ends", async () => {
-    const { client } = await connected();
+    const { host, client } = await connected();
     // `late-end` keeps the turn open long enough that the follow-up really is
     // sent mid-flight rather than racing a turn that already finished.
     await openThread(client, "t-queue", "late-end");
@@ -222,12 +222,29 @@ describe("steer vs redispatch", () => {
     const waiting = await client.threadTranscript({ threadId: "t-queue" });
     expect(waiting.queued).toHaveLength(1);
     expect(waiting.queued[0].content).toBe("second");
+    // The turn the replay cannot describe: the events end the same way whether
+    // the agent is working or the host died under it, so the ledger comes too.
+    expect(waiting.runState).toBe("running");
 
     const settled = await settle(client, "t-queue", (result) =>
       said(result.events).length === 2,
     );
     expect(said(settled.events)).toEqual(["first", "second"]);
     expect(settled.queued).toHaveLength(0);
+
+    // And the same thing through the production reducer, which is where the
+    // strip the user actually sees comes from: hydrate at the moment the
+    // follow-up is waiting, then apply the real notifications that arrived
+    // after it. The strip has to come down when the host dispatches the
+    // prompt — left up, it shows a delivered message as still waiting and its
+    // "Send now" button cancels an unrelated turn.
+    let stream = hydrate(waiting);
+    expect(stream.queued).toEqual(["second"]);
+    expect(stream.busy).toBe(true);
+    for (const params of updates(host, "t-queue")) {
+      stream = applyAcpEvent(stream, params.acp, params.transcriptSeq);
+    }
+    expect(stream.queued).toEqual([]);
 
     // Two turns, two runs. Never one run collecting both outcomes (#15).
     const state = await client.threadState({ threadId: "t-queue" });

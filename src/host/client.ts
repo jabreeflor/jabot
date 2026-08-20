@@ -19,6 +19,7 @@ import {
   HOST_RPC_EVENT,
   INBOX_LIST,
   JSONRPC_VERSION,
+  PERMISSION_PENDING,
   PERMISSION_REPLY,
   PROTOCOL_VERSION,
   SESSION_CANCEL,
@@ -62,7 +63,11 @@ import {
   type InboxListParams,
   type InboxListResult,
   type JsonRpcResponse,
+  type DeviceInfo,
+  type PermissionPendingParams,
+  type PermissionPendingResult,
   type PermissionReplyParams,
+  type PermissionReplyResult,
   type PromptParams,
   type PromptResult,
   type ResumeFromParams,
@@ -120,6 +125,7 @@ export class HostClient {
   private nextId = 1;
   private unlisten: (() => void) | null = null;
   private notificationHandlers = new Set<NotificationHandler>();
+  private device: DeviceInfo | null = null;
 
   constructor(private readonly transport: HostTransport = createTauriTransport()) {}
 
@@ -146,10 +152,21 @@ export class HostClient {
   }
 
   async hello(params: HelloParams = {}): Promise<HelloResult> {
-    return this.request<HelloResult>(HOST_HELLO, {
+    const result = await this.request<HelloResult>(HOST_HELLO, {
       ...params,
       protocolVersion: params.protocolVersion ?? PROTOCOL_VERSION,
     });
+    // The host binds this connection to a device on hello, and several calls —
+    // `permission/reply` above all — have to say which device is acting. Kept
+    // here so a feature slice does not have to thread the handshake result
+    // through every component that might answer something.
+    this.device = result.device;
+    return result;
+  }
+
+  /** The device the host bound this connection to, once hello has answered. */
+  get deviceId(): string | null {
+    return this.device?.deviceId ?? null;
   }
 
   async health(): Promise<HealthResult> {
@@ -303,8 +320,23 @@ export class HostClient {
     return this.request<GithubStatusResult>(GITHUB_STATUS, params);
   }
 
-  async replyPermission(params: PermissionReplyParams): Promise<void> {
-    await this.request(PERMISSION_REPLY, params);
+  /**
+   * Answer an ask. Idempotent on the host: a second click comes back with
+   * `alreadyAnswered` and whatever the first one decided, rather than an error
+   * or a second answer reaching the agent (#20).
+   */
+  async replyPermission(
+    params: PermissionReplyParams,
+  ): Promise<PermissionReplyResult> {
+    return this.request<PermissionReplyResult>(PERMISSION_REPLY, params);
+  }
+
+  /** Asks still waiting on a human — including ones a previous host took and
+      never got an answer to. */
+  async pendingPermissions(
+    params: PermissionPendingParams = {},
+  ): Promise<PermissionPendingResult> {
+    return this.request<PermissionPendingResult>(PERMISSION_PENDING, params);
   }
 
   async resumeFrom(params: ResumeFromParams): Promise<ResumeFromResult> {
