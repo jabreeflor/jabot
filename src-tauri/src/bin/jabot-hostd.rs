@@ -99,14 +99,20 @@ fn main() {
                 // notifications. Anything else on the inbound stream is noise.
                 continue;
             };
+            // Written while the session lock is still held, and the pump
+            // thread does the same. Two drainers that release the lock first
+            // can interleave their writes, and a client would then see `seq`
+            // 3 before `seq` 1 — which is exactly the order the envelope
+            // exists to promise (#14 relies on it to de-duplicate a replay
+            // against the live stream).
             let mut guard = lock(&session);
             let response = guard.handle_request(request);
             let outbound = guard.take_outbound();
-            drop(guard);
             write_message(&stdout, &JsonRpcMessage::Response(response));
             for notification in outbound {
                 write_message(&stdout, &JsonRpcMessage::Notification(notification));
             }
+            drop(guard);
         }
     }
 
@@ -128,10 +134,11 @@ fn spawn_acp_pump(session: Arc<Mutex<HostSession>>, wake: Arc<AdapterWake>) {
                 let mut guard = lock(&session);
                 guard.pump_acp();
                 let outbound = guard.take_outbound();
-                drop(guard);
+                // Under the lock, for the ordering reason above.
                 for notification in outbound {
                     write_message(&stdout, &JsonRpcMessage::Notification(notification));
                 }
+                drop(guard);
             }
         })
         .expect("acp pump thread");

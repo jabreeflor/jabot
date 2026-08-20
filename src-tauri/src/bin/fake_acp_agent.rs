@@ -13,6 +13,12 @@
 //! - `v2-idle`: report going idle with **no** stop reason before returning
 //!   `end_turn` on the prompt response — the shape an ACP v2 adapter has, and
 //!   the one where idleness alone must not be read as an outcome
+//! - `tools`: stream a plan, a read tool call that completes, an edit with a
+//!   diff, and a tool call whose `kind` is one nothing has ever heard of — the
+//!   shapes #14's renderer has to map, including the one it must not die on
+//! - `cancellable`: hold the turn open until `session/cancel`, then end it
+//!   with `stopReason: cancelled` — what a real adapter does, and what an
+//!   interrupt-then-redispatch depends on
 //! - `grandchild`: spawn a `sleep` grandchild in the same process group
 //! - `old-acp`: answer `initialize` with a protocol version older than the
 //!   host speaks, so the Doctor's deep probe has a real outdated adapter
@@ -105,6 +111,82 @@ fn main() {
                     }),
                 );
                 match mode.as_str() {
+                    // One turn carrying every shape the chat has to draw.
+                    "tools" => {
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "plan",
+                                "entries": [
+                                    { "content": "Read the module", "priority": "high", "status": "completed" },
+                                    { "content": "Patch the guard", "priority": "high", "status": "in_progress" },
+                                    { "content": "Run the tests", "priority": "medium", "status": "pending" }
+                                ]
+                            }),
+                        );
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "tool_call",
+                                "toolCallId": "call-read",
+                                "title": "src/auth.ts",
+                                "kind": "read",
+                                "status": "pending"
+                            }),
+                        );
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "tool_call_update",
+                                "toolCallId": "call-read",
+                                "status": "completed"
+                            }),
+                        );
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "tool_call",
+                                "toolCallId": "call-edit",
+                                "title": "src/auth.ts",
+                                "kind": "edit",
+                                "status": "completed",
+                                "content": [{
+                                    "type": "diff",
+                                    "path": "/repo/src/auth.ts",
+                                    "oldText": "const a = 1;\nconst gone = 2;\n",
+                                    "newText": "const a = 1;\nconst added = 3;\nconst also = 4;\n"
+                                }]
+                            }),
+                        );
+                        // A kind no client has a verb for. The transcript has
+                        // to keep rendering (#11's review found this class of
+                        // bug once already).
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "tool_call",
+                                "toolCallId": "call-strange",
+                                "title": "summon",
+                                "kind": "sorcery",
+                                "status": "in_progress"
+                            }),
+                        );
+                        reply(
+                            &mut stdout,
+                            id,
+                            serde_json::json!({ "stopReason": "end_turn" }),
+                        );
+                    }
                     "permission" | "read-permission" => {
                         let (title, kind) = if mode == "read-permission" {
                             ("Read src/auth.ts", "read")
@@ -133,6 +215,8 @@ fn main() {
                     // Never answers. The turn stays open and the host has to
                     // notice the silence on its own.
                     "hang" => {}
+                    // Holds the turn open, but ends it when told to.
+                    "cancellable" => pending_prompt_id = id,
                     // Quiet long enough to be called stuck, then finishes
                     // anyway — the agent was slow, not wedged.
                     "late-end" => {
@@ -173,6 +257,15 @@ fn main() {
             }
             "session/cancel" => {
                 eprintln!("cancelled");
+                if mode == "cancellable" {
+                    if let Some(id) = pending_prompt_id.take() {
+                        reply(
+                            &mut stdout,
+                            Some(id),
+                            serde_json::json!({ "stopReason": "cancelled" }),
+                        );
+                    }
+                }
             }
             _ => {
                 if let Some(id) = id {
