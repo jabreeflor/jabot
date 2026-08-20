@@ -246,6 +246,10 @@ impl Store {
         overlay::transcript_after(&self.conn, thread_id, seq)
     }
 
+    pub fn transcript_head(&self, thread_id: &str) -> Result<i64, StoreError> {
+        overlay::transcript_head(&self.conn, thread_id)
+    }
+
     pub fn insert_inbox_event(
         &self,
         thread_id: &str,
