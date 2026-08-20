@@ -1,23 +1,21 @@
-/**
- * Inbox — where folded threads come back to you.
- *
- * Two sections, because they are two different states of mind: work that has
- * *returned* and wants something, and work that is still asleep and does not.
- * Sleeping cards only appear under "All"; filtering to "Needs you" and still
- * showing them would defeat the point of folding them away.
- *
- * Cards are `inbox_events` rows (#22). The projection is the host's job; this
- * view only decides what a card looks like and which tab it falls under.
- */
+//! Inbox — where folded threads come back to you.
+//!
+//! Two sections, because they are two different states of mind: work that has
+//! *returned* and wants something, and work that is still asleep and does not.
+//! Sleeping cards only appear under "All"; filtering to "Needs you" and still
+//! showing them would defeat the point of folding them away.
+//!
+//! Cards are `inbox_events` rows (#22). The projection is the host's job; this
+//! view only decides what a card looks like and which tab it falls under.
 
 import { useState } from "react";
 
 import { Blob } from "../components/Blob";
 import { CodeSessionIcon } from "../components/Icon";
 import { formatWhen } from "../components/format";
-import { inboxTag } from "../components/status";
+import { NEEDS_YOU_KINDS, inboxTag } from "../components/status";
 import { Tabs, type TabSpec } from "../components/Tabs";
-import type { CardSource, InboxCard, InboxKind } from "../components/types";
+import type { CardSource, InboxCard } from "../components/types";
 
 type InboxTab = "all" | "needs" | "done";
 
@@ -25,16 +23,6 @@ const TABS: readonly TabSpec<InboxTab>[] = [
   { id: "all", label: "All" },
   { id: "needs", label: "Needs you" },
   { id: "done", label: "Done" },
-];
-
-/** Anything the human has to answer before the work can continue. */
-const NEEDS_YOU: readonly InboxKind[] = [
-  "needs_you",
-  "judgment_call",
-  "permission",
-  "stuck",
-  "failed",
-  "lost",
 ];
 
 export function InboxView({
@@ -55,7 +43,7 @@ export function InboxView({
   );
 
   const matching = cards.filter((card) => {
-    if (tab === "needs") return NEEDS_YOU.includes(card.kind);
+    if (tab === "needs") return NEEDS_YOU_KINDS.includes(card.kind);
     if (tab === "done") return card.kind === "done";
     return true;
   });

@@ -1,10 +1,8 @@
-/**
- * The left rail. Crew on top, code below, you at the bottom.
- *
- * Search filters the code half only. Six faces are found by looking; a dozen
- * thread titles across four repos are not, and hiding a bot you were about to
- * click would be worse than useless.
- */
+//! The left rail. Crew on top, code below, you at the bottom.
+//!
+//! Search filters the code half only. Six faces are found by looking; a dozen
+//! thread titles across four repos are not, and hiding a bot you were about to
+//! click would be worse than useless.
 
 import { useState } from "react";
 
@@ -98,23 +96,35 @@ export function Sidebar({
           New Chat
         </button>
 
+        {/* The counts are folded into the label rather than left as loose
+            numerals, so "Inbox — 2 waiting" is what gets announced. */}
         <button
           type="button"
           className="nav-row"
           aria-current={selection.view === "prs"}
+          aria-label={
+            openPrCount > 0 ? `Pull Requests — ${openPrCount} open` : undefined
+          }
           onClick={onOpenPullRequests}
         >
           <span className="ic">
             <PullRequestIcon />
           </span>
           Pull Requests
-          {openPrCount > 0 && <span className="count">{openPrCount}</span>}
+          {openPrCount > 0 && (
+            <span className="count" aria-hidden="true">
+              {openPrCount}
+            </span>
+          )}
         </button>
 
         <button
           type="button"
           className="nav-row"
           aria-current={selection.view === "inbox"}
+          aria-label={
+            inboxCount > 0 ? `Inbox — ${inboxCount} waiting` : undefined
+          }
           onClick={onOpenInbox}
         >
           <span className="ic">
@@ -122,7 +132,7 @@ export function Sidebar({
           </span>
           Inbox
           {inboxCount > 0 && (
-            <span className="badge" aria-label={`${inboxCount} waiting`}>
+            <span className="badge" aria-hidden="true">
               {inboxCount}
             </span>
           )}

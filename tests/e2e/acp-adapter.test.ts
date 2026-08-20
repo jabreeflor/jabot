@@ -1,0 +1,346 @@
+/**
+ * End-to-end: the ACP adapter layer (#10) through the real wire.
+ *
+ * `src-tauri/tests/acp_adapter.rs` drives `HostSession` in-process, where the
+ * test can call `pump_acp()` itself. This file makes the same claims from the
+ * other side of the protocol — a `HostClient` and a `jabot-hostd` process with
+ * a real adapter subprocess under it — so "the adapter works" means the bytes
+ * actually make the round trip, not that a Rust helper was polled.
+ *
+ * The adapter under test is `fake_acp_agent.rs`, addressed by absolute path
+ * the way `acp_adapter.rs` addresses it through `CARGO_BIN_EXE_*`.
+ *
+ * ---------------------------------------------------------------------------
+ * The four skipped cases below are blocked on host defects, not on anything
+ * missing here. `jabot-hostd` never pumps the ACP connections: the
+ * Tauri host runs a `jabot-acp-pump` thread (`src-tauri/src/lib.rs`) that waits
+ * on `AdapterWake` and calls `pump_acp()` + `take_outbound()`, but
+ * `src-tauri/src/bin/jabot-hostd.rs` only calls `take_outbound()` after a
+ * request it has just handled and calls `pump_acp()` nowhere. Adapter events
+ * therefore sit unread in the connection's channel, and no `session/update`,
+ * `permission/ask` or `permission/resolved` ever reaches a client of the
+ * stdio host — nor does the event log they are replayed from.
+ *
+ * Repro: start `jabot-hostd`, `host/hello`, `session/prompt` with the fake
+ * agent, wait: nothing arrives, and `sync/resumeFrom` stays at `headSeq: 0`.
+ * The fix is a pump thread in `jabot-hostd` mirroring `spawn_acp_pump`.
+ *
+ * The cancel-ordering case is blocked a second time, on the host itself:
+ * `HostSession::session_cancel` (`src-tauri/src/host/acp/mod.rs`) calls
+ * `conn.cancel()` before `cancel_pending_permissions()`, which is the reverse
+ * of "reply `cancelled` to every pending request, then close"
+ * (`docs/research/harness-integration/adapter-design.md`). Both fixes are
+ * outside this suite's file zone. The cases are written against the intended
+ * behaviour and were run green against an out-of-tree `jabot-hostd` carrying
+ * both fixes, so they should need no edits once those land — with the pump
+ * alone, three pass and the ordering one still fails on its last assertion.
+ * ---------------------------------------------------------------------------
+ */
+import { tmpdir } from "node:os";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import { HostClient, HostRpcError } from "../../src/host/client";
+import {
+  PERMISSION_ASK,
+  PERMISSION_RESOLVED,
+  RPC_ERROR,
+  SESSION_CANCEL,
+  SESSION_PROMPT,
+  SESSION_UPDATE,
+  type JsonRpcNotification,
+  type PermissionAskParams,
+  type PermissionResolvedParams,
+  type PromptResult,
+  type SessionCancelResult,
+  type SessionUpdateParams,
+} from "../../src/host/protocol";
+import {
+  cargoDebugDir,
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
+
+const running: HostdProcess[] = [];
+
+async function connected(options?: HostdOptions) {
+  const host = new HostdProcess(options);
+  running.push(host);
+  const client = new HostClient(host);
+  await client.connect();
+  const hello = await client.hello();
+  return { host, client, hello };
+}
+
+afterEach(async () => {
+  await Promise.all(running.splice(0).map((host) => host.dispose()));
+});
+
+/** Prompt params that spawn the fake agent for a thread the store never saw. */
+function promptFor(threadId: string, mode?: string, content = "hi") {
+  return { threadId, content, cwd: tmpdir(), runtime: fakeAcpRuntime(mode) };
+}
+
+function updateOf(notification: JsonRpcNotification): SessionUpdateParams {
+  return notification.params as SessionUpdateParams;
+}
+
+function acpOf(notification: JsonRpcNotification): Record<string, unknown> {
+  return updateOf(notification).acp as Record<string, unknown>;
+}
+
+function isUpdate(threadId: string, kind: string) {
+  return (n: JsonRpcNotification) =>
+    n.method === SESSION_UPDATE &&
+    updateOf(n).threadId === threadId &&
+    acpOf(n).sessionUpdate === kind;
+}
+
+/** The fake agent narrates to stderr, which the host tees into the thread log. */
+async function waitForAdapterLog(
+  host: HostdProcess,
+  threadId: string,
+  needle: string,
+  timeoutMs = 10_000,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const log = host.readAdapterLog(threadId);
+    if (log.includes(needle)) return log;
+    if (Date.now() > deadline) {
+      throw new Error(`adapter log for ${threadId} never mentioned ${needle}; saw: ${log}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+describe("adapter spawn", () => {
+  it("completes the ACP handshake and accepts the prompt", async () => {
+    const { host } = await connected();
+
+    const response = await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-spawn"));
+
+    // `accepted` is only reachable if initialize and session/new both round
+    // tripped over the adapter's stdio — the session id comes from the agent.
+    expect(response.error).toBeUndefined();
+    expect(response.result).toMatchObject({
+      threadId: "t-spawn",
+      acpSessionId: "sess-fake-1",
+      accepted: true,
+    });
+  });
+
+  it("resolves a bare adapter command through the host's PATH", async () => {
+    const { host } = await connected({
+      env: { PATH: `${cargoDebugDir()}:${process.env.PATH ?? ""}` },
+    });
+
+    const response = await host.call<PromptResult>(SESSION_PROMPT, {
+      threadId: "t-path",
+      content: "hi",
+      cwd: tmpdir(),
+      runtime: { command: "fake-acp-agent" },
+    });
+
+    expect(response.error).toBeUndefined();
+    expect(response.result?.accepted).toBe(true);
+  });
+
+  it("answers a missing adapter binary with an install hint and stays up", async () => {
+    const { host, client } = await connected();
+
+    const response = await host.call(SESSION_PROMPT, {
+      threadId: "t-missing",
+      content: "hi",
+      cwd: tmpdir(),
+      runtime: {
+        command: "jabot-definitely-not-on-path-xyz",
+        installHint: "npm i -g jabot-definitely-not-on-path-xyz",
+      },
+    });
+
+    expect(response.error?.code).toBe(RPC_ERROR.HARNESS_UNAVAILABLE);
+    expect(response.error?.data).toMatchObject({
+      command: "jabot-definitely-not-on-path-xyz",
+      installHint: "npm i -g jabot-definitely-not-on-path-xyz",
+    });
+    // A missing harness is a message, not a crash: the same connection keeps
+    // serving. If the host had panicked or hung, this would time out instead.
+    expect((await client.health()).connected).toBe(true);
+  });
+
+  it("refuses a prompt it cannot resolve a runtime for", async () => {
+    const { client } = await connected();
+
+    // Until #15 puts threads in the store, an unknown thread must carry its
+    // own runtime; guessing one would spawn the wrong harness.
+    await expect(
+      client.prompt({ threadId: "t-no-runtime", content: "hi" }),
+    ).rejects.toMatchObject({ name: "HostRpcError", code: RPC_ERROR.INVALID_PARAMS });
+  });
+
+  it("tees adapter stderr to a per-thread log under the data dir", async () => {
+    const { host } = await connected({ persistent: true });
+    await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-log"));
+
+    const cancel = await host.call<SessionCancelResult>(SESSION_CANCEL, {
+      threadId: "t-log",
+    });
+
+    expect(cancel.result?.cancelled).toBe(true);
+    // The agent prints `cancelled` when the ACP notification lands, so the log
+    // is proof the cancel travelled host → adapter stdin, not just that the
+    // host returned success.
+    expect(await waitForAdapterLog(host, "t-log", "cancelled")).toContain("cancelled");
+  });
+});
+
+describe("adapter errors", () => {
+  it("rejects a cancel for a thread with no live adapter", async () => {
+    const { client } = await connected();
+
+    await expect(client.cancel({ threadId: "t-never-prompted" })).rejects.toMatchObject({
+      name: "HostRpcError",
+      code: RPC_ERROR.INTERNAL_ERROR,
+    });
+  });
+
+  it("rejects a permission reply for a request it is not holding", async () => {
+    const { client, hello } = await connected();
+
+    const failure = await client
+      .replyPermission({
+        requestId: "not-a-pending-request",
+        deviceId: hello.device.deviceId,
+        optionId: "allow_once",
+      })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(HostRpcError);
+    expect((failure as HostRpcError).code).toBe(RPC_ERROR.INVALID_PARAMS);
+  });
+
+  it("replays nothing for a thread the host has never streamed", async () => {
+    const { client } = await connected();
+
+    const replay = await client.resumeFrom({ threadId: "t-unknown", seq: 0 });
+
+    expect(replay).toEqual({ threadId: "t-unknown", headSeq: 0, events: [] });
+  });
+});
+
+// Blocked on the first defect in the module header: jabot-hostd never pumps.
+describe.skip("adapter streaming (blocked: jabot-hostd never calls pump_acp)", () => {
+  it("streams session/update with a host-stamped, strictly increasing envelope", async () => {
+    const { host, hello } = await connected();
+    await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-stream"));
+
+    const chunk = await host.waitFor(isUpdate("t-stream", "agent_message_chunk"));
+    expect(updateOf(chunk).hostId).toBe(hello.hostId);
+    expect(updateOf(chunk).threadId).toBe("t-stream");
+    expect(updateOf(chunk).seq).toBe(1);
+    expect(JSON.stringify(acpOf(chunk))).toContain("hello from fake-acp");
+
+    // The turn ending is itself an update, so the client learns idle without
+    // polling — and it must be numbered after the chunk it follows.
+    const idle = await host.waitFor(isUpdate("t-stream", "state_update"));
+    expect(acpOf(idle).stopReason).toBe("end_turn");
+
+    const seqs = host.notifications(SESSION_UPDATE).map((n) => updateOf(n).seq);
+    expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+    expect(new Set(seqs).size).toBe(seqs.length);
+  });
+
+  it("surfaces a permission request and routes the answer back to the agent", async () => {
+    const { host, client, hello } = await connected();
+    await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-perm", "permission", "rm -rf"));
+
+    const ask = await host.waitFor(PERMISSION_ASK);
+    const asked = ask.params as PermissionAskParams;
+    expect(asked.hostId).toBe(hello.hostId);
+    expect(asked.threadId).toBe("t-perm");
+    expect(asked.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(asked.subject).toMatchObject({ kind: "execute", title: "Run ls" });
+    expect(asked.options).toEqual(
+      expect.arrayContaining([expect.objectContaining({ optionId: "allow_once" })]),
+    );
+
+    await client.replyPermission({
+      requestId: asked.requestId,
+      deviceId: hello.device.deviceId,
+      optionId: "allow_once",
+    });
+
+    const resolved = (await host.waitFor(PERMISSION_RESOLVED))
+      .params as PermissionResolvedParams;
+    expect(resolved.requestId).toBe(asked.requestId);
+    expect(resolved.optionId).toBe("allow_once");
+    expect(resolved.deviceId).toBe(hello.device.deviceId);
+    expect(resolved.seq).toBeGreaterThan(asked.seq);
+
+    // The agent only emits this chunk once it has read our outcome, so it is
+    // the proof the answer reached ACP rather than stopping at the host.
+    const allowed = await host.waitFor(
+      (n) =>
+        isUpdate("t-perm", "agent_message_chunk")(n) &&
+        JSON.stringify(acpOf(n)).includes("allowed"),
+    );
+    expect(updateOf(allowed).seq).toBeGreaterThan(resolved.seq);
+  });
+
+  it("replays through sync/resumeFrom exactly what a disconnected client missed", async () => {
+    const { host, client } = await connected();
+    await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-resume"));
+    const chunk = await host.waitFor(isUpdate("t-resume", "agent_message_chunk"));
+    const idle = await host.waitFor(isUpdate("t-resume", "state_update"));
+
+    const missedAll = await client.resumeFrom({ threadId: "t-resume", seq: 0 });
+    expect(missedAll.headSeq).toBe(updateOf(idle).seq);
+    expect(missedAll.events.map((e) => e.seq)).toEqual([
+      updateOf(chunk).seq,
+      updateOf(idle).seq,
+    ]);
+    // A reconnecting client must get the same envelope it would have received
+    // live, or the transcript it rebuilds is a different one.
+    expect(missedAll.events[0].params).toEqual(chunk.params);
+
+    const missedTail = await client.resumeFrom({
+      threadId: "t-resume",
+      seq: updateOf(chunk).seq,
+    });
+    expect(missedTail.headSeq).toBe(updateOf(idle).seq);
+    expect(missedTail.events).toEqual([
+      { seq: updateOf(idle).seq, method: SESSION_UPDATE, params: idle.params },
+    ]);
+  });
+});
+
+// Blocked on both defects in the module header: without a pump the host never
+// learns a permission is outstanding, and `session_cancel` answers the ones it
+// does know about only after it has already cancelled the turn.
+describe.skip("cancel ordering (blocked: session_cancel resolves permissions last)", () => {
+  it("answers outstanding permission requests as cancelled before cancelling the turn", async () => {
+    const { host, client } = await connected({ persistent: true });
+    await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-cancel", "permission", "rm -rf"));
+    const asked = (await host.waitFor(PERMISSION_ASK)).params as PermissionAskParams;
+
+    await client.cancel({ threadId: "t-cancel" });
+
+    const resolved = (await host.waitFor(PERMISSION_RESOLVED))
+      .params as PermissionResolvedParams;
+    expect(resolved.requestId).toBe(asked.requestId);
+    expect(resolved.cancelled).toBe(true);
+    expect(resolved.optionId).toBeUndefined();
+
+    // Ordering is the contract, not just that both happen: an agent that gets
+    // session/cancel first is free to tear the turn down with a permission
+    // request still outstanding, which is the hang #10 exists to prevent.
+    // The fake agent logs `permission_reply=` and `cancelled` as it reads
+    // them, so the log is the order the host wrote to its stdin. This is the
+    // assertion `session_cancel`'s current call order fails — see the header.
+    const log = await waitForAdapterLog(host, "t-cancel", "cancelled");
+    expect(log).toContain("permission_reply=");
+    expect(log.indexOf("permission_reply=")).toBeLessThan(log.indexOf("cancelled"));
+  });
+});

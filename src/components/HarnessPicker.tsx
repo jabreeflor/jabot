@@ -1,11 +1,9 @@
-/**
- * Pick the engine. Shared by New Chat (this thread) and the bot editor (this
- * bot's default), because #6 made them the same choice at two scopes: a thread
- * override else `bots.harness_id`.
- *
- * A harness the Doctor could not find is still shown — greying it out and
- * saying how to install it is more useful than pretending it does not exist.
- */
+//! Pick the engine. Shared by New Chat (this thread) and the bot editor (this
+//! bot's default), because #6 made them the same choice at two scopes: a thread
+//! override else `bots.harness_id`.
+//!
+//! A harness the Doctor could not find is still shown — greying it out and
+//! saying how to install it is more useful than pretending it does not exist.
 
 import type { CSSProperties } from "react";
 

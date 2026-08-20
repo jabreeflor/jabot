@@ -1,11 +1,9 @@
-/**
- * New Chat: the card that spawns a code thread.
- *
- * Harness is picked *per thread*, not per bot — Code owns many folder threads
- * and any one of them may run a different engine than Code's default (#6). The
- * folder is the repo the thread will work in; "No folder" is a scratch session
- * with no worktree.
- */
+//! New Chat: the card that spawns a code thread.
+//!
+//! Harness is picked *per thread*, not per bot — Code owns many folder threads
+//! and any one of them may run a different engine than Code's default (#6). The
+//! folder is the repo the thread will work in; "No folder" is a scratch session
+//! with no worktree.
 
 import { useId, useState } from "react";
 

@@ -10,7 +10,7 @@
  * a live host process with no production code aware it is under test.
  */
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,10 +19,12 @@ import type {
   HostTransport,
   NotificationHandler,
 } from "../../src/host/client";
-import type {
-  JsonRpcNotification,
-  JsonRpcRequest,
-  JsonRpcResponse,
+import {
+  JSONRPC_VERSION,
+  type JsonRpcNotification,
+  type JsonRpcRequest,
+  type JsonRpcResponse,
+  type RuntimeSpec,
 } from "../../src/host/protocol";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -30,8 +32,50 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 export function hostdBinaryPath(): string {
   const override = process.env.JABOT_HOSTD_BIN;
   if (override) return override;
-  const exe = process.platform === "win32" ? "jabot-hostd.exe" : "jabot-hostd";
-  return path.join(repoRoot, "src-tauri", "target", "debug", exe);
+  return cargoBinaryPath("jabot-hostd");
+}
+
+/**
+ * The scriptable ACP agent from `src-tauri/src/bin/fake_acp_agent.rs`.
+ *
+ * `src-tauri/tests/acp_adapter.rs` reaches it through `CARGO_BIN_EXE_*`; from
+ * TypeScript the equivalent is the same `target/debug` path. `cargo test` and
+ * `cargo build --bins` both produce it, so a missing binary means a stale tree
+ * rather than a broken test — say so instead of failing on `ENOENT` later.
+ */
+export function fakeAcpAgentPath(): string {
+  const override = process.env.JABOT_FAKE_ACP_BIN;
+  if (override) return override;
+  const built = cargoBinaryPath("fake-acp-agent");
+  if (!existsSync(built)) {
+    throw new Error(
+      `fake-acp-agent is not built at ${built}; run: cargo build --manifest-path src-tauri/Cargo.toml --bins`,
+    );
+  }
+  return built;
+}
+
+/** Directory the Rust bins land in — also what a PATH-probe test prepends. */
+export function cargoDebugDir(): string {
+  return path.join(repoRoot, "src-tauri", "target", "debug");
+}
+
+function cargoBinaryPath(name: string): string {
+  const exe = process.platform === "win32" ? `${name}.exe` : name;
+  return path.join(cargoDebugDir(), exe);
+}
+
+/**
+ * A `runtime` for `session/prompt` that spawns the fake agent by absolute path.
+ *
+ * `mode` is the agent's first argv — `echo` (default), `permission`, or
+ * `grandchild`; see `fake_acp_agent.rs`.
+ */
+export function fakeAcpRuntime(mode?: string): RuntimeSpec {
+  return {
+    command: fakeAcpAgentPath(),
+    args: mode ? [mode] : [],
+  };
 }
 
 export interface HostdOptions {
@@ -39,6 +83,8 @@ export interface HostdOptions {
   persistent?: boolean;
   /** Reuse an existing data dir — lets a test restart the host and assert resume. */
   dataDir?: string;
+  /** Extra environment for the host process; adapters inherit it when spawned. */
+  env?: Record<string, string>;
 }
 
 /**
@@ -59,6 +105,7 @@ export class HostdProcess implements HostTransport {
     match: (n: JsonRpcNotification) => boolean;
     resolve: (n: JsonRpcNotification) => void;
   }> = [];
+  private nextId = 1;
   private buffer = "";
   private stderr = "";
   private exited = false;
@@ -78,6 +125,7 @@ export class HostdProcess implements HostTransport {
 
     this.child = spawn(hostdBinaryPath(), args, {
       stdio: ["pipe", "pipe", "pipe"],
+      env: options.env ? { ...process.env, ...options.env } : process.env,
     });
     this.child.stdout.setEncoding("utf8");
     this.child.stderr.setEncoding("utf8");
@@ -150,6 +198,39 @@ export class HostdProcess implements HostTransport {
     return () => {
       this.handlers.delete(handler);
     };
+  }
+
+  /**
+   * One request, one response — including the error case.
+   *
+   * `HostClient` throws on `error` and drops the result of `prompt`, `cancel`
+   * and `replyPermission`, so a test that asserts on either needs the frame
+   * itself. Ids are string-tagged so they cannot collide with the numeric ones
+   * a `HostClient` on the same transport is handing out.
+   */
+  call<T = unknown>(method: string, params?: unknown): Promise<JsonRpcResponse<T>> {
+    const request: JsonRpcRequest = {
+      jsonrpc: JSONRPC_VERSION,
+      id: `harness-${this.nextId++}`,
+      method,
+    };
+    if (params !== undefined) request.params = params;
+    return this.request(request) as Promise<JsonRpcResponse<T>>;
+  }
+
+  /**
+   * Where the host tees an adapter's stderr. The fake agent logs what it was
+   * told and when, which is how a test observes ordering on the ACP side of
+   * the host rather than only on the client side.
+   */
+  adapterLogPath(threadId: string): string {
+    if (!this.dataDir) throw new Error("adapter logs need a data dir; start the host persistent");
+    return path.join(this.dataDir, "adapter-logs", `${threadId}.stderr.log`);
+  }
+
+  readAdapterLog(threadId: string): string {
+    const file = this.adapterLogPath(threadId);
+    return existsSync(file) ? readFileSync(file, "utf8") : "";
   }
 
   /** Raw line write, for protocol-level tests (malformed frames, batching). */

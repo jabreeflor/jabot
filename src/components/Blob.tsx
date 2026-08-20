@@ -1,8 +1,6 @@
-/**
- * Bot avatars. A blob is a bot's identity everywhere it appears — sidebar tile,
- * chat header, crew card, Inbox row — so size is a CSS variable set by the
- * container rather than a prop threaded through four call sites.
- */
+//! Bot avatars. A blob is a bot's identity everywhere it appears — sidebar tile,
+//! chat header, crew card, Inbox row — so size is a CSS variable set by the
+//! container rather than a prop threaded through four call sites.
 
 import type { BotColor } from "./types";
 

@@ -1,11 +1,9 @@
-/**
- * The transcript: ACP-shaped items rendered in the prototype's grammar.
- *
- * Items arrive one tool call at a time because that is how `session/update`
- * reports them, but a consecutive run of them is drawn as a *single* toolblock.
- * One agent turn that read six files and ran the tests is one thing that
- * happened, and six stacked cards would read as six turns.
- */
+//! The transcript: ACP-shaped items rendered in the prototype's grammar.
+//!
+//! Items arrive one tool call at a time because that is how `session/update`
+//! reports them, but a consecutive run of them is drawn as a *single* toolblock.
+//! One agent turn that read six files and ran the tests is one thing that
+//! happened, and six stacked cards would read as six turns.
 
 import type { ToolCall, ToolKind, TranscriptItem } from "./types";
 

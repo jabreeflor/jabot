@@ -1,12 +1,10 @@
-/**
- * A code thread — one job in one repo, wrapped in the same chat surface as a
- * bot conversation.
- *
- * The header answers the three questions a running session raises: what am I
- * doing, what engine is doing it, and where has it got to. The harness comes
- * from the *thread*, not from the Code bot, because New Chat can override it
- * per thread (#6).
- */
+//! A code thread — one job in one repo, wrapped in the same chat surface as a
+//! bot conversation.
+//!
+//! The header answers the three questions a running session raises: what am I
+//! doing, what engine is doing it, and where has it got to. The harness comes
+//! from the *thread*, not from the Code bot, because New Chat can override it
+//! per thread (#6).
 
 import { Conversation } from "../components/Conversation";
 import { HarnessChip } from "../components/HarnessChip";

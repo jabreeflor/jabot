@@ -1,13 +1,11 @@
-/**
- * Pull Requests — what the coding sessions produced.
- *
- * Sections are ordered by what the human can act on: PRs waiting for review,
- * then PRs whose checks are still running (nothing to do yet), then what has
- * already landed. A draft is listed under Open but never claims review.
- *
- * Rows are `thread_prs` joined with GitHub state (#28); `threadId` is what
- * makes "Reopen thread" possible at all.
- */
+//! Pull Requests — what the coding sessions produced.
+//!
+//! Sections are ordered by what the human can act on: PRs waiting for review,
+//! then PRs whose checks are still running (nothing to do yet), then what has
+//! already landed. A draft is listed under Open but never claims review.
+//!
+//! Rows are `thread_prs` joined with GitHub state (#28); `threadId` is what
+//! makes "Reopen thread" possible at all.
 
 import { useState } from "react";
 
@@ -132,8 +130,12 @@ function PrRow({
         .filter(Boolean)
         .join(" ")}
     >
-      <div className={`prav ${pr.status === "merged" ? "merged" : pr.status === "open" ? "open" : ""}`}>
-        {pr.status === "merged" ? <PullRequestMergedIcon /> : <PullRequestIcon />}
+      <div className={`prav ${pr.status}`}>
+        {pr.status === "merged" ? (
+          <PullRequestMergedIcon />
+        ) : (
+          <PullRequestIcon />
+        )}
       </div>
       <div className="bd">
         <button

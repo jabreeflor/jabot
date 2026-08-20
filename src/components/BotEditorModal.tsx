@@ -1,13 +1,11 @@
-/**
- * The bot editor: name, colour, instructions, tools — and a harness.
- *
- * The harness picker is the one thing the prototype's editor did not have.
- * Decision #6 made every bot an ACP harness session, so "which engine runs
- * this bot" is part of the bot, not a hidden default.
- *
- * Templates are the same fields without an id, so picking one just fills the
- * form; nothing is created until Save.
- */
+//! The bot editor: name, colour, instructions, tools — and a harness.
+//!
+//! The harness picker is the one thing the prototype's editor did not have.
+//! Decision #6 made every bot an ACP harness session, so "which engine runs
+//! this bot" is part of the bot, not a hidden default.
+//!
+//! Templates are the same fields without an id, so picking one just fills the
+//! form; nothing is created until Save.
 
 import { useId, useState } from "react";
 

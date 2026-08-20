@@ -55,6 +55,20 @@ export interface Tag {
 }
 
 /**
+ * The kinds that are actually asking the human something. The sidebar badge
+ * counts these and only these — a folded thread is *not* a notification, which
+ * is the entire point of folding it (#5).
+ */
+export const NEEDS_YOU_KINDS: readonly InboxKind[] = [
+  "needs_you",
+  "judgment_call",
+  "permission",
+  "stuck",
+  "failed",
+  "lost",
+];
+
+/**
  * An Inbox card's pill. Amber for anything that is waiting on the human, red
  * for anything that went wrong on its own, grey for work still asleep.
  */

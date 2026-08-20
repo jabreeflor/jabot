@@ -194,6 +194,9 @@ export type TranscriptItem =
       pill?: string;
       body: string;
       actions: NoticeAction[];
+      /** The thread the decision is about — the one a fold offer folds and the
+          one a #20 permission prompt is blocking. Absent for plain notices. */
+      threadId?: string;
       /** Set once answered: the card animates out instead of vanishing. */
       resolved?: boolean;
     };

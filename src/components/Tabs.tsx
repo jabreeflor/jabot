@@ -1,8 +1,6 @@
-/**
- * The pill tab row on Inbox and Pull Requests. The prototype only toggled a
- * class; here the selected tab is state the view filters by, and the tabs are
- * a real tablist so arrow keys and screen readers behave.
- */
+//! The pill tab row on Inbox and Pull Requests. The prototype only toggled a
+//! class; here the selected tab is state the view filters by, and the tabs are
+//! a real tablist so arrow keys and screen readers behave.
 
 export interface TabSpec<T extends string> {
   id: T;

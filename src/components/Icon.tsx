@@ -1,11 +1,9 @@
-/**
- * The prototype's icon set, verbatim paths.
- *
- * They are drawn, not imported, because there are ten of them and a sprite
- * dependency would be more machinery than SVG. Every icon is decorative — the
- * control around it carries the accessible name — so all of them are hidden
- * from the accessibility tree.
- */
+//! The prototype's icon set, verbatim paths.
+//!
+//! They are drawn, not imported, because there are ten of them and a sprite
+//! dependency would be more machinery than SVG. Every icon is decorative — the
+//! control around it carries the accessible name — so all of them are hidden
+//! from the accessibility tree.
 
 import type { ReactNode } from "react";
 

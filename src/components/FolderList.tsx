@@ -1,15 +1,13 @@
-/**
- * Folders and their code threads.
- *
- * A folder is a registered repo (#16) and the container is literal: threads
- * live *inside* the folder card, because a code thread only means something
- * relative to its checkout. The ＋ in the header starts a thread already
- * pointed at that repo, which is the common case — the sidebar's New Chat row
- * is the one that has to ask.
- *
- * Folded threads are not listed at all. That is the promise fold makes: the
- * row goes away and comes back through the Inbox.
- */
+//! Folders and their code threads.
+//!
+//! A folder is a registered repo (#16) and the container is literal: threads
+//! live *inside* the folder card, because a code thread only means something
+//! relative to its checkout. The ＋ in the header starts a thread already
+//! pointed at that repo, which is the common case — the sidebar's New Chat row
+//! is the one that has to ask.
+//!
+//! Folded threads are not listed at all. That is the promise fold makes: the
+//! row goes away and comes back through the Inbox.
 
 import { useState } from "react";
 

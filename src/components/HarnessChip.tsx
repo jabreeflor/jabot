@@ -1,8 +1,6 @@
-/**
- * Which engine is behind this thread. Every bot is an ACP harness session (#6),
- * and a thread can override its bot's default at spawn, so the chip reads the
- * thread's own `harnessId` rather than the bot's.
- */
+//! Which engine is behind this thread. Every bot is an ACP harness session (#6),
+//! and a thread can override its bot's default at spawn, so the chip reads the
+//! thread's own `harnessId` rather than the bot's.
 
 import type { CSSProperties } from "react";
 

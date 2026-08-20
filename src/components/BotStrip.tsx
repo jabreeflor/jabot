@@ -1,10 +1,8 @@
-/**
- * The crew as faces. Chief gets its own wider row because it is the one bot you
- * talk to about the others; the rest sit in a three-up grid with the Crew tile
- * last, so "manage the crew" is where the crew is rather than in a menu.
- *
- * Every bot here has one standing thread (#6) — clicking a face opens it.
- */
+//! The crew as faces. Chief gets its own wider row because it is the one bot you
+//! talk to about the others; the rest sit in a three-up grid with the Crew tile
+//! last, so "manage the crew" is where the crew is rather than in a menu.
+//!
+//! Every bot here has one standing thread (#6) — clicking a face opens it.
 
 import { Blob, BlobCluster } from "./Blob";
 import type { Bot, Selection } from "./types";

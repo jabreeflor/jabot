@@ -34,10 +34,6 @@
   font-size: var(--fs-meta);
 }
 
-.chat-head .spacer {
-  margin-left: auto;
-}
-
 /* The 🖥 affordance. MVP1 only ever has one host, but the button exists so
    picking a host later is not a new piece of chrome. */
 .host-picker {

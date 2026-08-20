@@ -1,10 +1,8 @@
-/**
- * Crew management. Every bot is editable and removable except Chief, which is
- * the one seat the product assumes exists (`bots_one_chief` in the schema).
- *
- * Each card shows the bot's harness next to its tools, because after #6 the
- * engine is part of who a bot is — not a preference buried in a settings pane.
- */
+//! Crew management. Every bot is editable and removable except Chief, which is
+//! the one seat the product assumes exists (`bots_one_chief` in the schema).
+//!
+//! Each card shows the bot's harness next to its tools, because after #6 the
+//! engine is part of who a bot is — not a preference buried in a settings pane.
 
 import { Blob } from "../components/Blob";
 import { HarnessChip } from "../components/HarnessChip";

@@ -1,11 +1,9 @@
-/**
- * Right-click on a thread row.
- *
- * "Wait for Inbox" is the fold policy from #5, not a delete — the thread keeps
- * running, it just stops taking up sidebar space until it has something to say.
- * The menu names the thread so a mis-aimed right-click is obvious before the
- * destructive item is clicked.
- */
+//! Right-click on a thread row.
+//!
+//! "Wait for Inbox" is the fold policy from #5, not a delete — the thread keeps
+//! running, it just stops taking up sidebar space until it has something to say.
+//! The menu names the thread so a mis-aimed right-click is obvious before the
+//! destructive item is clicked.
 
 import { useEffect, useRef } from "react";
 

@@ -1,10 +1,8 @@
-/**
- * Scrolling transcript + composer, under whatever header the view supplies.
- *
- * A bot chat and a code thread are the same conversation with a different
- * nameplate — one is a standing thread with a persona, the other a job in a
- * repo — so the body is one component and only the header differs.
- */
+//! Scrolling transcript + composer, under whatever header the view supplies.
+//!
+//! A bot chat and a code thread are the same conversation with a different
+//! nameplate — one is a standing thread with a persona, the other a job in a
+//! repo — so the body is one component and only the header differs.
 
 import { useEffect, useRef, type ReactNode } from "react";
 

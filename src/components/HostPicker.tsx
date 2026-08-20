@@ -1,8 +1,6 @@
-/**
- * The 🖥 in the chat header. MVP1 runs everything on this Mac, but the header
- * keeps the affordance so a second host is a longer menu rather than a new
- * piece of chrome (#7 decision: the renderer only ever talks to a host API).
- */
+//! The 🖥 in the chat header. MVP1 runs everything on this Mac, but the header
+//! keeps the affordance so a second host is a longer menu rather than a new
+//! piece of chrome (#7 decision: the renderer only ever talks to a host API).
 
 import type { HostTarget } from "./types";
 

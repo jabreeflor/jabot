@@ -1,11 +1,9 @@
-/**
- * Overlay shell for New Chat and the bot editor.
- *
- * The prototype toggled a class and left the keyboard behind. A modal here
- * actually behaves: Escape closes it, a click on the backdrop closes it, focus
- * moves inside on open and Tab is trapped so it cannot wander back into the
- * sidebar underneath.
- */
+//! Overlay shell for New Chat and the bot editor.
+//!
+//! The prototype toggled a class and left the keyboard behind. A modal here
+//! actually behaves: Escape closes it, a click on the backdrop closes it, focus
+//! moves inside on open and Tab is trapped so it cannot wander back into the
+//! sidebar underneath.
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
 

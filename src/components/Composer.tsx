@@ -1,10 +1,8 @@
-/**
- * The message box. A real form, so Return submits and the field clears — the
- * prototype's input did nothing at all.
- *
- * Sending is a prop: this component never calls the host. #14 hands it a
- * `session/prompt`.
- */
+//! The message box. A real form, so Return submits and the field clears — the
+//! prototype's input did nothing at all.
+//!
+//! Sending is a prop: this component never calls the host. #14 hands it a
+//! `session/prompt`.
 
 import { useState, type FormEvent } from "react";
 

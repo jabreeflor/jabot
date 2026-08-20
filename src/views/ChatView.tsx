@@ -1,8 +1,6 @@
-/**
- * A bot's standing chat. Chief and every worker has exactly one (#6) — extra
- * tasks append to it or fold away to the Inbox, so there is no thread list here
- * and no way to accumulate twelve half-finished conversations with the Writer.
- */
+//! A bot's standing chat. Chief and every worker has exactly one (#6) — extra
+//! tasks append to it or fold away to the Inbox, so there is no thread list here
+//! and no way to accumulate twelve half-finished conversations with the Writer.
 
 import { Blob } from "../components/Blob";
 import { Conversation } from "../components/Conversation";
