@@ -11,10 +11,17 @@
 //! | `foldThread`    | `thread/fold` (#26)                          |
 //! | `archiveThread` | thread overlay transition (#15)              |
 //! | `sendMessage`   | `session/prompt` (#14)                       |
-//! | `saveBot`       | crew CRUD (#17)                              |
+//! | `saveBot`       | `crew/create` / `crew/update` (#17 — live)   |
+//! | `removeBot`     | `crew/remove` (#17 — live)                   |
 //!
 //! It is *not* pure: folding stamps `createdAt` on the Inbox card it writes.
 //! The host does that in SQLite, before it notifies anyone (#5).
+//!
+//! The rows marked *live* have been swapped for real host calls; what stays
+//! here is the fixture the shell renders **before** the host has answered —
+//! a preview build, a unit test, a host still starting — and the guards in
+//! `mock-host.test.ts` are what keep the fixture from drifting away from the
+//! catalogs the host actually serves.
 
 import { NEEDS_YOU_KINDS } from "../components/status";
 import type {
@@ -97,13 +104,19 @@ export const HOST_TOOLS: readonly ToolOption[] = [
   { id: "list_crew_status", label: "Crew status" },
 ];
 
+/**
+ * Fallback copies of the shipped template packs in
+ * `src-tauri/src/host/crew/templates/*.json`, which are the source of truth
+ * (#17). `mock-host.test.ts` fails if the two drift: a template that promises
+ * tools the host would refuse is worse than no template at all.
+ */
 export const BOT_TEMPLATES: readonly BotTemplate[] = [
   {
     templateId: "expense",
     name: "Expense Manager",
     color: "b-green",
     instructions:
-      "Chase receipts, file the monthly report, flag anything unusual.",
+      "Chase receipts, file the monthly report, flag anything unusual. Never move money — draft, then wait for me.",
     tools: ["gmail", "drive"],
     harnessId: "claude",
   },
@@ -112,7 +125,7 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     name: "Talent Scout",
     color: "b-pink",
     instructions:
-      "Watch for interesting people. Draft warm intros in my voice, hold for review.",
+      "Watch for interesting people. Draft warm intros in my voice and hold them for review — nothing goes out unread.",
     tools: ["browser", "gmail"],
     harnessId: "claude",
   },
@@ -120,7 +133,8 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     templateId: "social",
     name: "Social Media",
     color: "b-blue",
-    instructions: "Draft posts from my shipped work. Never publish without approval.",
+    instructions:
+      "Draft posts from my shipped work. Never publish without approval.",
     tools: ["browser"],
     harnessId: "claude",
   },
@@ -128,7 +142,8 @@ export const BOT_TEMPLATES: readonly BotTemplate[] = [
     templateId: "ops",
     name: "Ops / On-call",
     color: "b-orange",
-    instructions: "Watch deploys and alerts. Wake me only for real fires.",
+    instructions:
+      "Watch deploys and alerts. Wake me only for real fires; everything else goes in the morning digest.",
     tools: ["terminal", "slack"],
     harnessId: "codex",
   },
