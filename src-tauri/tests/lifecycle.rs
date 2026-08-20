@@ -194,6 +194,15 @@ fn an_illegal_transition_is_an_error_not_a_silent_no_op() {
     // And it left the thread where it was, rather than half-moving it.
     assert_eq!(host.state("t-illegal")["state"], "folded");
 
+    // The policy is part of the row: a refused fold must not quietly make the
+    // thread quieter on its way back out as an error.
+    let with_policy = host.err(
+        THREAD_FOLD,
+        json!({ "threadId": "t-illegal", "policy": "wait_for_inbox" }),
+    );
+    assert_eq!(with_policy.code, ILLEGAL_TRANSITION);
+    assert_eq!(host.state("t-illegal")["foldPolicy"], "default");
+
     host.ok(THREAD_DELETE, json!({ "threadId": "t-illegal" }));
     assert_eq!(host.state("t-illegal")["state"], "deleted");
     // Deleted has no outbound edges at all.
