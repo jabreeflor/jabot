@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   HARNESSES,
+  TOOL_CATALOG,
   initialMockState,
   mockHostReducer,
   needsYouCount,
@@ -44,6 +45,23 @@ describe("the seed", () => {
       // `thread_prs.thread_id` is NOT NULL; a PR with no session is a row the
       // store cannot hold, so the mock must not invent one.
       expect(threads).toContain(pr.threadId);
+    }
+  });
+
+  it("offers only tools the host has, with the host's own ids and labels", () => {
+    // Same reason as the harness guard below: the bot editor's chips are an
+    // allowlist of *host* catalog ids (#18), so a chip the host does not know
+    // would save a bot a tool that can never be passed to a session.
+    const catalog = readFileSync("src-tauri/src/host/tools/catalog.rs", "utf8");
+    const entries = [
+      ...catalog
+        .slice(catalog.indexOf("pub const CATALOG:"))
+        .matchAll(/id: "([^"]+)",\s*\n\s*label: "([^"]+)"/g),
+    ].map(([, id, label]) => ({ id, label }));
+
+    expect(entries.map((entry) => entry.id)).toContain("terminal");
+    for (const tool of TOOL_CATALOG) {
+      expect(entries).toContainEqual({ id: tool.id, label: tool.label });
     }
   });
 

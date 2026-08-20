@@ -41,22 +41,27 @@ impl HostSession {
         let thread_id = params.thread_id.clone();
         self.ensure_connection(&params)?;
         let cwd = self.resolve_cwd(&params)?;
-        // Host-selected MCP, from the bot's allowlist (#18). The harness's own
-        // configured servers are suppressed by the catalog's env floor, so
-        // this array is the whole tool surface the agent is given — a tool
-        // that is not here is one the model never sees a schema for.
-        let mcp_servers = self.mcp_servers_for_thread(&thread_id);
-        let session_id = {
-            let conn = self.connections.get_mut(&thread_id).expect("spawned");
-            match conn.session_id.clone() {
-                Some(id) => id,
-                None => match conn.new_session(&cwd, mcp_servers) {
+        let existing = self
+            .connections
+            .get(&thread_id)
+            .and_then(|conn| conn.session_id.clone());
+        let session_id = match existing {
+            Some(id) => id,
+            None => {
+                // Host-selected MCP, from the bot's allowlist (#18). Resolved
+                // here rather than per prompt because this is the only moment
+                // it is read: `session/new` fixes the tool surface for the
+                // life of the session, and a tool that is not in this array is
+                // one the model never sees a schema for.
+                let mcp_servers = self.mcp_servers_for_thread(&thread_id);
+                let conn = self.connections.get_mut(&thread_id).expect("spawned");
+                match conn.new_session(&cwd, mcp_servers) {
                     Ok(id) => id,
                     Err(err) => {
                         self.connections.remove(&thread_id);
                         return Err(err);
                     }
-                },
+                }
             }
         };
         if let Some(store) = &self.store {

@@ -461,30 +461,68 @@ mod tests {
             .expect("thread");
     }
 
-    fn connect_gmail(session: &mut HostSession, auth: &LocalAuthServer) {
+    /// Run a whole Google grant through the host: real flow, real consent on a
+    /// local authorization server, real commit into the vault and the store.
+    fn connect_google(session: &mut HostSession, auth: &LocalAuthServer, consent: bool) {
         let flow = ConnectFlow::start(ConnectRequest {
             tool_id: "gmail".into(),
             provider: catalog::GOOGLE,
             server_url: auth.mcp_url(),
             scopes: vec!["gmail.compose".into()],
-            config_dir: None,
+            config_dir: session.data_dir.clone(),
         })
         .expect("flow");
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let authorize_url = loop {
-            if let Some(url) = flow.authorize_url() {
-                break url;
-            }
-            assert!(Instant::now() < deadline, "no authorize URL");
-            std::thread::sleep(Duration::from_millis(10));
-        };
-        auth.consent(&authorize_url);
+        if consent {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let authorize_url = loop {
+                if let Some(url) = flow.authorize_url() {
+                    break url;
+                }
+                assert!(Instant::now() < deadline, "no authorize URL");
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            auth.consent(&authorize_url);
+        }
         session.connect_flows.insert("google".into(), flow);
         let deadline = Instant::now() + Duration::from_secs(10);
         while session.connect_flows.contains_key("google") {
-            assert!(Instant::now() < deadline, "flow never committed");
+            assert!(Instant::now() < deadline, "flow never finished");
             session.drain_connect_flows();
             std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn connect_gmail(session: &mut HostSession, auth: &LocalAuthServer) {
+        connect_google(session, auth, true);
+    }
+
+    /// Host-selected MCP has to be the *only* MCP a session sees (#10,
+    /// decision #6). A harness that also reads servers from its own config
+    /// would hand the model schemas no bot allowlisted, so it must be launched
+    /// with the vendor's documented switch that turns that off. The catalog
+    /// (#13) carries those switches as an env floor; this is the invariant
+    /// that keeps them there, asserted from the side that depends on it.
+    ///
+    /// Hermes is the only harness in the catalog that documents such a switch.
+    /// For the rest the host still passes its own array and never merges
+    /// anything into it — but it cannot suppress what a vendor gives no flag
+    /// for, and inventing an env var name would be a guess that does nothing.
+    #[test]
+    fn harnesses_with_ambient_mcp_are_launched_with_it_switched_off() {
+        const SWITCHES: &[(&str, &str, &str)] =
+            &[("hermes", "HERMES_ACP_SKIP_CONFIGURED_MCP", "1")];
+
+        let catalog = crate::host::harness::catalog::compiled_in();
+        for (harness_id, key, value) in SWITCHES {
+            let descriptor = catalog
+                .iter()
+                .find(|card| card.id == *harness_id)
+                .unwrap_or_else(|| panic!("{harness_id} is missing from the harness catalog"));
+            assert_eq!(
+                descriptor.env.get(*key).map(String::as_str),
+                Some(*value),
+                "{harness_id} would merge its own MCP servers into a JaBot session"
+            );
         }
     }
 
@@ -637,6 +675,31 @@ mod tests {
             .unwrap()
             .is_empty());
 
+        open_thread(&session, "t-inbox", "inboxm");
+        assert_eq!(
+            session.mcp_servers_for_thread("t-inbox"),
+            serde_json::json!([])
+        );
+    }
+
+    /// A flow that fails has to leave the reason where the user will see it —
+    /// on the chip — instead of a chip that quietly says "not connected" while
+    /// the actual problem is a file only they can write.
+    #[test]
+    fn a_failed_connect_leaves_the_providers_reason_on_the_chip() {
+        let (mut session, _dir) = host();
+        let auth = LocalAuthServer::start();
+        auth.disable_dynamic_registration();
+
+        connect_google(&mut session, &auth, false);
+
+        let tools = session.tools_list().unwrap().tools;
+        let gmail = tools.iter().find(|t| t.id == "gmail").unwrap();
+        assert_eq!(gmail.status, ToolConnectionStatus::Error);
+        let detail = gmail.detail.as_deref().expect("a reason");
+        assert!(detail.contains("oauth_clients.json"), "{detail}");
+
+        // And a failed connect grants nothing.
         open_thread(&session, "t-inbox", "inboxm");
         assert_eq!(
             session.mcp_servers_for_thread("t-inbox"),

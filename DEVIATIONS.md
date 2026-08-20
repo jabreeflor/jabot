@@ -241,3 +241,62 @@ needs. Tier and card copy live in the compiled catalog and in the user's own
 JSON, which stay the source of truth; the table holds only what
 `threads.harness_id` must point at. A row is never deleted when a tier-3 file
 disappears — that would take the threads that used it along with it.
+
+---
+
+## D-008 — #18: how OAuth was built without a client id, and what curl is doing here
+
+**Plan:** #18 asks for the MCP catalog, OAuth 2.1 per remote server with tokens
+in the #9 vault, per-bot allowlists, the same catalog passed as `mcpServers` on
+ACP `session/new`, and connection status for the bot editor's chips.
+
+**Built:** all of it, in `host/tools/`, plus migration `0003_tool_connections`.
+Four things departed from the obvious reading and are worth recording.
+
+**1. No OAuth endpoints and no client ids are compiled in.** The research lists
+provider URLs, and the first instinct is a table of authorize/token endpoints
+plus a JaBot client id per provider. There is no JaBot client id — one is issued
+to a registered application with its own consent screen, and a fabricated string
+produces a browser page reading `invalid_client` that no user can act on. So the
+flow *discovers* instead: RFC 9728 protected-resource metadata names the
+authorization server, RFC 8414 metadata names its endpoints, and RFC 7591
+dynamic client registration mints the client id where the provider offers one.
+Where it does not (Google, Slack), the id comes from the user's own registration
+in `<data dir>/oauth_clients.json`, and the error names that file. This is also
+what the MCP authorization spec asks of a client, so it is the correct design
+rather than a workaround for a missing secret.
+
+**2. HTTP goes through `curl`.** The crate has no HTTP dependency; the only one
+in the tree is `reqwest`, pulled in by the macOS-only updater plugin, and adding
+a TLS stack to every target — including the Linux e2e build the Cargo.toml
+deliberately keeps thin — for four requests per grant is a poor trade. Form
+bodies are written to curl's **stdin**, never argv, so no code, refresh token or
+secret is visible in `ps`, and `require_safe_url` refuses plaintext http to
+anything but loopback. The loopback exception is what makes the flow testable
+against a local authorization server; it can never widen to a real provider.
+
+**3. `JABOT_SECRETS_BACKEND=memory` is a new env knob on the vault.** On
+Linux/Windows `Secrets::platform()` is `Unavailable` and every `put` fails
+closed, which is right for production and makes the whole OAuth path impossible
+to exercise on CI. The opt-in gives a process-local vault that dies with the
+process — it is not a persistence path and cannot become one — so the Linux e2e
+host and the flow tests can run the real thing.
+
+**4. `tools/connect` is asynchronous, and the UI polls.** Consent takes as long
+as a human takes, and the host answers JSON-RPC on one thread; blocking would
+freeze every other thread in the app. So `tools/connect` returns once the flow
+is running, publishes the authorize URL into `tools/list`, and the grant is
+committed on the host thread when the browser comes back. There is no
+notification for it: every host → client notification carries a `threadId`
+envelope, and a connection belongs to no thread.
+
+**What could not be exercised:** a real provider handshake. There is no
+registered client and no human to click Allow, so no Google/GitHub/Notion/Slack
+endpoint has ever answered this code. Everything between JaBot and the provider
+*is* protocol, and it is tested against a local authorization server that checks
+the PKCE verifier itself (`host/tools/testing.rs`) — discovery, dynamic
+registration, the loopback redirect, the code exchange, and the token bundle
+landing in the vault. What remains unproven is provider-specific behaviour:
+whether Google's preview MCP endpoints publish the metadata documents this
+discovery expects, and whether the scopes in the catalog match what those
+servers actually require. First contact with each provider will need a live run.

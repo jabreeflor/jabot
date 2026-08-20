@@ -78,6 +78,10 @@ fn main() {
                 }),
             ),
             "session/new" => {
+                // Echo the params the host sent. The host decides which MCP
+                // servers a session sees (#18), and the only honest place to
+                // check that from a test is the agent's side of the wire.
+                eprintln!("session_new={}", msg["params"]);
                 session_id = Some("sess-fake-1".into());
                 reply(
                     &mut stdout,
