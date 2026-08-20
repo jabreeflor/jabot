@@ -8,6 +8,7 @@ use super::now_utc;
 const MIGRATIONS: &[(i32, &str)] = &[
     (1, include_str!("migrations/0001_init.sql")),
     (2, include_str!("migrations/0002_lifecycle.sql")),
+    (3, include_str!("migrations/0003_tool_connections.sql")),
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<i32, StoreError> {
@@ -64,8 +65,9 @@ mod tests {
     fn migrate_is_idempotent() {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", true).unwrap();
-        assert_eq!(migrate(&mut conn).unwrap(), 2);
-        assert_eq!(migrate(&mut conn).unwrap(), 2);
+        let head = MIGRATIONS.last().expect("at least one migration").0;
+        assert_eq!(migrate(&mut conn).unwrap(), head);
+        assert_eq!(migrate(&mut conn).unwrap(), head);
         let tables: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'threads'",

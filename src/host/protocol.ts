@@ -23,6 +23,9 @@ export const INBOX_RESURFACE = "inbox/resurface";
 export const INBOX_LIST = "inbox/list";
 export const HARNESS_LIST = "harness/list";
 export const HARNESS_DOCTOR = "harness/doctor";
+export const TOOLS_LIST = "tools/list";
+export const TOOLS_CONNECT = "tools/connect";
+export const TOOLS_DISCONNECT = "tools/disconnect";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 
 export type RequestId = number | string | null;
@@ -368,6 +371,71 @@ export interface HarnessDoctorResult {
   /** The PATH the probes searched. "It works in my terminal" is a PATH the app
       never inherited, and this is how the user can see the difference. */
   path: string[];
+}
+
+/** How a catalog tool reaches its provider (#18). `harness_execute` is
+    Terminal, and it can never become an `mcpServers` entry. */
+export type ToolTransport = "http" | "stdio" | "harness_execute";
+
+/** What the bot editor's chip says. Each value is a different next action,
+    which is why "not working" is not one of them. */
+export type ToolConnectionStatus =
+  | "connected"
+  | "needs_auth"
+  | "connecting"
+  | "error"
+  | "missing";
+
+/** A catalog entry with today's connection status. */
+export interface ToolCardView {
+  id: string;
+  label: string;
+  blurb: string;
+  transport: ToolTransport;
+  /** False for Terminal: allowlisting it can never produce an MCP server. */
+  mcp: boolean;
+  /** The grant this tool draws on — Gmail, Calendar and Drive share one. */
+  provider?: string;
+  providerLabel?: string;
+  scopes: string[];
+  status: ToolConnectionStatus;
+  /** One sentence for the chip: which account, or what went wrong. */
+  detail?: string;
+  account?: string;
+  expiresAt?: string;
+  /** Only while a consent window is open — the page to send the user to. */
+  authorizeUrl?: string;
+  redirectUri?: string;
+  docsUrl: string;
+}
+
+export interface ToolListResult {
+  tools: ToolCardView[];
+}
+
+export interface ToolRefParams {
+  toolId: string;
+}
+
+/** `tools/connect` returns as soon as the flow is running, not when the user
+    has finished signing in. Poll `tools/list` for `authorizeUrl` and for the
+    outcome. */
+export interface ToolConnectResult {
+  toolId: string;
+  provider: string;
+  status: ToolConnectionStatus;
+  authorizeUrl?: string;
+  redirectUri: string;
+  /** The other chips this one grant covers. */
+  affects: string[];
+}
+
+export interface ToolDisconnectResult {
+  toolId: string;
+  provider: string;
+  disconnected: boolean;
+  /** Every chip that just lost its grant: there was only ever one login. */
+  affects: string[];
 }
 
 export interface PermissionReplyParams {

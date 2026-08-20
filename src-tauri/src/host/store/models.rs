@@ -160,6 +160,26 @@ pub struct SecretRefRow {
     pub updated_at: String,
 }
 
+/// The non-secret half of a provider grant (#18). One row per provider —
+/// Gmail, Calendar and Drive are three catalog entries drawing on one Google
+/// grant — so the chips can show connected / needs auth without opening the
+/// vault. `secret_ref_id` is the pointer to the keychain item holding the
+/// tokens; nothing here is a credential.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolConnectionRow {
+    pub provider: String,
+    pub status: String,
+    pub account: Option<String>,
+    pub scopes_json: String,
+    pub secret_ref_id: Option<String>,
+    pub client_id: Option<String>,
+    pub expires_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct StoreStatus {

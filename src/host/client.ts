@@ -21,6 +21,9 @@ import {
   THREAD_OPEN,
   THREAD_REOPEN,
   THREAD_STATE,
+  TOOLS_CONNECT,
+  TOOLS_DISCONNECT,
+  TOOLS_LIST,
   type HarnessDoctorParams,
   type HarnessDoctorResult,
   type HarnessListResult,
@@ -42,6 +45,10 @@ import {
   type ThreadOpenParams,
   type ThreadRefParams,
   type ThreadStateResult,
+  type ToolConnectResult,
+  type ToolDisconnectResult,
+  type ToolListResult,
+  type ToolRefParams,
 } from "./protocol";
 
 export class HostRpcError extends Error {
@@ -167,6 +174,22 @@ export class HostClient {
     params: HarnessDoctorParams = {},
   ): Promise<HarnessDoctorResult> {
     return this.request<HarnessDoctorResult>(HARNESS_DOCTOR, params);
+  }
+
+  /** The MCP catalog with each entry's connection status (#18). */
+  async listTools(): Promise<ToolListResult> {
+    return this.request<ToolListResult>(TOOLS_LIST);
+  }
+
+  /** Start an OAuth flow. Returns immediately: consent happens in the user's
+      browser, so poll `listTools` for `authorizeUrl` and for the outcome. */
+  async connectTool(params: ToolRefParams): Promise<ToolConnectResult> {
+    return this.request<ToolConnectResult>(TOOLS_CONNECT, params);
+  }
+
+  /** Forget the grant behind this tool — and every tool that shared it. */
+  async disconnectTool(params: ToolRefParams): Promise<ToolDisconnectResult> {
+    return this.request<ToolDisconnectResult>(TOOLS_DISCONNECT, params);
   }
 
   async replyPermission(params: PermissionReplyParams): Promise<void> {

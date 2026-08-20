@@ -8,9 +8,10 @@ use super::protocol::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use super::protocol::methods::{
     HarnessDoctorParams, HelloParams, InboxListParams, PermissionReplyParams, PromptParams,
     ResumeFromParams, SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
-    HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PERMISSION_REPLY,
-    SESSION_CANCEL, SESSION_PROMPT, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
-    THREAD_OPEN, THREAD_REOPEN, THREAD_STATE,
+    ToolRefParams, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST,
+    PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SYNC_RESUME_FROM, THREAD_ARCHIVE,
+    THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_STATE, TOOLS_CONNECT,
+    TOOLS_DISCONNECT, TOOLS_LIST,
 };
 use super::HostSession;
 
@@ -99,6 +100,22 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             session.require_hello()?;
             let params: HarnessDoctorParams = parse_params_or_default(request.params.as_ref())?;
             to_value(session.harness_doctor(params)?)
+        }
+        TOOLS_LIST => {
+            session.require_hello()?;
+            to_value(session.tools_list()?)
+        }
+        TOOLS_CONNECT => {
+            session.require_hello()?;
+            let params: ToolRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.tools_connect(params)?)
+        }
+        TOOLS_DISCONNECT => {
+            session.require_hello()?;
+            let params: ToolRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.tools_disconnect(params)?)
         }
         SYNC_RESUME_FROM => {
             session.require_hello()?;

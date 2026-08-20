@@ -12,6 +12,7 @@ mod protocol;
 mod router;
 mod seq;
 mod store;
+mod tools;
 
 #[allow(unused_imports)]
 pub use acp::AdapterWake;
@@ -32,13 +33,17 @@ pub use protocol::{
     HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams,
     HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
     JsonRpcResponse, RequestId, ResurfaceReason, RpcError, StoreStatus, ThreadStateResult,
-    CLIENT_METHODS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS,
-    INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_REPLY,
-    PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
-    THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_STATE,
+    ToolCardView, ToolConnectResult, ToolConnectionStatus, ToolDisconnectResult, ToolListResult,
+    ToolRefParams, ToolTransport, CLIENT_METHODS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH,
+    HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
+    PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT,
+    SESSION_UPDATE, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
+    THREAD_STATE, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 #[allow(unused_imports)]
 pub use store::{NewThread, Secrets, Store, StoreError, ThreadRow};
+#[allow(unused_imports)]
+pub use tools::catalog::CATALOG as TOOL_CATALOG;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -75,6 +80,13 @@ pub struct HostSession {
     /// Tier-3 harness JSON. `None` on an ephemeral host: with no data
     /// directory there is nowhere for a user file to have been put.
     custom_harness_dir: Option<PathBuf>,
+    /// The app data directory, for anything that is neither SQLite nor a
+    /// secret: OAuth client registrations, MCP browser profiles (#18).
+    data_dir: Option<PathBuf>,
+    /// OAuth flows waiting on a browser, keyed by provider. Not persisted: a
+    /// consent window does not survive a quit, and pretending otherwise would
+    /// leave a chip saying "connecting" after a restart.
+    connect_flows: HashMap<String, tools::ConnectFlow>,
     lifecycle: LifecycleState,
 }
 
@@ -100,6 +112,7 @@ impl HostSession {
             .with_store_at(&data_dir.join("jabot.sqlite"))
             .with_log_dir(data_dir.join("adapter-logs"));
         session.custom_harness_dir = Some(data_dir.join("custom_harnesses"));
+        session.data_dir = Some(data_dir.to_path_buf());
         // Custom harnesses become rows now rather than on first list: New Chat
         // may open a thread on one before anything asks for the catalog, and
         // `threads.harness_id` is a foreign key.
@@ -130,6 +143,8 @@ impl HostSession {
             wake: acp::AdapterWake::new(),
             log_dir,
             custom_harness_dir: None,
+            data_dir: None,
+            connect_flows: HashMap::new(),
             lifecycle: LifecycleState::from_env(),
         }
     }
@@ -614,7 +629,7 @@ mod tests {
         let response = session.handle_request(req(1, HOST_HELLO, None));
         let value = result_value(&response);
         assert_eq!(value["store"]["journalMode"], "wal");
-        assert_eq!(value["store"]["schemaVersion"], 2);
+        assert_eq!(value["store"]["schemaVersion"], 3);
         assert_eq!(value["store"]["botCount"], 6);
         // Three shipped cards plus the two presets, all seeded as rows so a
         // thread can name any of them (#13).

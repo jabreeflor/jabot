@@ -8,7 +8,7 @@
 //! (a folder and its threads, a thread and its latest run), that join is named
 //! here so there is one answer to what the host has to return.
 
-import type { ResurfaceReason } from "../host";
+import type { ResurfaceReason, ToolConnectionStatus } from "../host";
 
 /** `bots.color` — a class name, because the gradient *is* the identity. */
 export type BotColor =
@@ -278,10 +278,18 @@ export interface HostTarget {
   reachable: boolean;
 }
 
-/** An MCP catalog entry as a chip in the bot editor (#18 fills the catalog). */
+/** An MCP catalog entry as a chip in the bot editor (#18).
+ *
+ * `status` is the host's answer for the *provider grant*, not for the chip:
+ * Gmail, Calendar and Drive share one Google login, so connecting one connects
+ * all three. `undefined` means not asked yet, which is not the same as
+ * disconnected — the same distinction `HarnessCard.available` makes. */
 export interface ToolOption {
   id: string;
   label: string;
+  status?: ToolConnectionStatus;
+  /** One sentence for the chip's tooltip: which account, or what went wrong. */
+  detail?: string;
 }
 
 /** What New Chat emits. The host resolves the runtime and spawns (#6, #10). */

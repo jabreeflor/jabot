@@ -22,6 +22,25 @@ import {
   type ToolOption,
 } from "./types";
 
+/**
+ * What the chip's tooltip says. The host's own sentence when it has one —
+ * "Connected as you@example.com", or the provider's error — because a status
+ * word alone ("error") tells the user nothing they can act on.
+ */
+function chipTitle(tool: ToolOption): string | undefined {
+  if (tool.detail) return `${tool.label} — ${tool.detail}`;
+  switch (tool.status) {
+    case "needs_auth":
+      return `${tool.label} is not connected yet`;
+    case "connecting":
+      return `Waiting for ${tool.label} sign-in`;
+    case "missing":
+      return `${tool.label} is not installed on this Mac`;
+    default:
+      return undefined;
+  }
+}
+
 export function BotEditorModal({
   bot,
   templates,
@@ -147,8 +166,13 @@ export function BotEditorModal({
             type="button"
             className="toolchip"
             aria-pressed={selectedTools.includes(tool.id)}
+            // The chip's name stays the tool's name — the connection state is
+            // a dot and a tooltip, not part of what the button is called.
+            data-status={tool.status}
+            title={chipTitle(tool)}
             onClick={() => toggleTool(tool.id)}
           >
+            {tool.status && <i className="chipdot" aria-hidden="true" />}
             {tool.label}
           </button>
         ))}

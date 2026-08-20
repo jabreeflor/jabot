@@ -21,6 +21,8 @@ pub use secrets::{Secrets, SecretsBackend};
 
 const MIN_SQLITE: (u32, u32, u32) = (3, 51, 3);
 const UNCLEAN_SUFFIX: &str = ".unclean";
+/// `secret_refs.kind` for an OAuth token bundle. One row per provider grant.
+const TOOL_GRANT_KIND: &str = "mcp_oauth";
 
 pub struct Store {
     conn: Connection,
@@ -388,6 +390,188 @@ impl Store {
     pub fn list_secret_refs(&self) -> Result<Vec<SecretRefRow>, StoreError> {
         secrets::list_secret_refs(&self.conn)
     }
+
+    /// Record a provider grant: tokens into the vault, everything else into
+    /// `tool_connections` (#18).
+    ///
+    /// Any grant this provider already had is revoked first — vault item and
+    /// pointer both — so a re-consent replaces the tokens instead of leaving
+    /// an orphaned keychain entry nobody can reach or delete.
+    #[allow(clippy::too_many_arguments)]
+    pub fn put_tool_grant(
+        &self,
+        secrets: &mut Secrets,
+        provider: &str,
+        account: Option<&str>,
+        scopes: &[String],
+        client_id: Option<&str>,
+        expires_at: Option<&str>,
+        bundle_json: &str,
+    ) -> Result<ToolConnectionRow, StoreError> {
+        self.revoke_tool_secret(secrets, provider)?;
+        let row = self.put_secret(secrets, TOOL_GRANT_KIND, provider, bundle_json, None)?;
+        let scopes_json = serde_json::to_string(scopes)?;
+        secrets::upsert_tool_connection(
+            &self.conn,
+            provider,
+            "connected",
+            account,
+            &scopes_json,
+            Some(&row.id),
+            client_id,
+            expires_at,
+            None,
+        )
+    }
+
+    /// The stored token bundle, or `None` when this provider has no grant.
+    ///
+    /// A pointer with no bytes behind it (keychain item deleted out from under
+    /// us) is not an error worth failing a prompt over — it is a grant that
+    /// needs re-authorising, and reads as `None`.
+    pub fn get_tool_grant(
+        &self,
+        secrets: &Secrets,
+        provider: &str,
+    ) -> Result<Option<String>, StoreError> {
+        let Some(row) = secrets::get_tool_connection(&self.conn, provider)? else {
+            return Ok(None);
+        };
+        let Some(secret_ref_id) = row.secret_ref_id else {
+            return Ok(None);
+        };
+        match self.get_secret(secrets, &secret_ref_id) {
+            Ok(bundle) => Ok(Some(bundle)),
+            Err(StoreError::SecretNotFound(_)) | Err(StoreError::NotFound(_)) => Ok(None),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Forget a grant entirely: vault bytes, pointer, and connection row.
+    pub fn delete_tool_grant(
+        &self,
+        secrets: &mut Secrets,
+        provider: &str,
+    ) -> Result<bool, StoreError> {
+        let had_secret = self.revoke_tool_secret(secrets, provider)?;
+        let had_row = secrets::delete_tool_connection(&self.conn, provider)?.is_some();
+        Ok(had_secret || had_row)
+    }
+
+    /// Keep the row, drop the tokens: what a failed refresh leaves behind, so
+    /// the chip can say "needs auth" instead of silently pretending to work.
+    pub fn expire_tool_grant(
+        &self,
+        secrets: &mut Secrets,
+        provider: &str,
+        reason: &str,
+    ) -> Result<(), StoreError> {
+        self.revoke_tool_secret(secrets, provider)?;
+        let existing = secrets::get_tool_connection(&self.conn, provider)?;
+        secrets::upsert_tool_connection(
+            &self.conn,
+            provider,
+            "needs_auth",
+            existing.as_ref().and_then(|row| row.account.as_deref()),
+            existing
+                .as_ref()
+                .map(|row| row.scopes_json.as_str())
+                .unwrap_or("[]"),
+            None,
+            existing.as_ref().and_then(|row| row.client_id.as_deref()),
+            None,
+            Some(reason),
+        )?;
+        Ok(())
+    }
+
+    /// Remember that a connect attempt failed. The message is shown on the
+    /// chip, so it has to be the provider's own words, not a stack trace.
+    pub fn fail_tool_connection(
+        &self,
+        provider: &str,
+        message: &str,
+    ) -> Result<ToolConnectionRow, StoreError> {
+        let existing = secrets::get_tool_connection(&self.conn, provider)?;
+        secrets::upsert_tool_connection(
+            &self.conn,
+            provider,
+            "error",
+            existing.as_ref().and_then(|row| row.account.as_deref()),
+            existing
+                .as_ref()
+                .map(|row| row.scopes_json.as_str())
+                .unwrap_or("[]"),
+            existing
+                .as_ref()
+                .and_then(|row| row.secret_ref_id.as_deref()),
+            existing.as_ref().and_then(|row| row.client_id.as_deref()),
+            existing.as_ref().and_then(|row| row.expires_at.as_deref()),
+            Some(message),
+        )
+    }
+
+    /// Stamp a refreshed access token onto an existing grant.
+    pub fn refresh_tool_grant(
+        &self,
+        secrets: &mut Secrets,
+        provider: &str,
+        expires_at: Option<&str>,
+        bundle_json: &str,
+    ) -> Result<(), StoreError> {
+        let existing = secrets::get_tool_connection(&self.conn, provider)?;
+        let account = existing.as_ref().and_then(|row| row.account.clone());
+        let scopes_json = existing
+            .as_ref()
+            .map(|row| row.scopes_json.clone())
+            .unwrap_or_else(|| "[]".into());
+        let client_id = existing.as_ref().and_then(|row| row.client_id.clone());
+        self.revoke_tool_secret(secrets, provider)?;
+        let row = self.put_secret(secrets, TOOL_GRANT_KIND, provider, bundle_json, None)?;
+        secrets::upsert_tool_connection(
+            &self.conn,
+            provider,
+            "connected",
+            account.as_deref(),
+            &scopes_json,
+            Some(&row.id),
+            client_id.as_deref(),
+            expires_at,
+            None,
+        )?;
+        Ok(())
+    }
+
+    pub fn get_tool_connection(
+        &self,
+        provider: &str,
+    ) -> Result<Option<ToolConnectionRow>, StoreError> {
+        secrets::get_tool_connection(&self.conn, provider)
+    }
+
+    pub fn list_tool_connections(&self) -> Result<Vec<ToolConnectionRow>, StoreError> {
+        secrets::list_tool_connections(&self.conn)
+    }
+
+    fn revoke_tool_secret(
+        &self,
+        secrets: &mut Secrets,
+        provider: &str,
+    ) -> Result<bool, StoreError> {
+        let Some(row) = secrets::get_tool_connection(&self.conn, provider)? else {
+            return Ok(false);
+        };
+        let Some(secret_ref_id) = row.secret_ref_id else {
+            return Ok(false);
+        };
+        match self.delete_secret(secrets, &secret_ref_id) {
+            Ok(()) => Ok(true),
+            // The pointer outliving its bytes is the state we are trying to
+            // reach anyway; only a real vault failure is worth reporting.
+            Err(StoreError::NotFound(_)) | Err(StoreError::SecretNotFound(_)) => Ok(false),
+            Err(err) => Err(err),
+        }
+    }
 }
 
 impl Drop for Store {
@@ -639,6 +823,21 @@ pub(crate) fn map_secret_ref(row: &Row<'_>) -> rusqlite::Result<SecretRefRow> {
     })
 }
 
+pub(crate) fn map_tool_connection(row: &Row<'_>) -> rusqlite::Result<ToolConnectionRow> {
+    Ok(ToolConnectionRow {
+        provider: row.get(0)?,
+        status: row.get(1)?,
+        account: row.get(2)?,
+        scopes_json: row.get(3)?,
+        secret_ref_id: row.get(4)?,
+        client_id: row.get(5)?,
+        expires_at: row.get(6)?,
+        last_error: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -704,7 +903,7 @@ mod tests {
     fn open_uses_wal_and_seeds_catalog() {
         let (store, _dir) = open_store();
         assert_eq!(store.journal_mode().unwrap(), "wal");
-        assert_eq!(store.schema_version().unwrap(), 2);
+        assert_eq!(store.schema_version().unwrap(), 3);
         // Both compiled-in tiers land as rows, because `threads.harness_id`
         // is a foreign key and a preset has to be nameable by a thread (#13).
         let harnesses = store.list_harnesses().unwrap();
@@ -1007,6 +1206,107 @@ mod tests {
 
         store.delete_secret(&mut secrets, &row.id).unwrap();
         assert!(store.get_secret(&secrets, &row.id).is_err());
+        assert!(store.list_secret_refs().unwrap().is_empty());
+    }
+
+    /// The same guarantee as `secrets_live_in_vault_not_sqlite`, extended to
+    /// tool credentials (#18) — and checked against the database *file*, not
+    /// just the rows, so a token that leaked into an index or a WAL frame
+    /// would fail this too.
+    #[test]
+    fn tool_tokens_live_in_vault_not_sqlite() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("jabot.sqlite");
+        let store = Store::open(&path).unwrap();
+        let mut secrets = Secrets::memory();
+        let access = "ya29.tool-access-token";
+        let refresh = "1//tool-refresh-token";
+        let bundle = format!(
+            r#"{{"accessToken":"{access}","refreshToken":"{refresh}","tokenType":"Bearer"}}"#
+        );
+
+        let row = store
+            .put_tool_grant(
+                &mut secrets,
+                "google",
+                Some("you@example.com"),
+                &["gmail.compose".to_string()],
+                Some("client-1"),
+                None,
+                &bundle,
+            )
+            .unwrap();
+        assert_eq!(row.status, "connected");
+        assert_eq!(
+            store.get_tool_grant(&secrets, "google").unwrap().as_deref(),
+            Some(bundle.as_str())
+        );
+
+        store.checkpoint().unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        for secret in [access, refresh] {
+            assert!(
+                !bytes
+                    .windows(secret.len())
+                    .any(|window| window == secret.as_bytes()),
+                "sqlite file contains {secret}"
+            );
+        }
+        // The account label is not a secret, and the chip needs it — so it is
+        // in the file, which is what makes the assertion above meaningful.
+        assert!(bytes
+            .windows("you@example.com".len())
+            .any(|window| window == b"you@example.com"));
+
+        // A re-consent replaces the grant rather than orphaning a vault item.
+        store
+            .put_tool_grant(
+                &mut secrets,
+                "google",
+                Some("you@example.com"),
+                &[],
+                Some("client-1"),
+                None,
+                r#"{"accessToken":"second"}"#,
+            )
+            .unwrap();
+        assert_eq!(store.list_secret_refs().unwrap().len(), 1);
+
+        assert!(store.delete_tool_grant(&mut secrets, "google").unwrap());
+        assert!(store.get_tool_grant(&secrets, "google").unwrap().is_none());
+        assert!(store.list_secret_refs().unwrap().is_empty());
+        assert!(store.get_tool_connection("google").unwrap().is_none());
+    }
+
+    /// A failed refresh must not leave a grant that looks alive.
+    #[test]
+    fn expiring_a_grant_keeps_the_row_and_drops_the_tokens() {
+        let (store, _dir) = open_store();
+        let mut secrets = Secrets::memory();
+        store
+            .put_tool_grant(
+                &mut secrets,
+                "notion",
+                None,
+                &[],
+                None,
+                None,
+                r#"{"accessToken":"a"}"#,
+            )
+            .unwrap();
+
+        store
+            .expire_tool_grant(&mut secrets, "notion", "the refresh token was revoked")
+            .unwrap();
+
+        let row = store.get_tool_connection("notion").unwrap().unwrap();
+        assert_eq!(row.status, "needs_auth");
+        assert_eq!(
+            row.last_error.as_deref(),
+            Some("the refresh token was revoked")
+        );
+        assert!(row.secret_ref_id.is_none());
+        assert!(store.get_tool_grant(&secrets, "notion").unwrap().is_none());
         assert!(store.list_secret_refs().unwrap().is_empty());
     }
 

@@ -28,6 +28,9 @@ pub const INBOX_RESURFACE: &str = "inbox/resurface";
 pub const HARNESS_LIST: &str = "harness/list";
 pub const HARNESS_DOCTOR: &str = "harness/doctor";
 pub const INBOX_LIST: &str = "inbox/list";
+pub const TOOLS_LIST: &str = "tools/list";
+pub const TOOLS_CONNECT: &str = "tools/connect";
+pub const TOOLS_DISCONNECT: &str = "tools/disconnect";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
 pub const CLIENT_METHODS: &[&str] = &[
@@ -46,6 +49,9 @@ pub const CLIENT_METHODS: &[&str] = &[
     SYNC_RESUME_FROM,
     HARNESS_LIST,
     HARNESS_DOCTOR,
+    TOOLS_LIST,
+    TOOLS_CONNECT,
+    TOOLS_DISCONNECT,
 ];
 
 pub const HOST_NOTIFICATIONS: &[&str] = &[
@@ -644,6 +650,115 @@ pub struct HarnessDoctorResult {
     /// The PATH the probes searched. "It works in my terminal" is a PATH the
     /// app never inherited, and this is how the user can see the difference.
     pub path: Vec<String>,
+}
+
+/// How a catalog tool reaches its provider (#18).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolTransport {
+    /// Remote MCP over streamable HTTP, with a host-minted bearer.
+    Http,
+    /// A local MCP subprocess the harness spawns.
+    Stdio,
+    /// Not MCP: the harness's own `execute`. Terminal, and only Terminal.
+    HarnessExecute,
+}
+
+/// What the bot editor's chip says. Each value is a different next action,
+/// which is why "not working" is not one value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolConnectionStatus {
+    /// Usable in a session right now.
+    Connected,
+    /// Needs a provider grant and has none. The chip offers Connect.
+    NeedsAuth,
+    /// A consent window is open. `authorizeUrl` is the page to show.
+    Connecting,
+    /// The last attempt failed; `detail` is the provider's own words.
+    Error,
+    /// A local MCP server whose command is not installed on this machine.
+    Missing,
+}
+
+/// A catalog entry as a chip in the bot editor.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCardView {
+    pub id: String,
+    pub label: String,
+    pub blurb: String,
+    pub transport: ToolTransport,
+    /// False for Terminal: allowlisting it can never produce an MCP server.
+    pub mcp: bool,
+    /// The grant this tool draws on. Several tools share one — Gmail,
+    /// Calendar and Drive are one Google login.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_label: Option<String>,
+    pub scopes: Vec<String>,
+    pub status: ToolConnectionStatus,
+    /// One sentence for the chip: which account, or what went wrong.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    /// Only while a consent window is open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorize_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_uri: Option<String>,
+    pub docs_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolListResult {
+    pub tools: Vec<ToolCardView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRefParams {
+    pub tool_id: String,
+}
+
+/// `tools/connect` returns as soon as the flow is running, not when the user
+/// has finished signing in: the host answers on one thread and consent takes
+/// as long as a human takes. Poll `tools/list` for `authorizeUrl` and for the
+/// outcome.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolConnectResult {
+    pub tool_id: String,
+    pub provider: String,
+    pub status: ToolConnectionStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub authorize_url: Option<String>,
+    pub redirect_uri: String,
+    /// The other chips this grant covers, so the UI can say so before the user
+    /// wonders why Calendar lit up when they connected Gmail.
+    pub affects: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolDisconnectResult {
+    pub tool_id: String,
+    pub provider: String,
+    pub disconnected: bool,
+    /// Every chip that lost its grant. Disconnecting Gmail disconnects
+    /// Calendar and Drive, because there was only ever one Google login.
+    pub affects: Vec<String>,
+}
+
+impl ToolRefParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.tool_id, "toolId")
+    }
 }
 
 impl PromptParams {

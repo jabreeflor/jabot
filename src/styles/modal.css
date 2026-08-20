@@ -180,3 +180,26 @@
   color: var(--bub-me-ink);
   border-color: var(--bub-me);
 }
+
+/* Connection state (#18) rides beside the label rather than in it: the chip
+   toggles the allowlist, and whether Gmail is signed in is a different fact
+   from whether this bot may use it. */
+.toolchip .chipdot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  vertical-align: middle;
+}
+
+.toolchip[data-status="needs_auth"] .chipdot,
+.toolchip[data-status="connecting"] .chipdot {
+  background: var(--amber);
+}
+
+.toolchip[data-status="error"] .chipdot,
+.toolchip[data-status="missing"] .chipdot {
+  background: var(--danger);
+}
