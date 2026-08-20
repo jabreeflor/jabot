@@ -15,6 +15,7 @@
 //! `gh` to `git` — and killing the pid alone leaves that subtree behind.
 
 use std::io::Read;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -58,7 +59,54 @@ pub enum RunError {
     Failed(String),
 }
 
+/// One child process: what to run, where, and with what added to its
+/// environment. `cwd` and `env` exist for #23's setup command — a folder's
+/// `npm ci` has to run *in* the new worktree and be told where it is — and are
+/// empty for the probes this module was written for.
+#[derive(Debug)]
+pub struct Spawn<'a> {
+    pub command: &'a str,
+    pub args: &'a [&'a str],
+    pub cwd: Option<&'a Path>,
+    /// Added to the child's environment, on top of the host's.
+    pub env: &'a [(&'a str, String)],
+    pub timeout: Duration,
+}
+
+impl<'a> Spawn<'a> {
+    pub fn new(command: &'a str, args: &'a [&'a str], timeout: Duration) -> Self {
+        Self {
+            command,
+            args,
+            cwd: None,
+            env: &[],
+            timeout,
+        }
+    }
+
+    pub fn in_dir(mut self, dir: &'a Path) -> Self {
+        self.cwd = Some(dir);
+        self
+    }
+
+    pub fn with_env(mut self, env: &'a [(&'a str, String)]) -> Self {
+        self.env = env;
+        self
+    }
+}
+
 pub fn run(command: &str, args: &[&str], timeout: Duration) -> Result<Output, RunError> {
+    spawn(Spawn::new(command, args, timeout))
+}
+
+pub fn spawn(spec: Spawn<'_>) -> Result<Output, RunError> {
+    let Spawn {
+        command,
+        args,
+        cwd,
+        env,
+        timeout,
+    } = spec;
     let Some(resolved) = resolve_command(command) else {
         return Err(RunError::NotInstalled(command.to_string()));
     };
@@ -72,6 +120,12 @@ pub fn run(command: &str, args: &[&str], timeout: Duration) -> Result<Output, Ru
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+    for (key, value) in env {
+        cmd.env(key, value);
+    }
     procgroup::own_group(&mut cmd);
 
     let mut child = cmd.spawn().map_err(|e| RunError::Failed(e.to_string()))?;
@@ -141,6 +195,30 @@ mod tests {
         if !out.ok() {
             assert!(out.line().is_none());
         }
+    }
+
+    #[test]
+    fn a_child_runs_where_it_is_told_and_sees_what_it_is_given() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = [("JABOT_PROBE_ECHO".to_string(), "worktree".to_string())];
+        let env: Vec<(&str, String)> = env.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+        let out = spawn(
+            Spawn::new("sh", &["-c", "pwd; echo $JABOT_PROBE_ECHO"], PROBE_TIMEOUT)
+                .in_dir(dir.path())
+                .with_env(&env),
+        )
+        .expect("sh is required to build");
+        assert!(out.ok(), "{out:?}");
+        let canonical = std::fs::canonicalize(dir.path()).unwrap();
+        // Both halves matter: a setup command that runs in the wrong directory
+        // installs the wrong project's dependencies, and one that cannot see
+        // where the worktree is cannot copy anything into it.
+        assert!(
+            out.stdout
+                .contains(&canonical.to_string_lossy().into_owned()),
+            "{out:?}"
+        );
+        assert!(out.stdout.contains("worktree"), "{out:?}");
     }
 
     #[test]
