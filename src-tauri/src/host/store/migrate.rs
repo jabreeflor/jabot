@@ -10,6 +10,7 @@ const MIGRATIONS: &[(i32, &str)] = &[
     (2, include_str!("migrations/0002_lifecycle.sql")),
     (3, include_str!("migrations/0003_tool_connections.sql")),
     (4, include_str!("migrations/0004_folders.sql")),
+    (5, include_str!("migrations/0005_permission_requests.sql")),
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<i32, StoreError> {

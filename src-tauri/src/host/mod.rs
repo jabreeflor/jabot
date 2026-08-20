@@ -10,6 +10,7 @@ mod harness;
 mod identity;
 mod lifecycle;
 mod log;
+mod permission;
 mod procgroup;
 mod protocol;
 mod repo;
@@ -44,18 +45,19 @@ pub use protocol::{
     DeviceInfo, DeviceRole, Envelope, FolderForgetResult, FolderListResult, FolderOriginView,
     FolderThreadView, FolderView, GithubStatusResult, HarnessCardView, HarnessDoctorResult,
     HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams, HelloResult,
-    JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, PromptMode,
-    QueuedPromptView, RequestId, ResumeOutcome, ResurfaceReason, RpcError, StoreStatus,
-    SupervisorStatusResult, ThreadResumeResult, ThreadStateResult, ThreadTranscriptParams,
-    ThreadTranscriptResult, ToolCardView, ToolConnectResult, ToolConnectionStatus,
-    ToolDisconnectResult, ToolListResult, ToolRefParams, ToolTransport, TranscriptEventView,
-    CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST,
-    FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH,
-    HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
-    PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT,
-    SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
-    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
-    TOOLS_LIST,
+    JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+    PendingPermissionView, PermissionPendingParams, PermissionPendingResult, PermissionReplyParams,
+    PermissionReplyResult, PromptMode, QueuedPromptView, RequestId, ResumeOutcome, ResurfaceReason,
+    RpcError, StoreStatus, SupervisorStatusResult, ThreadResumeResult, ThreadStateResult,
+    ThreadTranscriptParams, ThreadTranscriptResult, ToolCardView, ToolConnectResult,
+    ToolConnectionStatus, ToolDisconnectResult, ToolListResult, ToolRefParams, ToolTransport,
+    TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE,
+    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR,
+    HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE,
+    JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_PENDING, PERMISSION_REPLY, PERMISSION_RESOLVED,
+    PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE, SUPERVISOR_STATUS,
+    THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME,
+    THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 #[allow(unused_imports)]
 pub use repo::{gh::GhAuth, git::RepoProbe, origin::Origin};
@@ -96,7 +98,10 @@ pub struct HostSession {
     secrets: Secrets,
     store_error: Option<String>,
     connections: HashMap<String, acp::AcpConnection>,
-    pending_permissions: HashMap<String, acp::PendingPermission>,
+    /// Live asks, by the `requestId` the client answers with. The durable half
+    /// is `permission_requests`; this holds the adapter call blocked on each
+    /// one, which is the part that cannot outlive the process (#20).
+    pending_permissions: HashMap<String, permission::PendingPermission>,
     wake: Arc<acp::AdapterWake>,
     log_dir: PathBuf,
     /// Tier-3 harness JSON. `None` on an ephemeral host: with no data
@@ -689,7 +694,7 @@ mod tests {
         let response = session.handle_request(req(1, HOST_HELLO, None));
         let value = result_value(&response);
         assert_eq!(value["store"]["journalMode"], "wal");
-        assert_eq!(value["store"]["schemaVersion"], 4);
+        assert_eq!(value["store"]["schemaVersion"], 5);
         assert_eq!(value["store"]["botCount"], 6);
         // Three shipped cards plus the two presets, all seeded as rows so a
         // thread can name any of them (#13).

@@ -8,13 +8,14 @@ use super::protocol::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use super::protocol::methods::{
     CrewCreateParams, CrewRefParams, CrewUpdateParams, FolderRefParams, FolderRegisterParams,
     FolderUpdateParams, GithubStatusParams, HarnessDoctorParams, HelloParams, InboxListParams,
-    PermissionReplyParams, PromptParams, ResumeFromParams, SessionCancelParams, ThreadFoldParams,
-    ThreadOpenParams, ThreadRefParams, ThreadTranscriptParams, ToolRefParams, CREW_CREATE,
-    CREW_LIST, CREW_REMOVE, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
-    FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
-    INBOX_LIST, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS,
-    SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
-    THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    PermissionPendingParams, PermissionReplyParams, PromptParams, ResumeFromParams,
+    SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
+    ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE,
+    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR,
+    HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PERMISSION_PENDING, PERMISSION_REPLY,
+    SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE,
+    THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME, THREAD_STATE,
+    THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 use super::HostSession;
 
@@ -53,6 +54,11 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: PermissionReplyParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.permission_reply(params)?)
+        }
+        PERMISSION_PENDING => {
+            session.require_hello()?;
+            let params: PermissionPendingParams = parse_params_or_default(request.params.as_ref())?;
+            to_value(session.permission_pending(params)?)
         }
         THREAD_FOLD => {
             session.require_hello()?;

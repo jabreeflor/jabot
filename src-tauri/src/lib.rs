@@ -7,8 +7,9 @@ pub mod host;
 
 pub use host::{
     HostSession, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NewThread, RequestId, Store,
-    StoreError, ThreadRepo, ThreadRow, HOST_HELLO, PERMISSION_ASK, PERMISSION_REPLY,
-    PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
+    StoreError, ThreadRepo, ThreadRow, HOST_HELLO, PERMISSION_ASK, PERMISSION_PENDING,
+    PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT,
+    SESSION_UPDATE,
 };
 
 use std::sync::Mutex;
