@@ -377,6 +377,7 @@ fn a_resume_into_a_folder_that_is_gone_is_refused_and_says_so() {
     host.settle("t-gone", |s| s["latestRun"]["state"] == "succeeded");
     host.ok(THREAD_FOLD, json!({ "threadId": "t-gone" }));
     host.restart();
+
     std::fs::remove_dir_all(&cwd).unwrap();
 
     let refused = host.ok(THREAD_RESUME, json!({ "threadId": "t-gone" }));
