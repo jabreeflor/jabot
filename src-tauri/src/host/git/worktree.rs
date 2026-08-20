@@ -22,7 +22,12 @@
 //! **Nothing is removed before it is saved.** [`save_uncommitted`] is the whole
 //! answer to "removing a worktree that has uncommitted work loses it": the work
 //! becomes a commit on the thread's own branch, so the tree can go and the work
-//! cannot. The branch outlives the thread on purpose.
+//! cannot. The branch outlives the thread on purpose. "On the thread's own
+//! branch" is checked and not assumed — an agent that ran `git checkout <sha>`,
+//! `git bisect`, or a rebase that stopped on a conflict leaves HEAD detached,
+//! and a commit made there is reachable from no ref at all, so the removal that
+//! follows would take the only thing pointing at it. [`save_uncommitted`] plants
+//! a ref itself in that case and says which one, so the caller can record it.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -254,6 +259,19 @@ pub fn is_dirty(path: &Path) -> bool {
     }
 }
 
+/// A commit [`save_uncommitted`] made, and the branch that holds it.
+///
+/// Both halves matter to the caller: the sha is what gets logged, and the
+/// branch is what the thread's row has to point at afterwards, because a
+/// removal is about to take the worktree's own `HEAD` and reflog with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Saved {
+    pub sha: String,
+    /// Always a `jabot/` branch, and not necessarily the one the row was
+    /// stamped with: the agent may have moved HEAD since the tree was made.
+    pub branch: String,
+}
+
 /// Commit whatever is in the tree onto the thread's own branch.
 ///
 /// This is the policy that makes cleanup safe: archive and delete both go
@@ -262,10 +280,20 @@ pub fn is_dirty(path: &Path) -> bool {
 /// user gets it back with `git worktree add <path> jabot/<id>` or plain
 /// `git checkout`.
 ///
+/// The commit alone is not the guarantee, though: `git commit` moves whatever
+/// HEAD happens to be, and an agent leaves HEAD detached every time it runs
+/// `git checkout <sha>` or stops mid-rebase. A commit on a detached HEAD is
+/// held by nothing but the worktree's own `HEAD` file, which the removal
+/// deletes — so the work would be a dangling object waiting for `gc`, with the
+/// host having logged that it saved it. A branch of the agent's own is the same
+/// defect one step quieter: the work is reachable, but not from the branch the
+/// row names, so a reopen restores the wrong one. Both are answered the same
+/// way — plant a `jabot/` ref at the new commit and tell the caller its name.
+///
 /// Identity, hooks and signing are all overridden: a machine with no
 /// `user.email`, a `pre-commit` that fails, or a GPG key that wants a
 /// passphrase must not be able to turn "save this work" into "lose this work".
-pub fn save_uncommitted(path: &Path, thread_id: &str) -> Result<Option<String>, GitFailure> {
+pub fn save_uncommitted(path: &Path, thread_id: &str) -> Result<Option<Saved>, GitFailure> {
     if !is_dirty(path) {
         return Ok(None);
     }
@@ -291,10 +319,49 @@ pub fn save_uncommitted(path: &Path, thread_id: &str) -> Result<Option<String>, 
         "-m",
         body,
     ])?;
-    let sha = run(&["-C", &dir, "rev-parse", "HEAD"])
+    // `check`, not a best-effort `run`: a rev-parse that fails right after a
+    // successful commit means the repository is in a state we cannot reason
+    // about, and reporting "nothing was saved" would let the caller remove the
+    // tree anyway.
+    let sha = check(&["-C", &dir, "rev-parse", "HEAD"])?
+        .line()
+        .ok_or_else(|| GitFailure {
+            command: "rev-parse HEAD".to_string(),
+            detail: "the commit just made has no sha".to_string(),
+        })?;
+    let branch = anchor(&dir, thread_id, &sha)?;
+    Ok(Some(Saved { sha, branch }))
+}
+
+/// The `jabot/` branch that holds `sha`, planting one if nothing does.
+///
+/// The `?` on `update-ref` is deliberate: archive's non-forced path turns an
+/// error here into "the tree is kept", which is the only safe answer when the
+/// work cannot be made reachable.
+fn anchor(dir: &str, thread_id: &str, sha: &str) -> Result<String, GitFailure> {
+    // `--quiet` because a detached HEAD is an expected answer here, not an
+    // error worth printing; `--short` to get `jabot/x` rather than the full
+    // `refs/heads/jabot/x`.
+    let head = run(&["-C", dir, "symbolic-ref", "--quiet", "--short", "HEAD"])
         .ok()
         .and_then(|out| out.line());
-    Ok(sha)
+    if let Some(branch) = head {
+        if branch.starts_with(BRANCH_PREFIX) {
+            return Ok(branch);
+        }
+    }
+    // A free name rather than a fixed one: a thread can be archived from a
+    // detached HEAD more than once, and moving an existing rescue branch would
+    // make the *previous* rescue the dangling commit this exists to prevent.
+    let rescue = free_branch(Path::new(dir), &format!("{}-rescue", slug(thread_id)));
+    check(&[
+        "-C",
+        dir,
+        "update-ref",
+        &format!("refs/heads/{rescue}"),
+        sha,
+    ])?;
+    Ok(rescue)
 }
 
 /// Unlock, remove, prune. `force` is the difference between Archive and Delete.
@@ -489,9 +556,10 @@ mod tests {
         std::fs::write(at.join("notes.md"), "half-finished work").unwrap();
         assert!(is_dirty(&at));
 
-        let sha = save_uncommitted(&at, "t-dirty")
+        let saved = save_uncommitted(&at, "t-dirty")
             .expect("save")
             .expect("something was saved");
+        assert_eq!(saved.branch, "jabot/t-dirty");
         assert!(!is_dirty(&at));
         remove(repo.path(), &at, false).expect("a clean tree removes without force");
         assert!(!at.exists());
@@ -502,7 +570,116 @@ mod tests {
         let file = check(&["-C", &root, "show", "jabot/t-dirty:notes.md"]).unwrap();
         assert_eq!(file.stdout.trim(), "half-finished work");
         let head = resolve(&root, "jabot/t-dirty").unwrap();
-        assert_eq!(head, sha);
+        assert_eq!(head, saved.sha);
+    }
+
+    /// Every branch that contains a commit, asked of git. The question a save
+    /// has to be able to answer *after* the tree is gone: is anything at all
+    /// still pointing at this?
+    fn branches_containing(repo_root: &Path, sha: &str) -> Vec<String> {
+        let root = repo_root.to_string_lossy().into_owned();
+        let out = check(&[
+            "-C",
+            &root,
+            "branch",
+            "--format=%(refname:short)",
+            "--contains",
+            sha,
+        ])
+        .expect("git branch --contains");
+        out.stdout
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn work_saved_from_a_detached_head_is_still_reachable_once_the_tree_is_gone() {
+        let repo = repo();
+        let trees = tempfile::tempdir().unwrap();
+        let at = trees.path().join("t-detached");
+        add(&plan(repo.path(), &at, "jabot/t-detached")).unwrap();
+        // What an agent leaves behind after `git checkout <sha>`, `git bisect`,
+        // or a rebase that stopped on a conflict. `git commit` here moves
+        // nothing but the tree's own HEAD, and the removal deletes that.
+        let dir = at.to_string_lossy().into_owned();
+        check(&["-C", &dir, "checkout", "--detach", "HEAD"]).unwrap();
+        std::fs::write(at.join("important.txt"), "an hour of work").unwrap();
+
+        let saved = save_uncommitted(&at, "t-detached")
+            .expect("save")
+            .expect("something was saved");
+        remove(repo.path(), &at, false).expect("remove");
+        assert!(!at.exists());
+
+        // The claim the module doc makes, checked the only way that means
+        // anything: a ref still holds it, so `gc` cannot take it.
+        let holders = branches_containing(repo.path(), &saved.sha);
+        assert!(
+            holders.contains(&saved.branch),
+            "{:?} does not hold the save",
+            holders
+        );
+        assert!(saved.branch.starts_with(BRANCH_PREFIX), "{}", saved.branch);
+        let root = repo.path().to_string_lossy().into_owned();
+        assert_eq!(
+            super::testing::show(&root, &saved.branch, "important.txt").trim(),
+            "an hour of work"
+        );
+    }
+
+    #[test]
+    fn a_branch_the_agent_made_does_not_become_the_branch_the_thread_reopens_on() {
+        let repo = repo();
+        let trees = tempfile::tempdir().unwrap();
+        let at = trees.path().join("t-own-branch");
+        add(&plan(repo.path(), &at, "jabot/t-own-branch")).unwrap();
+        let dir = at.to_string_lossy().into_owned();
+        check(&["-C", &dir, "checkout", "-b", "feature/x"]).unwrap();
+        std::fs::write(at.join("important.txt"), "on the agent's branch").unwrap();
+
+        let saved = save_uncommitted(&at, "t-own-branch")
+            .expect("save")
+            .expect("something was saved");
+        // Reachable, but not from anything restore is willing to check out —
+        // so the save reports a `jabot/` branch of its own rather than letting
+        // the row keep naming a branch that does not have the work.
+        assert!(saved.branch.starts_with(BRANCH_PREFIX), "{}", saved.branch);
+        assert!(branches_containing(repo.path(), &saved.sha).contains(&saved.branch));
+    }
+
+    #[test]
+    fn a_second_rescue_does_not_overwrite_the_first() {
+        let repo = repo();
+        let trees = tempfile::tempdir().unwrap();
+        let at = trees.path().join("t-twice");
+        let spawn = plan(repo.path(), &at, "jabot/t-twice");
+        let base = spawn.base.clone();
+        add(&spawn).unwrap();
+        let dir = at.to_string_lossy().into_owned();
+
+        check(&["-C", &dir, "checkout", "--detach", "HEAD"]).unwrap();
+        std::fs::write(at.join("first.txt"), "first").unwrap();
+        let first = save_uncommitted(&at, "t-twice").unwrap().unwrap();
+        // Detached again, off the first save this time — a second bisect, or a
+        // reopened thread the agent moved again. A rescue ref reused by name
+        // would drag the first save's only holder along with it.
+        check(&["-C", &dir, "checkout", "--detach", &base]).unwrap();
+        std::fs::write(at.join("second.txt"), "second").unwrap();
+        let second = save_uncommitted(&at, "t-twice").unwrap().unwrap();
+
+        assert_ne!(first.branch, second.branch);
+        let root = repo.path().to_string_lossy().into_owned();
+        assert_eq!(
+            super::testing::show(&root, &first.branch, "first.txt").trim(),
+            "first"
+        );
+        assert_eq!(
+            super::testing::show(&root, &second.branch, "second.txt").trim(),
+            "second"
+        );
     }
 
     #[test]

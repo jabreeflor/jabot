@@ -33,6 +33,9 @@ pub enum SpawnError {
         #[source]
         source: std::io::Error,
     },
+    /// Asked to start an adapter in a directory that is not there.
+    #[error("the working directory {path} does not exist")]
+    Cwd { path: String },
 }
 
 pub fn spawn_adapter(
@@ -71,9 +74,17 @@ pub fn spawn_adapter(
         cmd.env(key, value);
     }
     if let Some(cwd) = cwd {
-        if cwd.is_dir() {
-            cmd.current_dir(cwd);
+        // Refuse rather than fall through. A child given no `current_dir`
+        // inherits the host's, so a thread whose checkout was unmounted or
+        // moved would run the agent's shell and edit tools against whatever
+        // folder JaBot was launched from. #21 catches this earlier and with a
+        // better error; this is the backstop for every other caller.
+        if !cwd.is_dir() {
+            return Err(SpawnError::Cwd {
+                path: cwd.display().to_string(),
+            });
         }
+        cmd.current_dir(cwd);
     }
 
     procgroup::own_group(&mut cmd);
