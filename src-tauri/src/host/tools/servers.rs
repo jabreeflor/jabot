@@ -11,7 +11,7 @@
 //! is an access token that expires, and the refresh token stays in the vault
 //! (`docs/research/bot-crew/mcp-and-tools.md`).
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
@@ -53,15 +53,20 @@ pub enum Credential<'a> {
 /// `resolve` turns a local MCP command into an absolute path on the augmented
 /// PATH; a `None` means the tool is not installed on this machine, which is a
 /// skip with a reason rather than a spawn that fails inside the adapter.
+///
+/// `profile` answers where an entry's JaBot-owned state goes, and is allowed
+/// to refuse. A `--user-data-dir` is a lock rather than a setting, so who may
+/// hold it depends on which other threads are live — something only the host
+/// knows, which is why the answer is passed in instead of derived here.
 pub fn plan<'a>(
     entries: impl IntoIterator<Item = &'a ToolEntry>,
     credential: impl Fn(&ToolEntry) -> Credential<'a>,
-    profile_root: Option<&Path>,
+    profile: impl Fn(&ToolEntry) -> Result<PathBuf, String>,
     resolve: impl Fn(&str) -> Option<std::path::PathBuf>,
 ) -> McpPlan {
     let mut plan = McpPlan::default();
     for entry in entries {
-        match build(entry, &credential(entry), profile_root, &resolve) {
+        match build(entry, &credential(entry), &profile, &resolve) {
             Ok(Some(server)) => plan.servers.push(server),
             Ok(None) => {}
             Err(reason) => plan.skipped.push(Skipped {
@@ -77,7 +82,7 @@ pub fn plan<'a>(
 fn build(
     entry: &ToolEntry,
     credential: &Credential<'_>,
-    profile_root: Option<&Path>,
+    profile: &impl Fn(&ToolEntry) -> Result<PathBuf, String>,
     resolve: &impl Fn(&str) -> Option<std::path::PathBuf>,
 ) -> Result<Option<Value>, String> {
     match &entry.transport {
@@ -105,14 +110,7 @@ fn build(
             })?;
             let mut args: Vec<String> = args.iter().map(|a| (*a).to_string()).collect();
             if let Some(flag) = profile_flag {
-                let dir = profile_root
-                    .ok_or_else(|| {
-                        format!(
-                            "{} needs a profile directory this host does not have",
-                            entry.label
-                        )
-                    })?
-                    .join(entry.id);
+                let dir = profile(entry)?;
                 std::fs::create_dir_all(&dir)
                     .map_err(|e| format!("could not create {}: {e}", dir.display()))?;
                 args.push((*flag).to_string());
@@ -130,6 +128,8 @@ fn build(
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::super::catalog::{self, CATALOG};
     use super::*;
 
@@ -149,6 +149,15 @@ mod tests {
         Some(std::path::PathBuf::from("/usr/local/bin").join(command))
     }
 
+    /// A host with a profile directory to give, in a directory the test owns.
+    fn profiles_in(root: &Path) -> impl Fn(&ToolEntry) -> Result<PathBuf, String> + '_ {
+        move |entry| Ok(root.join(entry.id))
+    }
+
+    fn no_profile(entry: &ToolEntry) -> Result<PathBuf, String> {
+        Err(format!("{} has nowhere to keep a profile", entry.label))
+    }
+
     /// The enforcement claim, stated as a test: an allowlist of one produces
     /// an array of one, and the tools left out are absent — not present and
     /// filtered later.
@@ -157,7 +166,7 @@ mod tests {
         let plan = plan(
             entries(&["gmail"]),
             |_| Credential::Bearer("Bearer live-access-token"),
-            None,
+            no_profile,
             always_resolve,
         );
         assert_eq!(names(&plan), vec!["gmail".to_string()]);
@@ -177,10 +186,11 @@ mod tests {
     /// shell behind a tool schema.
     #[test]
     fn terminal_never_becomes_a_server() {
+        let dir = tempfile::tempdir().unwrap();
         let plan = plan(
             entries(&["terminal", "browser"]),
             |_| Credential::None,
-            Some(&std::env::temp_dir().join("jabot-test-profiles")),
+            profiles_in(dir.path()),
             always_resolve,
         );
         assert_eq!(names(&plan), vec!["browser".to_string()]);
@@ -200,7 +210,7 @@ mod tests {
                     Credential::Missing("Notion is not connected".into())
                 }
             },
-            None,
+            no_profile,
             always_resolve,
         );
         assert_eq!(names(&plan), vec!["gmail".to_string()]);
@@ -220,7 +230,7 @@ mod tests {
         let plan = plan(
             entries(&["gmail"]),
             |_| Credential::Bearer("Bearer ya29.access-only"),
-            None,
+            no_profile,
             always_resolve,
         );
         let rendered = plan.as_params().to_string();
@@ -236,7 +246,7 @@ mod tests {
         let plan = plan(
             entries(&["browser"]),
             |_| Credential::None,
-            Some(dir.path()),
+            profiles_in(dir.path()),
             always_resolve,
         );
         let server = &plan.servers[0];
@@ -254,9 +264,34 @@ mod tests {
         );
     }
 
+    /// A profile the host will not hand out is the same class of answer as a
+    /// command that is not installed: no server, and a reason for the log.
+    #[test]
+    fn a_profile_the_host_refuses_is_a_skip_with_its_reason() {
+        let plan = plan(
+            entries(&["browser"]),
+            |_| Credential::None,
+            |_| Err("Browser is in use by another thread".to_string()),
+            always_resolve,
+        );
+        assert!(plan.servers.is_empty());
+        assert_eq!(
+            plan.skipped,
+            vec![Skipped {
+                tool_id: "browser".into(),
+                reason: "Browser is in use by another thread".into()
+            }]
+        );
+    }
+
     #[test]
     fn a_missing_local_command_is_a_skip_not_a_broken_session() {
-        let plan = plan(entries(&["browser"]), |_| Credential::None, None, |_| None);
+        let plan = plan(
+            entries(&["browser"]),
+            |_| Credential::None,
+            no_profile,
+            |_| None,
+        );
         assert!(plan.servers.is_empty());
         assert!(
             plan.skipped[0].reason.contains("not installed"),
@@ -271,7 +306,7 @@ mod tests {
         let plan = plan(
             entries(&["nope"]),
             |_| Credential::None,
-            None,
+            no_profile,
             always_resolve,
         );
         assert!(plan.servers.is_empty());

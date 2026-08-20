@@ -52,8 +52,14 @@ impl FlowState {
 pub struct ConnectRequest {
     pub tool_id: String,
     pub provider: Provider,
-    /// The MCP server this grant is for — also the RFC 8707 `resource`.
+    /// The server discovery probes for the provider's authorization server.
+    /// Any of the provider's entries would answer; this is the one whose chip
+    /// the user clicked.
     pub server_url: String,
+    /// Every MCP server this grant must work against (RFC 8707 `resource`).
+    /// All of the provider's entries, not just the clicked one — see
+    /// [`super::HostSession::tools_connect`].
+    pub resources: Vec<String>,
     pub scopes: Vec<String>,
     /// Where `oauth_clients.json` lives, for providers without dynamic
     /// registration. `None` on an ephemeral host: nowhere for one to be.
@@ -166,7 +172,7 @@ fn run(
         client: &client,
         redirect_uri,
         scopes: &request.scopes,
-        resource: &request.server_url,
+        resources: &request.resources,
     };
     let authorize_url = oauth::authorize_url(&server, &ctx, &csrf_state, &pkce, &extra);
     {
@@ -222,6 +228,7 @@ mod tests {
             tool_id: "gmail".into(),
             provider: GOOGLE,
             server_url: server_url.into(),
+            resources: vec![server_url.into()],
             scopes: vec!["gmail.compose".into()],
             config_dir,
         }
@@ -275,7 +282,7 @@ mod tests {
         let bundle = await_outcome(&flow).expect("a grant");
         assert_eq!(bundle.access_token, auth.issued_access_token());
         assert_eq!(bundle.refresh_token.as_deref(), Some("refresh-1"));
-        assert_eq!(bundle.resource, auth.mcp_url());
+        assert_eq!(bundle.resources, vec![auth.mcp_url()]);
         assert_eq!(bundle.account.as_deref(), Some("you@example.com"));
         // Dynamic registration, because this server offers it.
         assert_eq!(bundle.client_id, "dcr-client-1");

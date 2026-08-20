@@ -109,6 +109,15 @@ impl ToolEntry {
     pub fn needs_grant(&self) -> bool {
         self.provider.is_some() && matches!(self.transport, Transport::Http { .. })
     }
+
+    /// The flag naming a JaBot-owned profile directory, when this entry locks
+    /// one. The host reads it to decide who may hold the lock.
+    pub fn profile_flag(&self) -> Option<&'static str> {
+        match &self.transport {
+            Transport::Stdio { profile_flag, .. } => *profile_flag,
+            _ => None,
+        }
+    }
 }
 
 /// The catalog, in the order the bot editor shows its chips.
