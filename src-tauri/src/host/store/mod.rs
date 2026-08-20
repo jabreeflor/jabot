@@ -118,6 +118,18 @@ impl Store {
         catalog::get_harness(&self.conn, id)
     }
 
+    pub fn upsert_custom_harness(
+        &self,
+        id: &str,
+        label: &str,
+        command: &str,
+        args: &[String],
+        env: &std::collections::BTreeMap<String, String>,
+        install_hint: Option<&str>,
+    ) -> Result<HarnessRow, StoreError> {
+        catalog::upsert_custom_harness(&self.conn, id, label, command, args, env, install_hint)
+    }
+
     pub fn get_folder(&self, id: &str) -> Result<Option<FolderRow>, StoreError> {
         catalog::get_folder(&self.conn, id)
     }
@@ -477,7 +489,9 @@ pub fn validate_runtime_json(raw: &str) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn env_key_looks_secret(key: &str) -> bool {
+/// Shared with the harness catalog (#13): a credential belongs in the keychain,
+/// so neither a thread's `runtime_json` nor a catalog file may carry one.
+pub(crate) fn env_key_looks_secret(key: &str) -> bool {
     let upper = key.to_ascii_uppercase();
     upper.contains("API_KEY")
         || upper.contains("SECRET")
@@ -691,9 +705,21 @@ mod tests {
         let (store, _dir) = open_store();
         assert_eq!(store.journal_mode().unwrap(), "wal");
         assert_eq!(store.schema_version().unwrap(), 2);
+        // Both compiled-in tiers land as rows, because `threads.harness_id`
+        // is a foreign key and a preset has to be nameable by a thread (#13).
         let harnesses = store.list_harnesses().unwrap();
-        assert_eq!(harnesses.len(), 3);
+        let ids: Vec<_> = harnesses.iter().map(|h| h.id.as_str()).collect();
+        assert!(
+            ids.contains(&"claude") && ids.contains(&"hermes"),
+            "{ids:?}"
+        );
         assert!(harnesses.iter().all(|h| h.is_builtin));
+        let hermes = harnesses.iter().find(|h| h.id == "hermes").unwrap();
+        assert!(
+            hermes.env_json.contains("HERMES_ACP_SKIP_CONFIGURED_MCP"),
+            "the preset's env floor has to survive into the row: {}",
+            hermes.env_json
+        );
         let bots = store.list_bots().unwrap();
         assert_eq!(bots.len(), 6);
         assert_eq!(bots[0].id, "chief");
@@ -935,7 +961,10 @@ mod tests {
         assert_eq!(respawned.acp_session_id, "sess-2");
         assert_eq!(respawned.permission_mode, "wait_for_inbox");
         assert_eq!(respawned.native_session_ref.as_deref(), Some("claude-uuid"));
-        assert_eq!(respawned.created_at, respawned.updated_at);
+        // The upsert keeps `created_at` and moves `updated_at`. Asserting the
+        // two are equal only held while both writes landed in the same
+        // millisecond, which stopped being true under a loaded test run.
+        assert!(respawned.updated_at >= respawned.created_at);
         assert_eq!(
             store
                 .get_session_receipt("t-receipt")

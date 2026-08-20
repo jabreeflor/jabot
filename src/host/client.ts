@@ -3,6 +3,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
+  HARNESS_DOCTOR,
+  HARNESS_LIST,
   HOST_HEALTH,
   HOST_HELLO,
   HOST_RPC_EVENT,
@@ -19,6 +21,9 @@ import {
   THREAD_OPEN,
   THREAD_REOPEN,
   THREAD_STATE,
+  type HarnessDoctorParams,
+  type HarnessDoctorResult,
+  type HarnessListResult,
   type HealthResult,
   type HelloParams,
   type HelloResult,
@@ -149,6 +154,19 @@ export class HostClient {
 
   async inbox(params: InboxListParams = {}): Promise<InboxListResult> {
     return this.request<InboxListResult>(INBOX_LIST, params);
+  }
+
+  /** The New Chat / crew-editor catalog. Cheap: no probing, so opening the
+      picker never waits on a vendor CLI. */
+  async listHarnesses(): Promise<HarnessListResult> {
+    return this.request<HarnessListResult>(HARNESS_LIST);
+  }
+
+  /** Why each harness is or is not ready. Probes run concurrently in the host. */
+  async harnessDoctor(
+    params: HarnessDoctorParams = {},
+  ): Promise<HarnessDoctorResult> {
+    return this.request<HarnessDoctorResult>(HARNESS_DOCTOR, params);
   }
 
   async replyPermission(params: PermissionReplyParams): Promise<void> {

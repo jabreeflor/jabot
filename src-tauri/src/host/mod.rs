@@ -4,6 +4,7 @@
 //! session — Tauri IPC now, Unix socket later, same messages.
 
 mod acp;
+mod harness;
 mod identity;
 mod lifecycle;
 mod log;
@@ -15,6 +16,8 @@ mod store;
 #[allow(unused_imports)]
 pub use acp::AdapterWake;
 #[allow(unused_imports)]
+pub use harness::{catalog::HarnessDescriptor, doctor::ProbeHost, resolve_command};
+#[allow(unused_imports)]
 pub use identity::{DeviceRecord, HostIdentity};
 #[allow(unused_imports)]
 pub use lifecycle::{
@@ -25,13 +28,14 @@ pub use lifecycle::{
 };
 #[allow(unused_imports)]
 pub use protocol::{
-    decode_frame, decode_frames, encode_frame, DeviceInfo, DeviceRole, Envelope, HealthResult,
-    HelloParams, HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
+    decode_frame, decode_frames, encode_frame, DeviceInfo, DeviceRole, Envelope, HarnessCardView,
+    HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams,
+    HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
     JsonRpcResponse, RequestId, ResurfaceReason, RpcError, StoreStatus, ThreadStateResult,
-    CLIENT_METHODS, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE,
-    JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION,
-    SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
-    THREAD_OPEN, THREAD_REOPEN, THREAD_STATE,
+    CLIENT_METHODS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS,
+    INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_REPLY,
+    PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
+    THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_STATE,
 };
 #[allow(unused_imports)]
 pub use store::{NewThread, Secrets, Store, StoreError, ThreadRow};
@@ -68,6 +72,9 @@ pub struct HostSession {
     pending_permissions: HashMap<String, acp::PendingPermission>,
     wake: Arc<acp::AdapterWake>,
     log_dir: PathBuf,
+    /// Tier-3 harness JSON. `None` on an ephemeral host: with no data
+    /// directory there is nowhere for a user file to have been put.
+    custom_harness_dir: Option<PathBuf>,
     lifecycle: LifecycleState,
 }
 
@@ -89,9 +96,15 @@ impl HostSession {
                 Identity::generate()
             }
         };
-        Self::with_identity(identity)
+        let mut session = Self::with_identity(identity)
             .with_store_at(&data_dir.join("jabot.sqlite"))
-            .with_log_dir(data_dir.join("adapter-logs"))
+            .with_log_dir(data_dir.join("adapter-logs"));
+        session.custom_harness_dir = Some(data_dir.join("custom_harnesses"));
+        // Custom harnesses become rows now rather than on first list: New Chat
+        // may open a thread on one before anything asks for the catalog, and
+        // `threads.harness_id` is a foreign key.
+        session.sync_harness_catalog();
+        session
     }
 
     fn with_log_dir(mut self, log_dir: PathBuf) -> Self {
@@ -116,6 +129,7 @@ impl HostSession {
             pending_permissions: HashMap::new(),
             wake: acp::AdapterWake::new(),
             log_dir,
+            custom_harness_dir: None,
             lifecycle: LifecycleState::from_env(),
         }
     }
@@ -602,7 +616,9 @@ mod tests {
         assert_eq!(value["store"]["journalMode"], "wal");
         assert_eq!(value["store"]["schemaVersion"], 2);
         assert_eq!(value["store"]["botCount"], 6);
-        assert_eq!(value["store"]["harnessCount"], 3);
+        // Three shipped cards plus the two presets, all seeded as rows so a
+        // thread can name any of them (#13).
+        assert_eq!(value["store"]["harnessCount"], 5);
         let backend = value["store"]["secretsBackend"].as_str().unwrap();
         assert!(
             backend == "keychain" || backend == "unavailable",

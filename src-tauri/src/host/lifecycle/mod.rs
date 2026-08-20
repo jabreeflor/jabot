@@ -890,6 +890,23 @@ impl HostSession {
             }
             return Ok(runtime.to_string());
         }
+        // The catalog knows which of a card's candidate commands this machine
+        // actually has — the difference between `claude-agent-acp` and the
+        // older `claude-code-acp` — so a thread snapshots what would really
+        // spawn rather than the first name in the table (#13).
+        if let Some(spec) = self.catalog_runtime_spec(&params.harness_id) {
+            let mut runtime = json!({ "command": spec.command });
+            if let Some(args) = &spec.args {
+                runtime["args"] = json!(args);
+            }
+            if let Some(env) = &spec.env {
+                runtime["env"] = json!(env);
+            }
+            if let Some(hint) = &spec.install_hint {
+                runtime["installHint"] = json!(hint);
+            }
+            return Ok(runtime.to_string());
+        }
         let row = self
             .store_or_err()?
             .get_harness(&params.harness_id)

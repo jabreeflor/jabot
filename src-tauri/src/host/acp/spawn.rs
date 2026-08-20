@@ -9,6 +9,7 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use super::super::harness;
 use super::runtime::HarnessRuntime;
 
 #[derive(Debug)]
@@ -56,7 +57,11 @@ pub fn spawn_adapter(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::from(log));
-    for (key, value) in &runtime.env {
+    // A Finder-launched .app inherits launchd's PATH, so an adapter that
+    // shells out to `node`, `git`, or its own vendor CLI would not find them.
+    // Hand the child the same augmented PATH the catalog probed with (#13).
+    cmd.env("PATH", harness::path::joined());
+    for (key, value) in harness::floor_env(&runtime.env, |key| std::env::var_os(key).is_some()) {
         cmd.env(key, value);
     }
     if let Some(cwd) = cwd {

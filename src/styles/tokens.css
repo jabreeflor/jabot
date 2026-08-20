@@ -51,6 +51,9 @@
   --h-claude: #d97757;
   --h-codex: #5dbb6e;
   --h-pi: #a78bfa;
+  /* tier-2 presets (#13): compiled in, PATH-probed, not user-editable */
+  --h-hermes: #6ab7c6;
+  --h-openclaw: #cf6a4c;
   /* every tier-3 harness a user brings (#13) — they share one accent */
   --h-custom: #e8a33d;
 

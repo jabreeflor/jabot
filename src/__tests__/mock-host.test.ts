@@ -47,17 +47,36 @@ describe("the seed", () => {
     }
   });
 
-  it("offers only harnesses the store can spawn", () => {
+  it("offers only harnesses the host can spawn, with the host's own words", () => {
     // Read from the repo root: vitest runs there, and the point of the test is
-    // that this list and the store's cannot drift apart unnoticed.
-    const seed = readFileSync("src-tauri/src/host/store/seed.rs", "utf8");
-    const builtins = [
-      ...seed.matchAll(/BuiltinHarness \{\s*id: "([^"]+)"/g),
-    ].map((match) => match[1]);
+    // that this list and the host catalog cannot drift apart unnoticed. The
+    // catalog is the source of truth for tier 1 and 2 — `store/seed.rs` writes
+    // its rows from the same table (#13).
+    const catalog = readFileSync(
+      "src-tauri/src/host/harness/catalog.rs",
+      "utf8",
+    );
+    const shipped = catalog.slice(
+      catalog.indexOf("const SHIPPED:"),
+      catalog.indexOf("const PRESETS:"),
+    );
+    const cards = [
+      ...shipped.matchAll(
+        /id: "([^"]+)",\s*\n\s*label: "([^"]+)",\s*\n\s*blurb: "([^"]+)",\s*\n\s*accent: "([^"]+)"/g,
+      ),
+    ].map(([, id, label, blurb, accent]) => ({ id, label, blurb, accent }));
 
-    expect(builtins).toContain("claude");
+    expect(cards.map((card) => card.id)).toContain("claude");
     for (const harness of HARNESSES) {
-      expect(builtins).toContain(harness.id);
+      // Presets and custom harnesses reach the UI at runtime through
+      // `harness/list`; the seeded cards are the ones the mock may hard-code,
+      // and every word of them has to be the host's.
+      expect(cards).toContainEqual({
+        id: harness.id,
+        label: harness.label,
+        blurb: harness.blurb,
+        accent: harness.accent,
+      });
     }
   });
 });

@@ -21,6 +21,8 @@ export const THREAD_DELETE = "thread/delete";
 export const THREAD_STATE = "thread/state";
 export const INBOX_RESURFACE = "inbox/resurface";
 export const INBOX_LIST = "inbox/list";
+export const HARNESS_LIST = "harness/list";
+export const HARNESS_DOCTOR = "harness/doctor";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 
 export type RequestId = number | string | null;
@@ -285,6 +287,87 @@ export interface InboxListResult {
   events: InboxEventView[];
   sleeping: SleepingThreadView[];
   unread: number;
+}
+
+/** Which tier of the catalog a card came from (#13): compiled-in card,
+    compiled-in preset, or user JSON. Tiers 1 and 2 have reserved ids. */
+export type HarnessTier = "shipped" | "preset" | "custom";
+
+/** How many chats one adapter process may carry. Hermes multiplexes chats onto
+    one process per profile; Claude and Codex get a process per thread. */
+export type SessionScope = "thread" | "profile";
+
+/** Why a harness is not ready. Each value is a different fix — which is the
+    whole point of the Doctor, since "not installed" is wrong five times in six. */
+export type HarnessStatus =
+  | "ready"
+  | "cli_missing"
+  | "adapter_missing"
+  | "adapter_outdated"
+  | "logged_out"
+  | "invalid_config"
+  | "daemon_not_running"
+  | "unknown";
+
+/** A catalog row as a New Chat / crew-editor card. */
+export interface HarnessCardView {
+  id: string;
+  label: string;
+  blurb: string;
+  /** Accent colour token, e.g. `var(--h-claude)`. */
+  accent: string;
+  tier: HarnessTier;
+  command: string;
+  args: string[];
+  installHint?: string;
+  installUrl?: string;
+  sessionScope: SessionScope;
+  /** Reserved ids cannot be shadowed by a user file. */
+  reserved: boolean;
+}
+
+/** A tier-3 file that did not make it into the catalog, and why. */
+export interface CatalogIssue {
+  file: string;
+  reason: string;
+}
+
+export interface HarnessListResult {
+  harnesses: HarnessCardView[];
+  issues: CatalogIssue[];
+}
+
+export interface HarnessDoctorParams {
+  /** Probe one card instead of the catalog. */
+  harnessId?: string;
+  /** Also spawn each ready adapter and run the ACP handshake — the only way
+      to learn which protocol version it really speaks. */
+  deep?: boolean;
+}
+
+export interface HarnessReport {
+  id: string;
+  label: string;
+  tier: HarnessTier;
+  status: HarnessStatus;
+  ready: boolean;
+  /** One sentence naming what was found, in the user's terms. */
+  detail: string;
+  remedy?: string;
+  /** The absolute path that resolved, when one did. */
+  command?: string;
+  args: string[];
+  installHint?: string;
+  installUrl?: string;
+  elapsedMs: number;
+}
+
+export interface HarnessDoctorResult {
+  reports: HarnessReport[];
+  issues: CatalogIssue[];
+  /** The PATH the probes searched. "It works in my terminal" is a PATH the app
+      never inherited, and this is how the user can see the difference. */
+  path: string[];
 }
 
 export interface PermissionReplyParams {

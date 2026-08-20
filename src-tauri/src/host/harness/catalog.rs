@@ -149,7 +149,12 @@ struct Compiled {
 
 enum CompiledReadiness {
     Binary,
-    Command(&'static str, &'static [&'static str], HarnessStatus, &'static str),
+    Command(
+        &'static str,
+        &'static [&'static str],
+        HarnessStatus,
+        &'static str,
+    ),
     Daemon(&'static str, &'static str),
 }
 
@@ -162,7 +167,10 @@ const SHIPPED: &[Compiled] = &[
         accent: "var(--h-claude)",
         tier: HarnessTier::Shipped,
         // `claude-code-acp` is the older name for the same zero-arg runtime.
-        launches: &[("claude-agent-acp", &[], false), ("claude-code-acp", &[], false)],
+        launches: &[
+            ("claude-agent-acp", &[], false),
+            ("claude-code-acp", &[], false),
+        ],
         cli: Some("claude"),
         env: &[],
         install_hint: "Install Claude Code, then `npm i -g @zed-industries/claude-code-acp`.",
@@ -335,7 +343,10 @@ mod tests {
 
     #[test]
     fn claude_falls_back_to_the_older_adapter_name() {
-        let claude = compiled_in().into_iter().find(|d| d.id == "claude").unwrap();
+        let claude = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "claude")
+            .unwrap();
         let commands: Vec<_> = claude
             .launches
             .iter()
@@ -346,9 +357,15 @@ mod tests {
 
     #[test]
     fn hermes_carries_the_skip_ambient_mcp_floor() {
-        let hermes = compiled_in().into_iter().find(|d| d.id == "hermes").unwrap();
+        let hermes = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "hermes")
+            .unwrap();
         assert_eq!(
-            hermes.env.get("HERMES_ACP_SKIP_CONFIGURED_MCP").map(String::as_str),
+            hermes
+                .env
+                .get("HERMES_ACP_SKIP_CONFIGURED_MCP")
+                .map(String::as_str),
             Some("1")
         );
     }
@@ -357,7 +374,10 @@ mod tests {
     /// same profile must land on the same key and two profiles must not.
     #[test]
     fn profile_scope_shares_a_process_and_thread_scope_does_not() {
-        let mut hermes = compiled_in().into_iter().find(|d| d.id == "hermes").unwrap();
+        let mut hermes = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "hermes")
+            .unwrap();
         assert_eq!(hermes.profile_key("t1"), hermes.profile_key("t2"));
 
         let researcher = Launch::new("hermes", &["-p", "researcher", "acp"], false);
@@ -371,7 +391,10 @@ mod tests {
                 .profile_key("t1")
         );
 
-        let claude = compiled_in().into_iter().find(|d| d.id == "claude").unwrap();
+        let claude = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "claude")
+            .unwrap();
         assert_ne!(claude.profile_key("t1"), claude.profile_key("t2"));
     }
 

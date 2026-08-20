@@ -1,11 +1,13 @@
 //! Folders, harnesses, and crew rows.
 
+use std::collections::BTreeMap;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use super::error::StoreError;
 use super::models::{BotRow, FolderRow, HarnessRow};
-use super::{map_bot, map_folder, map_harness, now_utc};
+use super::{env_key_looks_secret, map_bot, map_folder, map_harness, now_utc};
 
 pub fn insert_folder(
     conn: &Connection,
@@ -69,6 +71,55 @@ pub fn get_harness(conn: &Connection, id: &str) -> Result<Option<HarnessRow>, St
     )
     .optional()
     .map_err(Into::into)
+}
+
+/// Register a tier-3 harness so threads can point at it.
+///
+/// The row exists for the foreign key, not as the catalog: the JSON file the
+/// user wrote stays the source of truth for label, args, and env, so this
+/// overwrites its own row on every sync. `is_builtin` stays 0 — the seed's
+/// upsert refuses to touch user rows, and this one refuses to touch builtins,
+/// so neither tier can overwrite the other.
+pub fn upsert_custom_harness(
+    conn: &Connection,
+    id: &str,
+    label: &str,
+    command: &str,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+    install_hint: Option<&str>,
+) -> Result<HarnessRow, StoreError> {
+    if id.trim().is_empty() || label.trim().is_empty() || command.trim().is_empty() {
+        return Err(StoreError::invalid(
+            "harness id, label, and command are required",
+        ));
+    }
+    // Same rule as `runtime_json`: a credential in the catalog is a credential
+    // in every bug report and backup that catalog ends up in.
+    if let Some(key) = env.keys().find(|key| env_key_looks_secret(key)) {
+        return Err(StoreError::invalid(format!(
+            "harness env must not contain secret key {key}"
+        )));
+    }
+    let args_json = serde_json::to_string(args)?;
+    let env_json = serde_json::to_string(env)?;
+    let now = now_utc();
+    conn.execute(
+        "INSERT INTO harnesses (
+            id, label, command, args_json, env_json, install_hint,
+            is_builtin, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?7)
+         ON CONFLICT(id) DO UPDATE SET
+            label = excluded.label,
+            command = excluded.command,
+            args_json = excluded.args_json,
+            env_json = excluded.env_json,
+            install_hint = excluded.install_hint,
+            updated_at = excluded.updated_at
+         WHERE harnesses.is_builtin = 0",
+        params![id, label, command, args_json, env_json, install_hint, now],
+    )?;
+    get_harness(conn, id)?.ok_or_else(|| StoreError::NotFound(id.to_string()))
 }
 
 pub fn list_bots(conn: &Connection) -> Result<Vec<BotRow>, StoreError> {

@@ -221,8 +221,13 @@ mod tests {
     fn nvm_versions_come_out_newest_first() {
         let home = tempfile::tempdir().unwrap();
         for version in ["v9.11.2", "v20.11.0", "v18.20.4"] {
-            std::fs::create_dir_all(home.path().join(".nvm/versions/node").join(version).join("bin"))
-                .unwrap();
+            std::fs::create_dir_all(
+                home.path()
+                    .join(".nvm/versions/node")
+                    .join(version)
+                    .join("bin"),
+            )
+            .unwrap();
         }
         let dirs = nvm_bin_dirs(home.path());
         let names: Vec<String> = dirs

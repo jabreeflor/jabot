@@ -91,7 +91,10 @@ pub fn load_dir(dir: &Path) -> (Vec<Loaded>, Vec<CatalogIssue>) {
         };
         match parse(&raw) {
             Ok(entry) => {
-                if loaded.iter().any(|l| l.descriptor.id == entry.descriptor.id) {
+                if loaded
+                    .iter()
+                    .any(|l| l.descriptor.id == entry.descriptor.id)
+                {
                     issues.push(CatalogIssue {
                         file: name,
                         reason: format!("duplicate harness id {}", entry.descriptor.id),
@@ -110,9 +113,7 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
     let file: CustomHarnessFile = serde_json::from_str(raw).map_err(|e| e.to_string())?;
     let id = file.id.trim().to_string();
     if !valid_id(&id) {
-        return Err(format!(
-            "invalid id {id:?}: expected [a-z0-9_][a-z0-9_-]*"
-        ));
+        return Err(format!("invalid id {id:?}: expected [a-z0-9_][a-z0-9_-]*"));
     }
     if is_reserved(&id) {
         return Err(format!("{id} is a reserved harness id"));
@@ -160,7 +161,9 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
             cli: None,
             env,
             install_hint: file.install_hint.filter(|h| !h.trim().is_empty()),
-            install_url: file.install_instructions_url.filter(|u| !u.trim().is_empty()),
+            install_url: file
+                .install_instructions_url
+                .filter(|u| !u.trim().is_empty()),
             readiness: Readiness::Binary,
             session_scope: SessionScope::Thread,
             id,
@@ -231,7 +234,10 @@ mod tests {
                 "id": id, "label": "X", "command": "x"
             })))
             .unwrap_err();
-            assert!(err.contains("invalid id") || err.contains("expected"), "{id}: {err}");
+            assert!(
+                err.contains("invalid id") || err.contains("expected"),
+                "{id}: {err}"
+            );
         }
     }
 
@@ -260,7 +266,10 @@ mod tests {
         .unwrap();
 
         assert!(!loaded.descriptor.env.contains_key("JABOT_IDLE_TIMEOUT_MS"));
-        assert_eq!(loaded.descriptor.env.get("SNEAKY_MODE").map(String::as_str), Some("acp"));
+        assert_eq!(
+            loaded.descriptor.env.get("SNEAKY_MODE").map(String::as_str),
+            Some("acp")
+        );
         assert_eq!(loaded.warnings.len(), 1);
     }
 

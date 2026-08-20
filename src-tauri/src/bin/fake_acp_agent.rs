@@ -9,6 +9,8 @@
 //!   backstop has something real to fire on
 //! - `fail`: return a non-`end_turn` stop reason
 //! - `grandchild`: spawn a `sleep` grandchild in the same process group
+//! - `old-acp`: answer `initialize` with a protocol version older than the
+//!   host speaks, so the Doctor's deep probe has a real outdated adapter
 
 use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
@@ -69,7 +71,7 @@ fn main() {
                 &mut stdout,
                 id,
                 serde_json::json!({
-                    "protocolVersion": 1,
+                    "protocolVersion": if mode == "old-acp" { 0 } else { 1 },
                     "agentCapabilities": { "loadSession": false },
                     "agentInfo": { "name": "fake-acp-agent", "version": "0.0.0" },
                     "authMethods": []

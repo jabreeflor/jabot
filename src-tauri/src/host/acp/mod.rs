@@ -23,9 +23,11 @@ use super::protocol::methods::{
 };
 use super::HostSession;
 use connection::Inbound;
-use runtime::{HarnessRuntime, ProbeResult};
+use runtime::ProbeResult;
 
 pub(crate) use connection::AcpConnection;
+/// The Doctor's deep probe spawns an adapter the same way a session does (#13).
+pub(crate) use runtime::HarnessRuntime;
 pub use wake::AdapterWake;
 
 #[derive(Debug)]

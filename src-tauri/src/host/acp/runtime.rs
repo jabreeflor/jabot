@@ -4,8 +4,7 @@
 //! command?" so a missing binary becomes an install hint instead of a crash.
 
 use std::collections::BTreeMap;
-use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde_json::Value;
 
@@ -102,47 +101,11 @@ impl HarnessRuntime {
     }
 }
 
+/// Delegates to the harness catalog's resolver so the Doctor and the spawner
+/// search the same PATH. They used to search `env::var("PATH")`, which is the
+/// starved launchd one when the app is opened from Finder (#13).
 pub fn find_in_path(command: &str) -> Option<PathBuf> {
-    let command = command.trim();
-    if command.is_empty() {
-        return None;
-    }
-    let as_path = Path::new(command);
-    if as_path.components().count() > 1 || command.contains('/') || command.contains('\\') {
-        return as_path.exists().then(|| as_path.to_path_buf());
-    }
-    let path_var = env::var_os("PATH")?;
-    for dir in env::split_paths(&path_var) {
-        let candidate = dir.join(command);
-        if is_executable(&candidate) {
-            return Some(candidate);
-        }
-        #[cfg(windows)]
-        {
-            let exe = dir.join(format!("{command}.exe"));
-            if is_executable(&exe) {
-                return Some(exe);
-            }
-        }
-    }
-    None
-}
-
-fn is_executable(path: &Path) -> bool {
-    if !path.is_file() {
-        return false;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        path.metadata()
-            .map(|m| m.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    super::super::harness::resolve_command(command)
 }
 
 fn parse_string_array(raw: &str) -> Result<Vec<String>, String> {

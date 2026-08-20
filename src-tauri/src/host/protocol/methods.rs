@@ -25,6 +25,8 @@ pub const THREAD_ARCHIVE: &str = "thread/archive";
 pub const THREAD_DELETE: &str = "thread/delete";
 pub const THREAD_STATE: &str = "thread/state";
 pub const INBOX_RESURFACE: &str = "inbox/resurface";
+pub const HARNESS_LIST: &str = "harness/list";
+pub const HARNESS_DOCTOR: &str = "harness/doctor";
 pub const INBOX_LIST: &str = "inbox/list";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
@@ -42,6 +44,8 @@ pub const CLIENT_METHODS: &[&str] = &[
     THREAD_STATE,
     INBOX_LIST,
     SYNC_RESUME_FROM,
+    HARNESS_LIST,
+    HARNESS_DOCTOR,
 ];
 
 pub const HOST_NOTIFICATIONS: &[&str] = &[
@@ -512,6 +516,134 @@ pub struct InboxResurfaceParams {
     pub thread_id: String,
     pub seq: u64,
     pub reason: ResurfaceReason,
+}
+
+/// Which tier of the catalog a card came from (#13). The UI shows all three
+/// the same way; the tier says who may edit it and whether its id is reserved.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HarnessTier {
+    Shipped,
+    Preset,
+    Custom,
+}
+
+/// How many JaBot chats one adapter process may carry.
+///
+/// Hermes wants one long-lived process per profile with chats multiplexed as
+/// ACP sessions; Claude and Codex get a process per thread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionScope {
+    Thread,
+    Profile,
+}
+
+/// Why a harness is not ready. Each variant is a different fix, which is the
+/// entire reason the Doctor exists: "not installed" sends the user to the
+/// wrong page five times out of six.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessStatus {
+    Ready,
+    /// The vendor product is not installed at all.
+    CliMissing,
+    /// The product is here; the thing that speaks ACP is not.
+    AdapterMissing,
+    /// The adapter is here but answers an older ACP than the host speaks.
+    AdapterOutdated,
+    /// Installed and configured, but nobody is signed in.
+    LoggedOut,
+    /// Installed and signed in, but not set up (no provider, no model).
+    InvalidConfig,
+    /// The adapter is a bridge to a daemon that is not running.
+    DaemonNotRunning,
+    /// The probe could not be run. Deliberately not a failure: an unanswered
+    /// question must not read as a diagnosis.
+    Unknown,
+}
+
+/// A catalog row as a New Chat / crew-editor card.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessCardView {
+    pub id: String,
+    pub label: String,
+    pub blurb: String,
+    /// Accent colour token, e.g. `var(--h-claude)`.
+    pub accent: String,
+    pub tier: HarnessTier,
+    pub command: String,
+    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_hint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_url: Option<String>,
+    pub session_scope: SessionScope,
+    /// Reserved ids cannot be shadowed by a user file.
+    pub reserved: bool,
+}
+
+/// A tier-3 file that did not make it into the catalog, and why. Surfaced
+/// rather than logged: a user who wrote the file is the only one who can fix it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogIssue {
+    pub file: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessListResult {
+    pub harnesses: Vec<HarnessCardView>,
+    pub issues: Vec<CatalogIssue>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessDoctorParams {
+    /// Probe one card instead of the catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_id: Option<String>,
+    /// Also spawn each ready adapter and run the ACP handshake. The only way
+    /// to learn the protocol version it actually speaks, and the only way to
+    /// find out it is outdated before a user's first prompt does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deep: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessReport {
+    pub id: String,
+    pub label: String,
+    pub tier: HarnessTier,
+    pub status: HarnessStatus,
+    pub ready: bool,
+    /// One sentence naming what was found, in the user's terms.
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remedy: Option<String>,
+    /// The absolute path that resolved, when one did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_hint: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_url: Option<String>,
+    pub elapsed_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessDoctorResult {
+    pub reports: Vec<HarnessReport>,
+    pub issues: Vec<CatalogIssue>,
+    /// The PATH the probes searched. "It works in my terminal" is a PATH the
+    /// app never inherited, and this is how the user can see the difference.
+    pub path: Vec<String>,
 }
 
 impl PromptParams {
