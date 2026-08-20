@@ -198,6 +198,22 @@ impl Store {
         overlay::set_thread_acp_session(&self.conn, id, acp_session_id)
     }
 
+    /// Threads that still claim a host-owned worktree — see
+    /// [`overlay::list_worktree_threads`].
+    pub fn list_worktree_threads(&self) -> Result<Vec<ThreadRow>, StoreError> {
+        overlay::list_worktree_threads(&self.conn)
+    }
+
+    /// Say whether the thread's worktree currently exists — see
+    /// [`overlay::set_thread_worktree`].
+    pub fn set_thread_worktree(
+        &self,
+        id: &str,
+        path: Option<&str>,
+    ) -> Result<ThreadRow, StoreError> {
+        overlay::set_thread_worktree(&self.conn, id, path)
+    }
+
     pub fn list_threads_by_state(&self, state: &str) -> Result<Vec<ThreadRow>, StoreError> {
         overlay::list_threads_by_state(&self.conn, state)
     }
@@ -342,6 +358,21 @@ impl Store {
 
     pub fn latest_run(&self, thread_id: &str) -> Result<Option<RunRow>, StoreError> {
         overlay::latest_run(&self.conn, thread_id)
+    }
+
+    /// Runs a stopped host left open, for boot reconciliation (#21).
+    pub fn list_open_runs(&self) -> Result<Vec<RunRow>, StoreError> {
+        overlay::list_open_runs(&self.conn)
+    }
+
+    /// Update the newest undismissed card of a kind on a thread, and unread it.
+    pub fn restate_inbox_event(
+        &self,
+        thread_id: &str,
+        kind: &str,
+        summary: &str,
+    ) -> Result<bool, StoreError> {
+        overlay::restate_inbox_event(&self.conn, thread_id, kind, summary)
     }
 
     pub fn list_inbox_events(
@@ -928,6 +959,7 @@ mod tests {
             runtime_json: sample_runtime(),
             title: "Auth migration".into(),
             fold_policy: "default".into(),
+            worktree_path: None,
             repo: ThreadRepo::default(),
         }
     }
