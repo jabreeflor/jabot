@@ -24,6 +24,7 @@ pub const THREAD_REOPEN: &str = "thread/reopen";
 pub const THREAD_ARCHIVE: &str = "thread/archive";
 pub const THREAD_DELETE: &str = "thread/delete";
 pub const THREAD_STATE: &str = "thread/state";
+pub const THREAD_TRANSCRIPT: &str = "thread/transcript";
 pub const INBOX_RESURFACE: &str = "inbox/resurface";
 pub const HARNESS_LIST: &str = "harness/list";
 pub const HARNESS_DOCTOR: &str = "harness/doctor";
@@ -31,6 +32,15 @@ pub const INBOX_LIST: &str = "inbox/list";
 pub const TOOLS_LIST: &str = "tools/list";
 pub const TOOLS_CONNECT: &str = "tools/connect";
 pub const TOOLS_DISCONNECT: &str = "tools/disconnect";
+pub const FOLDER_LIST: &str = "folder/list";
+pub const FOLDER_REGISTER: &str = "folder/register";
+pub const FOLDER_UPDATE: &str = "folder/update";
+pub const FOLDER_FORGET: &str = "folder/forget";
+pub const GITHUB_STATUS: &str = "github/status";
+pub const CREW_LIST: &str = "crew/list";
+pub const CREW_CREATE: &str = "crew/create";
+pub const CREW_UPDATE: &str = "crew/update";
+pub const CREW_REMOVE: &str = "crew/remove";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
 pub const CLIENT_METHODS: &[&str] = &[
@@ -52,6 +62,16 @@ pub const CLIENT_METHODS: &[&str] = &[
     TOOLS_LIST,
     TOOLS_CONNECT,
     TOOLS_DISCONNECT,
+    FOLDER_LIST,
+    FOLDER_REGISTER,
+    FOLDER_UPDATE,
+    FOLDER_FORGET,
+    GITHUB_STATUS,
+    CREW_LIST,
+    CREW_CREATE,
+    CREW_UPDATE,
+    CREW_REMOVE,
+    THREAD_TRANSCRIPT,
 ];
 
 pub const HOST_NOTIFICATIONS: &[&str] = &[
@@ -163,6 +183,11 @@ pub struct RuntimeSpec {
 pub struct PromptParams {
     pub thread_id: String,
     pub content: Value,
+    /// What to do when a turn is already in flight on this thread (#14).
+    /// Omitted is [`PromptMode::Reject`], which is #15's contract: a client
+    /// that has not been taught about the queue cannot silently create one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<PromptMode>,
     /// Used when the thread is not yet in the store (tests / first prompt).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
@@ -177,7 +202,98 @@ pub struct PromptParams {
 pub struct PromptResult {
     pub thread_id: String,
     pub acp_session_id: String,
+    /// The agent has the prompt. False means it is only queued — see `queued`.
     pub accepted: bool,
+    /// Held for the turn in flight rather than sent (`mode: queue|interrupt`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub queued: bool,
+    /// 1 = next out. Only meaningful while `queued`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue_position: Option<usize>,
+}
+
+/// Steer vs redispatch: what a prompt does to a thread that is already busy.
+///
+/// ACP has no mid-turn steering primitive — `session/prompt` is one turn per
+/// session and the stop reason comes back on the response — so the two honest
+/// answers are *wait for the turn* and *end the turn first*. Both keep the
+/// #15 invariant that no run collects another run's outcome.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptMode {
+    /// Refuse with `RUN_IN_FLIGHT` (#15). The default, so an older client
+    /// cannot queue by accident.
+    #[default]
+    Reject,
+    /// Hold it and send it when the turn in flight ends.
+    Queue,
+    /// Cancel the turn in flight, then send this one when the cancelled turn
+    /// reports back. Buzz's "if the adapter lacks steer, cancel and redispatch".
+    Interrupt,
+}
+
+impl PromptMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Reject => "reject",
+            Self::Queue => "queue",
+            Self::Interrupt => "interrupt",
+        }
+    }
+}
+
+/// Hydrate a reopened thread from our own store, never from harness JSONL
+/// (#14, store.md "transcript ownership").
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTranscriptParams {
+    pub thread_id: String,
+    /// Exclusive: only rows with a greater `seq`. A client that already holds
+    /// part of the transcript asks for the rest instead of the whole thing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_seq: Option<i64>,
+    /// Newest-N window. The reply is still in `seq` order; `truncated` says
+    /// whether anything older was left behind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+/// One `transcript_events` row. `payload` is the ACP notification as it
+/// arrived — the renderer runs the same mapper over a replay as over the live
+/// stream, which is the only way the two can agree.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptEventView {
+    pub seq: i64,
+    pub method: String,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadTranscriptResult {
+    pub thread_id: String,
+    /// The highest `seq` on disk for this thread, whether or not it is in
+    /// `events`. A live client applies notifications above this and drops the
+    /// ones at or below it, which is what makes hydrate-while-streaming safe.
+    pub head_seq: i64,
+    pub events: Vec<TranscriptEventView>,
+    /// Older rows exist that `limit` left out.
+    pub truncated: bool,
+    /// Prompts held for the turn in flight, oldest first. Supervisor RAM, so
+    /// this is empty after a restart — the same answer the run ledger gives.
+    pub queued: Vec<QueuedPromptView>,
+}
+
+/// A prompt the user has sent that the agent has not been given yet.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedPromptView {
+    pub position: usize,
+    /// The prompt content as the client sent it.
+    pub content: Value,
+    pub queued_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -322,6 +438,23 @@ pub struct ThreadStateResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resurfaced_reason: Option<ResurfaceReason>,
     pub cwd: String,
+    /// The spawn record (#16, setup-porting §19): where this thread works,
+    /// stamped when it was opened and never re-derived. It outlives the folder
+    /// it was copied from, which is the point — a thread whose folder has been
+    /// forgotten still knows its checkout.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_root: Option<String>,
+    /// `owner/name`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forge_host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    /// Which machine opened it. One host in MVP1; recorded so a second one
+    /// never has to guess (remote-and-mobile).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host_id: Option<String>,
     pub harness_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub folder_id: Option<String>,
@@ -455,6 +588,13 @@ pub struct SessionUpdateParams {
     pub seq: u64,
     /// Opaque ACP `session/update` payload (ACP v1 `session/update` params).
     pub acp: Value,
+    /// Where this event landed in `transcript_events`, when it landed at all.
+    /// `seq` above orders notifications; this one orders the durable log, and
+    /// a client hydrating from `thread/transcript` needs the second to know
+    /// which live events it has already replayed. `None` on a host with no
+    /// store, which is also a host with nothing to hydrate from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcript_seq: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -755,9 +895,346 @@ pub struct ToolDisconnectResult {
     pub affects: Vec<String>,
 }
 
+/// A folder's `origin`, split the way `gh` splits it (#16). Absent when the
+/// directory has no remote, or a remote no forge claims — both of which are
+/// folders that still run threads.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderOriginView {
+    pub url: String,
+    /// `github.com`, a GHES hostname, `gitlab.com`. Never assumed.
+    pub host: String,
+    pub owner: String,
+    pub name: String,
+    /// `owner/name` — one spelling for `gh --repo`, `thread_prs.repo`, and the
+    /// PR view, so they cannot disagree about what this repository is called.
+    pub repo: String,
+}
+
+/// A sidebar row under a folder. The fields are exactly what the list needs;
+/// the transcript and the run ledger are a `thread/state` away.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderThreadView {
+    pub thread_id: String,
+    pub folder_id: Option<String>,
+    pub bot_id: Option<String>,
+    pub harness_id: String,
+    pub title: String,
+    pub state: String,
+    pub fold_policy: FoldPolicy,
+    /// The latest run's state, or `None` for a thread that has never run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}
+
+/// One registered directory (#16). A folder is a repo, not a group of them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderView {
+    pub folder_id: String,
+    /// Ours to display and to rename. The directory keeps its own name.
+    pub name: String,
+    /// The absolute directory the user registered.
+    pub path: String,
+    /// What a thread in this folder starts in: the repository root when there
+    /// is one, else the registered path. Resolved here so the renderer does not
+    /// re-derive the rule, and so #23 has one thing to replace with a worktree.
+    pub cwd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo_root: Option<String>,
+    /// False for a directory git does not claim. Legal: threads run, the PR
+    /// view skips it, and the sidebar says so.
+    pub is_git: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<FolderOriginView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_branch: Option<String>,
+    /// Optional per-folder setup for a fresh worktree (#23 runs it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setup_command: Option<String>,
+    /// Gitignored files a fresh worktree needs — `.env` and friends (#23).
+    pub files_to_copy: Vec<String>,
+    pub sort_order: i64,
+    /// Active and resurfaced threads only. A folded thread is not listed: that
+    /// is the promise fold makes.
+    pub threads: Vec<FolderThreadView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderListResult {
+    pub folders: Vec<FolderView>,
+}
+
+/// Register a directory. The host probes git once, here, and writes the answer
+/// down; nothing later re-derives it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderRegisterParams {
+    /// Absolute, or `~`-relative. The host canonicalises it.
+    pub path: String,
+    /// Defaults to the directory's basename, and stays editable after.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_to_copy: Option<Vec<String>>,
+}
+
+/// A patch. An omitted field is left alone; an empty `setupCommand` clears it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderUpdateParams {
+    pub folder_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files_to_copy: Option<Vec<String>>,
+    /// Ask git again: a remote added or re-pointed since registration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderRefParams {
+    pub folder_id: String,
+}
+
+/// Forgetting a folder removes the sidebar row, never the directory.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FolderForgetResult {
+    pub folder_id: String,
+    pub forgotten: bool,
+    /// Threads that lost their folder and kept everything else — their cwd and
+    /// their repo were stamped on them at spawn.
+    pub detached_threads: usize,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubStatusParams {
+    /// Defaults to `github.com`. GHES folders pass their `origin` host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+}
+
+/// Whether the host can act as the user on GitHub, and as whom.
+///
+/// There is no token in this result and there never will be: MVP auth is the
+/// user's own `gh` login, read on demand by the host (#16). `installed` and
+/// `authenticated` are separate because they have different remedies.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubStatusResult {
+    pub installed: bool,
+    pub authenticated: bool,
+    pub host: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remedy: Option<String>,
+    /// Where `gh` resolved from, so "it works in my terminal" is comparable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gh_path: Option<String>,
+}
+
+/// A `bots` row as the crew grid and the bot editor see it (#17).
+///
+/// `tools` is the parsed allowlist rather than the stored JSON text, because
+/// every reader wants the list and none of them wants to parse it twice. The
+/// editor **is** this record: what it saves is what the next spawn resolves.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BotView {
+    pub bot_id: String,
+    pub name: String,
+    /// A colour token from [`crate::host::BOT_COLORS`] — the gradient is the
+    /// bot's identity in the UI, so the host keeps the vocabulary closed.
+    pub color: String,
+    /// Persona / system prompt. Also mirrored to `instructions.md` in the
+    /// bot's memory directory, where the session can read it.
+    pub instructions: String,
+    /// MCP catalog ids, plus host-tool ids for Chief (#6, #18).
+    pub tools: Vec<String>,
+    pub harness_id: String,
+    /// Exactly one bot has this, it is seeded, and it cannot be removed.
+    pub is_chief: bool,
+    /// Which template's fields were copied when this bot was added. History,
+    /// not a link: the template is never read again (#17).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_id: Option<String>,
+    /// The bot's own directory: `instructions.md`, `MEMORY.md`, and the cwd a
+    /// worker's standing thread runs in. `None` on a host with no data
+    /// directory — an ephemeral host has nowhere to put one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_dir: Option<String>,
+    pub sort_order: i64,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// A shipped template pack: a bot record without an identity (#6).
+///
+/// Adding one **copies** these fields into a new row. There is no live link
+/// back, which is why the editor can change anything afterwards without the
+/// pack having a say.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BotTemplateView {
+    pub template_id: String,
+    pub name: String,
+    pub color: String,
+    pub instructions: String,
+    pub tools: Vec<String>,
+    pub harness_id: String,
+}
+
+/// One of Chief's host tools (#6). Not MCP, not in the `tools/list` catalog,
+/// and not offered to other bots — but the crew grid still has to name it
+/// rather than print `handoff_to_bot` at the user.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewHostToolView {
+    pub id: String,
+    pub label: String,
+    pub blurb: String,
+}
+
+/// Everything the Crew view draws in one answer. The templates and host tools
+/// are compiled in and tiny; sending them with the crew means the editor and
+/// the grid can never disagree about what a template contains.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewListResult {
+    pub bots: Vec<BotView>,
+    pub templates: Vec<BotTemplateView>,
+    pub host_tools: Vec<CrewHostToolView>,
+}
+
+/// Add a bot. Every field is optional so that "add from template" is one
+/// call — the template supplies whatever the caller did not — but the result
+/// is a snapshot either way.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewCreateParams {
+    /// A shipped pack to copy the unspecified fields from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_id: Option<String>,
+}
+
+/// A patch. An omitted field is left alone; `instructions: ""` really does
+/// clear the persona, which is a thing a user may want.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewUpdateParams {
+    pub bot_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewRefParams {
+    pub bot_id: String,
+}
+
+/// Removing a bot takes the row, never the directory — its markdown memory
+/// outlives it, the same way forgetting a folder leaves the checkout alone.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewRemoveResult {
+    pub bot_id: String,
+    pub removed: bool,
+    /// Threads that lost their bot and kept everything else — their cwd,
+    /// harness and runtime were stamped on them at spawn.
+    pub detached_threads: usize,
+    /// The directory left behind, so the UI can say where the notes went.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_dir: Option<String>,
+}
+
 impl ToolRefParams {
     pub fn validate(&self) -> Result<(), super::error::RpcError> {
         require_non_empty(&self.tool_id, "toolId")
+    }
+}
+
+impl CrewCreateParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        // A blank name with no template is the one shape that cannot be
+        // resolved into a bot; everything else has a default to fall back on.
+        match (&self.name, &self.template_id) {
+            (None, None) => Err(super::error::RpcError::InvalidParams(
+                "name or templateId is required".into(),
+            )),
+            (Some(name), _) => require_non_empty(name, "name"),
+            _ => Ok(()),
+        }
+    }
+}
+
+impl CrewUpdateParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.bot_id, "botId")?;
+        if let Some(name) = &self.name {
+            require_non_empty(name, "name")?;
+        }
+        Ok(())
+    }
+}
+
+impl CrewRefParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.bot_id, "botId")
+    }
+}
+
+impl FolderRegisterParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.path, "path")
+    }
+}
+
+impl FolderUpdateParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.folder_id, "folderId")?;
+        if let Some(name) = &self.name {
+            require_non_empty(name, "name")?;
+        }
+        Ok(())
+    }
+}
+
+impl FolderRefParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.folder_id, "folderId")
     }
 }
 
@@ -812,6 +1289,12 @@ impl PermissionReplyParams {
                 "permission/reply requires optionId or cancelled: true".into(),
             )),
         }
+    }
+}
+
+impl ThreadTranscriptParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")
     }
 }
 
@@ -882,6 +1365,7 @@ mod envelope_tests {
             thread_id: "thread-1".into(),
             seq: 7,
             acp: json!({ "sessionUpdate": "agent_message_chunk" }),
+            transcript_seq: Some(3),
         })
         .unwrap();
 
