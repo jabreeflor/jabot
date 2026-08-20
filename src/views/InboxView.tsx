@@ -14,7 +14,7 @@ import { Blob } from "../components/Blob";
 import { CodeSessionIcon } from "../components/Icon";
 import { formatWhen } from "../components/format";
 import { NEEDS_YOU_KINDS, inboxTag } from "../components/status";
-import { Tabs, type TabSpec } from "../components/Tabs";
+import { Tabs, tabButtonId, type TabSpec } from "../components/Tabs";
 import type { CardSource, InboxCard } from "../components/types";
 
 type InboxTab = "all" | "needs" | "done";
@@ -67,7 +67,11 @@ export function InboxView({
             onChange={setTab}
           />
 
-          <div id="inbox-panel" role="tabpanel" aria-label="Inbox">
+          <div
+            id="inbox-panel"
+            role="tabpanel"
+            aria-labelledby={tabButtonId("inbox-panel", tab)}
+          >
             {resurfaced.length === 0 && sleeping.length === 0 && (
               <div className="page-empty">Nothing waiting. Enjoy it.</div>
             )}

@@ -1,7 +1,8 @@
 /**
  * Pull Requests. The ordering claim is the one worth testing: a PR whose checks
  * are still running is not review-ready, and a merged or draft PR should never
- * shout. "Reopen thread" only exists where a JaBot session opened the PR.
+ * shout. Every PR here was opened by a session, so "Reopen thread" always has a
+ * thread to go to.
  */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -18,6 +19,7 @@ const PRS: PullRequest[] = [
   {
     id: "pr-23",
     threadId: "auth",
+    provider: "github",
     repo: "jabot-app",
     number: 23,
     url: "https://example.invalid/23",
@@ -45,6 +47,7 @@ const PRS: PullRequest[] = [
   {
     id: "pr-21",
     threadId: "retry",
+    provider: "github",
     repo: "globnet-sync",
     number: 21,
     url: "https://example.invalid/21",
@@ -57,7 +60,8 @@ const PRS: PullRequest[] = [
   },
   {
     id: "pr-19",
-    threadId: null,
+    threadId: "deps",
+    provider: "github",
     repo: "jabot-app",
     number: 19,
     url: "https://example.invalid/19",
@@ -70,7 +74,8 @@ const PRS: PullRequest[] = [
   },
   {
     id: "pr-18",
-    threadId: null,
+    threadId: "onboarding",
+    provider: "github",
     repo: "jabot-app",
     number: 18,
     url: "https://example.invalid/18",
@@ -159,24 +164,27 @@ describe("PullRequestsView", () => {
     expect(screen.getByText("−96")).toBeInTheDocument();
   });
 
-  it("has no reopen affordance for a PR no session owns", async () => {
-    renderPrs({
-      pullRequests: [
-        {
-          ...PRS[0],
-          id: "pr-external",
-          threadId: null,
-          detail: {
-            checks: [],
-            bullets: [],
-            actions: [{ id: "reopen", label: "Reopen thread" }],
-          },
-        },
-      ],
-    });
+  it("moves between filters with the arrow keys", async () => {
+    renderPrs();
 
+    screen.getByRole("tab", { name: "Open · 2" }).focus();
+    await userEvent.keyboard("{ArrowRight}");
+
+    expect(screen.getByRole("tab", { name: "Merged" })).toHaveFocus();
+    expect(screen.getByText("Onboarding flow polish")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Reopen thread" }),
-    ).toBeDisabled();
+      screen.queryByText("Migrate auth to sessions"),
+    ).not.toBeInTheDocument();
+
+    // Left from the first tab wraps to the last rather than dead-ending.
+    await userEvent.keyboard("{ArrowLeft}{ArrowLeft}");
+    expect(screen.getByRole("tab", { name: "Drafts" })).toHaveFocus();
+    expect(screen.getByText("Bump dependencies")).toBeInTheDocument();
+  });
+
+  it("names the panel after the tab that is showing it", () => {
+    renderPrs();
+
+    expect(screen.getByRole("tabpanel", { name: "Open · 2" })).toBeInTheDocument();
   });
 });

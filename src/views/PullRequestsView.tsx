@@ -4,15 +4,16 @@
 //! then PRs whose checks are still running (nothing to do yet), then what has
 //! already landed. A draft is listed under Open but never claims review.
 //!
-//! Rows are `thread_prs` joined with GitHub state (#28); `threadId` is what
-//! makes "Reopen thread" possible at all.
+//! Rows are `thread_prs` joined with GitHub state (#28). Every PR here was
+//! opened by a session — that is what the table is — so "Reopen thread" always
+//! has somewhere to go.
 
 import { useState } from "react";
 
 import { PullRequestIcon, PullRequestMergedIcon } from "../components/Icon";
 import { formatWhen } from "../components/format";
 import { prTag } from "../components/status";
-import { Tabs, type TabSpec } from "../components/Tabs";
+import { Tabs, tabButtonId, type TabSpec } from "../components/Tabs";
 import type { PullRequest } from "../components/types";
 
 type PrTab = "open" | "merged" | "drafts";
@@ -79,7 +80,11 @@ export function PullRequestsView({
             onChange={setTab}
           />
 
-          <div id="prs-panel" role="tabpanel" aria-label="Pull requests">
+          <div
+            id="prs-panel"
+            role="tabpanel"
+            aria-labelledby={tabButtonId("prs-panel", tab)}
+          >
             {visible.length === 0 && (
               <div className="page-empty">No pull requests here.</div>
             )}
@@ -199,9 +204,8 @@ function PrRow({
                   key={action.id}
                   type="button"
                   className={action.primary ? "btn primary" : "btn"}
-                  disabled={action.id === "reopen" && pr.threadId === null}
                   onClick={() =>
-                    action.id === "reopen" && pr.threadId
+                    action.id === "reopen"
                       ? onOpenThread(pr.threadId)
                       : onAction?.(pr.id, action.id)
                   }

@@ -232,12 +232,14 @@ export interface InboxDetail {
 }
 
 /**
- * A `thread_prs` row plus the GitHub fields #28 polls. `threadId` is null for a
- * PR that exists in the repo but was not opened by a JaBot session.
+ * A `thread_prs` row plus the GitHub fields #28 polls. Every row has a thread:
+ * `thread_prs.thread_id` is `NOT NULL`, because a PR gets here by a session
+ * opening it. `provider` + `repo` + `number` is the key #28 dedupes on.
  */
 export interface PullRequest {
   id: string;
-  threadId: string | null;
+  threadId: string;
+  provider: string;
   repo: string;
   number: number;
   url: string;

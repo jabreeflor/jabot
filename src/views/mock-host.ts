@@ -33,7 +33,15 @@ import type {
 } from "../components/types";
 
 /**
- * Tier-1 compiled-in harnesses plus Custom (#6, #13).
+ * The tier-1 compiled-in harnesses, and only those — the same three ids
+ * `seed.rs` writes into `harnesses`, because `threads.harness_id` is a foreign
+ * key onto that table.
+ *
+ * The prototype's "Custom" card is deliberately absent. Tier-3 harnesses are
+ * user JSON with ids of their own (#6), so there is no id `"custom"` to spawn;
+ * offering it here would let New Chat file a draft the host can only answer
+ * with `HARNESS_UNAVAILABLE`. #13 adds the real cards once the catalog can
+ * produce them.
  *
  * Pi is Mario Zechner's coding agent. The prototype called it "Inflection's
  * agent", which is wrong — Inflection Pi is a consumer chatbot.
@@ -56,12 +64,6 @@ export const HARNESSES: readonly HarnessCard[] = [
     label: "Pi",
     blurb: "Mario Zechner's coding agent",
     accent: "var(--h-pi)",
-  },
-  {
-    id: "custom",
-    label: "Custom",
-    blurb: "Point at anything on your machine that speaks ACP",
-    accent: "var(--h-custom)",
   },
 ];
 
@@ -248,6 +250,29 @@ export function initialMockState(): MockState {
         state: "folded",
         foldPolicy: "wait_for_inbox",
         runState: "running",
+      },
+      // Two sessions whose work is over but whose PRs are still on the board.
+      // They stay because `thread_prs.thread_id` is NOT NULL: a PR without the
+      // session that opened it is not a row the store can hold.
+      {
+        id: "deps",
+        folderId: "jabot-app",
+        botId: "code",
+        harnessId: "claude",
+        title: "Bump dependencies",
+        state: "archived",
+        foldPolicy: "default",
+        runState: "succeeded",
+      },
+      {
+        id: "onboarding",
+        folderId: "jabot-app",
+        botId: "code",
+        harnessId: "claude",
+        title: "Onboarding flow polish",
+        state: "archived",
+        foldPolicy: "default",
+        runState: "succeeded",
       },
     ],
     transcripts: {
@@ -443,6 +468,32 @@ export function initialMockState(): MockState {
           text: "Thread folded — will reappear in Inbox",
         },
       ],
+      deps: [
+        { kind: "stamp", id: "deps-0", text: "Yesterday" },
+        {
+          kind: "user",
+          id: "deps-1",
+          text: "Bump everything that has a patch release and see what breaks.",
+        },
+        {
+          kind: "agent",
+          id: "deps-2",
+          text: "Opened PR #19 as a draft — the dependency audit has to clear before this is reviewable.",
+        },
+      ],
+      onboarding: [
+        { kind: "stamp", id: "onboarding-0", text: "Monday" },
+        {
+          kind: "user",
+          id: "onboarding-1",
+          text: "The first-run flow is three screens too long. Cut it down.",
+        },
+        {
+          kind: "sys",
+          id: "onboarding-2",
+          text: "Session archived — PR #18 merged",
+        },
+      ],
     },
     inbox: [
       {
@@ -500,6 +551,7 @@ export function initialMockState(): MockState {
       {
         id: "pr-23",
         threadId: "auth",
+        provider: "github",
         repo: "jabot-app",
         number: 23,
         url: "https://github.com/jabreeflor/jabot-app/pull/23",
@@ -533,6 +585,7 @@ export function initialMockState(): MockState {
       {
         id: "pr-22",
         threadId: "sidebar",
+        provider: "github",
         repo: "jabot-app",
         number: 22,
         url: "https://github.com/jabreeflor/jabot-app/pull/22",
@@ -547,6 +600,7 @@ export function initialMockState(): MockState {
       {
         id: "pr-21",
         threadId: "retry",
+        provider: "github",
         repo: "globnet-sync",
         number: 21,
         url: "https://github.com/jabreeflor/globnet-sync/pull/21",
@@ -560,7 +614,8 @@ export function initialMockState(): MockState {
       },
       {
         id: "pr-19",
-        threadId: null,
+        threadId: "deps",
+        provider: "github",
         repo: "jabot-app",
         number: 19,
         url: "https://github.com/jabreeflor/jabot-app/pull/19",
@@ -574,7 +629,8 @@ export function initialMockState(): MockState {
       },
       {
         id: "pr-18",
-        threadId: null,
+        threadId: "onboarding",
+        provider: "github",
         repo: "jabot-app",
         number: 18,
         url: "https://github.com/jabreeflor/jabot-app/pull/18",
@@ -603,6 +659,7 @@ export type MockAction =
       itemId: string;
       actionId: string;
     }
+  | { type: "removeNotice"; conversationId: string; itemId: string }
   | { type: "dismissInboxCard"; cardId: string }
   | { type: "saveBot"; botId: string | null; draft: BotDraft }
   | { type: "removeBot"; botId: string };
@@ -638,6 +695,8 @@ export function mockHostReducer(state: MockState, action: MockAction): MockState
       ]);
     case "answerNotice":
       return answerNotice(state, action);
+    case "removeNotice":
+      return removeNotice(state, action.conversationId, action.itemId);
     case "dismissInboxCard":
       return {
         ...state,
@@ -766,6 +825,28 @@ function answerNotice(
       text: "Done. It's out of your way — I'll ping you the moment it needs you.",
     },
   ]);
+}
+
+/**
+ * Drop an answered card once its exit animation has run. `resolved` only fades
+ * it; leaving it in the list would keep its box, its gap, and its place in the
+ * accessibility tree — an invisible hole in the middle of the transcript.
+ */
+function removeNotice(
+  state: MockState,
+  conversationId: string,
+  itemId: string,
+): MockState {
+  const items = state.transcripts[conversationId];
+  if (!items?.some((item) => item.id === itemId)) return state;
+
+  return {
+    ...state,
+    transcripts: {
+      ...state.transcripts,
+      [conversationId]: items.filter((item) => item.id !== itemId),
+    },
+  };
 }
 
 function appendItems(

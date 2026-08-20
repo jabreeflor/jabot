@@ -26,6 +26,7 @@ function pr(over: Partial<PullRequest> = {}): PullRequest {
   return {
     id: "pr1",
     threadId: "t1",
+    provider: "github",
     repo: "jabot-app",
     number: 23,
     url: "https://example.invalid/23",

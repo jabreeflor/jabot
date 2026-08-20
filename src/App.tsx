@@ -72,15 +72,35 @@ function App() {
     return () => pending.forEach((id) => window.clearTimeout(id));
   }, []);
 
+  /** Run the data change once the exit transition has finished. */
+  function afterLeaving(then: () => void) {
+    timers.current.push(window.setTimeout(then, LEAVE_MS));
+  }
+
   /** Let the row animate out before the data change removes it. */
   function leaveThread(threadId: string, then: () => void) {
     setLeaving((ids) => [...ids, threadId]);
     setMenu(null);
-    const timer = window.setTimeout(() => {
+    afterLeaving(() => {
       then();
       setLeaving((ids) => ids.filter((id) => id !== threadId));
-    }, LEAVE_MS);
-    timers.current.push(timer);
+    });
+  }
+
+  /**
+   * Answering a notice card fades it out; this is what finally takes it out of
+   * the transcript. `resolved` alone would leave an invisible card holding its
+   * full height and still being read out.
+   */
+  function answerNotice(
+    conversationId: string,
+    itemId: string,
+    actionId: string,
+  ) {
+    dispatch({ type: "answerNotice", conversationId, itemId, actionId });
+    afterLeaving(() =>
+      dispatch({ type: "removeNotice", conversationId, itemId }),
+    );
   }
 
   function startThread(draft: NewChatDraft) {
@@ -138,14 +158,7 @@ function App() {
           onSend={(conversationId, text) =>
             dispatch({ type: "sendMessage", conversationId, text })
           }
-          onNotice={(conversationId, itemId, actionId) =>
-            dispatch({
-              type: "answerNotice",
-              conversationId,
-              itemId,
-              actionId,
-            })
-          }
+          onNotice={answerNotice}
           onInboxAction={(cardId, actionId) => {
             if (actionId === "archive") {
               dispatch({ type: "dismissInboxCard", cardId });
@@ -272,8 +285,11 @@ function MainView({
           </div>
         );
       }
+      // Keyed by thread: a conversation is its own component instance, so an
+      // unsent draft cannot follow you into the next thread's composer.
       return (
         <ThreadView
+          key={thread.id}
           thread={thread}
           harnesses={HARNESSES}
           host={host}
@@ -290,6 +306,7 @@ function MainView({
       if (!bot) return <div className="view" />;
       return (
         <ChatView
+          key={bot.id}
           bot={bot}
           host={host}
           items={state.transcripts[bot.id] ?? []}

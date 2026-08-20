@@ -4,9 +4,12 @@
  * when they replace it: fold hides but does not notify, delete takes the Inbox
  * cards with it, Chief cannot be removed.
  */
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
+  HARNESSES,
   initialMockState,
   mockHostReducer,
   needsYouCount,
@@ -28,6 +31,35 @@ describe("sidebarFolders", () => {
     expect(nas?.state).toBe("folded");
     expect(threadIds(state, "globnet-sync")).not.toContain("nas");
     expect(threadIds(state, "globnet-sync")).toContain("retry");
+  });
+});
+
+describe("the seed", () => {
+  it("gives every PR the session that opened it", () => {
+    const state = initialMockState();
+    const threads = new Set(state.threads.map((thread) => thread.id));
+
+    expect(state.pullRequests.length).toBeGreaterThan(0);
+    for (const pr of state.pullRequests) {
+      // `thread_prs.thread_id` is NOT NULL; a PR with no session is a row the
+      // store cannot hold, so the mock must not invent one.
+      expect(threads).toContain(pr.threadId);
+    }
+  });
+
+  it("offers only harnesses the store can spawn", () => {
+    const seed = readFileSync(
+      new URL("../../src-tauri/src/host/store/seed.rs", import.meta.url),
+      "utf8",
+    );
+    const builtins = [...seed.matchAll(/BuiltinHarness \{\s*id: "([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+
+    expect(builtins).toContain("claude");
+    for (const harness of HARNESSES) {
+      expect(builtins).toContain(harness.id);
+    }
   });
 });
 
@@ -147,6 +179,41 @@ describe("answerNotice", () => {
     expect(after.transcripts.chief).toHaveLength(
       before.transcripts.chief.length,
     );
+  });
+});
+
+describe("removeNotice", () => {
+  it("takes the answered card out of the transcript, not just out of sight", () => {
+    const answered = mockHostReducer(initialMockState(), {
+      type: "answerNotice",
+      conversationId: "chief",
+      itemId: "chief-3",
+      actionId: "watch",
+    });
+    const after = mockHostReducer(answered, {
+      type: "removeNotice",
+      conversationId: "chief",
+      itemId: "chief-3",
+    });
+
+    expect(after.transcripts.chief.some((item) => item.id === "chief-3")).toBe(
+      false,
+    );
+    // The rest of the conversation is untouched — only the card goes.
+    expect(after.transcripts.chief).toHaveLength(
+      answered.transcripts.chief.length - 1,
+    );
+  });
+
+  it("is a no-op for a card that has already gone", () => {
+    const state = initialMockState();
+    const after = mockHostReducer(state, {
+      type: "removeNotice",
+      conversationId: "chief",
+      itemId: "chief-3-again",
+    });
+
+    expect(after).toBe(state);
   });
 });
 
