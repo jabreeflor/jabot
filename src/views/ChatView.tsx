@@ -1,6 +1,11 @@
 //! A bot's standing chat. Chief and every worker has exactly one (#6) — extra
 //! tasks append to it or fold away to the Inbox, so there is no thread list here
 //! and no way to accumulate twelve half-finished conversations with the Writer.
+//!
+//! The conversation controls #14 added to the code thread are optional props
+//! here rather than a second implementation: nothing opens a bot's standing
+//! thread yet (#24 does), and when something does, this view already carries
+//! the queue strip, the Stop button and the error line that a live turn needs.
 
 import { Blob } from "../components/Blob";
 import { Conversation } from "../components/Conversation";
@@ -14,6 +19,10 @@ export function ChatView({
   onSend,
   onAction,
   onPickHost,
+  busy,
+  queued,
+  onCancel,
+  error,
 }: {
   bot: Bot;
   host: HostTarget;
@@ -21,6 +30,11 @@ export function ChatView({
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
   onPickHost?: (hostId: string) => void;
+  /** A turn is in flight on this bot's standing thread (#24). */
+  busy?: boolean;
+  queued?: readonly string[];
+  onCancel?: () => void;
+  error?: string | null;
 }) {
   return (
     <Conversation
@@ -35,6 +49,10 @@ export function ChatView({
       composerPlaceholder={`Message ${bot.name}`}
       onSend={onSend}
       onAction={onAction}
+      busy={busy}
+      queued={queued}
+      onCancel={onCancel}
+      error={error}
     />
   );
 }

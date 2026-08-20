@@ -46,6 +46,7 @@ export function BotEditorModal({
   templates,
   tools,
   harnesses,
+  error = null,
   onSave,
   onRemove,
   onCancel,
@@ -55,6 +56,10 @@ export function BotEditorModal({
   templates: readonly BotTemplate[];
   tools: readonly ToolOption[];
   harnesses: readonly HarnessCard[];
+  /** Why the last save or remove was refused. The modal stays open holding
+      the form: "unknown tool" and "no such harness" are things to fix and
+      retry, not reasons to lose what the user typed. */
+  error?: string | null;
   onSave: (draft: BotDraft) => void;
   onRemove?: (botId: string) => void;
   onCancel: () => void;
@@ -177,6 +182,12 @@ export function BotEditorModal({
           </button>
         ))}
       </div>
+
+      {error && (
+        <p className="modal-error" role="alert">
+          {error}
+        </p>
+      )}
 
       <div className="macts">
         {!adding && !bot.isChief && onRemove && (
