@@ -9,7 +9,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
+  BOT_TEMPLATES,
   HARNESSES,
+  HOST_TOOLS,
   TOOL_CATALOG,
   initialMockState,
   mockHostReducer,
@@ -62,6 +64,39 @@ describe("the seed", () => {
     expect(entries.map((entry) => entry.id)).toContain("terminal");
     for (const tool of TOOL_CATALOG) {
       expect(entries).toContainEqual({ id: tool.id, label: tool.label });
+    }
+  });
+
+  it("ships the same template packs the host ships", () => {
+    // The packs in `src-tauri/src/host/crew/templates/` are the source of
+    // truth (#17); this list is only the fallback the shell renders before
+    // `crew/list` answers. A fallback that promises different tools than the
+    // host would accept is a template whose Save fails.
+    for (const template of BOT_TEMPLATES) {
+      const pack = JSON.parse(
+        readFileSync(
+          `src-tauri/src/host/crew/templates/${template.templateId}.json`,
+          "utf8",
+        ),
+      ) as unknown;
+      expect(pack).toEqual({ ...template });
+    }
+  });
+
+  it("names Chief's host tools exactly as the host names them", () => {
+    // Not MCP and not in `tools/list`, so `crew/list` carries them (#6). The
+    // ids are what Chief's seeded allowlist contains — a label the host does
+    // not know would print a raw id on Chief's card.
+    const crew = readFileSync("src-tauri/src/host/crew/mod.rs", "utf8");
+    const host = [
+      ...crew
+        .slice(crew.indexOf("pub const HOST_TOOLS:"))
+        .matchAll(/id: "([^"]+)",\s*\n\s*label: "([^"]+)"/g),
+    ].map(([, id, label]) => ({ id, label }));
+
+    expect(host).toHaveLength(HOST_TOOLS.length);
+    for (const tool of HOST_TOOLS) {
+      expect(host).toContainEqual({ id: tool.id, label: tool.label });
     }
   });
 
