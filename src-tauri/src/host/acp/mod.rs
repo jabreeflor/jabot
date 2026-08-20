@@ -39,6 +39,10 @@ pub(crate) struct PendingPermission {
 impl HostSession {
     pub fn session_prompt(&mut self, params: PromptParams) -> Result<PromptResult, RpcError> {
         let thread_id = params.thread_id.clone();
+        // Before anything is spawned: a turn already in flight owns this
+        // session, and starting a second one loses whichever result comes back
+        // second (#15).
+        self.refuse_overlapping_run(&thread_id)?;
         self.ensure_connection(&params)?;
         let cwd = self.resolve_cwd(&params)?;
         let existing = self
@@ -346,18 +350,27 @@ impl HostSession {
                 }
             }
             Inbound::PromptResult(result) => {
+                let stop_reason = result
+                    .get("stopReason")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
                 let acp = json!({
                     "sessionUpdate": "state_update",
                     "sessionState": "idle",
-                    "stopReason": result.get("stopReason").cloned().unwrap_or(Value::Null),
+                    "stopReason": stop_reason,
                     "result": result,
                 });
                 self.persist_transcript(thread_id, "session/prompt", &acp);
-                self.notify_session_update(thread_id, acp.clone());
-                // v1 completion. A v2 adapter also sends `state_update`; the
-                // ledger transition is idempotent so whichever lands first wins
-                // and the other is a no-op.
-                self.lifecycle_on_update(thread_id, &acp);
+                self.notify_session_update(thread_id, acp);
+                // The completion signal, and the authoritative one: ACP puts
+                // the stop reason on the prompt *response*. Ending the turn
+                // straight from here rather than through a synthesized
+                // `state_update` means a response that carries no stop reason
+                // still ends the run, while a v2 adapter merely reporting that
+                // it went idle no longer ends one it knows nothing about. A v2
+                // adapter that does report a stop reason gets there first; the
+                // ledger transition is idempotent and this is then a no-op.
+                self.lifecycle_on_turn_end(thread_id, stop_reason.as_deref());
             }
             Inbound::Closed { error } => {
                 if let Some(err) = &error {

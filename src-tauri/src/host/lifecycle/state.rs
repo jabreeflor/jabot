@@ -98,12 +98,15 @@ impl ThreadAction {
     }
 }
 
-/// Ranking used when a thread that is already resurfaced comes back again.
+/// Ranking used when a thread that is already resurfaced comes back again
+/// *while the run is still going*.
 ///
+/// This is about how loud the notification is, not about what happened.
 /// `stuck → needs_you` is a real upgrade (the agent stopped being merely quiet
 /// and now wants an answer) and `resurface.md` says the notification replaces
 /// the old one. The reverse is not: nothing that arrives later should downgrade
-/// a card the user is being asked to act on.
+/// a card the user is being asked to act on — unless it is an outcome, see
+/// [`is_outcome`].
 fn urgency(reason: ResurfaceReason) -> u8 {
     match reason {
         ResurfaceReason::Done => 0,
@@ -111,6 +114,20 @@ fn urgency(reason: ResurfaceReason) -> u8 {
         ResurfaceReason::Failed => 2,
         ResurfaceReason::NeedsYou => 3,
     }
+}
+
+/// Does this reason report a *closed run* — work that actually ended?
+///
+/// An outcome is exempt from the urgency ranking, because the Inbox is a
+/// projection of the ledger and the two are not allowed to disagree.
+/// `resurface.md`'s mapping table sends `idle + end_turn` to **Done**, so a
+/// folded thread that went quiet, resurfaced `stuck`, and then finished has to
+/// stop reading "has gone quiet" — otherwise finished work sits under Needs
+/// you forever with no path back. The rule the loudness ranking encodes is
+/// about replacing a live notification, not about refusing to update the card
+/// once the answer is known.
+fn is_outcome(reason: ResurfaceReason) -> bool {
+    matches!(reason, ResurfaceReason::Done | ResurfaceReason::Failed)
 }
 
 /// The transition table. `current_reason` is only consulted for a re-resurface.
@@ -155,6 +172,11 @@ pub fn next_state(
         // You cannot re-sleep a card that already came back: fold again from
         // `active` after reopening it.
         (Resurfaced, Resurface(next)) => match current_reason {
+            // The card already says this. A second identical resurface has
+            // nothing new to tell anyone and would only stack a duplicate row.
+            Some(current) if current == next => illegal(),
+            // The run ended. Say what happened, even over a louder card.
+            _ if is_outcome(next) => Ok(Resurfaced),
             Some(current) if urgency(next) <= urgency(current) => illegal(),
             _ => Ok(Resurfaced),
         },
@@ -245,6 +267,37 @@ mod tests {
             Resurfaced,
             Resurface(ResurfaceReason::Done),
             Some(ResurfaceReason::Done)
+        )
+        .is_err());
+    }
+
+    /// The loudness ranking must not outlive the run it was ranking. A thread
+    /// that went quiet and then finished is Done — `resurface.md`'s own mapping
+    /// table says so — and leaving it under "has gone quiet" strands finished
+    /// work in the Needs you tab.
+    #[test]
+    fn an_outcome_replaces_the_card_that_was_only_a_status() {
+        for current in [ResurfaceReason::Stuck, ResurfaceReason::NeedsYou] {
+            for outcome in [ResurfaceReason::Done, ResurfaceReason::Failed] {
+                assert_eq!(
+                    next_state(Resurfaced, Resurface(outcome), Some(current)),
+                    Ok(Resurfaced),
+                    "{current:?} → {outcome:?}"
+                );
+            }
+        }
+        // A finished run that finishes again is still nothing new, and going
+        // quiet is not an outcome: it cannot displace an ask the user owes.
+        assert!(next_state(
+            Resurfaced,
+            Resurface(ResurfaceReason::Failed),
+            Some(ResurfaceReason::Failed)
+        )
+        .is_err());
+        assert!(next_state(
+            Resurfaced,
+            Resurface(ResurfaceReason::Stuck),
+            Some(ResurfaceReason::NeedsYou)
         )
         .is_err());
     }

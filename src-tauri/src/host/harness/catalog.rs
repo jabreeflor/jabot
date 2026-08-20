@@ -71,7 +71,9 @@ pub struct HarnessDescriptor {
     /// The vendor CLI behind the adapter. Its absence is `CliMissing` — a
     /// different sentence to the user than "the ACP adapter is missing".
     pub cli: Option<String>,
-    /// Floor, not override: a value the user already exported wins.
+    /// Floor, not override: a value the user already exported wins. Resolved
+    /// in [`HarnessDescriptor::runtime_spec`], so what a thread snapshots is
+    /// what the supervisor will apply.
     pub env: BTreeMap<String, String>,
     pub install_hint: Option<String>,
     pub install_url: Option<String>,
@@ -82,11 +84,23 @@ pub struct HarnessDescriptor {
 impl HarnessDescriptor {
     /// What `thread/open` snapshots and what the supervisor spawns, for one
     /// resolved candidate.
+    ///
+    /// The env floor is resolved *here*, because this is the one place where
+    /// the env is purely the catalog's: a key the user already exported is
+    /// left out of the snapshot so their value is the one the child inherits.
+    /// Downstream the spec is indistinguishable from env a client passed to
+    /// `thread/open`, and that env is not a default the environment may
+    /// outvote — it is the runtime the thread recorded.
     pub fn runtime_spec(&self, launch: &Launch) -> RuntimeSpec {
+        let env: BTreeMap<String, String> =
+            super::floor_env(&self.env, |key| std::env::var_os(key).is_some())
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect();
         RuntimeSpec {
             command: launch.command.clone(),
             args: Some(launch.args.clone()),
-            env: (!self.env.is_empty()).then(|| self.env.clone()),
+            env: (!env.is_empty()).then_some(env),
             install_hint: self.install_hint.clone(),
         }
     }
@@ -353,6 +367,34 @@ mod tests {
             .map(|l| l.command.as_str().to_string())
             .collect();
         assert_eq!(commands, ["claude-agent-acp", "claude-code-acp"]);
+    }
+
+    /// The floor is the snapshot's, not the spawner's: a key the environment
+    /// already answers is omitted so the exported value survives, and
+    /// everything else is recorded verbatim for the supervisor to apply.
+    #[test]
+    fn runtime_spec_drops_env_the_environment_already_answers() {
+        let mut hermes = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "hermes")
+            .unwrap();
+        let spec = hermes.runtime_spec(hermes.primary());
+        assert_eq!(
+            spec.env
+                .as_ref()
+                .and_then(|env| env.get("HERMES_ACP_SKIP_CONFIGURED_MCP"))
+                .map(String::as_str),
+            Some("1"),
+            "an unexported switch belongs in the snapshot"
+        );
+
+        // `HOME` stands in for "the user exported this already" — it is the one
+        // key every machine running this test has set.
+        if std::env::var_os("HOME").is_some() {
+            hermes.env.insert("HOME".into(), "/jabot/floor".into());
+            let spec = hermes.runtime_spec(hermes.primary());
+            assert!(!spec.env.expect("catalog env").contains_key("HOME"));
+        }
     }
 
     #[test]

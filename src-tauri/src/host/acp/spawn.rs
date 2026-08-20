@@ -6,10 +6,9 @@
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::thread;
-use std::time::{Duration, Instant};
 
 use super::super::harness;
+use super::super::procgroup;
 use super::runtime::HarnessRuntime;
 
 #[derive(Debug)]
@@ -61,7 +60,14 @@ pub fn spawn_adapter(
     // shells out to `node`, `git`, or its own vendor CLI would not find them.
     // Hand the child the same augmented PATH the catalog probed with (#13).
     cmd.env("PATH", harness::path::joined());
-    for (key, value) in harness::floor_env(&runtime.env, |key| std::env::var_os(key).is_some()) {
+    // Applied as written, not as a default. By the time a runtime reaches the
+    // spawner its env is the thread's snapshot: the catalog's floor was
+    // already resolved when the spec was built (`HarnessDescriptor::
+    // runtime_spec`), and everything else came from the client's `thread/open`
+    // or a tier-3 file. Letting the host's own environment win here would mean
+    // an exported `HERMES_HOME` quietly redirecting every profile-scoped
+    // thread onto one state directory (`setup-porting/hermes.md`).
+    for (key, value) in &runtime.env {
         cmd.env(key, value);
     }
     if let Some(cwd) = cwd {
@@ -70,19 +76,7 @@ pub fn spawn_adapter(
         }
     }
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // New process group; child's pid becomes the pgid.
-        cmd.process_group(0);
-    }
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x00000200;
-        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP);
-    }
+    procgroup::own_group(&mut cmd);
 
     let mut child = cmd.spawn().map_err(|source| SpawnError::Spawn {
         command: runtime.command.clone(),
@@ -100,26 +94,7 @@ pub fn spawn_adapter(
 
 /// SIGTERM the process group, then SIGKILL if it is still alive.
 pub fn terminate_process_group(child: &mut Child) {
-    #[cfg(unix)]
-    {
-        let pid = child.id() as i32;
-        unsafe {
-            libc::kill(-pid, libc::SIGTERM);
-        }
-        let deadline = Instant::now() + Duration::from_millis(400);
-        while Instant::now() < deadline {
-            match child.try_wait() {
-                Ok(Some(_)) => return,
-                Ok(None) => thread::sleep(Duration::from_millis(20)),
-                Err(_) => break,
-            }
-        }
-        unsafe {
-            libc::kill(-pid, libc::SIGKILL);
-        }
-    }
-    let _ = child.kill();
-    let _ = child.wait();
+    procgroup::terminate(child);
 }
 
 #[cfg(test)]
@@ -127,7 +102,10 @@ mod tests {
     use super::*;
     use crate::host::acp::runtime::HarnessRuntime;
     use std::collections::BTreeMap;
-    use std::process::Command;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use crate::host::procgroup::process_alive;
 
     #[cfg(unix)]
     #[test]
@@ -175,26 +153,38 @@ mod tests {
         );
     }
 
-    /// True only if the pid is a *running* process.
-    ///
-    /// `kill -0` is not enough: it succeeds for a zombie, and a
-    /// group-killed grandchild is exactly that until its reparented
-    /// init gets around to reaping it. Under a PID 1 that does not reap
-    /// promptly — most containers, including CI — `kill -0` would report
-    /// a corpse as alive and fail this test against correct code. Ask for
-    /// the process state instead and treat `Z` as gone.
+    /// A thread's snapshotted env is the runtime it recorded, so it has to
+    /// reach the child even when the host process exports the same key. `HOME`
+    /// is the one key every machine running this test already has, which makes
+    /// it the only honest way to ask the question without mutating the test
+    /// process's own environment.
     #[cfg(unix)]
-    fn process_alive(pid: i32) -> bool {
-        let output = Command::new("ps")
-            .args(["-o", "stat=", "-p", &pid.to_string()])
-            .output();
-        match output {
-            Ok(output) => {
-                let state = String::from_utf8_lossy(&output.stdout);
-                let state = state.trim();
-                !state.is_empty() && !state.starts_with('Z')
-            }
-            Err(_) => false,
-        }
+    #[test]
+    fn snapshotted_env_beats_the_hosts_own() {
+        let Some(host_home) = std::env::var_os("HOME") else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let seen = dir.path().join("home.txt");
+        let runtime = HarnessRuntime {
+            id: "env".into(),
+            command: "sh".into(),
+            args: vec![
+                "-c".into(),
+                format!("printf %s \"$HOME\" > {}", seen.display()),
+            ],
+            env: BTreeMap::from([("HOME".to_string(), "/jabot/from-thread".to_string())]),
+            install_hint: None,
+        };
+        let mut spawned = spawn_adapter(&runtime, None, &dir.path().join("stderr.log")).unwrap();
+        drop(spawned.stdin);
+        drop(spawned.stdout);
+        spawned.child.wait().unwrap();
+
+        assert_ne!(host_home, std::ffi::OsString::from("/jabot/from-thread"));
+        assert_eq!(
+            std::fs::read_to_string(&seen).unwrap(),
+            "/jabot/from-thread"
+        );
     }
 }

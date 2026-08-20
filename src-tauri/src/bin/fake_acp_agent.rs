@@ -8,6 +8,11 @@
 //! - `hang`: stream a chunk and then go silent forever, so the idle-timeout
 //!   backstop has something real to fire on
 //! - `fail`: return a non-`end_turn` stop reason
+//! - `late-end`: stream a chunk, stay quiet long enough for the idle-timeout
+//!   backstop to fire, and only then return `end_turn`
+//! - `v2-idle`: report going idle with **no** stop reason before returning
+//!   `end_turn` on the prompt response — the shape an ACP v2 adapter has, and
+//!   the one where idleness alone must not be read as an outcome
 //! - `grandchild`: spawn a `sleep` grandchild in the same process group
 //! - `old-acp`: answer `initialize` with a protocol version older than the
 //!   host speaks, so the Doctor's deep probe has a real outdated adapter
@@ -128,6 +133,32 @@ fn main() {
                     // Never answers. The turn stays open and the host has to
                     // notice the silence on its own.
                     "hang" => {}
+                    // Quiet long enough to be called stuck, then finishes
+                    // anyway — the agent was slow, not wedged.
+                    "late-end" => {
+                        std::thread::sleep(std::time::Duration::from_millis(400));
+                        reply(
+                            &mut stdout,
+                            id,
+                            serde_json::json!({ "stopReason": "end_turn" }),
+                        );
+                    }
+                    "v2-idle" => {
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "state_update",
+                                "sessionState": "idle"
+                            }),
+                        );
+                        reply(
+                            &mut stdout,
+                            id,
+                            serde_json::json!({ "stopReason": "end_turn" }),
+                        );
+                    }
                     "fail" => reply(
                         &mut stdout,
                         id,

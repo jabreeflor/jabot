@@ -432,12 +432,21 @@ pub fn list_inbox_events(
 
 /// Badge count. `thread_id` narrows it to one row's dot; `None` is the Inbox
 /// nav badge.
+///
+/// Only threads the Inbox still shows can badge it. `resurface.md` defines the
+/// nav badge as resurfaced-and-unread, and `state-machine.md` hides `archived`
+/// from both the sidebar and the Inbox — a badge for a thread the user has
+/// archived points at a row that is not there any more, and nothing in the UI
+/// could ever clear it.
 pub fn count_unread_inbox(conn: &Connection, thread_id: Option<&str>) -> Result<i64, StoreError> {
     conn.query_row(
         "SELECT COUNT(*) FROM inbox_events
          WHERE read_at IS NULL AND dismissed_at IS NULL
            AND (?1 IS NULL OR thread_id = ?1)
-           AND thread_id IN (SELECT id FROM threads WHERE deleted_at IS NULL)",
+           AND thread_id IN (
+                SELECT id FROM threads
+                WHERE deleted_at IS NULL AND state IN ('folded', 'resurfaced')
+           )",
         [thread_id],
         |row| row.get(0),
     )
@@ -534,6 +543,12 @@ pub fn get_session_receipt(
 /// failure part-way through does not leave a resurfaced thread with no Inbox
 /// row to open. The notification is emitted by the caller, strictly after this
 /// returns `Ok` (#15, persist-then-notify).
+///
+/// The card the user has not read yet is the Inbox twin of the one live
+/// notification `resurface.md` allows per thread, so a resurface **replaces**
+/// it rather than stacking beside it: a thread that went quiet and then
+/// finished shows one Done row, not a stale "has gone quiet" next to its own
+/// answer. Read cards are history from an earlier visit to the Inbox and stay.
 #[allow(clippy::too_many_arguments)]
 pub fn resurface_thread(
     conn: &Connection,
@@ -560,6 +575,13 @@ pub fn resurface_thread(
     if changed == 0 {
         return Err(StoreError::NotFound(id.into()));
     }
+    tx.execute(
+        "UPDATE inbox_events SET dismissed_at = ?2
+         WHERE thread_id = ?1
+           AND read_at IS NULL AND dismissed_at IS NULL
+           AND kind IN ('done', 'failed', 'stuck', 'needs_you')",
+        params![id, now],
+    )?;
     let event = insert_inbox_event(&tx, id, run_id, kind, title, summary, payload_json)?;
     let row = get_thread(&tx, id)?.ok_or_else(|| StoreError::NotFound(id.into()))?;
     tx.commit()?;

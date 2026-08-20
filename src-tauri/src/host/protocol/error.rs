@@ -17,6 +17,7 @@ pub const HARNESS_UNAVAILABLE: i64 = -32004;
 pub const ILLEGAL_TRANSITION: i64 = -32005;
 pub const THREAD_NOT_FOUND: i64 = -32006;
 pub const STORE_UNAVAILABLE: i64 = -32007;
+pub const RUN_IN_FLIGHT: i64 = -32008;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -56,6 +57,16 @@ pub enum RpcError {
     ThreadNotFound(String),
     #[error("this host has no store; lifecycle state cannot be persisted")]
     StoreUnavailable,
+    /// A second prompt while the thread's run is still in flight. ACP runs one
+    /// turn per session at a time, and the outcome that comes back names no
+    /// prompt — so a second run would be handed the first turn's stop reason
+    /// and the first run would end holding nothing (#15).
+    #[error("thread {thread_id} already has a run in flight")]
+    RunInFlight {
+        thread_id: String,
+        run_id: String,
+        state: String,
+    },
 }
 
 impl RpcError {
@@ -74,6 +85,7 @@ impl RpcError {
             Self::IllegalTransition { .. } => ILLEGAL_TRANSITION,
             Self::ThreadNotFound(_) => THREAD_NOT_FOUND,
             Self::StoreUnavailable => STORE_UNAVAILABLE,
+            Self::RunInFlight { .. } => RUN_IN_FLIGHT,
         }
     }
 
@@ -107,6 +119,15 @@ impl RpcError {
             })),
             Self::ThreadNotFound(thread_id) => Some(serde_json::json!({
                 "threadId": thread_id,
+            })),
+            Self::RunInFlight {
+                thread_id,
+                run_id,
+                state,
+            } => Some(serde_json::json!({
+                "threadId": thread_id,
+                "runId": run_id,
+                "runState": state,
             })),
             _ => None,
         }

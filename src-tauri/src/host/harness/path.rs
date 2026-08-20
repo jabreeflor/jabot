@@ -151,13 +151,16 @@ fn login_shell_path() -> Option<String> {
     }
     // `-l -c` so rc files that set PATH actually run; `printf` rather than
     // `echo` so nothing adds a trailing newline of its own.
-    let mut child = Command::new(&shell)
-        .args(["-l", "-c", "printf %s \"$PATH\""])
+    let mut cmd = Command::new(&shell);
+    cmd.args(["-l", "-c", "printf %s \"$PATH\""])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+        .stderr(Stdio::null());
+    // Its own group, because a login shell runs the user's rc files and those
+    // routinely start background work. On the timeout path below, killing the
+    // shell alone would leave that work orphaned.
+    super::super::procgroup::own_group(&mut cmd);
+    let mut child = cmd.spawn().ok()?;
     let deadline = std::time::Instant::now() + LOGIN_SHELL_TIMEOUT;
     loop {
         match child.try_wait() {
@@ -166,8 +169,7 @@ fn login_shell_path() -> Option<String> {
                 std::thread::sleep(Duration::from_millis(25));
             }
             Ok(None) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                super::super::procgroup::terminate(&mut child);
                 return None;
             }
             Err(_) => return None,

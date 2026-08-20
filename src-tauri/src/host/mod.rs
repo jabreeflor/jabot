@@ -8,6 +8,7 @@ mod harness;
 mod identity;
 mod lifecycle;
 mod log;
+mod procgroup;
 mod protocol;
 mod router;
 mod seq;

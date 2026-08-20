@@ -289,6 +289,32 @@ impl HostSession {
 
     // ---- supervisor hooks, driven by the ACP layer (#10) ---------------
 
+    /// One turn per session at a time. Refuse a prompt that would overlap a run
+    /// that is still in flight.
+    ///
+    /// ACP gives us no way to tell two concurrent turns apart: the stop reason
+    /// comes back on a response the host matches to the thread, not to the
+    /// prompt it answers, so a second run would collect the first turn's
+    /// outcome and the first run would be retired holding nothing. "A result
+    /// must not be lost" is the invariant that forbids it. Queueing the second
+    /// prompt instead of refusing it is #26's call, not a guess made here.
+    ///
+    /// A run left open by a host that quit has no adapter behind it and really
+    /// is lost; it is let through so a relaunch can prompt again.
+    pub(crate) fn refuse_overlapping_run(&self, thread_id: &str) -> Result<(), RpcError> {
+        let Some((run_id, state)) = self.open_run(thread_id) else {
+            return Ok(());
+        };
+        if !self.connections.contains_key(thread_id) {
+            return Ok(());
+        }
+        Err(RpcError::RunInFlight {
+            thread_id: thread_id.to_string(),
+            run_id,
+            state: state.as_str().to_string(),
+        })
+    }
+
     /// A prompt was accepted: open a run and stamp the session receipt.
     pub(crate) fn lifecycle_run_started(&mut self, thread_id: &str, acp_session_id: &str) {
         {
@@ -303,9 +329,10 @@ impl HostSession {
         let Ok(Some(thread)) = store.get_thread(thread_id) else {
             return;
         };
-        // A previous run still open when a new prompt arrives will never report
-        // its own outcome — `lost` is exactly that: we stopped being able to
-        // find out.
+        // A previous run still open here is one no adapter is going to report
+        // on — a live one is refused by [`Self::refuse_overlapping_run`] before
+        // we get this far, so what is left is a run whose host quit under it.
+        // `lost` is exactly that: we stopped being able to find out.
         if let Ok(Some(previous)) = store.latest_run(thread_id) {
             if RunState::parse(&previous.state).map(RunState::is_open) == Ok(true) {
                 let _ = store.set_run_state(
@@ -365,20 +392,33 @@ impl HostSession {
             .map(AcpState::parse)
             .unwrap_or(AcpState::Unknown);
         self.lifecycle.entry(thread_id).acp = reported;
+        // Going idle is a process fact, not an outcome. ACP carries the stop
+        // reason on the `session/prompt` *response*, so a `state_update` that
+        // only says "idle" has told us nothing about how the turn went —
+        // ending the run on it would classify an ordinary `end_turn` as
+        // `failed` before the response that says otherwise even arrives, and
+        // the response would then find no open run to correct. The v1
+        // completion path (`acp::handle_inbound`) ends the turn on its own.
         if reported == AcpState::Idle {
-            let stop = acp
-                .get("stopReason")
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            self.lifecycle_on_turn_end(thread_id, stop.as_deref());
+            if let Some(stop) = acp.get("stopReason").and_then(Value::as_str) {
+                self.lifecycle_on_turn_end(thread_id, Some(stop));
+            }
         }
     }
 
-    /// Idle plus a stop reason: close the run, and resurface if this thread was
-    /// folded. An `active` thread just shows "session finished" in chat.
+    /// The turn ended: close the run, and resurface if this thread was folded.
+    /// An `active` thread just shows "session finished" in chat.
+    ///
+    /// Idempotent, because a v2 adapter reports the same ending twice — once as
+    /// `state_update` with a stop reason and once as the prompt response.
+    /// Whichever lands first closes the run; the other finds none open.
     pub(crate) fn lifecycle_on_turn_end(&mut self, thread_id: &str, stop_reason: Option<&str>) {
         let outcome = resurface::classify_stop(stop_reason);
-        self.lifecycle.entry(thread_id).acp = AcpState::Idle;
+        {
+            let entry = self.lifecycle.entry(thread_id);
+            entry.touch();
+            entry.acp = AcpState::Idle;
+        }
         let target = match outcome {
             resurface::StopOutcome::Done => RunState::Succeeded,
             resurface::StopOutcome::Failed => RunState::Failed,
@@ -398,6 +438,13 @@ impl HostSession {
             // A cancel the user asked for gets a quiet row, not a card.
             return;
         };
+        // An ask the human still owes outranks the outcome. The agent may have
+        // walked away from its own `request_permission`, but we cannot know
+        // that, and replacing the Needs you card would drop the only pointer to
+        // a question nobody answered.
+        if self.pending_permission_count(thread_id) > 0 {
+            return;
+        }
         let summary = match reason {
             ResurfaceReason::Done => "finished".to_string(),
             _ => error.unwrap_or_else(|| "the run did not finish".into()),
@@ -587,7 +634,6 @@ impl HostSession {
             if self.pending_permission_count(&thread_id) > 0 {
                 continue;
             }
-            self.lifecycle.entry(&thread_id).stuck_reported = true;
             // The run stays `running` and the process stays alive on purpose:
             // stuck means "no output for a while", not "give up". `timed_out`
             // is reserved for a hard cap that actually ends a run.
@@ -596,12 +642,28 @@ impl HostSession {
                 .lifecycle
                 .get(&thread_id)
                 .and_then(|s| s.run_id.clone());
-            self.try_resurface(
+            // Latch only what actually landed. `resurface.md` gates the
+            // backstop on `folded`, so a thread the user is still watching
+            // reports `false` here — and it has to stay eligible, because the
+            // only thing that clears the latch is the adapter saying
+            // something, and a wedged adapter says nothing. Latching on the
+            // way past would mean "went quiet on screen, then folded" never
+            // produces a card: the exact failure the backstop exists for.
+            let reported = match self.resurface_and_notify(
                 &thread_id,
                 ResurfaceReason::Stuck,
                 &summary,
                 run_id.as_deref(),
-            );
+            ) {
+                Ok(reported) => reported,
+                Err(err) => {
+                    eprintln!("failed to resurface {thread_id}: {err}");
+                    // A store that could not take the card will not take it
+                    // next tick either; latch so we log once, not per pump.
+                    true
+                }
+            };
+            self.lifecycle.entry(&thread_id).stuck_reported = reported;
         }
     }
 
@@ -765,6 +827,15 @@ impl HostSession {
     /// and it is what quit already does.
     fn close_out(&mut self, thread_id: &str, why: &str) {
         let _ = self.cancel_pending_permissions(thread_id, why);
+        // Archive is one of the two actions on a resurfaced card, and it hides
+        // the thread from the Inbox for good (`state-machine.md`: archived is
+        // Sidebar hidden / Inbox hidden). A badge for a thread the user has
+        // just closed out has no screen left to send them to.
+        if let Some(store) = self.store.as_ref() {
+            if let Err(err) = store.mark_inbox_read(thread_id) {
+                eprintln!("failed to clear the Inbox badge for {thread_id}: {err}");
+            }
+        }
         if let Some((run_id, run_state)) = self.open_run(thread_id) {
             if let Some(store) = self.store.as_ref() {
                 if ledger::advance(run_state, RunState::Cancelled).is_ok() {

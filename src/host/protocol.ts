@@ -503,4 +503,6 @@ export const RPC_ERROR = {
   ILLEGAL_TRANSITION: -32005,
   THREAD_NOT_FOUND: -32006,
   STORE_UNAVAILABLE: -32007,
+  /** A prompt arrived while the thread's run was still in flight (#15). */
+  RUN_IN_FLIGHT: -32008,
 } as const;

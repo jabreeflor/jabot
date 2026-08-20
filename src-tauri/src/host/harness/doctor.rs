@@ -16,6 +16,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use super::super::procgroup;
 use super::super::protocol::methods::HarnessStatus;
 use super::catalog::{HarnessDescriptor, Launch, Readiness};
 
@@ -107,6 +108,29 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
         elapsed_ms: started.elapsed().as_millis() as u64,
     };
 
+    // The vendor CLI is asked about first, before any adapter resolves,
+    // because an adapter that is present says nothing about the product it
+    // drives. `npx -y pi-acp` resolves on every machine with Node, so without
+    // this Pi would report ready on a box with no Pi — the PATH-only false
+    // ready this Doctor exists to prevent (`setup-porting/buzz.md` §4). And a
+    // readiness command whose binary is absent (`claude auth status` with no
+    // `claude`) would come back as an unanswered question with a login remedy
+    // the user cannot follow, when the answer was knowable up front.
+    if let Some(cli) = descriptor.cli.as_deref() {
+        if probe.resolve(cli).is_none() {
+            return finish(
+                HarnessStatus::CliMissing,
+                format!(
+                    "{} is not installed — no `{cli}` on PATH.",
+                    descriptor.label
+                ),
+                descriptor.install_hint.clone(),
+                None,
+                None,
+            );
+        }
+    }
+
     let resolved = descriptor
         .launches
         .iter()
@@ -120,18 +144,9 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
             .collect::<Vec<_>>()
             .join(", ");
         // Which of the two sentences the user gets decides which page they go
-        // read: install the product, or install its ACP adapter.
+        // read: install the product, or install its ACP adapter. The CLI is
+        // known to be here by now, so this can only be the adapter.
         return match descriptor.cli.as_deref() {
-            Some(cli) if probe.resolve(cli).is_none() => finish(
-                HarnessStatus::CliMissing,
-                format!(
-                    "{} is not installed — no `{cli}` on PATH.",
-                    descriptor.label
-                ),
-                descriptor.install_hint.clone(),
-                None,
-                None,
-            ),
             Some(cli) => finish(
                 HarnessStatus::AdapterMissing,
                 format!("`{cli}` is installed but its ACP adapter is not (looked for {commands})."),
@@ -233,30 +248,32 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
 #[derive(Debug, Default)]
 pub struct SystemProbe;
 
-impl ProbeHost for SystemProbe {
-    fn resolve(&self, command: &str) -> Option<PathBuf> {
-        super::resolve_command(command)
-    }
-
-    fn run(&self, command: &str, args: &[String]) -> ProbeRun {
+impl SystemProbe {
+    /// The deadline is a parameter so the kill path can be tested without
+    /// waiting out the real one.
+    fn run_until(&self, command: &str, args: &[String], timeout: Duration) -> ProbeRun {
         // Resolve first so the child is exec'd from the same augmented PATH
         // the probe searched, and inherit that PATH so a CLI that shells out
         // to `node` finds the same one the terminal would.
         let Some(path) = self.resolve(command) else {
             return ProbeRun::Failed(format!("{command} is not on PATH"));
         };
-        let child = Command::new(path)
-            .args(args)
+        let mut cmd = Command::new(path);
+        cmd.args(args)
             .env("PATH", super::path::joined())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-        let mut child = match child {
+            .stderr(Stdio::null());
+        // A probe is the one command most likely to hang — that is why the
+        // user opened the Doctor — and every one of these CLIs is a wrapper
+        // that forks work of its own. Killing the pid alone would leave that
+        // subtree running for the rest of the session.
+        procgroup::own_group(&mut cmd);
+        let mut child = match cmd.spawn() {
             Ok(child) => child,
             Err(err) => return ProbeRun::Failed(err.to_string()),
         };
-        let deadline = Instant::now() + PROBE_TIMEOUT;
+        let deadline = Instant::now() + timeout;
         loop {
             match child.try_wait() {
                 Ok(Some(status)) => return ProbeRun::Exit(status.code().unwrap_or(-1)),
@@ -264,13 +281,22 @@ impl ProbeHost for SystemProbe {
                     std::thread::sleep(Duration::from_millis(25));
                 }
                 Ok(None) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    procgroup::terminate(&mut child);
                     return ProbeRun::TimedOut;
                 }
                 Err(err) => return ProbeRun::Failed(err.to_string()),
             }
         }
+    }
+}
+
+impl ProbeHost for SystemProbe {
+    fn resolve(&self, command: &str) -> Option<PathBuf> {
+        super::resolve_command(command)
+    }
+
+    fn run(&self, command: &str, args: &[String]) -> ProbeRun {
+        self.run_until(command, args, PROBE_TIMEOUT)
     }
 
     fn listening(&self, addr: &str) -> bool {
@@ -329,6 +355,12 @@ mod tests {
                 .lock()
                 .map(|mut calls| calls.push(format!("{command} {}", args.join(" "))))
                 .ok();
+            // A command that is not installed cannot be run, and saying
+            // otherwise is how a fake hides a real machine's diagnosis behind
+            // a cheerful exit 0.
+            if !self.installed.contains_key(command) {
+                return ProbeRun::Failed(format!("{command} is not on PATH"));
+            }
             self.exits
                 .get(command)
                 .cloned()
@@ -425,12 +457,67 @@ mod tests {
         assert_eq!(report.status, HarnessStatus::Unknown);
     }
 
+    /// The adapter being present is not the product being present, and the
+    /// difference is what the user has to go and do next: install Claude Code,
+    /// not `npm i -g` an adapter they already have. Before the CLI was probed
+    /// first this came back as `unknown` with a "sign in" remedy, because
+    /// `claude auth status` cannot run without `claude`.
+    #[test]
+    fn an_adapter_without_its_vendor_cli_blames_the_cli() {
+        let machine = FakeMachine::with(&["claude-agent-acp"]);
+        let report = diagnose(&descriptor("claude"), &machine);
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+        assert!(report.detail.contains("claude"), "{}", report.detail);
+        assert!(report.remedy.is_some());
+    }
+
+    /// `npx` is on every machine with Node, so `npx -y pi-acp` resolving says
+    /// nothing about Pi. Pi's probe is `pi` on PATH
+    /// (`setup-porting/findings.md`), and without it the card would claim
+    /// ready everywhere.
+    #[test]
+    fn npx_does_not_make_pi_ready_on_a_machine_without_pi() {
+        let machine = FakeMachine::with(&["npx"]);
+        let report = diagnose(&descriptor("pi"), &machine);
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+    }
+
     #[test]
     fn npx_fallback_is_ready_but_says_it_downloads() {
         let machine = FakeMachine::with(&["pi", "npx"]);
         let report = diagnose(&descriptor("pi"), &machine);
         assert_eq!(report.status, HarnessStatus::Ready);
         assert!(report.detail.contains("first use"), "{}", report.detail);
+    }
+
+    /// The Doctor is the thing a user opens *because* a CLI is hanging, so the
+    /// timeout path is the one that has to clean up — and these probes are all
+    /// node wrappers that fork work of their own. Killing the pid we spawned
+    /// would leave that subtree running with nothing to reap it.
+    #[cfg(unix)]
+    #[test]
+    fn a_probe_that_times_out_takes_its_grandchildren_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("grand.pid");
+        let script = format!("sleep 30 & echo $! > {}; exec sleep 30", pidfile.display());
+
+        let run = SystemProbe.run_until(
+            "sh",
+            &["-c".to_string(), script],
+            Duration::from_millis(800),
+        );
+        assert_eq!(run, ProbeRun::TimedOut);
+
+        let grandchild: i32 = std::fs::read_to_string(&pidfile)
+            .expect("the probe's grandchild wrote its pid")
+            .trim()
+            .parse()
+            .expect("a pid");
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            !crate::host::procgroup::process_alive(grandchild),
+            "grandchild {grandchild} outlived the probe that started it"
+        );
     }
 
     /// Serial probing costs the sum of every vendor CLI's latency. With one
