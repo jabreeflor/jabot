@@ -4,6 +4,11 @@ version = "0.1.0"
 description = "JaBot — bot-crew messenger with ACP harness sessions"
 authors = ["JaBot"]
 edition = "2021"
+# The crate ships three binaries: the app itself, plus `jabot-hostd` (the host
+# over stdio, for the e2e suite) and `fake-acp-agent` (a scriptable ACP agent
+# for tests). `tauri build` bundles one binary and cannot guess which, so say so
+# explicitly — without this it fails with "failed to find main binary".
+default-run = "jabot"
 
 [lib]
 name = "jabot_lib"
