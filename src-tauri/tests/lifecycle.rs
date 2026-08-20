@@ -18,6 +18,7 @@ use serde_json::{json, Value};
 
 const ILLEGAL_TRANSITION: i64 = -32005;
 const THREAD_NOT_FOUND: i64 = -32006;
+const RUN_IN_FLIGHT: i64 = -32008;
 
 fn req(id: i64, method: &str, params: Option<Value>) -> JsonRpcRequest {
     JsonRpcRequest::new(RequestId::Number(id), method, params)
@@ -506,4 +507,137 @@ fn reopening_a_resurfaced_thread_clears_its_badge() {
     assert_eq!(host.ok(INBOX_LIST, json!({}))["unread"], 0);
     // The card stays in the Inbox history; only the badge clears.
     assert_eq!(kinds(&host.ok(INBOX_LIST, json!({}))), vec!["done"]);
+}
+
+#[test]
+fn archiving_a_resurfaced_thread_clears_its_badge() {
+    let mut host = Host::start();
+    host.open_thread("t-closed", None);
+    host.prompt("t-closed");
+    host.settle("t-closed", |s| s["latestRun"]["state"] == "succeeded");
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-closed" }));
+    assert_eq!(host.ok(INBOX_LIST, json!({}))["unread"], 1);
+
+    // Archive is the other action offered on a resurfaced card, and it takes
+    // the thread out of the Inbox for good. A badge that outlives it points at
+    // a row no screen shows any more, and no click can ever clear it.
+    let archived = host.ok(THREAD_ARCHIVE, json!({ "threadId": "t-closed" }));
+    assert_eq!(archived["state"], "archived");
+    assert_eq!(archived["unread"], 0);
+    assert_eq!(host.ok(INBOX_LIST, json!({}))["unread"], 0);
+}
+
+#[test]
+fn going_quiet_on_screen_still_resurfaces_stuck_once_it_is_folded() {
+    let mut host = Host::start();
+    host.session.set_idle_timeout(Duration::from_millis(50));
+    host.open_thread("t-watched", Some("hang"));
+    host.prompt("t-watched");
+
+    // Watched, so nothing resurfaces: an `active` thread shows its own silence.
+    for _ in 0..5 {
+        host.drain();
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(host.state("t-watched")["state"], "active");
+    assert!(kinds(&host.ok(INBOX_LIST, json!({}))).is_empty());
+
+    // Now the user gets bored and folds it. The agent is still wedged, so it
+    // will never say anything that could re-arm the backstop — the card has to
+    // come from the fold, not from a signal that is never coming.
+    let folded = host.ok(THREAD_FOLD, json!({ "threadId": "t-watched" }));
+    assert_eq!(
+        folded["state"], "folded",
+        "a running run is not settled yet"
+    );
+    let state = host.settle("t-watched", |s| s["state"] == "resurfaced");
+    assert_eq!(state["resurfacedReason"], "stuck");
+    assert_eq!(kinds(&host.ok(INBOX_LIST, json!({}))), vec!["stuck"]);
+}
+
+#[test]
+fn a_thread_that_went_quiet_and_then_finished_reads_as_done() {
+    let mut host = Host::start();
+    host.session.set_idle_timeout(Duration::from_millis(50));
+    host.open_thread("t-slow", Some("late-end"));
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-slow" }));
+    host.prompt("t-slow");
+
+    let stuck = host.settle("t-slow", |s| s["resurfacedReason"] == "stuck");
+    assert_eq!(stuck["latestRun"]["state"], "running");
+
+    // The agent was slow, not wedged. Once the turn actually ends the Inbox
+    // has to agree with the ledger: finished work belongs in Done, not under
+    // "has gone quiet" in Needs you.
+    let done = host.settle("t-slow", |s| s["latestRun"]["state"] == "succeeded");
+    assert_eq!(done["resurfacedReason"], "done");
+    assert_eq!(done["lastStopReason"], "end_turn");
+    // And one row, not a stale stuck card beside its own answer.
+    assert_eq!(kinds(&host.ok(INBOX_LIST, json!({}))), vec!["done"]);
+    assert_eq!(host.ok(INBOX_LIST, json!({}))["unread"], 1);
+}
+
+#[test]
+fn reporting_idle_without_a_stop_reason_is_not_a_failure() {
+    let mut host = Host::start();
+    host.open_thread("t-idle", Some("v2-idle"));
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-idle" }));
+    host.prompt("t-idle");
+
+    // The adapter said "idle" before it said how the turn went. Idleness is a
+    // process fact; the outcome rides on the prompt response, and reading the
+    // first as the second reports a successful turn as a failure.
+    let state = host.settle("t-idle", |s| s["state"] == "resurfaced");
+    assert_eq!(state["resurfacedReason"], "done");
+    assert_eq!(state["latestRun"]["state"], "succeeded");
+    assert_eq!(state["lastStopReason"], "end_turn");
+    assert_eq!(kinds(&host.ok(INBOX_LIST, json!({}))), vec!["done"]);
+}
+
+#[test]
+fn a_second_prompt_cannot_retire_a_run_that_is_still_in_flight() {
+    let mut host = Host::start();
+    host.open_thread("t-overlap", Some("permission"));
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-overlap" }));
+    host.prompt("t-overlap");
+    let blocked = host.settle("t-overlap", |s| s["state"] == "resurfaced");
+    assert_eq!(blocked["latestRun"]["state"], "needs_you");
+
+    // The first turn is alive and will report. Opening a second run here would
+    // hand it the first turn's stop reason and retire the run that did the
+    // work — "a result must not be lost" forbids it.
+    let refused = host.err(
+        SESSION_PROMPT,
+        json!({ "threadId": "t-overlap", "content": "and also" }),
+    );
+    assert_eq!(refused.code, RUN_IN_FLIGHT);
+    assert_eq!(refused.data.as_ref().unwrap()["runState"], "needs_you");
+    assert_eq!(
+        host.state("t-overlap")["runs"].as_array().unwrap().len(),
+        1,
+        "the refused prompt must not have opened a run"
+    );
+
+    // Answering the outstanding ask lets the original run finish as itself.
+    let ask = host
+        .drain()
+        .into_iter()
+        .find(|n| n.method == PERMISSION_ASK)
+        .expect("permission/ask");
+    let request_id = ask.params.unwrap()["requestId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let device_id = host.session.identity().local_device.device_id.clone();
+    host.ok(
+        PERMISSION_REPLY,
+        json!({
+            "requestId": request_id,
+            "deviceId": device_id,
+            "optionId": "allow_once"
+        }),
+    );
+    let finished = host.settle("t-overlap", |s| s["latestRun"]["state"] == "succeeded");
+    assert_eq!(finished["latestRun"]["seq"], 1);
+    assert_eq!(finished["resurfacedReason"], "done");
 }

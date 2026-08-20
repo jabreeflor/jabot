@@ -142,6 +142,16 @@ impl HostSession {
     /// Fold: hide the thread, keep the subprocess. Never `session/close`.
     pub fn thread_fold(&mut self, params: ThreadFoldParams) -> Result<ThreadStateResult, RpcError> {
         let thread_id = params.thread_id.clone();
+        let action = match params.policy {
+            Some(FoldPolicy::WaitForInbox) => ThreadAction::WaitForInbox,
+            _ => ThreadAction::Fold,
+        };
+        // Nothing is written until the fold is known to be legal. A refused
+        // transition has to leave the row exactly as it was, and the policy is
+        // part of the row: quietly making a thread quieter on the way out of a
+        // request that came back as an error is the same silent half-move the
+        // state machine exists to refuse.
+        self.check_action(&thread_id, action)?;
         // The policy lands before the fold so that a permission arriving in the
         // same breath is judged by the policy the user just chose.
         if let Some(policy) = params.policy {
@@ -149,10 +159,6 @@ impl HostSession {
                 .set_thread_fold_policy(&thread_id, policy.as_str())
                 .map_err(store_error)?;
         }
-        let action = match params.policy {
-            Some(FoldPolicy::WaitForInbox) => ThreadAction::WaitForInbox,
-            _ => ThreadAction::Fold,
-        };
         self.apply_action(&thread_id, action)?;
         // Folding work that already finished should not park it in Still
         // Sleeping waiting for an event that will never come; it resurfaces
@@ -683,12 +689,14 @@ impl HostSession {
 
     // ---- internals -----------------------------------------------------
 
-    /// Persist the transition, or say why it cannot happen.
-    fn apply_action(
-        &mut self,
+    /// Where this action would move the thread, without moving it. Read-only,
+    /// so a caller that writes something else alongside the transition can find
+    /// out it is refused before it writes anything.
+    fn check_action(
+        &self,
         thread_id: &str,
         action: ThreadAction,
-    ) -> Result<ThreadRow, RpcError> {
+    ) -> Result<(ThreadState, ThreadState), RpcError> {
         let row = self
             .lifecycle_thread(thread_id)?
             .ok_or_else(|| RpcError::ThreadNotFound(thread_id.to_string()))?;
@@ -704,6 +712,16 @@ impl HostSession {
                 action: action.as_str().to_string(),
             }
         })?;
+        Ok((from, to))
+    }
+
+    /// Persist the transition, or say why it cannot happen.
+    fn apply_action(
+        &mut self,
+        thread_id: &str,
+        action: ThreadAction,
+    ) -> Result<ThreadRow, RpcError> {
+        let (from, to) = self.check_action(thread_id, action)?;
         let store = self.store_or_err()?;
         let updated = if to == ThreadState::Deleted {
             store.tombstone_thread(thread_id)

@@ -169,6 +169,30 @@ describe("run ledger", () => {
     expect(second.runs.every((run) => run.acpSessionId === "sess-fake-1")).toBe(true);
   });
 
+  it("refuses a second prompt while the first turn is still in flight", async () => {
+    const { client } = await connected();
+    await openThread(client, "t-overlap", "permission");
+    await client.fold({ threadId: "t-overlap" });
+    await client.prompt({ threadId: "t-overlap", content: "rm -rf" });
+    await settle(client, "t-overlap", (s) => s.latestRun?.state === "needs_you");
+
+    // ACP runs one turn per session, and the stop reason that comes back names
+    // no prompt — so a second run would be handed the first turn's outcome and
+    // the run that did the work would be retired holding nothing.
+    const failure = await client
+      .prompt({ threadId: "t-overlap", content: "and also" })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(HostRpcError);
+    expect((failure as HostRpcError).code).toBe(RPC_ERROR.RUN_IN_FLIGHT);
+    expect((failure as HostRpcError).data).toMatchObject({
+      threadId: "t-overlap",
+      runState: "needs_you",
+    });
+    const state = await client.threadState({ threadId: "t-overlap" });
+    expect(state.runs).toHaveLength(1);
+  });
+
   it("writes a session receipt a resume can check for drift", async () => {
     const { client } = await connected();
     await openThread(client, "t-receipt");
