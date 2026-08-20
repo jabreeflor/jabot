@@ -28,6 +28,8 @@ export function Sidebar({
   hostLine,
   hostOffline = false,
   leavingThreadIds,
+  foldersEmpty = false,
+  onAddFolder,
   onSelectBot,
   onSelectThread,
   onOpenCrew,
@@ -46,6 +48,12 @@ export function Sidebar({
   hostLine: string;
   hostOffline?: boolean;
   leavingThreadIds?: readonly string[];
+  /** The host answered, and it has no folders yet — not the same as a host
+      that has not answered, which keeps whatever is already on screen. */
+  foldersEmpty?: boolean;
+  /** Absent until the host can register one, which is what makes the ＋ in the
+      CODE header appear at all. */
+  onAddFolder?: () => void;
   onSelectBot: (botId: string) => void;
   onSelectThread: (threadId: string) => void;
   onOpenCrew: () => void;
@@ -83,7 +91,20 @@ export function Sidebar({
         />
 
         <div className="sidebar-divider" />
-        <div className="section-header">CODE</div>
+        <div className="section-header">
+          CODE
+          {onAddFolder && (
+            <button
+              type="button"
+              className="folder-add section-add"
+              title="Add folder"
+              aria-label="Add folder"
+              onClick={onAddFolder}
+            >
+              ＋
+            </button>
+          )}
+        </div>
 
         <button
           type="button"
@@ -148,6 +169,11 @@ export function Sidebar({
         />
         {query && visibleFolders.length === 0 && (
           <div className="page-empty">No threads match “{query}”.</div>
+        )}
+        {!query && foldersEmpty && (
+          <div className="page-empty">
+            No folders yet. Add one to start a code thread in it.
+          </div>
         )}
       </div>
 

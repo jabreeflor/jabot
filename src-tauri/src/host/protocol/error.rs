@@ -18,6 +18,7 @@ pub const ILLEGAL_TRANSITION: i64 = -32005;
 pub const THREAD_NOT_FOUND: i64 = -32006;
 pub const STORE_UNAVAILABLE: i64 = -32007;
 pub const RUN_IN_FLIGHT: i64 = -32008;
+pub const FOLDER_EXISTS: i64 = -32009;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -67,6 +68,11 @@ pub enum RpcError {
         run_id: String,
         state: String,
     },
+    /// This directory — or the checkout it belongs to — is already a folder.
+    /// An error rather than a silent second row, and it carries the id of the
+    /// folder that already exists so the UI can select it instead (#16).
+    #[error("{path} is already registered")]
+    FolderExists { folder_id: String, path: String },
 }
 
 impl RpcError {
@@ -86,6 +92,7 @@ impl RpcError {
             Self::ThreadNotFound(_) => THREAD_NOT_FOUND,
             Self::StoreUnavailable => STORE_UNAVAILABLE,
             Self::RunInFlight { .. } => RUN_IN_FLIGHT,
+            Self::FolderExists { .. } => FOLDER_EXISTS,
         }
     }
 
@@ -128,6 +135,10 @@ impl RpcError {
                 "threadId": thread_id,
                 "runId": run_id,
                 "runState": state,
+            })),
+            Self::FolderExists { folder_id, path } => Some(serde_json::json!({
+                "folderId": folder_id,
+                "path": path,
             })),
             _ => None,
         }
