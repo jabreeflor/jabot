@@ -9,6 +9,7 @@ const MIGRATIONS: &[(i32, &str)] = &[
     (1, include_str!("migrations/0001_init.sql")),
     (2, include_str!("migrations/0002_lifecycle.sql")),
     (3, include_str!("migrations/0003_tool_connections.sql")),
+    (4, include_str!("migrations/0004_folders.sql")),
 ];
 
 pub fn migrate(conn: &mut Connection) -> Result<i32, StoreError> {

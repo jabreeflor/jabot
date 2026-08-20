@@ -109,6 +109,12 @@
   color: var(--danger);
 }
 
+/* A button waiting on the host. Still readable — it says what it is doing. */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .host-error {
   color: var(--red);
 }
