@@ -22,10 +22,9 @@ use super::protocol::methods::{
     SessionCancelResult,
 };
 use super::HostSession;
-use connection::Inbound;
 use runtime::ProbeResult;
 
-pub(crate) use connection::AcpConnection;
+pub(crate) use connection::{AcpConnection, Inbound};
 /// The Doctor's deep probe spawns an adapter the same way a session does (#13).
 pub(crate) use runtime::HarnessRuntime;
 pub use wake::AdapterWake;
@@ -55,14 +54,13 @@ impl HostSession {
         let session_id = match existing {
             Some(id) => id,
             None => {
-                // Host-selected MCP, from the bot's allowlist (#18). Resolved
-                // here rather than per prompt because this is the only moment
-                // it is read: `session/new` fixes the tool surface for the
-                // life of the session, and a tool that is not in this array is
-                // one the model never sees a schema for.
-                let mcp_servers = self.mcp_servers_for_thread(&thread_id);
-                let conn = self.connections.get_mut(&thread_id).expect("spawned");
-                match conn.new_session(&cwd, mcp_servers) {
+                // A fresh process on a thread that already has a session is
+                // the ordinary case after a quit, a crash, or an idle evict —
+                // and `session/new` there would orphan the conversation
+                // (`keep-alive.md`: "Do not session/new. That orphans the
+                // conversation."). The supervisor resumes when it can and says
+                // so when it cannot; only then is a new session minted (#21).
+                match self.attach_session(&thread_id, &cwd) {
                     Ok(id) => id,
                     Err(err) => {
                         self.connections.remove(&thread_id);
@@ -202,6 +200,10 @@ impl HostSession {
         // The stuck backstop needs a clock, and this is the only thing the host
         // runs on a timer. It is a comparison per live thread.
         self.lifecycle_tick();
+        // And the supervisor's keep-alive rides the same timer: reap adapters
+        // whose process is gone, notice a machine that was asleep, and close
+        // sessions nobody is using (#21). Rate-limited inside.
+        self.supervisor_tick();
     }
 
     pub fn shutdown_adapters(&mut self) {
@@ -231,15 +233,50 @@ impl HostSession {
             .count()
     }
 
-    /// Drop a thread's adapter. Archive and delete both end the process; the
-    /// ACP layer has no `session/close` yet (#21), so the process group is it.
+    /// An adapter is no longer there: EOF on its stdout, or the supervisor's
+    /// keep-alive probe reaping a pid whose stdout nobody ever closed.
+    ///
+    /// One path for both, because the *consequences* are identical and the two
+    /// discoveries are not: an adapter that forks something holding its stdout
+    /// never produces the EOF, so a host that only listened for EOF would keep
+    /// a dead session marked live for as long as the app ran (#21).
+    pub(crate) fn on_adapter_gone(&mut self, thread_id: &str, error: Option<&str>) {
+        if let Some(err) = error {
+            eprintln!("adapter for {thread_id} closed: {err}");
+        }
+        let _ = self.cancel_pending_permissions(thread_id, "adapter closed");
+        self.connections.remove(thread_id);
+        self.drop_prompt_queue(thread_id, "the adapter stopped");
+        self.lifecycle_on_adapter_closed(thread_id, error);
+    }
+
+    /// Drop a thread's adapter, `session/close` first where the agent said it
+    /// speaks it.
+    ///
+    /// Close is what frees the agent's own resources; killing the group frees
+    /// ours. Buzz only ever did the second and pinned a Claude process tree per
+    /// session for the life of the app ([buzz#2961](https://github.com/block/buzz/issues/2961)),
+    /// which is why the order here is close-then-kill and not kill-only. It
+    /// stays best-effort: an adapter that will not answer must not be able to
+    /// hold up the user's Archive.
     pub(crate) fn drop_adapter(&mut self, thread_id: &str) {
         if let Some(mut conn) = self.connections.remove(thread_id) {
+            if let Some(session_id) = conn.session_id.clone() {
+                if let Err(err) = conn.close_session(&session_id) {
+                    eprintln!("session/close for {thread_id} failed: {err}");
+                }
+            }
             conn.kill();
         }
     }
 
-    fn ensure_connection(&mut self, params: &PromptParams) -> Result<(), RpcError> {
+    /// The adapter's pid, for `thread/state` and `supervisor/status`.
+    /// Diagnostic only: nothing durable is keyed on a pid (decision #4).
+    pub(crate) fn adapter_pid(&self, thread_id: &str) -> Option<u32> {
+        self.connections.get(thread_id).map(|conn| conn.pid())
+    }
+
+    pub(crate) fn ensure_connection(&mut self, params: &PromptParams) -> Result<(), RpcError> {
         if self.connections.contains_key(&params.thread_id) {
             return Ok(());
         }
@@ -291,7 +328,7 @@ impl HostSession {
         )))
     }
 
-    fn resolve_cwd(&self, params: &PromptParams) -> Result<String, RpcError> {
+    pub(crate) fn resolve_cwd(&self, params: &PromptParams) -> Result<String, RpcError> {
         if let Some(store) = &self.store {
             if let Ok(Some(thread)) = store.get_thread(&params.thread_id) {
                 return absolute_cwd(&thread.cwd);
@@ -308,7 +345,7 @@ impl HostSession {
         self.log_dir.join(format!("{thread_id}.stderr.log"))
     }
 
-    fn handle_inbound(&mut self, thread_id: &str, event: Inbound) {
+    pub(crate) fn handle_inbound(&mut self, thread_id: &str, event: Inbound) {
         match event {
             Inbound::Update(acp) => {
                 let seq = self.persist_transcript_event(thread_id, "session/update", &acp);
@@ -390,15 +427,7 @@ impl HostSession {
                 // it (#14 steer-vs-redispatch).
                 self.drain_prompt_queue(thread_id);
             }
-            Inbound::Closed { error } => {
-                if let Some(err) = &error {
-                    eprintln!("adapter for {thread_id} closed: {err}");
-                }
-                let _ = self.cancel_pending_permissions(thread_id, "adapter closed");
-                self.connections.remove(thread_id);
-                self.drop_prompt_queue(thread_id, "the adapter stopped");
-                self.lifecycle_on_adapter_closed(thread_id, error.as_deref());
-            }
+            Inbound::Closed { error } => self.on_adapter_gone(thread_id, error.as_deref()),
         }
     }
 

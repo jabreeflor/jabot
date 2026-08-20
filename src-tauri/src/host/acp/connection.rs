@@ -22,6 +22,31 @@ use super::wake::AdapterWake;
 
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(8);
 const SESSION_NEW_TIMEOUT: Duration = Duration::from_secs(8);
+/// Resume restores context; it does not run a turn, so it should answer as
+/// fast as `session/new`. `session/load` shares the budget because a replay
+/// arrives as notifications while the response is still outstanding.
+const SESSION_RESUME_TIMEOUT: Duration = Duration::from_secs(8);
+/// Closing is best-effort cleanup on a path that is about to kill the process
+/// group anyway (archive, delete, idle-evict). An adapter that will not answer
+/// in a second does not get to hold up the user's Archive.
+const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// What the agent said it can do, read once out of the `initialize` result.
+///
+/// Absent means **no**. Every one of these is a capability an adapter has to
+/// opt into (`session-lifecycle/keep-alive.md`), and guessing yes buys a
+/// `session/resume` that comes back `-32601` on a thread the user was told had
+/// been restored.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct AgentCapabilities {
+    /// ACP `agentCapabilities.loadSession` — replay history into the client.
+    pub load_session: bool,
+    /// `sessionCapabilities.resume` — restore context *without* a replay.
+    pub resume: bool,
+    /// `sessionCapabilities.close` — free adapter-side resources. Buzz never
+    /// sent it and leaked process trees; that is the bug this flag exists for.
+    pub close: bool,
+}
 
 #[derive(Debug)]
 pub enum Inbound {
@@ -41,6 +66,7 @@ pub(crate) struct AcpConnection {
     pub log_path: PathBuf,
     initialized: bool,
     killed: bool,
+    capabilities: AgentCapabilities,
 }
 
 impl std::fmt::Debug for AcpConnection {
@@ -103,11 +129,32 @@ impl AcpConnection {
             log_path: spawned.log_path,
             initialized: false,
             killed: false,
+            capabilities: AgentCapabilities::default(),
         })
     }
 
     pub fn try_recv(&mut self) -> Result<Inbound, TryRecvError> {
         self.inbound_rx.try_recv()
+    }
+
+    pub fn capabilities(&self) -> AgentCapabilities {
+        self.capabilities
+    }
+
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    /// Is the adapter process still running?
+    ///
+    /// The supervisor cannot ask the reader thread: EOF on stdout is what
+    /// tells it a child is gone, and a child that forked something holding the
+    /// same stdout leaves that pipe open after it exits. So the read loop
+    /// blocks on a pipe nobody will ever write to while the adapter itself is
+    /// a corpse — which is a session JaBot would keep reporting as live
+    /// forever. Reaping the pid is the only answer that cannot lie.
+    pub fn is_alive(&mut self) -> bool {
+        !matches!(self.child.try_wait(), Ok(Some(_)) | Err(_))
     }
 
     pub fn initialize(&mut self) -> Result<Value, RpcError> {
@@ -131,6 +178,7 @@ impl AcpConnection {
             INITIALIZE_TIMEOUT,
         )?;
         self.initialized = true;
+        self.capabilities = parse_capabilities(&result);
         Ok(result)
     }
 
@@ -151,6 +199,74 @@ impl AcpConnection {
             .to_string();
         self.session_id = Some(session_id.clone());
         Ok(session_id)
+    }
+
+    /// ACP `session/resume`: hand the agent back a session it already has.
+    ///
+    /// Restores context **without** replaying history, which is what makes it
+    /// the right verb for a thread whose transcript we already hold. The same
+    /// absolute `cwd` and the same MCP list go back out: resume is a
+    /// continuation of one job, and a session that comes back pointed at a
+    /// different directory or holding different tools is a different job
+    /// (`keep-alive.md`, "Resume recipe").
+    pub fn resume_session(
+        &mut self,
+        session_id: &str,
+        cwd: &str,
+        mcp_servers: Value,
+    ) -> Result<(), RpcError> {
+        self.initialize()?;
+        self.request(
+            "session/resume",
+            json!({
+                "sessionId": session_id,
+                "cwd": cwd,
+                "mcpServers": mcp_servers
+            }),
+            SESSION_RESUME_TIMEOUT,
+        )?;
+        self.session_id = Some(session_id.to_string());
+        Ok(())
+    }
+
+    /// ACP `session/load`: the agent replays the whole conversation at us.
+    ///
+    /// The replay arrives as `session/update` notifications *before* this
+    /// returns, so the caller decides what happens to them — a thread with no
+    /// transcript of its own wants them, and a thread that has one would get
+    /// every message twice (`keep-alive.md` step 4).
+    pub fn load_session(
+        &mut self,
+        session_id: &str,
+        cwd: &str,
+        mcp_servers: Value,
+    ) -> Result<(), RpcError> {
+        self.initialize()?;
+        self.request(
+            "session/load",
+            json!({
+                "sessionId": session_id,
+                "cwd": cwd,
+                "mcpServers": mcp_servers
+            }),
+            SESSION_RESUME_TIMEOUT,
+        )?;
+        self.session_id = Some(session_id.to_string());
+        Ok(())
+    }
+
+    /// ACP `session/close`. Frees the agent's own resources before we drop the
+    /// process; skipped, not faked, when the adapter never advertised it.
+    pub fn close_session(&mut self, session_id: &str) -> Result<(), RpcError> {
+        if !self.capabilities.close {
+            return Ok(());
+        }
+        self.request(
+            "session/close",
+            json!({ "sessionId": session_id }),
+            SESSION_CLOSE_TIMEOUT,
+        )?;
+        Ok(())
     }
 
     /// Fire `session/prompt` without waiting for the turn to finish. Completion
@@ -269,6 +385,30 @@ impl AcpConnection {
 impl Drop for AcpConnection {
     fn drop(&mut self) {
         self.kill();
+    }
+}
+
+/// Read the capability flags out of an `initialize` result.
+///
+/// Two shapes are accepted for `sessionCapabilities` because two exist in the
+/// wild: ACP nests it under `agentCapabilities`, and adapters written against
+/// the v2 session surface put it at the top level. Reading only one of them
+/// would silently downgrade half the adapters to "cannot resume".
+fn parse_capabilities(result: &Value) -> AgentCapabilities {
+    let agent = result.get("agentCapabilities");
+    let session = agent
+        .and_then(|caps| caps.get("sessionCapabilities"))
+        .or_else(|| result.get("sessionCapabilities"));
+    let flag = |source: Option<&Value>, key: &str| {
+        source
+            .and_then(|value| value.get(key))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    };
+    AgentCapabilities {
+        load_session: flag(agent, "loadSession"),
+        resume: flag(session, "resume"),
+        close: flag(session, "close"),
     }
 }
 
@@ -394,5 +534,53 @@ fn dispatch_message(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capabilities_are_read_from_both_shapes_agents_use() {
+        // ACP nests session capabilities under `agentCapabilities`.
+        let nested = parse_capabilities(&json!({
+            "protocolVersion": 1,
+            "agentCapabilities": {
+                "loadSession": true,
+                "sessionCapabilities": { "resume": true, "close": false }
+            }
+        }));
+        assert_eq!(
+            nested,
+            AgentCapabilities {
+                load_session: true,
+                resume: true,
+                close: false
+            }
+        );
+
+        // Adapters written against the v2 session surface hoist it.
+        let hoisted = parse_capabilities(&json!({
+            "protocolVersion": 1,
+            "sessionCapabilities": { "resume": true, "close": true }
+        }));
+        assert!(hoisted.resume && hoisted.close);
+        assert!(!hoisted.load_session);
+    }
+
+    #[test]
+    fn an_unadvertised_capability_is_no() {
+        // The failure this rules out is a `session/resume` that comes back
+        // "method not found" on a thread the user was told had been restored.
+        let silent = parse_capabilities(&json!({ "protocolVersion": 1 }));
+        assert_eq!(silent, AgentCapabilities::default());
+        let junk = parse_capabilities(&json!("not even an object"));
+        assert_eq!(junk, AgentCapabilities::default());
+        // A non-boolean is not a yes either.
+        let lying = parse_capabilities(&json!({
+            "agentCapabilities": { "loadSession": "yes" }
+        }));
+        assert!(!lying.load_session);
     }
 }
