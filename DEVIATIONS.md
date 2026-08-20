@@ -152,3 +152,49 @@ The signing and notarization path has never been executed — there are no Apple
 credentials here and the tooling is macOS-only. Its correctness rests on
 reading the `tauri-bundler`, `tauri-cli`, updater-plugin and `tauri-action`
 sources, not on running it.
+
+---
+
+## D-006 — #15: what the lifecycle core added, deferred, and reshaped
+
+**1. `thread/open` is a new host method nobody scoped.** #15 owns the state
+machine but no issue owns "create a thread row" — #16 registers folders, #17
+stores crew, and #14 renders a transcript that assumes a thread exists. Without
+it the state machine had no entry edge and nothing could be tested through the
+API. `thread/open` is that edge (New Chat → `active`) and nothing more: it is
+idempotent, takes the fields `threads` already has, and #16/#17 can layer folder
+and bot defaults on top without changing the wire.
+
+**2. Archive and delete kill the adapter; they do not send `session/close`.**
+`state-machine.md` says both should reply `cancelled` to pending permissions and
+then `session/close`. The first half is implemented. The ACP layer has no
+`session/close` yet — #21 owns close and resume — so the process group is
+terminated instead, which is what Quit already does. When #21 adds `close`, it
+goes in `close_out`.
+
+**3. The stuck backstop does not end the run.** Decision #5 lists `timed_out`
+among the run states, and the obvious reading is that the idle timeout produces
+it. `resurface.md` is explicit that stuck must **keep the process** so the user
+can wait, reopen, or cancel — so the thread resurfaces `stuck` while its run
+stays `running`, and `timed_out` is left for a hard cap that really does end a
+run (#25 schedules, #21 supervision). A `stuck` card whose run said `timed_out`
+would be lying about a process that is still working.
+
+**4. Folding writes no Inbox event.** `inbox_events` has a `folded` kind, but
+decision #5 defines Still Sleeping as `threads.state = folded`. Writing both
+would give the Inbox two sources of truth for the same row, so `inbox/list`
+projects sleeping threads from the thread table and reserves events for things
+that actually happened.
+
+**5. The away log is `judgment_call` rows, not a new table.** `resurface.md`
+sketches an `awayLog[]` on the thread. `inbox_events` already has the kind, the
+thread link, the run link, and a JSON payload, so an auto-allowed read lands
+there with `reviewable: false` and `read_at` set on arrival — recorded, never
+badged. If the digest in `resurface.md` ever needs richer structure, it can grow
+into the payload.
+
+**6. Not built here:** native notifications (#27 — the host emits
+`inbox/resurface` and the badge count; no `UNUserNotificationCenter`), the
+notification noise budget that goes with them, and boot reconciliation of the
+process layer (#21 — after a restart every thread reports `acpState: unknown`
+until something resumes it, which is the honest answer).
