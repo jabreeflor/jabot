@@ -96,6 +96,32 @@ fn wait_for_log(path: &std::path::Path, timeout: Duration) -> Vec<String> {
     }
 }
 
+/// Like [`wait_for`], but for one particular `session/update` — several now
+/// arrive on a thread and the interesting one is rarely the first.
+fn wait_for_update(
+    session: &mut HostSession,
+    needle: &str,
+    timeout: Duration,
+) -> Vec<JsonRpcNotification> {
+    let start = Instant::now();
+    let mut found = Vec::new();
+    while start.elapsed() < timeout {
+        session.pump_acp();
+        found.extend(session.take_outbound());
+        if found.iter().any(|n| {
+            n.method == SESSION_UPDATE
+                && n.params
+                    .as_ref()
+                    .map(|p| p["acp"].to_string().contains(needle))
+                    .unwrap_or(false)
+        }) {
+            return found;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+    found
+}
+
 fn result_value(response: &jabot_lib::JsonRpcResponse) -> &Value {
     response.result.as_ref().expect("expected result")
 }
@@ -113,15 +139,22 @@ fn prompt_streams_session_update() {
     assert_eq!(value["accepted"], true);
     assert_eq!(value["acpSessionId"], "sess-fake-1");
 
-    let outbound = wait_for(&mut session, SESSION_UPDATE, Duration::from_secs(3));
+    // The first `session/update` on a thread is now the host's own echo of the
+    // prompt (#14 writes the user's words into the transcript), so this looks
+    // for the agent's chunk rather than for whichever update arrives first.
+    let outbound = wait_for_update(&mut session, "hello from fake-acp", Duration::from_secs(3));
     let update = outbound
         .iter()
-        .find(|n| n.method == SESSION_UPDATE)
-        .expect("session/update");
-    let text = update.params.as_ref().unwrap()["acp"].to_string();
-    assert!(
-        text.contains("hello from fake-acp"),
-        "unexpected update {text}"
+        .find(|n| {
+            n.method == SESSION_UPDATE
+                && n.params.as_ref().unwrap()["acp"]
+                    .to_string()
+                    .contains("hello from fake-acp")
+        })
+        .expect("the agent's message chunk");
+    assert_eq!(
+        update.params.as_ref().unwrap()["acp"]["sessionUpdate"],
+        "agent_message_chunk"
     );
     assert_eq!(session.live_adapter_count(), 1);
 }
