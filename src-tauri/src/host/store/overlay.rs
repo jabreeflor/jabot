@@ -44,8 +44,8 @@ pub fn insert_thread(conn: &Connection, new: &NewThread) -> Result<ThreadRow, St
         "INSERT INTO threads (
             id, folder_id, bot_id, harness_id, cwd, runtime_json, title,
             state, fold_policy, created_at, updated_at,
-            repo_root, repo, forge_host, branch, host_id
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?14)",
+            repo_root, repo, forge_host, branch, host_id, worktree_path
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'active', ?8, ?9, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             new.id,
             new.folder_id,
@@ -61,6 +61,7 @@ pub fn insert_thread(conn: &Connection, new: &NewThread) -> Result<ThreadRow, St
             new.repo.forge_host,
             new.repo.branch,
             new.repo.host_id,
+            new.worktree_path,
         ],
     )?;
     get_thread(conn, &new.id)?.ok_or_else(|| StoreError::NotFound(new.id.clone()))
@@ -107,6 +108,44 @@ pub fn list_folder_threads(
         .query_map([folder_id], map_thread)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// Every thread that still claims a worktree.
+///
+/// Archived and deleted rows are excluded on purpose: their trees have been
+/// released, or should have been, and the boot sweep (#23) uses exactly this
+/// set to decide which directories under the worktree root nobody owns.
+pub fn list_worktree_threads(conn: &Connection) -> Result<Vec<ThreadRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {THREAD_COLUMNS} FROM threads
+         WHERE worktree_path IS NOT NULL AND deleted_at IS NULL AND state <> 'archived'"
+    ))?;
+    let rows = stmt
+        .query_map([], map_thread)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Record that the thread's worktree has been removed, or put back.
+///
+/// The path itself is chosen once, by the INSERT that creates the thread; this
+/// only ever says whether the tree named there currently exists. A row that
+/// still claimed a directory git had collected would send every later reader —
+/// and the next boot sweep — after a tree that is gone, and a row that stayed
+/// `NULL` after a restore would have the sweep collect a live one.
+pub fn set_thread_worktree(
+    conn: &Connection,
+    id: &str,
+    path: Option<&str>,
+) -> Result<ThreadRow, StoreError> {
+    let changed = conn.execute(
+        "UPDATE threads SET worktree_path = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, path, now_utc()],
+    )?;
+    if changed == 0 {
+        return Err(StoreError::NotFound(id.to_string()));
+    }
+    get_thread(conn, id)?.ok_or_else(|| StoreError::NotFound(id.to_string()))
 }
 
 pub fn set_thread_acp_session(
@@ -447,6 +486,55 @@ pub fn latest_run(conn: &Connection, thread_id: &str) -> Result<Option<RunRow>, 
     )
     .optional()
     .map_err(Into::into)
+}
+
+/// Every run a stopped host left open, newest run first within each thread.
+///
+/// The boot pass (#21) reads exactly this: nothing else can tell a fresh
+/// process that work was in flight when the last one went away, because the
+/// process axis is deliberately not persisted (#5). Tombstoned threads are
+/// excluded — their runs went with them.
+pub fn list_open_runs(conn: &Connection) -> Result<Vec<RunRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {RUN_COLUMNS} FROM runs
+         WHERE state IN ('queued', 'running', 'needs_you')
+           AND thread_id IN (SELECT id FROM threads WHERE deleted_at IS NULL)
+         ORDER BY thread_id, seq DESC"
+    ))?;
+    let rows = stmt
+        .query_map([], map_run)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Rewrite the summary of the newest undismissed card of `kind` on a thread,
+/// and make it unread again. `false` when there is no such card.
+///
+/// This exists for one case and should not grow others: a thread that was
+/// already resurfaced `needs_you` before the host stopped still has a card
+/// describing a permission request whose process no longer exists. The
+/// transition to `resurfaced` is a no-op the second time, so a boot pass that
+/// could only insert would either say nothing or stack a duplicate card for
+/// the same unanswered question. Restating the row is the only option that
+/// leaves the Inbox with one true card.
+pub fn restate_inbox_event(
+    conn: &Connection,
+    thread_id: &str,
+    kind: &str,
+    summary: &str,
+) -> Result<bool, StoreError> {
+    let changed = conn.execute(
+        "UPDATE inbox_events
+            SET summary = ?3, read_at = NULL
+          WHERE id = (
+            SELECT id FROM inbox_events
+             WHERE thread_id = ?1 AND kind = ?2 AND dismissed_at IS NULL
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT 1
+          )",
+        params![thread_id, kind, summary],
+    )?;
+    Ok(changed > 0)
 }
 
 /// The Inbox is a projection of these rows (#5), newest first. Deleted threads

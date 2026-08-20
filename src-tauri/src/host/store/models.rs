@@ -26,6 +26,16 @@ pub struct FolderRow {
     pub files_to_copy_json: String,
 }
 
+impl FolderRow {
+    /// The files-to-copy list as a list. Stored as JSON because SQLite has no
+    /// arrays; a column that will not parse reads as "nothing to copy" rather
+    /// than failing a spawn, since the worst case is a worktree missing its
+    /// `.env` and the alternative is a thread that cannot be opened at all.
+    pub fn files_to_copy(&self) -> Vec<String> {
+        serde_json::from_str(&self.files_to_copy_json).unwrap_or_default()
+    }
+}
+
 /// What `folder/register` writes. The git columns come from probing the
 /// directory once, at registration, rather than on every read: a sidebar that
 /// shells out to git per render is a sidebar that stutters.
@@ -177,6 +187,14 @@ pub struct NewThread {
     pub runtime_json: String,
     pub title: String,
     pub fold_policy: String,
+    /// The host-owned git worktree this thread works in (#23), or `None` for a
+    /// thread that has no repo to isolate — a worker's standing thread, a
+    /// folder that is not a checkout, or the advanced "use my own checkout".
+    /// Written with the row, never by a follow-up UPDATE: a tree that exists
+    /// for even one crash-width moment without a row is a tree nothing will
+    /// ever clean up.
+    #[serde(default)]
+    pub worktree_path: Option<String>,
     /// Where this thread works, resolved once at spawn (setup-porting §19).
     #[serde(default)]
     pub repo: ThreadRepo,
