@@ -25,15 +25,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   HostClient,
   JsonRpcNotification,
+  PendingPermissionView,
+  PermissionAskParams,
+  PermissionResolvedParams,
   PromptMode,
   QueuedPromptView,
   SessionUpdateParams,
   ThreadTranscriptResult,
   TranscriptEventView,
 } from "../host";
-import { SESSION_UPDATE } from "../host";
+import { PERMISSION_ASK, PERMISSION_RESOLVED, SESSION_UPDATE } from "../host";
 import type { StatusTone, ThreadStatus } from "../components/status";
 import type {
+  NoticeAction,
   ToolCall,
   ToolKind,
   ToolStatus,
@@ -51,10 +55,11 @@ export interface PlanProgress {
 /**
  * Everything one thread's chat is drawn from.
  *
- * `busy` is the renderer's own reading of the stream (a turn started and has
- * not ended), deliberately not a second copy of the run ledger: the ledger is
- * the host's answer and arrives by request, this one arrives with the events
- * and is what the composer switches on between polls.
+ * `busy` is "a turn is in flight", and it is fed from both ends: the events
+ * raise it (anything the agent says, and any prompt the host dispatches, means
+ * a turn is running — whoever started it) and a stop reason lowers it. It is
+ * seeded once, from the run ledger the replay arrives with, because the events
+ * alone cannot describe a turn that began before this view existed.
  */
 export interface ThreadStream {
   items: readonly TranscriptItem[];
@@ -77,6 +82,11 @@ export interface ThreadStream {
   queued: readonly string[];
   /** Index of each live `toolCallId`, so an update lands on its own line. */
   toolIndex: Readonly<Record<string, number>>;
+  /** Index of each permission card by `requestId` (#20). Keyed on the request
+      rather than on position because the same ask reaches this reducer twice —
+      once from `permission/pending` on hydrate, once from the live
+      `permission/ask` — and two cards for one question is two questions. */
+  permissions: Readonly<Record<string, number>>;
   /** The bubble a chunk is currently being appended to. */
   open: { kind: "user" | "agent"; index: number } | null;
   /** Fallback id source for a host that persists nothing (no `transcriptSeq`). */
@@ -92,6 +102,7 @@ export const EMPTY_STREAM: ThreadStream = {
   hydratedSeq: 0,
   queued: [],
   toolIndex: {},
+  permissions: {},
   open: null,
   counter: 0,
 };
@@ -132,12 +143,33 @@ export function hydrate(
   // given none at all. Everything at or below it is now drawn, so that is the
   // boundary the live stream is de-duplicated against.
   const head = Math.max(stream.headSeq, result.headSeq);
+  // The ledger decides `busy`, not the replay, and the replayed events' own
+  // reading of it is discarded here. A transcript that ends in an agent chunk
+  // looks exactly the same whether the agent is still typing or the host died
+  // under it a week ago; only the run says which. `from.busy` still wins,
+  // because a prompt sent while this read was in flight started a turn the
+  // host had not yet opened a run for when it answered.
+  const busy = from.busy || isOpenRun(result.runState);
+  // A replay over a run that has already ended holds no live bubble, however
+  // the rows end. A thread whose host died mid-sentence replays exactly like
+  // one still being written, and the caret would blink over it forever —
+  // which is the same lie a stop reason exists to stop telling.
+  const settled = busy ? stream : closeBubble(stream);
   stream = {
-    ...stream,
+    ...settled,
     headSeq: head,
-    hydratedSeq: Math.max(stream.hydratedSeq, result.headSeq),
+    hydratedSeq: Math.max(settled.hydratedSeq, result.headSeq),
+    busy,
+    // A turn in flight has no outcome yet, and the replay's last stop reason
+    // belongs to the turn before it.
+    lastStopReason: busy ? null : settled.lastStopReason,
   };
   return withQueued(stream, result.queued);
+}
+
+/** `runState` is reported only while the run is open, so any value means yes. */
+function isOpenRun(runState: ThreadTranscriptResult["runState"]): boolean {
+  return runState !== undefined && runState !== null;
 }
 
 /** The queue is host state, not a stream event — it replaces wholesale. */
@@ -174,10 +206,19 @@ export function applyAcpEvent(
   if (!update) return next;
 
   switch (str(update.sessionUpdate)) {
-    case "user_message_chunk":
-      return chunk(next, "user", blockText(update.content));
+    // The host writes this at *dispatch* and never at accept, so it is the
+    // start of a turn whether we asked for it or another window did — and when
+    // it is the queue draining, it is also the head of the queue leaving.
+    case "user_message_chunk": {
+      const started = turnInFlight(next);
+      return chunk(
+        promptDispatched(update) ? shiftQueued(started) : started,
+        "user",
+        blockText(update.content),
+      );
+    }
     case "agent_message_chunk":
-      return chunk(next, "agent", blockText(update.content));
+      return chunk(turnInFlight(next), "agent", blockText(update.content));
     // Reasoning is not the transcript. ACP has a `think` tool kind for the
     // work an agent chooses to show; a raw thought stream would double the
     // length of every chat with text the prototype has no bubble for.
@@ -185,9 +226,12 @@ export function applyAcpEvent(
       return next;
     case "tool_call":
     case "tool_call_update":
-      return toolCall(next, update);
+      return toolCall(turnInFlight(next), update);
     case "plan":
-      return { ...closeBubble(next), plan: planProgress(update.entries) };
+      return {
+        ...closeBubble(turnInFlight(next)),
+        plan: planProgress(update.entries),
+      };
     case "state_update":
       return stateUpdate(next, update);
     // `available_commands_update`, `current_mode_update`, and whatever ACP
@@ -239,6 +283,43 @@ function stopReasonLabel(reason: string): string {
 }
 
 // ---- reducer internals ----------------------------------------------------
+
+/**
+ * A turn is running, and this event is the evidence.
+ *
+ * Without this, `busy` is only ever raised by our own `send`, so a turn this
+ * view did not start — the queue draining, or anything already in flight when
+ * the view mounted — draws no Stop button, streams into a bubble marked
+ * `streaming: false`, and leaves the header reporting the *previous* turn's
+ * stop reason while the agent is mid-sentence.
+ *
+ * Returns the same object when nothing changes, because this runs on every
+ * chunk and the identity of the stream is what the memoized rows below hang
+ * off.
+ */
+function turnInFlight(stream: ThreadStream): ThreadStream {
+  if (stream.busy && stream.lastStopReason === null) return stream;
+  return { ...stream, busy: true, lastStopReason: null };
+}
+
+/**
+ * One prompt left the host's queue, so drop the head of our mirror of it.
+ *
+ * The head and not a text match: the queue is FIFO on both sides, and two
+ * identical follow-ups are two entries that have to clear one at a time. If
+ * the mirror is somehow already out of step, shrinking it by one still gets
+ * the count right, and the next `thread/transcript` replaces it wholesale.
+ */
+function shiftQueued(stream: ThreadStream): ThreadStream {
+  if (stream.queued.length === 0) return stream;
+  return { ...stream, queued: stream.queued.slice(1) };
+}
+
+/** The host's marker for "this bubble is the queue's head being sent". */
+function promptDispatched(update: Record<string, unknown>): boolean {
+  const jabot = asRecord(update.jabot);
+  return jabot !== undefined && str(jabot.event) === "prompt_dispatched";
+}
 
 function chunk(
   stream: ThreadStream,
@@ -367,9 +448,14 @@ function sysLine(stopReason: string): string {
   }
 }
 
-/** A turn began: the composer is busy and the queue can start filling. */
+/**
+ * A turn began: the composer is busy and the queue can start filling.
+ *
+ * The optimistic half of the same rule [`turnInFlight`] applies to events —
+ * the composer must not wait a round trip to offer Stop.
+ */
 export function markPromptSent(stream: ThreadStream): ThreadStream {
-  return { ...stream, busy: true, lastStopReason: null };
+  return turnInFlight(stream);
 }
 
 /** A prompt the host is holding, shown before it has been sent to anyone. */
@@ -378,6 +464,202 @@ export function markPromptQueued(
   text: string,
 ): ThreadStream {
   return { ...stream, queued: [...stream.queued, text] };
+}
+
+// ---- permission cards (#20) -----------------------------------------------
+
+/** The prefix that makes a notice card's id reversible back to its request. */
+const PERMISSION_ITEM = "perm-";
+
+/**
+ * The action id for "no" on a card whose agent offered no options at all.
+ *
+ * Never mixed in with the agent's own option ids — it is namespaced so an
+ * adapter cannot accidentally ship an option that means cancel to us and
+ * something else to itself.
+ */
+export const PERMISSION_CANCEL = "jabot:cancel";
+
+export function permissionItemId(requestId: string): string {
+  return `${PERMISSION_ITEM}${requestId}`;
+}
+
+/** The request a notice card belongs to, or `null` for any other notice. */
+export function permissionRequestId(itemId: string): string | null {
+  return itemId.startsWith(PERMISSION_ITEM)
+    ? itemId.slice(PERMISSION_ITEM.length)
+    : null;
+}
+
+/**
+ * An agent is asking. Draw the card once, whichever way the ask arrived.
+ *
+ * A request already on screen is left exactly as it is — the same object, so
+ * nothing re-renders. An ask does not change after it is made, and the live
+ * notification and the hydrated `permission/pending` row are two views of one
+ * question rather than two questions.
+ */
+export function applyPermissionAsk(
+  stream: ThreadStream,
+  ask: {
+    requestId: string;
+    threadId?: string;
+    subject: unknown;
+    options: unknown;
+    stale?: boolean;
+  },
+): ThreadStream {
+  if (!ask.requestId) return stream;
+  if (stream.permissions[ask.requestId] !== undefined) return stream;
+  const closed = closeBubble(stream);
+  return {
+    ...closed,
+    items: [...closed.items, permissionNotice(ask)],
+    permissions: {
+      ...closed.permissions,
+      [ask.requestId]: closed.items.length,
+    },
+  };
+}
+
+/**
+ * Somebody answered: this window, another window, or the host cancelling the
+ * turn. The card locks either way — the buttons are the only thing that could
+ * send a second answer, and the host is not the only one who can resolve it.
+ */
+export function applyPermissionResolved(
+  stream: ThreadStream,
+  requestId: string,
+): ThreadStream {
+  const at = stream.permissions[requestId];
+  if (at === undefined) return stream;
+  const item = stream.items[at];
+  if (!item || item.kind !== "notice" || item.resolved) return stream;
+  return {
+    ...stream,
+    items: replaceAt(stream.items, at, { ...item, resolved: true }),
+  };
+}
+
+/** Every ask the host is still holding for this thread, oldest first. */
+export function hydratePermissions(
+  stream: ThreadStream,
+  requests: readonly PendingPermissionView[],
+): ThreadStream {
+  return requests.reduce(
+    (acc: ThreadStream, request: PendingPermissionView) =>
+      applyPermissionAsk(acc, request),
+    stream,
+  );
+}
+
+/**
+ * Say out loud that an answer was recorded but never reached anyone.
+ *
+ * The alternative is a card that fades on click exactly as it would have if
+ * the agent had acted on it, over a session that is not going to do anything.
+ */
+export function noteUndelivered(stream: ThreadStream): ThreadStream {
+  return {
+    ...stream,
+    items: [
+      ...stream.items,
+      {
+        kind: "sys",
+        id: nextId(stream),
+        text: "Recorded. The agent that asked is gone — message the thread to pick the work back up.",
+      },
+    ],
+    counter: stream.counter + 1,
+  };
+}
+
+function permissionNotice(ask: {
+  requestId: string;
+  threadId?: string;
+  subject: unknown;
+  options: unknown;
+  stale?: boolean;
+}): Extract<TranscriptItem, { kind: "notice" }> {
+  const subject = asRecord(ask.subject);
+  const toolCall = subject ? asRecord(subject.toolCall) : undefined;
+  const detail = toolCall ?? subject;
+  return {
+    kind: "notice",
+    id: permissionItemId(ask.requestId),
+    title: (detail && str(detail.title)) ?? "Permission needed",
+    pill: detail ? str(detail.kind) : undefined,
+    body: permissionBody(detail, ask.stale === true),
+    actions: permissionActions(ask.options),
+    threadId: ask.threadId,
+  };
+}
+
+function permissionBody(
+  detail: Record<string, unknown> | undefined,
+  stale: boolean,
+): string {
+  const what = detail ? (permissionTarget(detail) ?? "") : "";
+  const base = what
+    ? `The agent wants to go ahead with ${what}.`
+    : "The agent is asking before it goes ahead.";
+  if (!stale) return base;
+  // The honest half. #21 brings this thread back as Needs you after a restart;
+  // what it cannot bring back is the ACP call, so a click here records the
+  // decision and reaches nobody.
+  return `${base} JaBot restarted while it was waiting, so your answer is recorded rather than delivered.`;
+}
+
+/**
+ * What the card says the agent is about to do.
+ *
+ * The *opposite* priority to a tool line's target: a toolblock leads with the
+ * agent's own title because it is a log of what happened, while this is a
+ * decision, and "Run ls" over a command of `rm -rf /` is the summary hiding
+ * the thing being agreed to. The concrete argument wins; the title is the
+ * fallback, and it is already the heading anyway.
+ */
+function permissionTarget(
+  detail: Record<string, unknown>,
+): string | undefined {
+  const raw = asRecord(detail.rawInput);
+  const argument = raw
+    ? (str(raw.command) ??
+      str(raw.path) ??
+      str(raw.file_path) ??
+      str(raw.query))
+    : undefined;
+  if (argument) return argument;
+  const locations = Array.isArray(detail.locations) ? detail.locations : [];
+  const first = asRecord(locations[0]);
+  return (first ? str(first.path) : undefined) ?? str(detail.title);
+}
+
+/**
+ * The agent's own options, in the agent's own words.
+ *
+ * Nothing is invented: an option the adapter did not offer is one the host
+ * cannot send back. The only exception is an ask with no options at all, which
+ * would otherwise be a question with no way to answer it.
+ */
+function permissionActions(options: unknown): NoticeAction[] {
+  const offered = Array.isArray(options) ? options : [];
+  const actions: NoticeAction[] = [];
+  for (const raw of offered) {
+    const option = asRecord(raw);
+    const id = option ? str(option.optionId) : undefined;
+    if (!id) continue;
+    const kind = option ? (str(option.kind) ?? "") : "";
+    actions.push({
+      id,
+      label: (option && str(option.name)) ?? id,
+      primary: kind.startsWith("allow") || id.startsWith("allow"),
+    });
+  }
+  if (actions.length === 0) {
+    actions.push({ id: PERMISSION_CANCEL, label: "Cancel" });
+  }
+  return actions;
 }
 
 function endTurn(stream: ThreadStream): ThreadStream {
@@ -617,6 +899,12 @@ export interface LiveTranscript {
    * has already enqueued by the time the button exists.
    */
   cancel: () => void;
+  /**
+   * Answer a permission card: the notice item's id, and the id of the button
+   * that was pressed — which is one of the agent's own ACP option ids, or
+   * [`PERMISSION_CANCEL`] (#20).
+   */
+  answer: (itemId: string, actionId: string) => void;
 }
 
 /**
@@ -650,43 +938,52 @@ export function useThreadTranscript(
     }
     let cancelled = false;
     let hydrated = false;
-    const buffered: SessionUpdateParams[] = [];
+    // Permission notifications are buffered with the updates and for the same
+    // reason: the subscription is installed before either read goes out, and
+    // an ask that arrives in between belongs on the screen, not in the gap.
+    const buffered: LiveEvent[] = [];
 
-    const apply = (params: SessionUpdateParams) => {
-      setStream((current) =>
-        applyAcpEvent(current, params.acp, params.transcriptSeq),
-      );
+    const apply = (event: LiveEvent) => {
+      setStream((current) => applyLive(current, event));
     };
 
     const unsubscribe = client.onNotification(
       (notification: JsonRpcNotification) => {
-        if (notification.method !== SESSION_UPDATE) return;
-        const params = notification.params as SessionUpdateParams | undefined;
-        if (!params || params.threadId !== threadId) return;
-        if (hydrated) apply(params);
-        else buffered.push(params);
+        const event = liveEvent(notification, threadId);
+        if (!event) return;
+        if (hydrated) apply(event);
+        else buffered.push(event);
       },
     );
 
-    client
-      .threadTranscript({ threadId })
-      .then((result) => {
+    let pendingError: unknown = null;
+    Promise.all([
+      client.threadTranscript({ threadId }),
+      // An ask outlives the host that took it (#20), so the outstanding ones
+      // are read at the same time as the transcript rather than waited for:
+      // a thread reopened after a quit has to show the question again.
+      client.pendingPermissions({ threadId }).catch((err: unknown) => {
+        pendingError = err;
+        return { requests: [] as PendingPermissionView[] };
+      }),
+    ])
+      .then(([result, pending]) => {
         if (cancelled) return;
         setStream((current) => {
           let next = hydrate(result, current);
-          for (const params of buffered) {
-            next = applyAcpEvent(next, params.acp, params.transcriptSeq);
-          }
+          next = hydratePermissions(next, pending.requests);
+          for (const event of buffered) next = applyLive(next, event);
           return next;
         });
         hydrated = true;
         buffered.length = 0;
+        if (pendingError) setError(message(pendingError));
       })
       .catch((err: unknown) => {
         if (cancelled) return;
         // A thread the host cannot replay still has a live stream: keep the
         // subscription, say what went wrong, and let the turn draw itself.
-        setError(err instanceof Error ? err.message : String(err));
+        setError(message(err));
         hydrated = true;
       })
       .finally(() => {
@@ -729,7 +1026,7 @@ export function useThreadTranscript(
             queued: current.queued.filter((held) => held !== text),
             busy: busy ? current.busy : false,
           }));
-          setError(err instanceof Error ? err.message : String(err));
+          setError(message(err));
         });
     },
     [client, threadId],
@@ -746,12 +1043,90 @@ export function useThreadTranscript(
   const cancel = useCallback(() => {
     if (!client || !threadId) return;
     client.cancel({ threadId }).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(message(err));
     });
   }, [client, threadId]);
 
-  return useMemo(
-    () => ({ stream, error, loading, send, cancel }),
-    [stream, error, loading, send, cancel],
+  const answer = useCallback(
+    (itemId: string, actionId: string) => {
+      const requestId = permissionRequestId(itemId);
+      if (!client || !threadId || !requestId) return;
+      const deviceId = client.deviceId;
+      if (!deviceId) {
+        setError("Not connected to the host yet.");
+        return;
+      }
+      // Optimistic, and load-bearing: locking the card *is* what stops a
+      // second click becoming a second answer while the first is in flight.
+      // The host is idempotent underneath (#20) — this is the half that keeps
+      // the user from having to find that out.
+      setStream((current) => applyPermissionResolved(current, requestId));
+      client
+        .replyPermission({
+          requestId,
+          deviceId,
+          ...(actionId === PERMISSION_CANCEL
+            ? { cancelled: true }
+            : { optionId: actionId }),
+        })
+        .then((result) => {
+          if (!result.delivered) {
+            setStream((current) => noteUndelivered(current));
+          }
+        })
+        .catch((err: unknown) => setError(message(err)));
+    },
+    [client, threadId],
   );
+
+  return useMemo(
+    () => ({ stream, error, loading, send, cancel, answer }),
+    [stream, error, loading, send, cancel, answer],
+  );
+}
+
+/** One notification, as something the reducer understands — or nothing. */
+type LiveEvent =
+  | { kind: "update"; params: SessionUpdateParams }
+  | { kind: "ask"; params: PermissionAskParams }
+  | { kind: "resolved"; params: PermissionResolvedParams };
+
+function liveEvent(
+  notification: JsonRpcNotification,
+  threadId: string,
+): LiveEvent | null {
+  const params = notification.params as
+    | { threadId?: string }
+    | undefined;
+  if (!params || params.threadId !== threadId) return null;
+  switch (notification.method) {
+    case SESSION_UPDATE:
+      return { kind: "update", params: params as SessionUpdateParams };
+    case PERMISSION_ASK:
+      return { kind: "ask", params: params as PermissionAskParams };
+    case PERMISSION_RESOLVED:
+      return { kind: "resolved", params: params as PermissionResolvedParams };
+    default:
+      return null;
+  }
+}
+
+function applyLive(stream: ThreadStream, event: LiveEvent): ThreadStream {
+  switch (event.kind) {
+    case "update":
+      return applyAcpEvent(stream, event.params.acp, event.params.transcriptSeq);
+    case "ask":
+      return applyPermissionAsk(stream, {
+        requestId: event.params.requestId,
+        threadId: event.params.threadId,
+        subject: event.params.subject,
+        options: event.params.options,
+      });
+    case "resolved":
+      return applyPermissionResolved(stream, event.params.requestId);
+  }
+}
+
+function message(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
