@@ -2307,7 +2307,35 @@ button that would go nowhere.
 **Also in this change, and unrelated to GitHub:** the harness picker and the
 header chip drew a coloured dot per engine. Five dots in five accents is a
 legend you have to learn, so they now draw a mark per harness
-(`components/HarnessIcon.tsx`), in the same accent the dot used. The marks are
-written for this file in the stroke style of `Icon.tsx` rather than vendored
-from anybody's brand kit, and an id this renderer has never heard of — every
-tier-3 harness a user brings (#13) — still gets a glyph.
+(`components/HarnessIcon.tsx`), in the same accent the dot used.
+
+The first attempt drew those marks by hand, in the stroke style of `Icon.tsx`,
+on the theory that a 16px glyph cannot be a real logo anyway. That was wrong,
+and it was rejected on sight: an approximation of a mark people already know
+reads as a *wrong* mark, not as a stylised one — the OpenAI knot came out
+looking like React's atom. Every mark is now the vendor's own path data,
+copied verbatim from a published set and traced to the same URL the harness
+catalog already points at for its install hint:
+
+| harness | source | vendor |
+| --- | --- | --- |
+| `claude` | `simple-icons` `claude` (CC0-1.0) | claude.ai |
+| `codex` | `@lobehub/icons` `Codex` (MIT) | openai.com/codex |
+| `pi` | `@lobehub/icons` `Pi` (MIT) | pi.dev |
+| `hermes` | `@lobehub/icons` `HermesAgent` (MIT) | hermes-agent.nousresearch.com |
+| `openclaw` | `@lobehub/icons` `OpenClaw` (MIT) | openclaw.dev |
+
+They are inlined rather than depended on — five glyphs do not earn a package
+on the critical path — and they are filled paths rather than strokes, because
+that is how the vendors draw them.
+
+Two things did not come from a vendor, and both are deliberate. An id this
+renderer has never heard of — every tier-3 harness a user brings (#13) —
+still gets a glyph: a terminal, drawn here, because there is no vendor to
+copy. And `hermes` is the one mark that is a whole illustration rather than a
+symbol: Nous Research publishes no Hermes *glyph* (the repo's own banner is a
+pixel wordmark), so the published mark is their character artwork. It is
+accurate and it is 19.5 KB, and at 17px it reads as a silhouette rather than
+as a logo. It is kept because it is theirs; the alternative on the table was
+the caduceus their README titles the project with, which is legible and is not
+a logo.

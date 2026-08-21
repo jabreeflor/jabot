@@ -59,7 +59,10 @@ describe("the harness mark", () => {
     const { container } = render(<HarnessMark harnessId="my-own-agent" />);
     const [mark] = marksIn(container);
     expect(mark).toBeDefined();
-    expect(mark.querySelector("rect")).not.toBeNull();
+    expect(mark.querySelector("path")).not.toBeNull();
+    // And it is not a vendor's mark wearing a stranger's name.
+    const { container: claude } = render(<HarnessMark harnessId="claude" />);
+    expect(mark.innerHTML).not.toBe(marksIn(claude)[0].innerHTML);
   });
 
   it("takes its colour from the harness accent the card sets", () => {

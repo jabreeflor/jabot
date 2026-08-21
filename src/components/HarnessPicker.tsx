@@ -7,7 +7,9 @@
 //!
 //! The card leads with the engine's own mark rather than a coloured dot: five
 //! dots in five accents is a legend you have to learn, and the shapes are the
-//! thing people already know these tools by.
+//! thing people already know these tools by. `HarnessIcon.tsx` has the marks
+//! and where each one came from — they are the vendors' own, not drawings of
+//! them.
 
 import type { CSSProperties } from "react";
 
