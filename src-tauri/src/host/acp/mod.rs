@@ -144,10 +144,6 @@ impl HostSession {
     }
 
     pub fn pump_acp(&mut self) {
-        // Chief's host tools first: a tool call is an agent blocked on an
-        // answer, and its connection thread is holding the socket open until
-        // this thread gives it one (#24).
-        self.drain_chief_requests();
         let thread_ids: Vec<String> = self.connections.keys().cloned().collect();
         for thread_id in thread_ids {
             let mut events = Vec::new();
@@ -167,10 +163,6 @@ impl HostSession {
         // whose process is gone, notice a machine that was asleep, and close
         // sessions nobody is using (#21). Rate-limited inside.
         self.supervisor_tick();
-        // The in-process cron rides it too. Decision #4 rules out a daemon, so
-        // this is the only clock a schedule has: no pump, no fire (#25).
-        // Rate-limited inside, to a coarser interval than the keep-alive.
-        self.schedule_tick();
     }
 
     /// Quit, in the sense decision #4 settled: kill the children, keep the

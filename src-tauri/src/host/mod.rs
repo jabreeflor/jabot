@@ -4,7 +4,6 @@
 //! session — Tauri IPC now, Unix socket later, same messages.
 
 mod acp;
-mod chief;
 mod crew;
 mod git;
 mod harness;
@@ -16,7 +15,6 @@ mod procgroup;
 mod protocol;
 mod repo;
 mod router;
-mod schedule;
 mod seq;
 mod store;
 mod supervisor;
@@ -42,34 +40,27 @@ pub use lifecycle::{
 };
 #[allow(unused_imports)]
 pub use protocol::{
-    decode_frame, decode_frames, encode_frame, BotTemplateView, BotView, ChiefInvokeParams,
-    ChiefInvokeResult, ChiefToolView, ChiefToolsResult, CrewCreateParams, CrewHostToolView,
-    CrewListResult, CrewRefParams, CrewRemoveResult, CrewUpdateParams, DeviceInfo, DeviceRole,
-    Envelope, FolderForgetResult, FolderListResult, FolderOriginView, FolderThreadView, FolderView,
-    GithubStatusResult, HarnessCardView, HarnessDoctorResult, HarnessListResult, HarnessStatus,
-    HarnessTier, HealthResult, HelloParams, HelloResult, JsonRpcError, JsonRpcMessage,
-    JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, PendingPermissionView,
-    PermissionPendingParams, PermissionPendingResult, PermissionReplyParams, PermissionReplyResult,
-    PromptMode, QueuedPromptView, RequestId, ResumeOutcome, ResurfaceReason, RpcError,
-    ScheduleCreateParams, ScheduleFireView, ScheduleListParams, ScheduleListResult,
-    ScheduleRefParams, ScheduleRemoveResult, ScheduleRunResult, ScheduleUpdateParams, ScheduleView,
-    StoreStatus, SupervisorStatusResult, ThreadResumeResult, ThreadStateResult,
+    decode_frame, decode_frames, encode_frame, BotTemplateView, BotView, CrewCreateParams,
+    CrewHostToolView, CrewListResult, CrewRefParams, CrewRemoveResult, CrewUpdateParams,
+    DeviceInfo, DeviceRole, Envelope, FolderForgetResult, FolderListResult, FolderOriginView,
+    FolderThreadView, FolderView, GithubStatusResult, HarnessCardView, HarnessDoctorResult,
+    HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams, HelloResult,
+    JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
+    PendingPermissionView, PermissionPendingParams, PermissionPendingResult, PermissionReplyParams,
+    PermissionReplyResult, PromptMode, QueuedPromptView, RequestId, ResumeOutcome, ResurfaceReason,
+    RpcError, StoreStatus, SupervisorStatusResult, ThreadResumeResult, ThreadStateResult,
     ThreadTranscriptParams, ThreadTranscriptResult, ToolCardView, ToolConnectResult,
     ToolConnectionStatus, ToolDisconnectResult, ToolListResult, ToolRefParams, ToolTransport,
-    TranscriptEventView, CHIEF_INVOKE, CHIEF_TOOLS, CLIENT_METHODS, CREW_CREATE, CREW_LIST,
-    CREW_REMOVE, CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
-    FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
-    HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
-    PERMISSION_PENDING, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SCHEDULE_CREATE,
-    SCHEDULE_LIST, SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE, SESSION_CANCEL, SESSION_PROMPT,
-    SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
-    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
-    TOOLS_LIST,
+    TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE,
+    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR,
+    HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE,
+    JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_PENDING, PERMISSION_REPLY, PERMISSION_RESOLVED,
+    PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE, SUPERVISOR_STATUS,
+    THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME,
+    THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 #[allow(unused_imports)]
 pub use repo::{gh::GhAuth, git::RepoProbe, origin::Origin};
-#[allow(unused_imports)]
-pub use schedule::Scheduler;
 #[allow(unused_imports)]
 pub use store::{NewFolder, NewThread, Secrets, Store, StoreError, ThreadRepo, ThreadRow};
 #[allow(unused_imports)]
@@ -90,7 +81,6 @@ use protocol::methods::{
     InboxResurfaceParams, LoggedEvent, PermissionAskParams, PermissionResolvedParams,
     ResumeFromParams, ResumeFromResult, SessionUpdateParams,
 };
-use schedule::Scheduler as SchedulerState;
 use seq::SeqStore;
 use supervisor::Supervisor as SupervisorState;
 
@@ -135,18 +125,6 @@ pub struct HostSession {
     lifecycle: LifecycleState,
     /// Keep-alive, resume, and what this launch found on the ledger (#21).
     supervisor: SupervisorState,
-    /// The in-process cron (#25). Decision #4 rules out a daemon, so this is
-    /// the only clock a schedule has — and why a missed slot is reconciled at
-    /// launch rather than replayed.
-    scheduler: SchedulerState,
-    /// The loopback MCP server that carries Chief's host tools into its ACP
-    /// session (#24). Started on the first session that has a host-tool chip,
-    /// not at boot: a host nobody has prompted should not be listening.
-    chief: Option<chief::ChiefEndpoint>,
-    /// Whether a host tool is running right now. A tool can prompt, prompting
-    /// pumps, and pumping drains the tool queue — this is what stops a call
-    /// from being answered inside another one.
-    chief_draining: bool,
 }
 
 impl HostSession {
@@ -186,12 +164,6 @@ impl HostSession {
         // directory left by the last launch is collected rather than colliding
         // with the thread that reuses its path (#23).
         session.sweep_worktrees();
-        // And last, because it reads the ledger the boot pass has just closed
-        // out: a schedule whose run was lost with the host gets its card here,
-        // and a slot that came round while the app was shut is caught up once
-        // rather than replayed (#25). Not a second boot path — this is the
-        // same reconcile the pump runs, taken once before anything can ask.
-        session.reconcile_schedules();
         session
     }
 
@@ -224,9 +196,6 @@ impl HostSession {
             prompt_queue: HashMap::new(),
             lifecycle: LifecycleState::from_env(),
             supervisor: SupervisorState::from_env(),
-            scheduler: SchedulerState::from_env(),
-            chief: None,
-            chief_draining: false,
         }
     }
 
@@ -725,7 +694,7 @@ mod tests {
         let response = session.handle_request(req(1, HOST_HELLO, None));
         let value = result_value(&response);
         assert_eq!(value["store"]["journalMode"], "wal");
-        assert_eq!(value["store"]["schemaVersion"], 7);
+        assert_eq!(value["store"]["schemaVersion"], 5);
         assert_eq!(value["store"]["botCount"], 6);
         // Three shipped cards plus the two presets, all seeded as rows so a
         // thread can name any of them (#13).
