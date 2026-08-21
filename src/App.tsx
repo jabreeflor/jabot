@@ -20,6 +20,7 @@ import { useEffect, useReducer, useRef, useState } from "react";
 
 import {
   connectHost,
+  onNotificationActivated,
   type FolderRegisterParams,
   type HelloResult,
   type HostClient,
@@ -136,6 +137,29 @@ function App() {
     const pending = timers.current;
     return () => pending.forEach((id) => window.clearTimeout(id));
   }, []);
+
+  // Clicking a native notification opens the thread it named (#27). The Tauri
+  // layer has already brought the window back by the time this arrives, so the
+  // only thing left is to point the main pane at the right row — after asking
+  // the host for it, because the thread the banner is about was very likely
+  // folded out of the sidebar until a moment ago. A thread that really is gone
+  // falls through to the existing "check the Inbox" pane, which is the honest
+  // answer rather than an error.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void onNotificationActivated(({ threadId }) => {
+      registered.reload();
+      setSelection({ view: "thread", threadId });
+    }).then((off) => {
+      if (cancelled) off();
+      else unlisten = off;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [registered.reload]);
 
   /** Run the data change once the exit transition has finished. */
   function afterLeaving(then: () => void) {

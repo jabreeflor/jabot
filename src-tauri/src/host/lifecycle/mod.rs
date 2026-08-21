@@ -905,7 +905,10 @@ impl HostSession {
                 run_id,
             )
             .map_err(store_error)?;
-        self.notify_inbox_resurface(thread_id, reason);
+        // The card copy travels with the frame so #27 can name the thread in a
+        // native notification without going back to the store. Persist first,
+        // then notify — the order this whole method exists to hold.
+        self.notify_inbox_resurface_card(thread_id, reason, Some(&title), Some(summary));
         Ok(true)
     }
 

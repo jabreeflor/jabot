@@ -1732,3 +1732,147 @@ only on success — leaves the sidebar hiding a thread that is still active.
   optimistic: nothing in this issue's scope creates a place to put it.
 - **An OS notification when a folded thread resurfaces.** Still #27's, as D-006
   recorded.
+
+---
+
+## D-019 — #27: what a banner is allowed to interrupt for, and what a Linux box can honestly prove about macOS code
+
+D-006 left this for #27 ("the host emits `inbox/resurface` and the badge count;
+no `UNUserNotificationCenter`") and D-018 pointed at it again. This is the entry
+that closes it — and the honest account of what could not be executed here.
+
+### 1. The noise budget is `needs_you`, `done`, `failed` — and nothing else
+
+The issue names three transitions; `src-tauri/src/notify/mod.rs` implements
+exactly those and lets everything else fall through to silence by default. Two
+absences are decisions rather than omissions:
+
+- **`stuck` does not ring.** It is a real `inbox_events` kind, and the whole
+  point of D-006 #3 is that the process behind a stuck card is *still alive*.
+  The ask is patience or a cancel. Interrupting someone to say "still working"
+  is the exact noise a budget exists to prevent; the Inbox card says it just as
+  well, and `notify/status` publishes the omission so it is discoverable.
+- **`folded` does not ring**, because nothing writes it (D-006 #4) — and if
+  something ever does, folding is the user asking *not* to be told.
+
+`session/update`, `permission/ask` and `permission/resolved` are stream traffic
+and are refused by name in the tests, so a future frame that happens to carry a
+`threadId` cannot start ringing by accident.
+
+### 2. `InboxResurfaceParams` grew `title` and `summary`
+
+A notification has to name the thread it opens, and the card copy existed only
+inside `resurface_and_notify`'s transaction. Rather than have the notify layer
+query the store — which would put a read *between* the write and the notify, in
+the one place decision #5 cares about order — the frame now carries the copy it
+just wrote. Both fields are optional and `skip_serializing_if`, so:
+
+- a client written against the original three fields still parses;
+- `supervisor::boot`'s *restate* path, which re-announces a row it did not
+  re-read, keeps calling the two-argument `notify_inbox_resurface` and gets
+  reason-shaped fallback copy ("A thread needs you") instead of a blank banner.
+
+`notify_inbox_resurface_card` is the new entry point; the old name delegates to
+it with `None, None` so no existing caller moved.
+
+### 3. `notify/status` is a host method nobody scoped
+
+"A refused OS permission must degrade to the in-app Inbox, not break" is
+satisfied structurally — nothing in the card path can observe a delivery
+failure — but *silently* degrading leaves the user unable to tell "notifications
+are off" from "JaBot is broken". `notify/status` is the difference: `supported`,
+`authorization` (`granted` / `denied` / `notDetermined` / `unsupported`), and
+`kinds` — the budget above, published rather than buried in Rust.
+
+`unsupported` is deliberately not `denied`. Denied is a permission a human can
+go and change; unsupported is a Linux build, or a dev build running outside
+`JaBot.app`, with nowhere to send them. A settings screen that conflated them
+would point people at a pane that does not exist.
+
+It is **not** in `APPROVER_METHODS`: whether *this Mac* can ring is not a
+phone's business, and the scope list is an allowlist, so it stays closed until
+somebody decides otherwise.
+
+### 4. Delivery choices worth knowing before someone "fixes" them
+
+- **One banner per thread.** The notification identifier is
+  `jabot.inbox.<threadId>`, and `UNUserNotificationCenter` *replaces* a
+  delivered notification whose identifier it already holds. A thread that asks
+  for permission and then finishes updates its one banner instead of stacking
+  two. The durable record is the Inbox; this is a tap on the shoulder, and five
+  taps about one thread is worse than one current one.
+- **No `willPresentNotification:` delegate method**, so macOS suppresses
+  banners while JaBot is frontmost. That is the right default here: someone
+  looking at the app has the Inbox in front of them, and #27 is about the times
+  they are somewhere else.
+- **No badge.** Authorization asks for `Alert | Sound` only. The Dock badge
+  belongs to the Inbox count (#22), and a second, divergent number would be
+  worse than none.
+- **Every entry point is guarded on `NSBundle.mainBundle().bundleIdentifier()`.**
+  `UNUserNotificationCenter` raises an Objective-C exception — an abort, not an
+  `Err` — when the process is not a bundled app, and `tauri dev` runs the bare
+  binary. Unbundled, the whole module is silence.
+- **The click sink is a process global.** Its other end is an Objective-C
+  delegate the system owns and calls on its own schedule; there is no `self` to
+  hang it off. Installed once, from `lib.rs`'s `setup`.
+
+### 5. What was actually verified, and how
+
+There is no display and no macOS here, so **no notification has ever been
+delivered, and no banner has ever been clicked.** What *was* done:
+
+- The whole decision layer — which kinds ring, the payload, the `userInfo`
+  round-trip that routes a click back to a thread, the identifier policy, the
+  fallback copy — is portable Rust with 11 unit tests that run on Linux.
+- `notify/status` and the widened resurface frame have e2e cases in
+  `tests/e2e/notifications.test.ts` driving the production `HostClient` against
+  a live `jabot-hostd`, including the one that matters most: the Inbox card
+  lands on a host whose own answer to "can you notify?" is *no*.
+- The renderer half — the shell subscribes, an activation opens that thread, a
+  thread that is gone falls through to "check the Inbox", and the subscriber
+  degrades to a no-op with no Tauri event bus — is in
+  `src/__tests__/notifications.test.tsx`.
+- **`src/notify/mac.rs` was type-checked and clippy-checked against the real
+  macOS target**, which is more than D-005 could claim for the signing path.
+  The recipe, for whoever touches it next:
+
+  ```
+  rustup target add x86_64-apple-darwin
+  # a scratch crate with objc2 / objc2-foundation /
+  # objc2-user-notifications / block2 and:
+  #   mod host { pub const INBOX_EVENT: &str = "inbox/event";
+  #              pub const INBOX_RESURFACE: &str = "inbox/resurface"; }
+  #   #[path = "…/src-tauri/src/notify/mod.rs"] mod notify;
+  cargo clippy --target x86_64-apple-darwin
+  ```
+
+  Cross-checking the *whole* crate does not work: `objc2-exception-helper`
+  (pulled in by tauri) has a `cc` build script that needs an Apple toolchain.
+  The scratch crate avoids it because nothing in `notify` uses ObjC exceptions.
+
+**What still needs a real Mac**, in the order someone should try it:
+
+1. That the permission prompt appears once, on first launch of a signed
+   `JaBot.app`, and that refusing it leaves the app working.
+2. That a banner appears at all — this is where an unbundled or unsigned build
+   fails, and where `bundleIdentifier` guard turns a crash into silence.
+3. That clicking one un-hides the window and lands on the named thread.
+4. That a second card on the same thread *replaces* the first rather than
+   stacking, which is the identifier policy in §4 and the only claim here that
+   depends on framework behaviour rather than on our own code.
+
+### What #27 did **not** build
+
+- **A view that reads `notify/status`.** The method, the client call and the
+  types are there; nothing renders them. The natural home is the Settings
+  surface D-018 records as still unowned — or a one-line note in the Inbox
+  header when `supported && authorization === "denied"`, which is #22's view to
+  change, not this issue's file zone.
+- **Notification actions.** No Allow / Deny buttons on a `needs_you` banner and
+  no inline reply. `UNNotificationCategory` is the mechanism and the category
+  identifier is already stamped on every notification, so the seam exists; the
+  decision that answering a permission from a banner is safe belongs with #20's
+  broker, not here.
+- **A user-facing on/off switch, or per-bot notification settings.** The budget
+  is a constant. Making it configurable needs the same missing Settings home.
+- **Anything on the Dock icon.** See §4.

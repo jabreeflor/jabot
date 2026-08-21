@@ -76,6 +76,11 @@ pub use protocol::{
     THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
     TOOLS_LIST,
 };
+/// Native notifications (#27). The result type and the method name live with
+/// the rest of the wire; delivery lives in `crate::notify`, off the host so a
+/// platform framework never becomes a dependency of the JSON-RPC layer.
+#[allow(unused_imports)]
+pub use protocol::{NotifyStatusResult, NOTIFY_STATUS};
 #[allow(unused_imports)]
 pub use protocol::{
     INBOX_EVENT, SCHEDULE_CREATE, SCHEDULE_LIST, SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE,
@@ -494,15 +499,47 @@ impl HostSession {
     }
 
     pub fn notify_inbox_resurface(&mut self, thread_id: &str, reason: ResurfaceReason) -> u64 {
+        self.notify_inbox_resurface_card(thread_id, reason, None, None)
+    }
+
+    /// The same resurface, carrying the card copy that was just written.
+    ///
+    /// The overlay transition is what `inbox/resurface` has always meant; the
+    /// title and summary ride along so a *second* consumer of the frame — the
+    /// native notification in `crate::notify` (#27) — can say which thread came
+    /// back without a second query. Both are optional: the boot restate path
+    /// re-announces a row it did not re-read, and a banner with no title falls
+    /// back to copy about the reason rather than being dropped.
+    pub fn notify_inbox_resurface_card(
+        &mut self,
+        thread_id: &str,
+        reason: ResurfaceReason,
+        title: Option<&str>,
+        summary: Option<&str>,
+    ) -> u64 {
         let seq = self.seq.next(thread_id);
         let params = InboxResurfaceParams {
             host_id: self.identity.host_id.clone(),
             thread_id: thread_id.to_string(),
             seq,
             reason,
+            title: title.map(str::to_string),
+            summary: summary.map(str::to_string),
         };
         self.push_logged(thread_id, protocol::INBOX_RESURFACE, params);
         seq
+    }
+
+    /// Whether a banner can reach this user, and which Inbox kinds send one.
+    ///
+    /// Reported rather than acted on: nothing the answer says changes whether a
+    /// card was written, because the card is written first and always (#5).
+    pub fn notify_status(&self) -> NotifyStatusResult {
+        NotifyStatusResult {
+            supported: crate::notify::supported(),
+            authorization: crate::notify::authorization().as_str().to_string(),
+            kinds: crate::notify::notifying_kinds(),
+        }
     }
 
     /// A new Inbox card on a thread that did not move (#25).

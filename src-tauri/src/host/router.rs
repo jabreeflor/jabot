@@ -12,10 +12,10 @@ use super::protocol::methods::{
     SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
     ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_THREAD,
     CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS,
-    HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PERMISSION_PENDING,
-    PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM,
-    THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME,
-    THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, NOTIFY_STATUS,
+    PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS,
+    SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
+    THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 use super::protocol::methods::{
     DeviceRefParams, PairingClaimParams, PairingConfirmParams, PairingRefParams,
@@ -132,6 +132,12 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             session.require_hello()?;
             let params: InboxListParams = parse_params_or_default(request.params.as_ref())?;
             to_value(session.inbox_list(params)?)
+        }
+        // #27. No params: "can you ring me, and for what" is a property of the
+        // machine, not of a thread.
+        NOTIFY_STATUS => {
+            session.require_hello()?;
+            to_value(session.notify_status())
         }
         HARNESS_LIST => {
             session.require_hello()?;

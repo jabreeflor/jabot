@@ -20,6 +20,8 @@ import {
   HOST_RPC_EVENT,
   INBOX_LIST,
   JSONRPC_VERSION,
+  NOTIFICATION_ACTIVATED_EVENT,
+  NOTIFY_STATUS,
   PERMISSION_PENDING,
   PERMISSION_REPLY,
   PROTOCOL_VERSION,
@@ -82,6 +84,8 @@ import {
   type JsonRpcRequest,
   type InboxListParams,
   type InboxListResult,
+  type NotificationActivated,
+  type NotifyStatusResult,
   type JsonRpcResponse,
   type DeviceInfo,
   type PermissionPendingParams,
@@ -270,6 +274,13 @@ export class HostClient {
 
   async inbox(params: InboxListParams = {}): Promise<InboxListResult> {
     return this.request<InboxListResult>(INBOX_LIST, params);
+  }
+
+  /** Whether a native notification can reach this user, and which Inbox kinds
+      send one (#27). Informational only: a `denied` answer changes nothing
+      about the Inbox, which is where every card lands regardless. */
+  async notifyStatus(): Promise<NotifyStatusResult> {
+    return this.request<NotifyStatusResult>(NOTIFY_STATUS);
   }
 
   /** The New Chat / crew-editor catalog. Cheap: no probing, so opening the
@@ -480,6 +491,30 @@ export class HostClient {
       throw new HostRpcError(response.error);
     }
     return response.result as T;
+  }
+}
+
+/**
+ * Clicking a native notification opens the thread it names (#27).
+ *
+ * Not a `HostClient` method: the click is an AppKit event the Tauri layer
+ * forwards, not a JSON-RPC frame, so it must keep working on a client whose
+ * transport is a socket rather than the webview bridge.
+ *
+ * Resolves to a no-op unsubscribe wherever there is no Tauri event bus — a
+ * preview build, a unit test — so a caller never has to guess whether it is
+ * running inside the app.
+ */
+export async function onNotificationActivated(
+  handler: (activated: NotificationActivated) => void,
+): Promise<UnlistenFn> {
+  try {
+    return await listen<NotificationActivated>(
+      NOTIFICATION_ACTIVATED_EVENT,
+      (event) => handler(event.payload),
+    );
+  } catch {
+    return () => {};
   }
 }
 

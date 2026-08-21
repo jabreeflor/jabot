@@ -1609,9 +1609,13 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 name = "jabot"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "chrono",
  "keyring",
  "libc",
+ "objc2",
+ "objc2-foundation",
+ "objc2-user-notifications",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2262,7 +2266,10 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9df9128cbbfef73cda168416ccf7f837b62737d748333bfe9ab71c245d76613e"
 dependencies = [
+ "bitflags 2.13.1",
+ "block2",
  "objc2",
+ "objc2-core-location",
  "objc2-foundation",
 ]
 

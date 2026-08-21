@@ -45,6 +45,15 @@ keyring = { version = "3", default-features = false, features = ["apple-native"]
 # jabot-hostd does not pay for reqwest; the matching `.plugin()` registration
 # in lib.rs carries the same cfg.
 tauri-plugin-updater = "2"
+# UNUserNotificationCenter for the Inbox cards that deserve a banner (#27).
+# macOS-only for the same reason as the two above: `src/notify/mac.rs` is the
+# only file that names them, it is `cfg(target_os = "macos")`, and CI's verify
+# job builds on Linux, where none of this is compiled or downloaded. Versions
+# track the ones tauri already resolves, so nothing here forks the objc2 graph.
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-user-notifications = "0.3"
+block2 = "0.6"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

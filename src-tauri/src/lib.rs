@@ -4,6 +4,7 @@
 //! stdio. The message types are the future Unix-socket / WebSocket frames.
 
 pub mod host;
+pub mod notify;
 
 pub use host::{
     HostSession, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NewThread, RequestId, Store,
@@ -47,6 +48,34 @@ fn emit_host_notification(app: &tauri::AppHandle, notification: &JsonRpcNotifica
     if let Err(err) = app.emit("host-rpc", notification) {
         eprintln!("failed to emit host-rpc notification: {err}");
     }
+    // Persist, then notify — and the OS banner is the *last* step of the
+    // second half (#27). The `inbox_events` row was written before this
+    // notification was queued, and the webview has just been told, so a
+    // refused permission or a machine with no Notification Center costs
+    // nothing but the banner. `announce` decides on its own which frames
+    // deserve one; almost none do.
+    if let Some(params) = notification.params.as_ref() {
+        notify::announce(&notification.method, params);
+    }
+}
+
+/// Clicking a banner opens the thread it names (#27).
+///
+/// In this order: bring the window back first, because the click nearly always
+/// arrives while JaBot is hidden in the Dock (#4), and only then tell the
+/// renderer which thread to select. The other order lands a selection on a
+/// webview nobody can see.
+fn route_notification_clicks(app: tauri::AppHandle) {
+    notify::on_click(move |open| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        if let Err(err) = app.emit(notify::ACTIVATED_EVENT, open) {
+            eprintln!("failed to emit a notification click: {err}");
+        }
+    });
 }
 
 fn load_session(app: &tauri::AppHandle) -> HostSession {
@@ -103,6 +132,12 @@ pub fn run() {
             let wake = session.adapter_wake();
             app.manage(HostState(Mutex::new(session)));
             spawn_acp_pump(app.handle().clone(), wake);
+            // Ask for notification permission and start listening for clicks
+            // (#27). A refusal is not an error: the Inbox is the record and
+            // this is only the tap on the shoulder. Off macOS `install` is a
+            // genuine no-op, and no click can ever arrive to reach the sink.
+            route_notification_clicks(app.handle().clone());
+            notify::install();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![host_rpc])

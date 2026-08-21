@@ -32,6 +32,9 @@ pub const INBOX_RESURFACE: &str = "inbox/resurface";
 pub const HARNESS_LIST: &str = "harness/list";
 pub const HARNESS_DOCTOR: &str = "harness/doctor";
 pub const INBOX_LIST: &str = "inbox/list";
+/// Whether this build and this Mac can put an Inbox card in front of someone
+/// who is not looking at JaBot (#27), and whether they have said yes.
+pub const NOTIFY_STATUS: &str = "notify/status";
 pub const TOOLS_LIST: &str = "tools/list";
 pub const TOOLS_CONNECT: &str = "tools/connect";
 pub const TOOLS_DISCONNECT: &str = "tools/disconnect";
@@ -90,6 +93,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     SCHEDULE_UPDATE,
     SCHEDULE_REMOVE,
     SCHEDULE_RUN,
+    NOTIFY_STATUS,
 ];
 
 /// A new Inbox card exists on a thread that did **not** resurface.
@@ -951,6 +955,16 @@ pub struct InboxResurfaceParams {
     pub thread_id: String,
     pub seq: u64,
     pub reason: ResurfaceReason,
+    /// The card copy that landed in `inbox_events` in the same breath (#15).
+    ///
+    /// Optional because not every resurface has it in hand — the boot restate
+    /// path re-announces a row it did not re-read — and because a client
+    /// written against the original three fields must keep parsing. A native
+    /// notification with no title falls back to copy about the reason (#27).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -963,6 +977,25 @@ pub struct InboxEventParams {
     pub kind: String,
     pub title: String,
     pub summary: String,
+}
+
+/// What `notify/status` answers (#27).
+///
+/// Exists so the UI can *say* why nothing pinged, rather than leaving the user
+/// to guess. Notifications are a nudge on top of the Inbox and never a
+/// replacement for it, so every field here is informational: no answer this
+/// method can give changes whether a card was written.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NotifyStatusResult {
+    /// Whether this build can deliver at all: macOS, inside an app bundle.
+    pub supported: bool,
+    /// `granted`, `denied`, `notDetermined`, or `unsupported`. Asynchronous on
+    /// macOS, so this is the last answer the OS gave rather than a fresh query.
+    pub authorization: String,
+    /// The `inbox_events.kind` values that produce a banner — the noise budget,
+    /// readable rather than folded into the source.
+    pub kinds: Vec<String>,
 }
 
 // ---- Schedules (#25) --------------------------------------------------
@@ -1836,6 +1869,8 @@ mod envelope_tests {
             thread_id: "thread-1".into(),
             seq: 9,
             reason: ResurfaceReason::NeedsYou,
+            title: Some("Auth migration needs a call".into()),
+            summary: Some("waiting on your answer".into()),
         })
         .unwrap();
 

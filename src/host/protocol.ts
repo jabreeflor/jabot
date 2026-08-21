@@ -4,6 +4,10 @@
 export const JSONRPC_VERSION = "2.0" as const;
 export const PROTOCOL_VERSION = 1;
 export const HOST_RPC_EVENT = "host-rpc";
+/** A native notification was clicked. Reaches the renderer the same way the
+    host stream does — a Tauri event, not a JSON-RPC frame — because the click
+    happens in AppKit and never touches the host protocol (#27). */
+export const NOTIFICATION_ACTIVATED_EVENT = "notification-activated";
 
 export const HOST_HELLO = "host/hello";
 export const HOST_HEALTH = "host/health";
@@ -25,6 +29,9 @@ export const THREAD_RESUME = "thread/resume";
 export const SUPERVISOR_STATUS = "supervisor/status";
 export const INBOX_RESURFACE = "inbox/resurface";
 export const INBOX_LIST = "inbox/list";
+/** Whether this build and this Mac can put a card in front of someone who is
+    not looking at JaBot, and whether they have said yes (#27). */
+export const NOTIFY_STATUS = "notify/status";
 export const HARNESS_LIST = "harness/list";
 export const HARNESS_DOCTOR = "harness/doctor";
 export const TOOLS_LIST = "tools/list";
@@ -962,6 +969,11 @@ export interface PermissionResolvedParams extends Envelope {
 
 export interface InboxResurfaceParams extends Envelope {
   reason: ResurfaceReason;
+  /** The card copy written in the same transaction (#15). Optional: the boot
+      restate path re-announces a row it did not re-read, and a client written
+      against the original three fields must keep parsing. */
+  title?: string;
+  summary?: string;
 }
 
 export interface InboxEventParams extends Envelope {
@@ -969,6 +981,33 @@ export interface InboxEventParams extends Envelope {
   kind: string;
   title: string;
   summary: string;
+}
+
+// ---- Native notifications (#27) ---------------------------------------
+
+/** `unsupported` is not a refusal: it is a Linux build, or a dev build running
+    outside `JaBot.app`, neither of which has a Notification Center to ask. */
+export type NotifyAuthorization =
+  | "granted"
+  | "denied"
+  | "notDetermined"
+  | "unsupported";
+
+/** What `notify/status` answers. Every field is informational — no answer here
+    changes whether an Inbox card was written, because the card is written
+    first and always (decision #5). */
+export interface NotifyStatusResult {
+  supported: boolean;
+  authorization: NotifyAuthorization;
+  /** The `inbox_events.kind` values that produce a banner — the noise budget,
+      readable rather than buried in the host source. */
+  kinds: string[];
+}
+
+/** The payload of {@link NOTIFICATION_ACTIVATED_EVENT}. */
+export interface NotificationActivated {
+  threadId: string;
+  kind: string;
 }
 
 // ---- Schedules (#25) --------------------------------------------------
