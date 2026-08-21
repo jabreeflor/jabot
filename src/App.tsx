@@ -62,6 +62,7 @@ import {
 import { allThreads, useFolders } from "./views/folders";
 import { useThreadActions } from "./views/fold";
 import { useInbox, type HostInbox } from "./views/inbox";
+import { CrossIcon } from "./components/Icon";
 import { ChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
@@ -513,7 +514,7 @@ function AppShell({
         <div className="app-error" role="alert">
           <span>{foldError}</span>
           <button type="button" onClick={clearFoldError} aria-label="Dismiss">
-            ×
+            <CrossIcon />
           </button>
         </div>
       )}

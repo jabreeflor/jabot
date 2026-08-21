@@ -13,6 +13,7 @@ import {
   ClockIcon,
   InboxIcon,
   NewChatIcon,
+  PlusIcon,
   PullRequestIcon,
   SearchIcon,
 } from "./Icon";
@@ -109,7 +110,7 @@ export function Sidebar({
               aria-label="Add folder"
               onClick={onAddFolder}
             >
-              ＋
+              <PlusIcon />
             </button>
           )}
         </div>
