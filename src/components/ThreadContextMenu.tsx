@@ -1,17 +1,25 @@
 //! Right-click on a thread row.
 //!
-//! "Wait for Inbox" is the fold policy from #5, not a delete — the thread keeps
-//! running, it just stops taking up sidebar space until it has something to say.
+//! Neither fold item is a delete — the thread keeps running, it just stops
+//! taking up sidebar space until it has something to say (#5). They differ only
+//! in the policy they leave behind: "Disappear until done" keeps whatever the
+//! thread already had, and "Wait for Inbox" is the quieter one that lets the
+//! host answer reads while nobody is watching (#26). Both are hidden for a row
+//! that cannot be folded, because the transition table refuses to re-sleep a
+//! thread that has already come back to you.
+//!
 //! The menu names the thread so a mis-aimed right-click is obvious before the
 //! destructive item is clicked.
 
 import { useEffect, useRef } from "react";
 
+import { canFold } from "./FoldButton";
 import { ArchiveIcon, InboxIcon, TrashIcon } from "./Icon";
+import type { FoldPolicy, ThreadState } from "./types";
 
 /** Roughly the menu's own size; keeps it on screen near the window edges. */
 const MENU_W = 195;
-const MENU_H = 150;
+const MENU_H = 190;
 
 export interface MenuPosition {
   x: number;
@@ -20,15 +28,19 @@ export interface MenuPosition {
 
 export function ThreadContextMenu({
   threadTitle,
+  threadState,
   position,
-  onWaitForInbox,
+  onFold,
   onArchive,
   onDelete,
   onClose,
 }: {
   threadTitle: string;
+  /** Decides whether the fold items are offered at all. */
+  threadState: ThreadState;
   position: MenuPosition;
-  onWaitForInbox: () => void;
+  /** `undefined` policy is "Disappear until done" — keep the current one. */
+  onFold: (policy?: FoldPolicy) => void;
   onArchive: () => void;
   onDelete: () => void;
   onClose: () => void;
@@ -65,9 +77,20 @@ export function ThreadContextMenu({
         top: Math.min(position.y, window.innerHeight - MENU_H),
       }}
     >
-      <button type="button" role="menuitem" onClick={onWaitForInbox}>
-        <InboxIcon /> Wait for Inbox
-      </button>
+      {canFold(threadState) && (
+        <>
+          <button type="button" role="menuitem" onClick={() => onFold()}>
+            <InboxIcon /> Disappear until done
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => onFold("wait_for_inbox")}
+          >
+            <InboxIcon /> Wait for Inbox
+          </button>
+        </>
+      )}
       <button type="button" role="menuitem" onClick={onArchive}>
         <ArchiveIcon /> Archive
       </button>

@@ -10,7 +10,14 @@
  * a live host process with no production code aware it is under test.
  */
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,6 +83,31 @@ export function fakeAcpRuntime(mode?: string): RuntimeSpec {
     command: fakeAcpAgentPath(),
     args: mode ? [mode] : [],
   };
+}
+
+/**
+ * A `runtime` for the fake agent's `gated` mode, driven by a file on disk.
+ *
+ * The gate is what makes fold testable: the agent holds its turn open until
+ * the file appears, so a test can fold a session that is *genuinely running*
+ * and then decide, afterwards, how the work it was already doing ends. Write
+ * the gate with [`openGate`]; the script it takes is documented on
+ * `wait_for_gate` in `fake_acp_agent.rs`.
+ */
+export function gatedAcpRuntime(gatePath: string): RuntimeSpec {
+  return { command: fakeAcpAgentPath(), args: ["gated", gatePath] };
+}
+
+/**
+ * Tell a gated turn what happens next — a stop reason, or a comma-separated
+ * script of ACP tool kinds to ask permission for first.
+ *
+ * Renamed into place, so an agent polling the path never reads half a script.
+ */
+export function openGate(gatePath: string, script: string): void {
+  const staged = `${gatePath}.part`;
+  writeFileSync(staged, script);
+  renameSync(staged, gatePath);
 }
 
 export interface HostdOptions {

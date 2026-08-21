@@ -104,6 +104,12 @@ pub fn sas_digits(mac: &[u8; 32]) -> String {
 /// Crockford base32 — no I, L, O or U, so nothing reads as another character
 /// over the phone. `pairing-security-mobile.md` picks it for the headless
 /// host that prints a code instead of drawing a QR.
+///
+/// Folding what a human actually typed (case, dashes, `I`/`L`/`O`) back onto
+/// this alphabet is the *device's* job and only ever could be: the host is
+/// never told the code, it is told a MAC keyed by it, so the normalized form
+/// has to exist on the side where the typing happened. The rule is specified
+/// on `PairingClaimParams` and implemented in `tests/support/pairing.ts`.
 const CROCKFORD: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 /// `len` Crockford characters of unguessable text.
@@ -117,35 +123,6 @@ pub fn crockford(bytes: &[u8], len: usize) -> String {
         .take(len)
         .map(|byte| CROCKFORD[usize::from(*byte) % 32] as char)
         .collect()
-}
-
-/// Fold the ways a human types a code back onto the alphabet, or refuse.
-///
-/// Case, spaces and dashes are noise. `I`/`L` are `1` and `O` is `0`, which is
-/// the whole point of Crockford: someone reading a code off a terminal to
-/// someone holding a phone should not be able to get it wrong.
-pub fn normalize_code(input: &str) -> Option<String> {
-    let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
-        if ch == '-' || ch == ' ' || ch == '\t' {
-            continue;
-        }
-        let upper = ch.to_ascii_uppercase();
-        let mapped = match upper {
-            'I' | 'L' => '1',
-            'O' => '0',
-            other => other,
-        };
-        if !CROCKFORD.contains(&(mapped as u8)) {
-            return None;
-        }
-        out.push(mapped);
-    }
-    if out.is_empty() {
-        None
-    } else {
-        Some(out)
-    }
 }
 
 /// Hex, for MACs on the wire. Shorter than base64url to eyeball in a log and
@@ -233,16 +210,6 @@ mod tests {
             assert_eq!(sas.as_bytes()[4], b'-');
             assert!(sas.chars().filter(char::is_ascii_digit).count() == 8);
         }
-    }
-
-    #[test]
-    fn codes_read_back_the_way_a_human_says_them() {
-        assert_eq!(normalize_code("abc-def12").as_deref(), Some("ABCDEF12"));
-        // The characters Crockford removes, mapped rather than rejected.
-        assert_eq!(normalize_code("iLo").as_deref(), Some("110"));
-        // A character that is not in the alphabet at all is a typo, not a code.
-        assert_eq!(normalize_code("ab!c"), None);
-        assert_eq!(normalize_code("  "), None);
     }
 
     #[test]

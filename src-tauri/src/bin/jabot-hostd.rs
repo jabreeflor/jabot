@@ -51,23 +51,48 @@ type ClientSink = std::os::unix::net::UnixStream;
 #[cfg(not(unix))]
 type ClientSink = std::io::Sink;
 
+/// One attached socket client: the connection id it is dispatched under, and
+/// the write end of its stream.
+struct Client {
+    connection: String,
+    sink: ClientSink,
+}
+
 /// Everyone currently listening: stdio, plus each open socket.
 ///
-/// Notifications go to all of them. A write that fails means that client hung
-/// up mid-frame; it is dropped rather than retried, because a partially
-/// written frame has already desynced that stream and no other client should
-/// wait for it.
+/// Notifications go to every client the host has *identified*. A socket is a
+/// connection, not a subscription: `require_hello` covers requests, but a
+/// notification is pushed, so nothing about answering a request governs it. A
+/// stream carrying prompt text and live `bash` output is exactly what
+/// `pairing-security-mobile.md` rule 2 says must not leak, so a connection
+/// that has not completed a `host/hello` is skipped until it has — and
+/// skipped again the moment its device is dropped or revoked, because the
+/// answer is read off the session on every frame rather than latched at
+/// accept time.
+///
+/// stdio is the exception, and deliberately: it is the process that spawned
+/// this host, which is the same colocated trust `host/hello` grants it.
+///
+/// A write that fails means that client hung up mid-frame; it is dropped
+/// rather than retried, because a partially written frame has already desynced
+/// that stream and no other client should wait for it.
 #[derive(Default)]
 struct Clients {
     next_id: u64,
-    sinks: HashMap<u64, ClientSink>,
+    sinks: HashMap<u64, Client>,
 }
 
 impl Clients {
-    fn add(&mut self, sink: ClientSink) -> u64 {
+    fn add(&mut self, connection: &str, sink: ClientSink) -> u64 {
         self.next_id += 1;
         let id = self.next_id;
-        self.sinks.insert(id, sink);
+        self.sinks.insert(
+            id,
+            Client {
+                connection: connection.to_string(),
+                sink,
+            },
+        );
         id
     }
 
@@ -75,7 +100,7 @@ impl Clients {
         self.sinks.remove(&id);
     }
 
-    fn broadcast(&mut self, stdout: &Stdout, message: &JsonRpcMessage) {
+    fn broadcast(&mut self, stdout: &Stdout, session: &HostSession, message: &JsonRpcMessage) {
         let Ok(frame) = encode_frame(message) else {
             eprintln!("jabot-hostd: encode failed");
             return;
@@ -86,9 +111,16 @@ impl Clients {
                 .write_all(frame.as_bytes())
                 .and_then(|()| handle.flush());
         }
-        self.sinks.retain(|_, sink| {
-            sink.write_all(frame.as_bytes())
-                .and_then(|()| sink.flush())
+        self.sinks.retain(|_, client| {
+            if !session.connection_has_device(&client.connection) {
+                // Nothing it has said entitles it to the stream — but it is
+                // still connected, and a hello later would.
+                return true;
+            }
+            client
+                .sink
+                .write_all(frame.as_bytes())
+                .and_then(|()| client.sink.flush())
                 .is_ok()
         });
     }
@@ -198,7 +230,7 @@ fn main() {
             // the connection that provoked it.
             let mut sinks = lock_clients(&clients);
             for notification in outbound {
-                sinks.broadcast(&stdout, &JsonRpcMessage::Notification(notification));
+                sinks.broadcast(&stdout, &guard, &JsonRpcMessage::Notification(notification));
             }
             drop(sinks);
             drop(guard);
@@ -230,7 +262,7 @@ fn spawn_acp_pump(
                 // Under the lock, for the ordering reason above.
                 let mut sinks = lock_clients(&clients);
                 for notification in outbound {
-                    sinks.broadcast(&stdout, &JsonRpcMessage::Notification(notification));
+                    sinks.broadcast(&stdout, &guard, &JsonRpcMessage::Notification(notification));
                 }
                 drop(sinks);
                 drop(guard);
@@ -243,18 +275,55 @@ fn spawn_acp_pump(
 ///
 /// A stale socket file is not a running host — it is a file — and refusing to
 /// start because of one would make a crashed host unrestartable.
+///
+/// The mode is the point, not housekeeping. `pairing-security-mobile.md` rule
+/// 1 lets the local socket skip TLS *because* it can be "`0700` in a user
+/// dir", and D-016 leans on the same sentence when it calls rung 0 "loopback,
+/// filesystem permissions". Default umask makes that `0755` — every account on
+/// the machine may connect — so the one control the design rests on has to be
+/// set explicitly, or the prose is describing a socket that does not exist.
+///
+/// `umask` rather than a `chmod` after the fact: `bind` publishes the socket
+/// in the directory the instant it returns, and a `chmod` on the next line is
+/// a window in which it is world-connectable. This runs before any thread is
+/// spawned, so the process-wide umask cannot race another one of ours.
 #[cfg(unix)]
 fn bind_listener(path: &std::path::Path) -> std::os::unix::net::UnixListener {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
     let _ = std::fs::remove_file(path);
-    if let Some(parent) = path.parent() {
-        if let Err(err) = std::fs::create_dir_all(parent) {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        // A directory we create is ours; one that already exists is the user's
+        // choice and not ours to tighten. `0700` matters even with the socket
+        // at `0600`, because some Unixes have historically ignored permissions
+        // on a socket inode — a directory nobody else may traverse is the
+        // check every kernel does agree on.
+        if let Err(err) = std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(parent)
+        {
             fatal(&format!("create {}: {err}", parent.display()));
         }
     }
-    match std::os::unix::net::UnixListener::bind(path) {
+    // SAFETY: a libc call with no pointers and no failure mode; single-threaded
+    // here, and restored before anything else can observe it.
+    let previous_umask = unsafe { libc::umask(0o177) };
+    let bound = std::os::unix::net::UnixListener::bind(path);
+    unsafe {
+        libc::umask(previous_umask);
+    }
+    let listener = match bound {
         Ok(listener) => listener,
         Err(err) => fatal(&format!("listen on {}: {err}", path.display())),
+    };
+    // Belt and braces: a umask can only clear bits, so this changes nothing on
+    // a sane platform — but it makes the guarantee true by assertion rather
+    // than by inheritance, which is what the e2e checks.
+    if let Err(err) = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)) {
+        fatal(&format!("chmod {}: {err}", path.display()));
     }
+    listener
 }
 
 #[cfg(not(unix))]
@@ -323,7 +392,7 @@ fn serve_connection(
             return;
         }
     };
-    let sink_id = lock_clients(&clients).add(sink);
+    let sink_id = lock_clients(&clients).add(&connection, sink);
     let stdout = std::io::stdout();
     let mut buffer = String::new();
 
@@ -358,7 +427,7 @@ fn serve_connection(
             write_to(&mut writer, &JsonRpcMessage::Response(response));
             let mut sinks = lock_clients(&clients);
             for notification in outbound {
-                sinks.broadcast(&stdout, &JsonRpcMessage::Notification(notification));
+                sinks.broadcast(&stdout, &guard, &JsonRpcMessage::Notification(notification));
             }
             drop(sinks);
             drop(guard);

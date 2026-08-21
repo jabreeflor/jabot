@@ -118,3 +118,38 @@
 .host-error {
   color: var(--red);
 }
+
+/*
+ * A shell-level refusal — today only a fold the host would not take (#26).
+ *
+ * It sits above the sidebar and the main pane because the action that caused it
+ * spans both: the row was animated out of the sidebar and the pane may have
+ * moved. Dismissible rather than timed, because the sentence tells the user
+ * what to do next and reading it is not a race.
+ */
+.app-error {
+  position: fixed;
+  z-index: 400;
+  top: var(--sp-3);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  max-width: 520px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--edge-menu);
+  border-radius: 11px;
+  background: var(--raise2);
+  color: var(--red);
+  font-size: var(--fs-meta);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+.app-error button {
+  background: none;
+  border: 0;
+  color: var(--dim);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}

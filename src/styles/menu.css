@@ -48,3 +48,86 @@
   background: var(--edge-menu);
   margin: var(--sp-1) var(--sp-2);
 }
+
+/*
+ * Fold, in the thread header (#26). A menu rather than a button because fold
+ * carries a choice — hide-and-keep-working, or the quieter policy that lets the
+ * host answer reads while you are away — and the difference has to be readable
+ * before it is chosen, not discovered afterwards.
+ */
+.fold-control {
+  position: relative;
+}
+
+.fold-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: none;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fold-btn:hover {
+  color: var(--ink);
+  background: var(--raise2);
+}
+
+.fold-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.fold-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.fold-menu {
+  position: absolute;
+  z-index: 300;
+  top: calc(100% + var(--sp-2));
+  right: 0;
+  width: 270px;
+  background: var(--raise2);
+  border: 1px solid var(--edge-menu);
+  border-radius: 13px;
+  padding: 5px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+.fold-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: 0;
+  border-radius: 9px;
+  padding: var(--sp-3) 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fold-menu button:hover {
+  background: var(--raise);
+}
+
+.fold-menu button span {
+  display: block;
+  color: var(--ink);
+  font-size: var(--fs-body);
+}
+
+/* The policy in words. A permission rule the user cannot read is one they
+   cannot consent to, so it is part of the item, not a tooltip. */
+.fold-menu button small {
+  display: block;
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: var(--fs-caps);
+  line-height: 1.35;
+}

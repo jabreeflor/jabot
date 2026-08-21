@@ -34,6 +34,12 @@
 //! - `orphan-stdout`: fork a grandchild that inherits stdout, then exit —
 //!   a dead adapter whose stdout pipe never closes, so EOF never comes and
 //!   only reaping the pid can tell the host the session is gone
+//! - `gated`: hold the turn open until the test says what happens next, by
+//!   writing the gate file named in the second argument. Fold is the one
+//!   feature that cannot be proved against an agent that finishes on its own:
+//!   the thread has to still be *running* at the moment it is folded, and then
+//!   go on running, and only then end. A sleep would make that a race; a gate
+//!   makes it an ordering. See [`wait_for_gate`] for the script it reads.
 
 use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
@@ -53,6 +59,10 @@ fn main() {
     let mut stdout = io::stdout();
     let mut session_id: Option<String> = None;
     let mut pending_prompt_id: Option<serde_json::Value> = None;
+    // What a `gated` turn still has to do. Empty for every other mode, which
+    // is what keeps their behaviour exactly as it was.
+    let mut steps: Vec<String> = Vec::new();
+    let mut ask_seq: i64 = 9001;
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -76,12 +86,24 @@ fn main() {
                         "content": { "type": "text", "text": "allowed" }
                     }),
                 );
-                if let Some(id) = pending_prompt_id.take() {
-                    reply(
-                        &mut stdout,
-                        Some(id),
-                        serde_json::json!({ "stopReason": "end_turn" }),
-                    );
+                // A gated script can ask for more than one thing in a turn —
+                // the read Wait for Inbox answers by itself, and then the
+                // execute it must not. Only the last step ends the turn.
+                match next_step(&mut steps) {
+                    Some(step) if is_tool_kind(&step) => {
+                        ask_permission(&mut stdout, &session_id, &step, &mut ask_seq);
+                    }
+                    step => {
+                        if let Some(id) = pending_prompt_id.take() {
+                            reply(
+                                &mut stdout,
+                                Some(id),
+                                serde_json::json!({
+                                    "stopReason": step.unwrap_or_else(|| "end_turn".into())
+                                }),
+                            );
+                        }
+                    }
                 }
             }
             continue;
@@ -274,6 +296,25 @@ fn main() {
                     // Never answers. The turn stays open and the host has to
                     // notice the silence on its own.
                     "hang" => {}
+                    // The turn is genuinely in flight until the test opens the
+                    // gate — which is what lets a test fold a *running*
+                    // session and then watch it keep running.
+                    "gated" => {
+                        steps = wait_for_gate(std::env::args().nth(2).as_deref());
+                        match next_step(&mut steps) {
+                            Some(step) if is_tool_kind(&step) => {
+                                ask_permission(&mut stdout, &session_id, &step, &mut ask_seq);
+                                pending_prompt_id = id;
+                            }
+                            step => reply(
+                                &mut stdout,
+                                id,
+                                serde_json::json!({
+                                    "stopReason": step.unwrap_or_else(|| "end_turn".into())
+                                }),
+                            ),
+                        }
+                    }
                     // Holds the turn open, but ends it when told to.
                     "cancellable" | "v2-cancel" => pending_prompt_id = id,
                     // Quiet long enough to be called stuck, then finishes
@@ -375,6 +416,84 @@ fn notify(stdout: &mut io::Stdout, method: &str, params: serde_json::Value) {
     });
     writeln!(stdout, "{msg}").ok();
     stdout.flush().ok();
+}
+
+/// Block until the gate file exists, then read the turn's script out of it.
+///
+/// The file's contents are a comma-separated list: an ACP tool `kind`
+/// (`read`, `execute`, `delete`) asks for that permission and waits; anything
+/// else is the stop reason the turn ends with. An empty file means `end_turn`.
+///
+/// A gate that never opens replies `gate_timeout`, which the host classifies
+/// as a failure — a test that forgot to open its gate should fail loudly
+/// rather than hang until the suite's own timeout.
+fn wait_for_gate(path: Option<&str>) -> Vec<String> {
+    let Some(path) = path else {
+        return vec!["gate_timeout".into()];
+    };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while std::time::Instant::now() < deadline {
+        // Written whole by `rename`, so a read that sees the file sees all of
+        // it; a partial read would turn into a stop reason nobody wrote.
+        if let Ok(body) = std::fs::read_to_string(path) {
+            let steps: Vec<String> = body
+                .split(',')
+                .map(|step| step.trim().to_string())
+                .filter(|step| !step.is_empty())
+                .collect();
+            return steps;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    eprintln!("fake-acp: gate {path} never opened");
+    vec!["gate_timeout".into()]
+}
+
+fn next_step(steps: &mut Vec<String>) -> Option<String> {
+    if steps.is_empty() {
+        None
+    } else {
+        Some(steps.remove(0))
+    }
+}
+
+/// The three ACP tool kinds a gated script can ask permission for. Everything
+/// else in a script is a stop reason.
+fn is_tool_kind(step: &str) -> bool {
+    matches!(step, "read" | "execute" | "delete")
+}
+
+/// One `session/request_permission`, with a fresh id so a turn can ask twice.
+fn ask_permission(
+    stdout: &mut io::Stdout,
+    session_id: &Option<String>,
+    kind: &str,
+    ask_seq: &mut i64,
+) {
+    let title = match kind {
+        "read" => "Read src/auth.ts",
+        "delete" => "Delete src/legacy.ts",
+        _ => "Run ls",
+    };
+    let id = *ask_seq;
+    *ask_seq += 1;
+    request(
+        stdout,
+        serde_json::json!(id),
+        "session/request_permission",
+        serde_json::json!({
+            "sessionId": session_id,
+            "toolCall": {
+                "toolCallId": format!("call-{id}"),
+                "title": title,
+                "kind": kind
+            },
+            "options": [
+                { "optionId": "allow_once", "name": "Allow", "kind": "allow_once" },
+                { "optionId": "reject_once", "name": "Deny", "kind": "reject_once" }
+            ]
+        }),
+    );
 }
 
 fn request(

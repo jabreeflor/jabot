@@ -25,7 +25,12 @@
 //!   QR, or the code read aloud. Both sides MAC the transcript with it, so a
 //!   man in the middle who never saw the screen cannot produce either proof
 //!   and the handshake stops at the MAC check — before any safety number is
-//!   shown.
+//!   shown. The credential itself is **never put on the wire**, in either
+//!   direction: `pairing/claim` carries a MAC and the host discovers which
+//!   channel was used by seeing which key that MAC verifies under. A frame
+//!   that carried the credential alongside the transcript fields would be a
+//!   frame an eavesdropper could turn into the safety number and the device
+//!   token, and the rest of this list would be worth nothing.
 //! - The **safety number is derived from both sides' material** — both
 //!   fingerprints, both nonces, the pairing id and which channel was used —
 //!   keyed by the out-of-band secret. It is the check that survives an
@@ -37,7 +42,13 @@
 //!   `pairing/confirm` makes both sides state the number they derived.
 //! - The pairing yields a shared **device token** that is *derived on both
 //!   sides and never transmitted*. The host keeps it in the OS keychain, not
-//!   in SQLite.
+//!   in SQLite. Its secrecy rests on the out-of-band credential and on
+//!   nothing else: the token is a pure function of that credential and the
+//!   public transcript, with no ephemeral contribution, so anyone who ever
+//!   learns the credential for an offer that was completed can recompute the
+//!   token of the device that completed it. That is precisely why the
+//!   credential stays off the wire and why an offer is single-use and
+//!   short-lived.
 //!
 //! What this does not do: it does not encrypt the transport (there is no
 //! remote transport yet — decision #4 keeps the host in-process until a second
@@ -254,13 +265,20 @@ impl HostSession {
 
     // ---- device side ----------------------------------------------------
 
-    /// Claim an offer with the out-of-band credential and a proof.
+    /// Claim an offer by proving possession of the out-of-band credential.
     ///
     /// Answered before any `host/hello`, because the device claiming it is by
     /// definition not paired yet — that is what this call is for. It is safe
     /// to answer unauthenticated for exactly one reason: without the secret
     /// from the host's own screen there is no way past the MAC check, and
     /// three wrong tries burn the offer.
+    ///
+    /// The credential does not come back over the wire, and that is the whole
+    /// reason the channel is discovered here rather than declared by the
+    /// caller: every other field of the frame is public transcript material,
+    /// so a claim carrying the secret too would be a single frame from which
+    /// an eavesdropper derives the safety number *and* the device's long-term
+    /// token. See [`PairingClaimParams`].
     pub fn pairing_claim(
         &mut self,
         params: PairingClaimParams,
@@ -277,41 +295,61 @@ impl HostSession {
 
         // Read everything the derivations need in one pass, so the rest of the
         // method is arithmetic rather than a borrow held across it.
-        let (host_nonce, channel, key, existing, expires_at) = {
+        let (host_nonce, keys, existing, expires_at) = {
             let entry = self
                 .pairing
                 .offers
                 .get(&params.pairing_id)
                 .ok_or_else(|| failed("unknown", "no such pairing offer"))?;
-            let channel = entry.match_channel(params.secret.as_deref(), params.code.as_deref());
             (
                 entry.host_nonce.clone(),
-                channel,
-                channel.map(|via| entry.channel_key(via).to_string()),
+                [
+                    (Channel::Qr, entry.channel_key(Channel::Qr).to_string()),
+                    (Channel::Code, entry.channel_key(Channel::Code).to_string()),
+                ],
                 entry.claim().cloned(),
                 entry.expires_at.to_rfc3339(),
             )
         };
 
-        let (Some(via), Some(key)) = (channel, key) else {
-            // A wrong credential costs the offer one of its three lives. That
-            // is what makes the eight-character code defensible: its entropy
-            // is a human's, and the offer's patience is not.
+        // Which channel this device used is whichever key its proof verifies
+        // under. Both are always tried and the winner is picked afterwards, so
+        // how long this takes says nothing about which one it was — and a
+        // device that scanned and a device that typed send byte-identical
+        // shapes, neither of which contains the credential.
+        let mut matched: Option<(Channel, String, String)> = None;
+        for (via, key) in &keys {
+            let transcript_hex = transcript(
+                &host_id,
+                &host_fingerprint,
+                &host_nonce,
+                &params.pairing_id,
+                &params.device,
+                *via,
+            );
+            let verified = ct_eq(
+                params.mac.as_bytes(),
+                hex(&bind(key, CLAIM_DOMAIN, &transcript_hex)).as_bytes(),
+            );
+            if verified && matched.is_none() {
+                matched = Some((*via, transcript_hex, key.clone()));
+            }
+        }
+
+        let Some((via, transcript_hex, key)) = matched else {
+            // A proof that verifies under neither credential costs the offer
+            // one of its three lives. That is what makes the eight-character
+            // code defensible: its entropy is a human's, and the offer's
+            // patience is not. It is also the only failure this call has, so
+            // "wrong code" and "forged MAC" are indistinguishable from
+            // outside — there is no cheaper question to ask than the whole
+            // proof.
             return Err(self.burn_attempt(
                 &params.pairing_id,
-                "credential",
-                "wrong pairing credential",
+                "proof",
+                "the device's pairing proof did not verify",
             ));
         };
-
-        let transcript_hex = transcript(
-            &host_id,
-            &host_fingerprint,
-            &host_nonce,
-            &params.pairing_id,
-            &params.device,
-            via,
-        );
 
         // A second claim by the *same* device with the *same* material is a
         // retry — a dropped response, a reconnect — and re-answering it costs
@@ -328,17 +366,6 @@ impl HostSession {
                     "this pairing offer has already been used",
                 ));
             }
-        }
-
-        if !ct_eq(
-            params.mac.as_bytes(),
-            hex(&bind(&key, CLAIM_DOMAIN, &transcript_hex)).as_bytes(),
-        ) {
-            return Err(self.burn_attempt(
-                &params.pairing_id,
-                "proof",
-                "the device's pairing proof did not verify",
-            ));
         }
 
         let sas = sas_digits(&bind(&key, SAS_DOMAIN, &transcript_hex));
@@ -750,6 +777,23 @@ impl HostSession {
             .ok_or(RpcError::UnpairedDevice)
     }
 
+    /// Has this connection already authenticated as a *paired* device?
+    ///
+    /// Asked by `host/hello`, and only there. The two console arms of hello
+    /// check nothing — rightly, because the client that spawned the host has
+    /// no credential to offer that the process it lives in does not already
+    /// hold — so what they rest on is that the caller could not be anybody
+    /// else. A connection that got here by proving it is a phone is somebody
+    /// else, and its second hello is re-authentication rather than a first
+    /// one. The answer is read off the binding rather than the store on
+    /// purpose: this is a question about the connection, not about the grant,
+    /// and it must stay true for a device whose row was revoked mid-session.
+    pub(crate) fn is_bound_to_a_paired_device(&self) -> bool {
+        self.connected_device_id
+            .as_deref()
+            .is_some_and(|id| id != self.identity.local_device.device_id)
+    }
+
     /// The guard every request goes through (`router::handle`).
     pub(crate) fn require_device_scope(&self, method: &str) -> Result<(), RpcError> {
         // The handshake itself has to answer a device that cannot possibly
@@ -805,7 +849,9 @@ fn validate_device(device: &PairingDevice) -> Result<(), RpcError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
     use crate::host::protocol::methods::{HelloDevice, HelloParams};
+    use crate::host::protocol::HOST_HELLO;
 
     /// A phone, implemented from the documented derivations only.
     ///
@@ -898,10 +944,26 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let mut session = HostSession::load(dir.path());
         session.secrets = super::super::store::Secrets::memory();
-        session
-            .hello(HelloParams::default())
-            .expect("the local console is implicitly paired");
+        console_hello(&mut session);
         (dir, session)
+    }
+
+    /// The console saying hello, dispatched the way the router dispatches it.
+    ///
+    /// Not `session.hello(..)` directly: since #29 a bare hello is admitted
+    /// only on the colocated connection, and which connection a request
+    /// arrived on is something only `handle_request_on` knows.
+    /// `HostSession::handle_request` is that call with the colocated id.
+    fn console_hello(session: &mut HostSession) {
+        let response = session.handle_request(JsonRpcRequest::new(
+            RequestId::Number(0),
+            HOST_HELLO,
+            Some(serde_json::json!({})),
+        ));
+        assert!(
+            response.error.is_none(),
+            "the local console is implicitly paired"
+        );
     }
 
     fn qr_of(start: &PairingStartResult) -> PairingQr {
@@ -925,8 +987,6 @@ mod tests {
         let claim = session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: phone.device(),
                 mac: derived.claim_mac.clone(),
             })
@@ -1018,8 +1078,6 @@ mod tests {
         session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: attacker.device(),
                 mac: attacker_view.claim_mac.clone(),
             })
@@ -1062,14 +1120,12 @@ mod tests {
             let err = session
                 .pairing_claim(PairingClaimParams {
                     pairing_id: qr.pairing_id.clone(),
-                    secret: None,
-                    code: Some("00000000".into()),
                     device: phone.device(),
                     mac: "00".repeat(32),
                 })
-                .expect_err("wrong credential");
+                .expect_err("a proof under neither credential");
             match err {
-                RpcError::PairingFailed { reason, .. } => assert_eq!(reason, "credential"),
+                RpcError::PairingFailed { reason, .. } => assert_eq!(reason, "proof"),
                 other => panic!("attempt {attempt}: {other:?}"),
             }
         }
@@ -1078,8 +1134,6 @@ mod tests {
         let err = session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: phone.device(),
                 mac: derived.claim_mac,
             })
@@ -1107,8 +1161,6 @@ mod tests {
         session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: first.device(),
                 mac: first_view.claim_mac.clone(),
             })
@@ -1119,8 +1171,6 @@ mod tests {
         let err = session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: second.device(),
                 mac: second_view.claim_mac,
             })
@@ -1134,8 +1184,6 @@ mod tests {
         let retry = session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: first.device(),
                 mac: first_view.claim_mac.clone(),
             })
@@ -1165,8 +1213,6 @@ mod tests {
         let err = session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: phone.device(),
                 mac: derived.claim_mac,
             })
@@ -1190,17 +1236,22 @@ mod tests {
             .expect("start");
         let qr = qr_of(&start);
 
-        let by_code = phone.derive(&qr, &start.code, Channel::Code);
+        // Typed the way a human types it — lower case, with a dash — and
+        // folded back onto the alphabet by the device, which is the only side
+        // that ever sees the characters. The key is what the host printed.
+        let typed = format!("{}-{}", start.code[..4].to_lowercase(), &start.code[4..]);
+        let keyed = typed.replace('-', "").to_uppercase();
+        assert_eq!(keyed, start.code);
+
+        let by_code = phone.derive(&qr, &keyed, Channel::Code);
         let by_qr = phone.derive(&qr, &qr.secret, Channel::Qr);
         assert_ne!(by_code.sas, by_qr.sas);
 
-        // Typed the way a human types it.
-        let typed = format!("{}-{}", start.code[..4].to_lowercase(), &start.code[4..]);
+        // Nothing in the frame says which channel this is: the host finds out
+        // by trying both keys against the one proof it was sent.
         let claim = session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: None,
-                code: Some(typed),
                 device: phone.device(),
                 mac: by_code.claim_mac.clone(),
             })
@@ -1224,8 +1275,6 @@ mod tests {
         session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: phone.device(),
                 mac: derived.claim_mac.clone(),
             })
@@ -1288,8 +1337,6 @@ mod tests {
         session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: phone.device(),
                 mac: derived.claim_mac.clone(),
             })
@@ -1369,8 +1416,6 @@ mod tests {
         session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),
-                secret: Some(qr.secret.clone()),
-                code: None,
                 device: phone.device(),
                 mac: derived.claim_mac.clone(),
             })
@@ -1444,7 +1489,7 @@ mod tests {
     #[test]
     fn an_ephemeral_host_refuses_to_offer_a_pairing() {
         let mut session = HostSession::ephemeral();
-        session.hello(HelloParams::default()).expect("hello");
+        console_hello(&mut session);
         match session.pairing_start(PairingStartParams::default()) {
             Err(RpcError::StoreUnavailable) => {}
             other => panic!("expected a refusal, got {other:?}"),
@@ -1462,5 +1507,148 @@ mod tests {
             serde_json::to_string(&session.pairing_status().expect("status")).expect("serialize");
         assert!(!listed.contains(&start.secret));
         assert!(!listed.contains(&start.code));
+    }
+
+    /// The claim frame is the one an eavesdropper would most like to have,
+    /// and it is worth nothing to them.
+    ///
+    /// Every other field in it — the pairing id, the device id, the
+    /// fingerprint, the nonce — is transcript material and therefore public by
+    /// construction. The safety number and the durable device token are pure
+    /// functions of that transcript *and the credential*, so a frame that also
+    /// carried the credential would be a frame from which both fall out, for
+    /// good: the token has no ephemeral contribution to rotate. What goes on
+    /// the wire is one MAC, which proves possession and yields nothing.
+    #[test]
+    fn a_claim_frame_never_carries_the_credential_it_proves() {
+        let (_dir, mut session) = host();
+        let phone = Phone::new("iPhone");
+        let start = session
+            .pairing_start(PairingStartParams::default())
+            .expect("start");
+        let qr = qr_of(&start);
+        let derived = phone.derive(&qr, &qr.secret, Channel::Qr);
+
+        let frame = serde_json::to_string(&PairingClaimParams {
+            pairing_id: qr.pairing_id.clone(),
+            device: phone.device(),
+            mac: derived.claim_mac.clone(),
+        })
+        .expect("serialize");
+        for leak in [&qr.secret, &start.code, &derived.token, &derived.sas] {
+            assert!(!frame.contains(leak), "the claim frame leaked {leak}");
+        }
+
+        // And it is still a complete claim: nothing was left out that the host
+        // needed, it simply never needed the secret back.
+        let claim = session
+            .pairing_claim(serde_json::from_str(&frame).expect("deserialize"))
+            .expect("claim");
+        assert_eq!(claim.via, "qr");
+        assert_eq!(claim.host_mac, derived.host_mac);
+    }
+
+    /// A connected phone says hello a second time, naming no device at all.
+    ///
+    /// `host/hello` has to be on the approver allowlist — a phone that drops
+    /// in a lift must be able to come back — and the console arms of hello ask
+    /// for no proof whatsoever, because the client that spawned the host has
+    /// none to give. Together, and unguarded, those two facts are a promotion:
+    /// one extra frame on the phone's own connection and it is device #1,
+    /// holding `pairing/start`, `device/revoke` and the rest of the console.
+    ///
+    /// Dispatched through `handle_request` rather than `hello`, because the
+    /// colocated connection is precisely where those arms are open.
+    #[test]
+    fn a_paired_device_cannot_re_hello_its_way_into_the_console() {
+        use crate::host::protocol::error::{DEVICE_SCOPE, UNPAIRED_DEVICE};
+        use crate::host::protocol::methods::PAIRING_START;
+
+        let (_dir, mut session) = host();
+        let phone = Phone::new("iPhone");
+        let derived = pair_an_approver(&mut session, &phone);
+        let host_id = session.identity.host_id.clone();
+
+        // The phone connects the honest way, and is an approver.
+        let connected = console_request(
+            &mut session,
+            HOST_HELLO,
+            serde_json::to_value(HelloParams {
+                protocol_version: Some(PROTOCOL_VERSION),
+                device: Some(HelloDevice {
+                    device_id: Some(phone.device_id.clone()),
+                    name: None,
+                    role: None,
+                }),
+                auth: Some(phone.hello_auth(&host_id, &derived.token, 1)),
+            })
+            .expect("hello params"),
+        );
+        assert_eq!(
+            connected.result.expect("hello")["device"]["role"],
+            "approver"
+        );
+
+        // And now the second hello, with nothing in it.
+        let again = console_request(&mut session, HOST_HELLO, serde_json::json!({}));
+        assert_eq!(
+            again
+                .error
+                .expect("a re-hello is re-authentication, not a promotion")
+                .code,
+            UNPAIRED_DEVICE
+        );
+
+        // The refusal left the connection where it was rather than unbound:
+        // still the phone, still an approver, still refused the console's own
+        // method — which is the thing the extra frame was reaching for.
+        let escalated = console_request(&mut session, PAIRING_START, serde_json::json!({}));
+        assert_eq!(
+            escalated.error.expect("pairing/start from a phone").code,
+            DEVICE_SCOPE
+        );
+    }
+
+    /// The whole handshake, ending in a phone this host has granted `approver`.
+    fn pair_an_approver(session: &mut HostSession, phone: &Phone) -> Derived {
+        let start = session
+            .pairing_start(PairingStartParams::default())
+            .expect("start");
+        let qr = qr_of(&start);
+        let derived = phone.derive(&qr, &qr.secret, Channel::Qr);
+        session
+            .pairing_claim(PairingClaimParams {
+                pairing_id: qr.pairing_id.clone(),
+                device: phone.device(),
+                mac: derived.claim_mac.clone(),
+            })
+            .expect("claim");
+        for side in [PairingSide::Device, PairingSide::Host] {
+            session
+                .pairing_confirm(PairingConfirmParams {
+                    pairing_id: qr.pairing_id.clone(),
+                    side,
+                    sas: derived.sas.clone(),
+                    role: Some(DeviceRole::Approver),
+                    name: None,
+                    mac: Some(derived.confirm_mac.clone()),
+                })
+                .expect("confirm");
+        }
+        derived
+    }
+
+    /// One request on the colocated connection — the one `handle_request`
+    /// binds, and the only one where hello's console arms are answerable.
+    fn console_request(
+        session: &mut HostSession,
+        method: &str,
+        params: serde_json::Value,
+    ) -> crate::host::protocol::jsonrpc::JsonRpcResponse {
+        session.handle_request(JsonRpcRequest::new(
+            RequestId::Number(7),
+            method,
+            Some(params),
+        ))
     }
 }

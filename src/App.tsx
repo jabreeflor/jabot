@@ -37,6 +37,7 @@ import {
 import type {
   Bot,
   BotDraft,
+  FoldPolicy,
   HarnessCard,
   HostTarget,
   NewChatDraft,
@@ -51,6 +52,7 @@ import {
   type Schedules,
 } from "./views/schedules";
 import { allThreads, useFolders } from "./views/folders";
+import { useFoldThread } from "./views/fold";
 import { ChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
@@ -66,6 +68,7 @@ import {
   mockHostReducer,
   needsYouCount,
   nextThreadId,
+  noticeThreadId,
   openPrCount,
   sidebarFolders,
   type MockState,
@@ -119,6 +122,15 @@ function App() {
   const folders = registered.folders ?? sidebarFolders(state);
   const hostThreads = registered.folders ? allThreads(registered.folders) : [];
 
+  // Fold is a host call for a host row (#26). `registered.reload` runs whether
+  // the host took it or not: the leave animation has already pulled the row off
+  // screen, so a refusal has to put it back rather than leave the sidebar
+  // showing a thread that is still active and no longer drawn.
+  const { fold, error: foldError, clearError: clearFoldError } = useFoldThread(
+    client,
+    registered.reload,
+  );
+
   const timers = useRef<number[]>([]);
   useEffect(() => {
     const pending = timers.current;
@@ -141,15 +153,58 @@ function App() {
   }
 
   /**
+   * Fold a thread: hide the row, keep the work.
+   *
+   * A row the host owns folds on the host, because the fold *is* a row on disk
+   * and the policy the permission broker reads while the user is away (#26).
+   * Only the fixtures fall back to the reducer. `policy` is left out for
+   * "Disappear until done" on purpose — that gesture keeps whatever policy the
+   * thread already had (`state-machine.md`), and both paths honour it.
+   */
+  function foldThread(threadId: string, policy?: FoldPolicy) {
+    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    leaveThread(threadId, () => {
+      if (!onHost) {
+        dispatch({ type: "foldThread", threadId, policy });
+        return;
+      }
+      void fold({ threadId, policy }).then((folded) => {
+        // The row is out of the sidebar; do not leave the main pane pointed at
+        // a thread the user just sent away. A refused fold keeps them there.
+        if (!folded) return;
+        setSelection((current) =>
+          current.view === "thread" && current.threadId === threadId
+            ? { view: "inbox" }
+            : current,
+        );
+      });
+    });
+  }
+
+  /**
    * Answering a notice card fades it out; this is what finally takes it out of
    * the transcript. `resolved` alone would leave an invisible card holding its
    * full height and still being read out.
+   *
+   * Chief's "Disappear until done" is the same fold as the sidebar's, aimed at
+   * whatever thread the card names — so a card about a *host* thread has to
+   * reach the host. The reducer's own fold only ever finds the fixtures, which
+   * is why this runs beside it rather than inside it.
    */
   function answerNotice(
     conversationId: string,
     itemId: string,
     actionId: string,
   ) {
+    const threadId = noticeThreadId(state, conversationId, itemId);
+    if (
+      actionId === "fold" &&
+      threadId &&
+      client &&
+      hostThreads.some((t) => t.id === threadId)
+    ) {
+      void fold({ threadId });
+    }
     dispatch({ type: "answerNotice", conversationId, itemId, actionId });
     afterLeaving(() =>
       dispatch({ type: "removeNotice", conversationId, itemId }),
@@ -293,6 +348,15 @@ function App() {
         onThreadMenu={(thread, position) => setMenu({ thread, position })}
       />
 
+      {foldError && (
+        <div className="app-error" role="alert">
+          <span>{foldError}</span>
+          <button type="button" onClick={clearFoldError} aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      )}
+
       <main className="main">
         <MainView
           client={client}
@@ -309,6 +373,7 @@ function App() {
           selection={selection}
           host={host}
           onSelect={setSelection}
+          onFoldThread={foldThread}
           onSend={(conversationId, text) =>
             dispatch({ type: "sendMessage", conversationId, text })
           }
@@ -385,13 +450,10 @@ function App() {
       {menu && (
         <ThreadContextMenu
           threadTitle={menu.thread.title}
+          threadState={menu.thread.state}
           position={menu.position}
           onClose={() => setMenu(null)}
-          onWaitForInbox={() =>
-            leaveThread(menu.thread.id, () =>
-              dispatch({ type: "foldThread", threadId: menu.thread.id }),
-            )
-          }
+          onFold={(policy) => foldThread(menu.thread.id, policy)}
           onArchive={() =>
             leaveThread(menu.thread.id, () =>
               dispatch({ type: "archiveThread", threadId: menu.thread.id }),
@@ -427,6 +489,7 @@ function MainView({
   selection,
   host,
   onSelect,
+  onFoldThread,
   onSend,
   onNotice,
   onInboxAction,
@@ -454,6 +517,8 @@ function MainView({
   selection: Selection;
   host: HostTarget;
   onSelect: (selection: Selection) => void;
+  /** Fold from the chat you are reading, not only from the sidebar row (#26). */
+  onFoldThread: (threadId: string, policy?: FoldPolicy) => void;
   onSend: (conversationId: string, text: string) => void;
   onNotice: (conversationId: string, itemId: string, actionId: string) => void;
   onInboxAction: (cardId: string, actionId: string) => void;
@@ -518,6 +583,7 @@ function MainView({
             thread={hostThread}
             harnesses={harnesses}
             host={host}
+            onFold={(policy) => onFoldThread(hostThread.id, policy)}
           />
         );
       }
@@ -546,6 +612,7 @@ function MainView({
           onAction={(itemId, actionId) =>
             onNotice(thread.id, itemId, actionId)
           }
+          onFold={(policy) => onFoldThread(thread.id, policy)}
         />
       );
     }

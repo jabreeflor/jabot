@@ -1181,7 +1181,18 @@ export interface PairingDevice {
   nonce: string;
 }
 
-/** Claim an offer with the out-of-band credential and a proof.
+/** Claim an offer by proving possession of the out-of-band credential.
+
+    The credential itself — the QR's `secret`, the spoken `code` — is
+    deliberately not a field here. Every other field is transcript material and
+    therefore public, and the durable device token is a pure function of the
+    credential and that transcript, so one frame carrying both would hand an
+    eavesdropper the safety number and the device's long-term token. `mac` is a
+    complete possession proof on its own; the host tries the offer's QR secret
+    and its typed code, keeps whichever one verifies, and answers with it in
+    `via`. Normalizing what a human typed (case, dashes, `I`/`L`/`O` folding
+    onto `1`/`1`/`0`) is therefore the device's job — see
+    `tests/support/pairing.ts`.
 
     `H[a, b, …]` is SHA-256 over each field written as a 4-byte big-endian
     length followed by its UTF-8 bytes; the framing stops one field absorbing
@@ -1204,9 +1215,11 @@ export interface PairingDevice {
     the other side. */
 export interface PairingClaimParams {
   pairingId: string;
-  secret?: string;
-  code?: string;
   device: PairingDevice;
+  /** `hex(bind("jabot/pairing/claim/v1"))` under the credential this device
+      holds. Which channel that was is whichever key it verifies under, so a
+      device that scanned and a device that typed send the same shape of frame
+      and neither says which. */
   mac: string;
 }
 

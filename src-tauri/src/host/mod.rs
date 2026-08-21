@@ -179,6 +179,15 @@ pub struct HostSession {
     /// dispatched through [`HostSession::handle_request_on`], which swaps this
     /// connection's binding in and stashes it back out again.
     connection_devices: HashMap<String, DeviceInfo>,
+    /// Which connection the request in flight arrived on, if any (#29).
+    ///
+    /// Only `host/hello` reads it, and only to answer one question: did this
+    /// caller spawn the host, or did it dial in? Everything else works off the
+    /// device binding above, which is the same whichever transport carried it.
+    /// `None` — no dispatch in flight — is deliberately *not* colocated, so a
+    /// future caller that reaches `hello` without going through
+    /// [`HostSession::handle_request_on`] is refused rather than trusted.
+    current_connection: Option<String>,
     /// The in-process cron (#25). RAM: the poll clock and the label for the
     /// run a fire is about to open. Everything durable is in `schedules` and
     /// `schedule_fires`, because decision #4 stops this process every time the
@@ -260,6 +269,7 @@ impl HostSession {
             chief_bridges: HashMap::new(),
             chief_dispatching: false,
             connection_devices: HashMap::new(),
+            current_connection: None,
             schedules: schedule::ScheduleState::from_env(),
         }
     }
@@ -332,12 +342,37 @@ impl HostSession {
             .map(str::trim)
             .filter(|id| !id.is_empty());
 
+        // Being the console is a claim about *where the caller is*, not about
+        // anything it said. `pairing-security-mobile.md` grants it exactly
+        // once — "the local desktop is implicitly paired to its colocated
+        // host (it spawned it)" — and until #29 that was the only kind of
+        // caller there was, so the two arms below could hand out device #1's
+        // `full` role for free. A socket connection did not spawn anything.
+        // On one, naming no device and naming the console's own id are the
+        // same unproven claim as naming a stranger's: the id is not a secret
+        // (every hello, health and device/list answer carries it), so treating
+        // it as proof would make #19's handshake optional for anyone who could
+        // reach the socket.
+        let colocated = self.caller_is_colocated();
+        // And a re-hello is re-authentication, never a promotion (#19).
+        // `host/hello` is on the approver allowlist because a phone has to be
+        // able to reconnect, so without this line a paired `approver` that had
+        // said hello on the colocated transport could simply say it again with
+        // no `device` at all and be re-bound as device #1 — `pairing/start`,
+        // `device/revoke`, and every other thing the console may do. From a
+        // connection that is already a paired device, the only route to a
+        // different identity is a proof, which is the third arm below.
+        let colocated = colocated && !self.is_bound_to_a_paired_device();
+
         match device_id {
-            None => {
+            None if colocated => {
                 self.connected_device_id = Some(self.identity.local_device.device_id.clone());
                 self.connected_device = Some(self.identity.local_device_info());
             }
-            Some(id) if id == self.identity.local_device.device_id => {
+            // A dialled-in client that named nothing has offered nothing to
+            // check, so there is no branch here that could admit it.
+            None => return Err(RpcError::UnpairedDevice),
+            Some(id) if colocated && id == self.identity.local_device.device_id => {
                 if let Some(device) = params.device.as_ref() {
                     if let Some(name) = device.name.as_ref() {
                         if !name.trim().is_empty() {
@@ -348,11 +383,15 @@ impl HostSession {
                 self.connected_device_id = Some(id.to_string());
                 self.connected_device = Some(self.identity.local_device_info());
             }
-            // Not this host's own console. Since #19 that is no longer
+            // Not this host's own console — or a caller claiming to be it from
+            // somewhere the console cannot be. Since #19 that is no longer
             // automatically a stranger — it may be a device the two humans
             // paired — but it is a stranger until it proves it, and every way
-            // of failing to prove it comes back as the same
-            // `UnpairedDevice` this arm has always returned.
+            // of failing to prove it comes back as the same `UnpairedDevice`
+            // this arm has always returned. The console's own id is not in
+            // `paired_devices` (it lives in the identity file), so a socket
+            // client that borrows it fails the lookup like any other name it
+            // has no credential for.
             Some(id) => {
                 let device = self.authenticate_paired_device(id, params.auth.as_ref())?;
                 self.connected_device_id = Some(device.device_id.clone());
@@ -624,10 +663,30 @@ impl HostSession {
                 .any(|device| device.device_id == device_id)
     }
 
+    /// Has this connection completed a `host/hello`?
+    ///
+    /// Asked by the transport rather than by the router: `require_hello`
+    /// refuses *requests* from a connection that has not identified itself,
+    /// but notifications are pushed, so nothing about answering a request
+    /// governs them. A socket that has said nothing must not be handed the
+    /// live `session/update` / `permission/ask` stream — that stream carries
+    /// the prompt text and the adapter's output, which is precisely what
+    /// `pairing-security-mobile.md` rule 2 says must not leak.
+    pub fn connection_has_device(&self, connection: &str) -> bool {
+        self.connection_devices.contains_key(connection)
+    }
+
+    /// Whether the caller is the client that started this host, rather than
+    /// one that dialled in over a transport. See `hello`.
+    fn caller_is_colocated(&self) -> bool {
+        self.current_connection.as_deref() == Some(LOCAL_CONNECTION)
+    }
+
     fn enter_connection(&mut self, connection: &str) {
         let device = self.connection_devices.get(connection).cloned();
         self.connected_device_id = device.as_ref().map(|d| d.device_id.clone());
         self.connected_device = device;
+        self.current_connection = Some(connection.to_string());
     }
 
     fn leave_connection(&mut self, connection: &str) {
@@ -640,6 +699,7 @@ impl HostSession {
                 self.connection_devices.remove(connection);
             }
         }
+        self.current_connection = None;
     }
 }
 
@@ -921,7 +981,7 @@ mod tests {
 /// its own, and it does not outlive the connection.
 #[cfg(test)]
 mod connection_tests {
-    use super::protocol::error::HELLO_REQUIRED;
+    use super::protocol::error::{HELLO_REQUIRED, UNPAIRED_DEVICE};
     use super::protocol::jsonrpc::RequestId;
     use super::protocol::{HOST_HELLO, SYNC_RESUME_FROM};
     use super::*;
@@ -950,32 +1010,81 @@ mod connection_tests {
     #[test]
     fn a_hello_on_one_connection_does_not_speak_for_another() {
         let mut session = HostSession::ephemeral();
-        let hello = session.handle_request_on("desktop", req(1, HOST_HELLO, None));
+        let hello = session.handle_request_on(LOCAL_CONNECTION, req(1, HOST_HELLO, None));
         assert!(hello.error.is_none());
 
         // The other connection has said nothing, and is treated as such.
-        let stranger = resume_from(&mut session, "phone");
+        let stranger = resume_from(&mut session, "socket-1");
         assert_eq!(stranger.error.expect("error").code, HELLO_REQUIRED);
         // While the one that did say hello is unaffected by the refusal.
-        assert!(resume_from(&mut session, "desktop").error.is_none());
+        assert!(resume_from(&mut session, LOCAL_CONNECTION).error.is_none());
+    }
+
+    /// The colocated grant is a statement about *where* the caller is, and a
+    /// socket is somewhere else.
+    ///
+    /// `hello_rejects_unknown_device` covers a name the host has never heard
+    /// of. This covers the two names it has: no name at all, and the console's
+    /// own id — which is not a secret, since every `host/hello`, `host/health`
+    /// and `device/list` answer hands it out. If either were enough on a
+    /// dialled-in connection, #19's handshake would be optional for anyone who
+    /// could reach the transport, and a phone could re-say hello on its own
+    /// open connection to promote itself from `approver` to `full`.
+    #[test]
+    fn a_dialled_in_connection_cannot_claim_to_be_the_console() {
+        let mut session = HostSession::ephemeral();
+        let local = session.identity.local_device.device_id.clone();
+
+        let bare = session.handle_request_on("socket-1", req(1, HOST_HELLO, None));
+        assert_eq!(bare.error.expect("bare hello").code, UNPAIRED_DEVICE);
+
+        let borrowed = session.handle_request_on(
+            "socket-1",
+            req(
+                2,
+                HOST_HELLO,
+                Some(json!({ "device": { "deviceId": local } })),
+            ),
+        );
+        assert_eq!(borrowed.error.expect("borrowed id").code, UNPAIRED_DEVICE);
+
+        // Refused, not merely unanswered: nothing behind `require_hello` is
+        // open to it either, and the failed hello left no binding behind.
+        assert_eq!(
+            resume_from(&mut session, "socket-1")
+                .error
+                .expect("error")
+                .code,
+            HELLO_REQUIRED
+        );
+        assert!(!session.connection_has_device("socket-1"));
+
+        // And the console itself is untouched by the attempt.
+        assert!(session
+            .handle_request_on(LOCAL_CONNECTION, req(3, HOST_HELLO, None))
+            .error
+            .is_none());
     }
 
     #[test]
     fn hanging_up_forgets_the_device() {
         let mut session = HostSession::ephemeral();
-        let hello = session.handle_request_on("phone", req(1, HOST_HELLO, None));
+        let hello = session.handle_request_on(LOCAL_CONNECTION, req(1, HOST_HELLO, None));
         let device_id = hello.result.expect("hello")["device"]["deviceId"]
             .as_str()
             .expect("deviceId")
             .to_string();
         assert!(session.device_is_connected(&device_id));
+        assert!(session.connection_has_device(LOCAL_CONNECTION));
 
-        session.drop_connection("phone");
+        session.drop_connection(LOCAL_CONNECTION);
         // `device/list` must not keep claiming a socket that is closed, and a
-        // reconnect on the same id must say hello again.
+        // reconnect on the same id must say hello again. The transport asks
+        // the same question before it pushes a notification down a connection.
         assert!(!session.device_is_connected(&device_id));
+        assert!(!session.connection_has_device(LOCAL_CONNECTION));
         assert_eq!(
-            resume_from(&mut session, "phone")
+            resume_from(&mut session, LOCAL_CONNECTION)
                 .error
                 .expect("error")
                 .code,

@@ -15,11 +15,13 @@
 //! and what keeps the chat testable without one.
 
 import { Conversation } from "../components/Conversation";
+import { canFold, FoldButton } from "../components/FoldButton";
 import { HarnessChip } from "../components/HarnessChip";
 import { HostPicker } from "../components/HostPicker";
 import { CodeSessionIcon } from "../components/Icon";
 import { threadStatus, type ThreadStatus } from "../components/status";
 import type {
+  FoldPolicy,
   HarnessCard,
   HostTarget,
   ThreadSummary,
@@ -36,6 +38,7 @@ export function ThreadView({
   onSend,
   onAction,
   onPickHost,
+  onFold,
   status,
   busy,
   queued,
@@ -49,6 +52,9 @@ export function ThreadView({
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
   onPickHost?: (hostId: string) => void;
+  /** Fold this thread from the chat itself — "Disappear until done" without
+      going back to the sidebar to right-click the row you are looking at. */
+  onFold?: (policy?: FoldPolicy) => void;
   /** Live status from the stream, when there is one. Falls back to the row's
       own run state — which is all a fixture-backed thread has. */
   status?: ThreadStatus;
@@ -72,6 +78,7 @@ export function ThreadView({
             {line.label}
           </span>
           <HostPicker host={host} onPick={onPickHost} />
+          {onFold && canFold(thread.state) && <FoldButton onFold={onFold} />}
         </div>
       }
       items={items}
@@ -99,12 +106,14 @@ export function LiveThreadView({
   harnesses,
   host,
   onPickHost,
+  onFold,
 }: {
   client: HostClient;
   thread: ThreadSummary;
   harnesses: readonly HarnessCard[];
   host: HostTarget;
   onPickHost?: (hostId: string) => void;
+  onFold?: (policy?: FoldPolicy) => void;
 }) {
   const { stream, error, send, cancel, answer } = useThreadTranscript(
     client,
@@ -122,6 +131,7 @@ export function LiveThreadView({
       // this is what carries the one the user pressed back to it (#20).
       onAction={answer}
       onPickHost={onPickHost}
+      onFold={onFold}
       status={streamStatus(stream, threadStatus(thread))}
       busy={stream.busy}
       queued={stream.queued}

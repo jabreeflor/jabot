@@ -1159,7 +1159,12 @@ verify a signature, and `host/pairing/mod.rs` opens by saying exactly that.
 Authentication comes from the out-of-band channel instead: both sides MAC the
 transcript with the secret off the host's own screen, so a man in the middle
 who never saw it cannot produce either proof and fails at the MAC check,
-before any number is displayed.
+before any number is displayed. The credential is never put on the wire in
+either direction — `pairing/claim` carries only the MAC, and the host learns
+which channel was used by seeing which of the offer's two keys that MAC
+verifies under. That is not decoration: every other field of a claim is
+transcript material, so a frame carrying the credential too would be a frame
+from which the safety number and the device token both fall out.
 
 **2. The SAS is derived from both sides' material, and `pairing/claim`
 deliberately does not return it.** The transcript is
@@ -1215,10 +1220,23 @@ bad MAC, replayed counter — returns the same `UNPAIRED_DEVICE` the host has
 always returned, so the handshake cannot be used as an oracle. The local
 console still says hello with no proof at all: it spawned the host, and the
 research says to persist it as device #1 rather than make it a special case.
+That free arm is fenced by *where* the caller is and *who it already is*, not
+by what it says. It answers only the colocated connection (#29 gave each
+connection an id; the socket's is not the console's), and only when that
+connection is not already bound to a paired device — otherwise an `approver`,
+which must have `host/hello` in its allowlist so a phone can reconnect, could
+say hello a second time with no `device` at all and be re-bound as device #1.
+A re-hello is re-authentication: from a paired device the only route to
+another identity is a proof.
 
 **7. The token is derived on both sides and never transmitted; the host keeps
 it in the vault.** `token = base64url(HMAC(oobSecret, H[tokenDomain,
-transcript]))`. SQLite stores only `token_ref`, the vault account name — the
+transcript]))`. Being precise about what that rests on: the token has no
+ephemeral contribution, so its secrecy is exactly the secrecy of the
+out-of-band credential — anyone who ever learns the credential of an offer
+that completed can recompute the token of the device that completed it. Hence
+the credential never travels (point 1), the offer is single-use, and its TTL
+is seconds-to-minutes. SQLite stores only `token_ref`, the vault account name — the
 same rule `store/secrets.rs` already holds. The cost is that where the vault
 cannot produce the bytes (a Linux host, a locked keychain) the host cannot
 check a proof and fails closed: the device must re-pair. That is the right
@@ -1328,7 +1346,7 @@ frames are the frames `jabot-hostd` has been answering since D-001. That was
 the point of decision #4, and the honest way to close #29 was to find out
 whether it held rather than to assert it.
 
-### The four host changes, and why each was unavoidable
+### The host changes, and why each was unavoidable
 
 **1. A device binding is per *connection*, not per process.** `HostSession`
 had one `connected_device`, which is correct for one webview and wrong the
@@ -1364,6 +1382,36 @@ The host now uses the device this connection said hello as and refuses a claim
 to be anybody else. Every existing caller already sent its own id, so nothing
 had to change but the guarantee.
 
+**5. Being the console is a fact about *where*, not a thing you can say.**
+`host/hello` with no device — or with the console's own id — used to bind the
+caller to device #1, `full`, on the strength of "who else would be calling".
+That was true of one webview and false the moment a listener exists: the
+console's id is not a secret (every `host/hello`, `host/health` and
+`device/list` answer prints it), so a socket client could name it and be the
+Mac, which makes #19's handshake optional for anyone who can reach the
+transport — including a paired `approver` promoting itself on its own open
+connection. `hello` now reads the connection the request arrived on and grants
+the colocated identity only there; anywhere else, both spellings go through
+`authenticate_paired_device` and come back `UnpairedDevice`.
+
+**6. A connection is not a subscription.** Notifications are pushed, so
+`require_hello` — which gates *requests* — said nothing about them, and a
+socket was added to the broadcast set at accept. A client that connected and
+sent nothing therefore received every `session/update` and `permission/ask`:
+the prompt text, the agent's replies, the command being approved. That is the
+leak rule 2 is about, from a process that cannot answer a single request.
+`Clients::broadcast` now asks the session whether that connection has a device
+before each frame, so the answer follows a revoke rather than being latched at
+accept.
+
+**7. The socket is `0600` in a `0700` directory, and a test says so.** Rule 1
+lets rung 0 skip TLS *because* the socket can be "`0700` in a user dir", and
+the bullet below leans on the same sentence. Under a default umask `bind`
+produced `0755` — every account on the machine could connect — so the one
+control the design rests on was prose. `bind_listener` sets the umask around
+the bind (a `chmod` afterwards is a window, not a fix), creates a parent it
+owns at `0700`, and the e2e asserts the resulting mode.
+
 ### What #29 did **not** build, and why
 
 - **A phone.** There is no app, no store listing, no push notification, no
@@ -1371,8 +1419,8 @@ had to change but the guarantee.
   conformance. `InboxScreen.tsx` is a DOM component; a real device replaces it
   and keeps `session.ts` unchanged, which is the seam the split was for.
 - **A transport that leaves the machine.** The socket is rung 0 — loopback,
-  filesystem permissions, no TLS, no Noise, nothing bound to a network
-  interface. Rungs 1–3 (mDNS, Tailscale, an E2E relay) are reach work, and
+  filesystem permissions (`0600`, and asserted, per change 7), no TLS, no
+  Noise, nothing bound to a network interface. Rungs 1–3 (mDNS, Tailscale, an E2E relay) are reach work, and
   `pairing-security-mobile.md`'s rule 1 — encrypt anything that leaves the box
   — is the transport's job when one exists. The handshake was designed to
   survive an untrusted wire (D-015); this still does not put it on one.
@@ -1408,6 +1456,15 @@ records the reply**. Asserting on the client's return value would have passed
 with nothing reaching ACP at all. The same file asserts the host refusing
 `thread/delete` from the phone, refusing the phone's attempt to be recorded as
 the Mac, and refusing a revoked device on its next connection.
+
+The same file also drives the socket from a client that is *not* a phone —
+connected, unpaired, saying whatever it likes — because that is what opening a
+listener created and what changes 5–7 close. It asserts that a bare hello and a
+hello borrowing the console's id are both refused, that `pairing/start` (which
+would hand out the pairing secret) is unreachable behind them, that a
+connection which never identified itself overhears none of a prompt the desktop
+drives to completion while a paired phone on an identical connection hears the
+next one, and that the socket's mode is `0600`.
 
 ---
 

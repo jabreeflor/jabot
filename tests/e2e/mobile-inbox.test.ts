@@ -24,7 +24,7 @@
  * The vault runs in-process (`JABOT_SECRETS_BACKEND=memory`) because Linux CI
  * has no Keychain; see `tests/e2e/pairing.test.ts` for what that costs.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -32,10 +32,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { HostClient, HostRpcError } from "../../src/host/client";
 import {
+  HOST_HELLO,
   JSONRPC_VERSION,
+  PAIRING_START,
   PERMISSION_ASK,
   PERMISSION_RESOLVED,
   RPC_ERROR,
+  SESSION_UPDATE,
   THREAD_DELETE,
   THREAD_TRANSCRIPT,
   type PairingQr,
@@ -81,7 +84,6 @@ async function pairPhone(desktop: HostClient, role: "full" | "approver" = "appro
 
   await desktop.claimPairing({
     pairingId: qr.pairingId,
-    secret: qr.secret,
     device: phone.descriptor(),
     mac: derived.claimMac,
   });
@@ -326,6 +328,96 @@ describe("the Mobile Inbox client", () => {
     // folded thread is not a notification, least of all on a phone.
     expect(inbox.sleeping.map((c) => c.threadId)).toEqual(["t-asleep"]);
     expect(inbox.sleeping[0].ask).toBeUndefined();
+  });
+
+  it("does not let a socket client talk its way into being the Mac", async () => {
+    const { host, hello } = await twoClientHost();
+
+    // A client with nothing but the socket path: no pairing, no credential.
+    const channel = connectUnixSocket(host.socketPath!);
+    await channel.ready;
+    const raw = createLineTransport(channel);
+
+    // The two names the host already knows. Neither is a credential: a bare
+    // hello used to be answered as "the console, because who else would be
+    // here", and the console's own id is printed in every hello, health and
+    // device/list answer, so it is a public string.
+    const bare = await raw.request({
+      jsonrpc: JSONRPC_VERSION,
+      id: "raw-hello",
+      method: HOST_HELLO,
+      params: {},
+    });
+    expect(bare.error?.code).toBe(RPC_ERROR.UNPAIRED_DEVICE);
+
+    const borrowed = await raw.request({
+      jsonrpc: JSONRPC_VERSION,
+      id: "raw-hello-as-mac",
+      method: HOST_HELLO,
+      params: { device: { deviceId: hello.device.deviceId } },
+    });
+    expect(borrowed.error?.code).toBe(RPC_ERROR.UNPAIRED_DEVICE);
+
+    // What it would have got if either had worked: `pairing/start` hands back
+    // the QR payload — the pairing secret included — so an admitted stranger
+    // does not need to defeat #19's handshake, it can run it.
+    const started = await raw.request({
+      jsonrpc: JSONRPC_VERSION,
+      id: "raw-pair",
+      method: PAIRING_START,
+      params: {},
+    });
+    expect(started.result).toBeUndefined();
+    expect(started.error?.code).toBe(RPC_ERROR.HELLO_REQUIRED);
+    raw.close();
+  });
+
+  it("streams nothing to a connection that has not said who it is", async () => {
+    const { host, desktop } = await twoClientHost();
+
+    // Connected, silent, and listening — the cheapest attack there is.
+    const channel = connectUnixSocket(host.socketPath!);
+    await channel.ready;
+    const overheard: string[] = [];
+    channel.onLine((line) => {
+      if (line.trim()) overheard.push(line);
+    });
+
+    await openThread(desktop, "t-quiet", "echo");
+    await desktop.prompt({ threadId: "t-quiet", content: "hello secret" });
+    // The desktop is on stdio and always hears it; the broadcast that fed it
+    // is the same call that would have fed the socket.
+    await host.waitFor(
+      (n) =>
+        n.method === SESSION_UPDATE &&
+        JSON.stringify(n.params).includes("hello secret"),
+    );
+    // Delivery to the socket would be a separate write on the same lock, so
+    // give it longer than it could possibly need to arrive.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(overheard).toEqual([]);
+
+    // And the gate is "unidentified", not "socket": a paired phone on an
+    // identical connection hears the next turn.
+    const { phone, qr, derived } = await pairPhone(desktop);
+    const { session } = await attachPhone(host, phone, qr.hostId, derived.token);
+    await openThread(desktop, "t-loud");
+    await desktop.prompt({ threadId: "t-loud", content: "rm -rf" });
+    await until(() => session.inbox.needs.length > 0);
+    // The silent one still heard none of it.
+    expect(overheard).toEqual([]);
+    channel.close();
+  });
+
+  it("puts the socket somewhere only this user can reach", async () => {
+    const { host } = await twoClientHost();
+    // `pairing-security-mobile.md` rule 1 lets rung 0 skip TLS *because* the
+    // socket is "`0700` in a user dir", and D-016 calls that the whole of the
+    // protection. Default umask would make it `0755`: every account on the
+    // machine could connect, and the two refusals above would be the only
+    // thing standing between them and the host.
+    expect(statSync(host.socketPath!).mode & 0o777).toBe(0o600);
+    expect(statSync(path.dirname(host.socketPath!)).mode & 0o077).toBe(0);
   });
 
   it("refuses a phone that was revoked, on its next connection", async () => {

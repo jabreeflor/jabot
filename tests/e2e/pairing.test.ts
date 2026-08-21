@@ -72,7 +72,6 @@ async function pair(
 
   const claim = await client.claimPairing({
     pairingId: qr.pairingId,
-    secret: qr.secret,
     device: device.descriptor(),
     mac: derived.claimMac,
   });
@@ -186,6 +185,23 @@ describe("pairing a second device", () => {
     const asks = await host.call("permission/pending", {});
     expect(asks.error).toBeUndefined();
 
+    // And it cannot climb back out by saying hello a second time. `host/hello`
+    // has to be on the approver allowlist — a phone that drops in a lift must
+    // be able to come back — and hello's console arms ask for no proof at all,
+    // because the client that spawned the host has none to give. Unguarded,
+    // those two facts are a promotion: one extra frame and the phone is device
+    // #1. Neither an empty hello nor one naming the console's own id (which is
+    // not a secret — this test read it off `device/list`) may re-bind it.
+    for (const params of [
+      { protocolVersion: 1 },
+      { protocolVersion: 1, device: { deviceId: local?.deviceId } },
+    ]) {
+      const promoted = await host.call(HOST_HELLO, params);
+      expect(promoted.error?.code).toBe(RPC_ERROR.UNPAIRED_DEVICE);
+    }
+    const stillScoped = await host.call(PAIRING_START, {});
+    expect(stillScoped.error?.code).toBe(RPC_ERROR.DEVICE_SCOPE);
+
     // Replaying the phone's own hello frame does not work either.
     const replay = await host.call(HOST_HELLO, {
       protocolVersion: 1,
@@ -211,7 +227,6 @@ describe("pairing a second device", () => {
     // the safety number exists for.
     await client.claimPairing({
       pairingId: qr.pairingId,
-      secret: qr.secret,
       device: attacker.descriptor(),
       mac: attackerView.claimMac,
     });
@@ -239,12 +254,13 @@ describe("pairing a second device", () => {
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const wrong = await host.call(PAIRING_CLAIM, {
         pairingId: qr.pairingId,
-        code: "00000000",
         device: phone.descriptor(),
         mac: "00".repeat(32),
       });
       expect(wrong.error?.code).toBe(RPC_ERROR.PAIRING_FAILED);
-      expect((wrong.error?.data as { reason: string }).reason).toBe("credential");
+      // One check, so "wrong code" and "forged MAC" are the same answer: a
+      // claim that verifies under neither credential.
+      expect((wrong.error?.data as { reason: string }).reason).toBe("proof");
     }
 
     // Spent. Even the real secret off the real screen is now worthless — the
@@ -252,7 +268,6 @@ describe("pairing a second device", () => {
     const derived = phone.derive(qr, qr.secret);
     const late = await host.call(PAIRING_CLAIM, {
       pairingId: qr.pairingId,
-      secret: qr.secret,
       device: phone.descriptor(),
       mac: derived.claimMac,
     });
@@ -266,17 +281,23 @@ describe("pairing a second device", () => {
     const start = await client.startPairing();
     const qr = qrOf(start);
 
-    const byCode = phone.derive(qr, normalizeCode(start.code), "code");
+    // Typed the way a human says it out loud, and folded back onto the
+    // alphabet by the device — which is the only side that ever sees the
+    // characters, because the host is sent a MAC keyed by them and never the
+    // code itself.
+    const spoken = `${start.code.slice(0, 4).toLowerCase()}-${start.code.slice(4)}`;
+    expect(normalizeCode(spoken)).toBe(start.code);
+
+    const byCode = phone.derive(qr, normalizeCode(spoken), "code");
     const byQr = phone.derive(qr, qr.secret, "qr");
     // A man in the middle downgrading a scan to a typed code changes what both
     // humans see rather than passing quietly.
     expect(byCode.sas).not.toBe(byQr.sas);
 
-    // Typed the way a human says it out loud.
-    const spoken = `${start.code.slice(0, 4).toLowerCase()}-${start.code.slice(4)}`;
+    // Nothing in the frame says which channel this is: the host finds out by
+    // trying both keys against the one proof it was sent.
     const claim = await client.claimPairing({
       pairingId: qr.pairingId,
-      code: spoken,
       device: phone.descriptor(),
       mac: byCode.claimMac,
     });

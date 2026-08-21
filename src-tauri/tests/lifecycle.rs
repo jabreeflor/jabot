@@ -5,7 +5,7 @@
 //! have. Where a case needs an agent it gets the real `fake-acp-agent`
 //! subprocess over real ACP stdio, not a stub.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -79,6 +79,39 @@ impl Host {
                 "runtime": { "command": fake_agent(), "args": args }
             }),
         )
+    }
+
+    /// A thread on the `gated` agent, plus the gate file that drives it.
+    ///
+    /// Fold is the one feature that cannot be proved against an agent which
+    /// finishes on its own: the turn has to still be in flight at the moment
+    /// the thread is folded, go on running after it, and only then end. A
+    /// sleep would make that a race the test usually wins; the gate makes it
+    /// an ordering the test always wins.
+    fn open_gated(&mut self, thread_id: &str) -> PathBuf {
+        let gate = self.dir.path().join(format!("{thread_id}.gate"));
+        self.ok(
+            THREAD_OPEN,
+            json!({
+                "threadId": thread_id,
+                "title": "Auth migration",
+                "cwd": self.dir.path().to_string_lossy(),
+                "harnessId": "claude",
+                "runtime": {
+                    "command": fake_agent(),
+                    "args": ["gated", gate.to_string_lossy()]
+                }
+            }),
+        );
+        gate
+    }
+
+    /// Tell a gated turn what to do next. Renamed into place so the agent
+    /// cannot read half a script.
+    fn open_gate(gate: &Path, script: &str) {
+        let staged = gate.with_extension("part");
+        std::fs::write(&staged, script).unwrap();
+        std::fs::rename(&staged, gate).unwrap();
     }
 
     fn prompt(&mut self, thread_id: &str) -> Value {
@@ -649,4 +682,124 @@ fn a_second_prompt_cannot_retire_a_run_that_is_still_in_flight() {
     let finished = host.settle("t-overlap", |s| s["latestRun"]["state"] == "succeeded");
     assert_eq!(finished["latestRun"]["seq"], 1);
     assert_eq!(finished["resurfacedReason"], "done");
+}
+
+/// #26's signature claim, and the only shape that can prove it: the thread is
+/// folded *while the agent is mid-turn*, keeps that same subprocess, and comes
+/// back on its own when the work it was doing all along finishes.
+#[test]
+fn folding_a_running_thread_keeps_it_working_and_brings_it_back_done() {
+    let mut host = Host::start();
+    let gate = host.open_gated("t-live");
+    host.prompt("t-live");
+
+    // Fold has to land on a turn that is genuinely in flight. Folding an idle
+    // thread and watching it stay idle proves nothing about any of this.
+    let running = host.settle("t-live", |s| {
+        s["latestRun"]["state"] == "running" && s["process"]["acpState"] == "running"
+    });
+    assert_eq!(running["state"], "active");
+
+    let folded = host.ok(THREAD_FOLD, json!({ "threadId": "t-live" }));
+    assert_eq!(folded["state"], "folded");
+    // Visibility only. Same process, same run, same turn — the overlay moved
+    // and nothing else did.
+    assert_eq!(folded["process"]["connected"], true);
+    assert_eq!(folded["process"]["acpState"], "running");
+    assert_eq!(folded["latestRun"]["state"], "running");
+    assert_eq!(folded["latestRun"]["id"], running["latestRun"]["id"]);
+    assert_eq!(host.session.live_adapter_count(), 1);
+
+    // Still Sleeping is the thread row, not an event: nothing has happened yet
+    // that the human needs to know about.
+    let inbox = host.ok(INBOX_LIST, json!({}));
+    assert!(kinds(&inbox).is_empty(), "folding is not news");
+    let sleeping = &inbox["sleeping"][0];
+    assert_eq!(sleeping["threadId"], "t-live");
+    assert_eq!(
+        sleeping["runState"], "running",
+        "the Inbox has to be able to say it is still working"
+    );
+    assert_eq!(sleeping["acpState"], "running");
+
+    // And the work that was already under way finishes with nobody watching.
+    Host::open_gate(&gate, "end_turn");
+    let done = host.settle("t-live", |s| s["state"] == "resurfaced");
+    assert_eq!(done["resurfacedReason"], "done");
+    assert_eq!(done["latestRun"]["state"], "succeeded");
+    assert_eq!(done["latestRun"]["id"], running["latestRun"]["id"]);
+    assert_eq!(kinds(&host.ok(INBOX_LIST, json!({}))), vec!["done"]);
+    assert!(
+        host.ok(INBOX_LIST, json!({}))["sleeping"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "a thread that came back is not asleep any more"
+    );
+}
+
+/// The same live fold, ending badly. `failed` and `stuck` are different asks of
+/// the human — a failure wants a retry, silence wants patience — so a turn that
+/// really ended must never be reported as one that merely went quiet.
+#[test]
+fn a_live_thread_that_fails_while_folded_comes_back_failed_not_stuck() {
+    let mut host = Host::start();
+    let gate = host.open_gated("t-live-fail");
+    host.prompt("t-live-fail");
+    host.settle("t-live-fail", |s| s["latestRun"]["state"] == "running");
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-live-fail" }));
+
+    Host::open_gate(&gate, "max_tokens");
+    let state = host.settle("t-live-fail", |s| s["state"] == "resurfaced");
+    assert_eq!(state["resurfacedReason"], "failed");
+    assert_eq!(state["latestRun"]["state"], "failed");
+    assert_eq!(state["lastStopReason"], "max_tokens");
+    assert_eq!(kinds(&host.ok(INBOX_LIST, json!({}))), vec!["failed"]);
+    // The run is closed, unlike a stuck one, and nothing is left in flight.
+    assert_eq!(state["process"]["acpState"], "idle");
+}
+
+/// Wait for Inbox chosen on a turn that is *already running*.
+///
+/// The policy is written before the fold precisely so an ask arriving in the
+/// same breath is judged by the policy the user just picked. Two asks in one
+/// turn prove both halves of it: the read the host may answer on their behalf,
+/// and the delete it may not.
+#[test]
+fn wait_for_inbox_chosen_mid_turn_answers_a_read_and_still_asks_before_a_delete() {
+    let mut host = Host::start();
+    let gate = host.open_gated("t-live-quiet");
+    host.prompt("t-live-quiet");
+    host.settle("t-live-quiet", |s| s["latestRun"]["state"] == "running");
+
+    let folded = host.ok(
+        THREAD_FOLD,
+        json!({ "threadId": "t-live-quiet", "policy": "wait_for_inbox" }),
+    );
+    assert_eq!(folded["state"], "folded");
+    assert_eq!(folded["foldPolicy"], "wait_for_inbox");
+
+    Host::open_gate(&gate, "read,delete");
+    let state = host.settle("t-live-quiet", |s| s["state"] == "resurfaced");
+
+    // Locked policy: folding never auto-allows a destructive tool, however
+    // quiet the user asked for it to be.
+    assert_eq!(state["resurfacedReason"], "needs_you");
+    assert_eq!(state["process"]["pendingPermissions"], 1);
+    assert_eq!(state["latestRun"]["state"], "needs_you");
+    assert!(host.drain().iter().any(|n| n.method == PERMISSION_ASK));
+
+    let inbox = host.ok(INBOX_LIST, json!({}));
+    assert!(kinds(&inbox).contains(&"needs_you".to_string()));
+    let away = inbox["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["kind"] == "judgment_call")
+        .expect("the read the host answered is in the away log");
+    assert_eq!(away["title"], "Allowed Read src/auth.ts");
+    assert_eq!(away["payload"]["reviewable"], false);
+    // A receipt, not something still owed: only the delete is unread.
+    assert!(away["readAt"].is_string());
+    assert_eq!(inbox["unread"], 1);
 }

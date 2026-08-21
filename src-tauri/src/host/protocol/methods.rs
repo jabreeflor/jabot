@@ -1985,7 +1985,17 @@ pub struct PairingDevice {
     pub nonce: String,
 }
 
-/// Claim an offer, presenting the out-of-band credential and a proof.
+/// Claim an offer, proving possession of the out-of-band credential.
+///
+/// The credential itself — the QR's `secret`, the spoken `code` — is
+/// deliberately **not** a field here. Everything else in this frame
+/// (`pairingId`, `deviceId`, `fingerprint`, `nonce`) is exactly the material
+/// the transcript is built from, and the device token is a pure function of
+/// the credential and that transcript, so one frame carrying both would hand
+/// an eavesdropper the safety number and the device's long-term token as well
+/// as the offer. `mac` is a complete possession proof on its own; which
+/// channel carried the credential is whichever key that MAC verifies under,
+/// and the host answers with it in `via`.
 ///
 /// The derivations, once, for a client in another language. `H[a, b, …]` is
 /// SHA-256 over each field written as a 4-byte big-endian length followed by
@@ -2011,14 +2021,11 @@ pub struct PairingDevice {
 #[serde(rename_all = "camelCase")]
 pub struct PairingClaimParams {
     pub pairing_id: String,
-    /// Present when the QR was scanned.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secret: Option<String>,
-    /// Present when the code was typed. Case, spaces and dashes are ignored,
-    /// and `I`/`L`/`O` fold onto `1`/`1`/`0`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
     pub device: PairingDevice,
+    /// `hex(bind("jabot/pairing/claim/v1"))` under the credential this device
+    /// holds. The host tries the offer's QR secret and its typed code, and the
+    /// one that verifies is the channel — so a device that scanned and a
+    /// device that typed send the same shape of frame and neither says which.
     pub mac: String,
 }
 

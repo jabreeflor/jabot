@@ -30,6 +30,7 @@ import type {
   BotTemplate,
   Folder,
   FolderWithThreads,
+  FoldPolicy,
   HarnessCard,
   InboxCard,
   NewChatDraft,
@@ -674,7 +675,7 @@ export function initialMockState(): MockState {
 
 export type MockAction =
   | { type: "startThread"; draft: NewChatDraft }
-  | { type: "foldThread"; threadId: string }
+  | { type: "foldThread"; threadId: string; policy?: FoldPolicy }
   | { type: "archiveThread"; threadId: string }
   | { type: "deleteThread"; threadId: string }
   | { type: "sendMessage"; conversationId: string; text: string }
@@ -694,7 +695,7 @@ export function mockHostReducer(state: MockState, action: MockAction): MockState
     case "startThread":
       return startThread(state, action.draft);
     case "foldThread":
-      return foldThread(state, action.threadId);
+      return foldThread(state, action.threadId, action.policy);
     case "archiveThread":
       return {
         ...state,
@@ -785,8 +786,17 @@ function startThread(state: MockState, draft: NewChatDraft): MockState {
  * Fold: the thread keeps running, the row leaves the sidebar, and a sleeping
  * card lands in the Inbox. Writing the card *before* anything is notified is
  * the persist-then-notify rule from #5 — here it is the same statement.
+ *
+ * An omitted `policy` keeps the one the thread already has, exactly as
+ * `thread/fold` does with an absent `policy` field (#26). The mock has to make
+ * the same promise as the host, or the shell is tested against a rule the real
+ * fold does not follow.
  */
-function foldThread(state: MockState, threadId: string): MockState {
+function foldThread(
+  state: MockState,
+  threadId: string,
+  policy?: FoldPolicy,
+): MockState {
   const thread = state.threads.find((t) => t.id === threadId);
   if (!thread || thread.state === "folded") return state;
   const folder = state.folders.find((f) => f.id === thread.folderId);
@@ -806,11 +816,30 @@ function foldThread(state: MockState, threadId: string): MockState {
     seq: state.seq + 1,
     threads: state.threads.map((t) =>
       t.id === threadId
-        ? { ...t, state: "folded", foldPolicy: "wait_for_inbox" }
+        ? { ...t, state: "folded", foldPolicy: policy ?? t.foldPolicy }
         : t,
     ),
     inbox: [card, ...state.inbox],
   };
+}
+
+/**
+ * The thread a transcript notice is about, if it names one.
+ *
+ * Chief's fold card is an affordance on a *thread*, so the shell has to know
+ * which one before it can decide whether the fold belongs to the host or to
+ * the fixtures (#26). The reducer cannot make that call for it: it only knows
+ * the threads it seeded.
+ */
+export function noticeThreadId(
+  state: MockState,
+  conversationId: string,
+  itemId: string,
+): string | null {
+  const item = (state.transcripts[conversationId] ?? []).find(
+    (entry) => entry.id === itemId,
+  );
+  return item?.kind === "notice" ? (item.threadId ?? null) : null;
 }
 
 function answerNotice(

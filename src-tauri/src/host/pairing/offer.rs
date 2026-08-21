@@ -125,26 +125,14 @@ impl Offer {
         self.attempts >= MAX_ATTEMPTS
     }
 
-    /// Which credential this presentation matched, if any.
-    ///
-    /// Both are checked in constant time and both are always checked, so the
-    /// answer does not depend on which channel the caller guessed at.
-    pub fn match_channel(&self, secret: Option<&str>, code: Option<&str>) -> Option<Channel> {
-        let by_secret = secret
-            .is_some_and(|s| super::crypto::ct_eq(s.as_bytes(), self.secret.as_bytes()))
-            .then_some(Channel::Qr);
-        let by_code = code
-            .and_then(super::crypto::normalize_code)
-            .is_some_and(|c| super::crypto::ct_eq(c.as_bytes(), self.code.as_bytes()))
-            .then_some(Channel::Code);
-        by_secret.or(by_code)
-    }
-
     /// The HMAC key for a claim on this channel.
     ///
     /// The key *is* the out-of-band credential, so a proof made with the typed
     /// code cannot be replayed as a proof of having scanned the QR, and the
-    /// safety number differs between the two channels.
+    /// safety number differs between the two channels. It is also why neither
+    /// credential is ever asked for on the wire: `pairing/claim` tries this
+    /// key for each channel and keeps whichever one the device's MAC verifies
+    /// under, which proves possession without transporting the thing possessed.
     pub fn channel_key(&self, via: Channel) -> &str {
         match via {
             Channel::Qr => &self.secret,
@@ -212,24 +200,6 @@ mod tests {
             attempts: 0,
             state: OfferState::Offered,
         }
-    }
-
-    #[test]
-    fn either_channel_matches_its_own_credential_only() {
-        let offer = offer();
-        assert_eq!(
-            offer.match_channel(Some("s3cr3t-material"), None),
-            Some(Channel::Qr)
-        );
-        // Typed the way a human types it: lower case, dashed, with the
-        // characters Crockford folds away.
-        assert_eq!(
-            offer.match_channel(None, Some("abcd-1234")),
-            Some(Channel::Code)
-        );
-        assert_eq!(offer.match_channel(Some("ABCD1234"), None), None);
-        assert_eq!(offer.match_channel(None, Some("s3cr3t-material")), None);
-        assert_eq!(offer.match_channel(None, None), None);
     }
 
     #[test]

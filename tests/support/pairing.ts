@@ -115,6 +115,12 @@ export class TestDevice {
    * `key` is the out-of-band credential: the QR's `secret`, or the normalized
    * code. Which one was used is part of the transcript, so a downgrade from
    * scan to typed code changes the safety number instead of passing quietly.
+   *
+   * The key never leaves this object. `pairing/claim` sends `claimMac` and
+   * nothing else derived from it, and the host works out which channel that
+   * was by trying both of the offer's keys — so normalizing what a human typed
+   * is this side's job, and a captured claim frame yields neither the
+   * credential nor the token below.
    */
   derive(qr: PairingQr, key: string, via: Channel = "qr"): Derived {
     const transcript = frameHash([

@@ -145,12 +145,30 @@ describe("foldThread", () => {
     expect(threadIds(after, "jabot-app")).not.toContain("auth");
     expect(after.threads.find((t) => t.id === "auth")).toMatchObject({
       state: "folded",
-      foldPolicy: "wait_for_inbox",
+      // "Disappear until done" sends no policy, and `thread/fold` leaves the
+      // stored one alone when the field is absent (#26). The mock has to make
+      // the same promise, or the shell is tested against a rule the host does
+      // not follow — silently resetting a quieter policy the user chose.
+      foldPolicy: "default",
     });
 
     const card = after.inbox.find((c) => c.threadId === "auth");
     expect(card).toMatchObject({ kind: "folded" });
     expect(card?.title).toBe("Auth migration");
+  });
+
+  it("takes the quieter policy when Wait for Inbox is the one chosen", () => {
+    const before = initialMockState();
+    const after = mockHostReducer(before, {
+      type: "foldThread",
+      threadId: "auth",
+      policy: "wait_for_inbox",
+    });
+
+    expect(after.threads.find((t) => t.id === "auth")).toMatchObject({
+      state: "folded",
+      foldPolicy: "wait_for_inbox",
+    });
   });
 
   it("does not increment the needs-you badge — sleeping is not a summons", () => {
