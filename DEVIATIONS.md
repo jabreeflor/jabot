@@ -1008,3 +1008,269 @@ SQL module were added in the store's own style; nothing existing changed shape.
 - **A second device answering.** `permission/reply` records `deviceId` and the
   card locks on anyone's `permission/resolved`, so the pieces are there, but
   pairing is MVP2 and nothing else was built for it.
+
+---
+
+## D-014 — #24: how Chief's host tools reach an ACP session, and what that cost
+
+**Plan:** #24 asks for Chief's four host tools (`handoff_to_bot`,
+`spawn_code_session`, `fold_thread`, `list_crew_status`) as real host actions,
+Chief's standing thread (D-009 left it unbuilt), the tools exposed to Chief's
+ACP session as **host-implemented** tools rather than as MCP servers from #18's
+catalog, and a traceable handoff on a new table.
+
+**Built:** `host/chief/` — `mod.rs` (the four actions), `tools.rs` (the schemas
+a model reads), `bridge.rs` (a loopback MCP server the host answers itself);
+`host/crew/standing.rs` (a bot's one standing thread); migration `0006_handoffs`
+plus `store/handoff.rs`; `crew/thread` on the wire; `handoff` on
+`ThreadStateResult`. Eight departures are worth recording.
+
+**1. "Host-implemented tools" is a loopback HTTP MCP server the host runs
+itself.** ACP has exactly one seam for giving a session tools — `mcpServers` on
+`session/new` — and no notion of a client-implemented tool beyond `fs/*` and
+`terminal/*`. So the host binds `127.0.0.1:0`, speaks MCP over it, and passes
+the session a single `{"type":"http"}` entry pointing at itself. From the
+adapter's side that is an ordinary remote server, which is the point: nothing
+in `acp/` or in any harness had to learn about this. What makes it a *host*
+tool rather than a catalog entry is who answers — the `HostSession` itself,
+through the actions in `chief/mod.rs`, with no third-party process anywhere.
+The alternatives were worse: a stdio bridge binary would need bundling and
+would still have to talk back to the host over a socket, and a fifth
+`tools/catalog.rs` entry would have made Chief's routing look like a provider
+integration, which decision #6 explicitly refuses.
+
+The security story is the ephemeral port plus a per-thread bearer token
+generated at bind. Another process on the machine that finds the port cannot
+hand work to the crew, and every call is attributable to the thread that made
+it — which is what the handoff trail records. `bridge.rs` has the test.
+
+**2. The bridge never touches `HostSession`, because it cannot.** The host is a
+single `&mut` owner driven by a pump; a listener thread reaching into it would
+need a lock around everything. So a request becomes a `Pending` on a channel,
+the connection thread blocks on the answer, and the host drains and answers
+from `pump_acp` — the same shape the ACP reader threads already use. The
+adapter wake is pinged so an answer takes a millisecond instead of a tick.
+`chief_dispatching` guards the one real cycle: a handoff prompts another
+thread, prompting pumps, and the pump comes back here.
+
+**3. What the MCP server deliberately does not implement.** No SSE stream (a
+`GET` is answered `405`, which is what makes a client fall back to plain
+POSTs), no MCP sessions, no resources or prompts, and no JSON-RPC batching —
+removed from MCP in 2025-06-18, and every tool here answers in one round trip.
+A second transport would be two code paths proving the same thing.
+
+**4. A dispatch that could not be delivered is still a handoff.** The
+`handoffs` row is written *before* the prompt is sent and `dispatched` is set
+afterwards, for the reason #5 gives about the Inbox. A bot whose harness is not
+installed produces a real, traceable handoff with `dispatched: false` and the
+reason in `detail`, never a silent nothing. Both halves are tested — the
+in-process tests assert the undelivered path (no `claude` on a test machine),
+and the e2e suite registers a tier-3 harness pointing at `fake-acp-agent` so it
+can assert the delivered one all the way into the receiving bot's transcript.
+
+**5. The standing thread's id is derived, not minted.** `bot-<bot id>`, so "one
+standing thread per bot" is enforced by the primary key rather than by a lookup
+that can race, and `crew/thread` is idempotent for free because `thread/open`
+already returns an existing thread. `cwd` is the memory directory #17 serves on
+`BotView`, and `use_checkout` is set explicitly even though a thread with no
+folder would not get a worktree anyway — the day someone gives a worker a
+folder, that line is what keeps decision #6's promise.
+
+**6. An archived standing thread comes back; a deleted one is replaced.**
+A handoff has to land where the human can see it. Archive is a user closing a
+conversation, not retiring a bot, so `crew/thread` reopens an archived standing
+thread rather than putting new work into a closed row — and leaves a *folded*
+one folded, because fold's promise is that it stays away until its own run
+brings it back. Delete is terminal (`state::next_state` refuses every move off
+it), which would otherwise leave a bot permanently unreachable, so the next
+generation takes a suffixed id — `bot-writer-2` — the same way #23 finds a free
+branch name. The live standing thread is still exactly one; the deleted
+conversation stays deleted.
+
+**7. The Code bot is resolved by convention, not by a column.** Decision #6
+says Code owns folder threads and everyone else has one standing thread, but
+nothing in the schema marks which bot that is. `spawn_code_session` resolves it
+as: the bot with id `code` (so a *renamed* Code bot still owns its work), else
+a non-Chief bot named "Code" (so an install where the user rebuilt it from a
+blank bot still has an owner), else `None` — the thread opens with no bot, the
+same as a New Chat in a folder with no bot selected. A `bots.owns_folders`
+column would be more principled and is #17's schema; this is the smaller
+change, and the fallback chain is tested.
+
+`crew/thread` is *not* refused for the Code bot. Nothing needs a standing
+thread for it, but refusing would mean hard-coding the same convention in a
+second place to deny something harmless.
+
+**8. Two cross-issue fixes, in the spirit of D-003.** `store/mod.rs`'s
+`open_uses_wal_and_seeds_catalog` asserted `schema_version() == 5` as a
+literal; it now asserts `migrate::head()`, so the next migration does not have
+to edit it. And #19's pairing work, which landed in the tree during this issue,
+left a duplicated `#[allow(unused_imports)]` in `host/mod.rs` and its
+`map_paired_device` / `impl Store` block *after* `mod tests` — both are clippy
+errors under `-D warnings`. The block was moved above the test module and the
+duplicate attribute removed. No behaviour changed in either case.
+
+**Not built here:**
+
+- **Any renderer surface.** `crew/thread` and `HostClient.botThread` are
+  served and typed, and `ThreadStateResult.handoff` is on the wire, but nothing
+  in `src/views/` opens a bot's standing thread or draws "handed off by Chief"
+  yet. The bot view is #22's, and inventing a Crew-grid gesture for it here
+  would have put a second design next to the one that issue is going to make.
+- **Chief's persona.** The seeded instructions still say "Route work across the
+  crew" and nothing was added about *when* to use which tool; the routing
+  policy decision #6 settled ("Chief does not call Gmail itself; it hands off
+  to Inbox Mgr") is written into the tool descriptions instead, because that is
+  the text a model reads at the moment it chooses.
+- **A handoff list on the wire.** `store::list_handoffs_to` exists and is
+  tested through the store; only the latest handoff is served, because that is
+  what "where did this work come from" needs and a full trail has no reader yet.
+- **Cancelling or reassigning a handoff.** A handoff is a record of a dispatch,
+  not a job with a lifecycle; the run ledger (#15) already owns what happened
+  next.
+
+---
+
+## D-015 — #19: what the pairing handshake actually proves, without a curve
+
+**Plan:** #19 asks for device pairing — "QR + SAS + revocable scoped grants".
+`docs/research/remote-and-mobile/pairing-security-mobile.md` sketches it: each
+host and each device generates a keypair, the host shows a QR carrying a
+single-use nonce, both sides display a Signal-style safety number, the user
+confirms, the host records `{ deviceId, pub, name, createdAt, lastSeen, role }`,
+and revoke is a list on the host. #8 already carried `deviceId` on
+`host/hello` and refused any id but the local console's.
+
+**Built:** `host/pairing/` (offer state, crypto primitives, role scope, the
+seven methods), a `paired_devices` table (migration `0008`), `host/hello`
+extended to admit a paired device that can prove itself, and a scope check in
+`router::handle` that runs on every request.
+
+**1. There are no keypairs, and the docs say so rather than implying there
+are.** The research says "generates a keypair"; this host has no asymmetric
+cryptography and adding one would mean either a new dependency (the set is
+deliberately tiny — see `src-tauri/Cargo.toml`) or a hand-rolled curve, which
+is a worse idea than an honest symmetric handshake. So a "fingerprint" here is
+a **commitment** — `H(domain, key_material)` — not a verifying key. Each side
+publishes a stable name for key material it never sends, a reinstall changes
+it (the signal the research says must not be silent), and both fingerprints
+are folded into the safety number. What it does *not* do is let either side
+verify a signature, and `host/pairing/mod.rs` opens by saying exactly that.
+Authentication comes from the out-of-band channel instead: both sides MAC the
+transcript with the secret off the host's own screen, so a man in the middle
+who never saw it cannot produce either proof and fails at the MAC check,
+before any number is displayed.
+
+**2. The SAS is derived from both sides' material, and `pairing/claim`
+deliberately does not return it.** The transcript is
+`H["jabot/pairing/v1", hostId, hostFingerprint, hostNonce, pairingId,
+deviceId, deviceFingerprint, deviceNonce, via]`, length-framed so no field can
+absorb another's bytes, and every derivation is `HMAC(oobSecret, H[domain,
+transcript])`. The device computes its own number; the host shows its own on
+`pairing/status`; **both** send the number they are looking at to
+`pairing/confirm`, and the host refuses to pair unless the two agree with each
+other and with its own. Returning the number from `claim` would have been more
+convenient and would have made the check theatre — a string one side computed
+and the other displayed proves nothing. `tests/support/pairing.ts` is a
+second, independent implementation of the device half written from the
+protocol docs, so the e2e assertion is that two programs agreed rather than
+that one function was called twice.
+
+**3. Offers are RAM-only; only the grant is durable.** The research's step 2
+says "single-use nonce, seconds-to-minutes TTL". Keeping offers out of SQLite
+is how that promise survives a crash: a QR photographed off a monitor is
+worthless the moment the host restarts, and a secret that was never written
+down cannot be read out of a backup. An offer also stops answering after three
+wrong credentials, which is what makes the headless eight-character Crockford
+code defensible — 40 bits is a human's entropy, and the offer's patience is
+not. `pairing/status` never returns `secret` or `code`; they are handed out
+exactly once, by the call that creates them.
+
+**4. Revoke is a tombstone, not a `DELETE`.** The research says "revoke
+deletes the row". `paired_devices.revoked_at` keeps the promise — the device
+is refused from the moment the row is stamped, and the stamp is on disk before
+the answer goes out — and additionally answers "was this phone ever paired,
+and when did we cut it off", which is the question a stolen phone actually
+raises. Re-pairing upserts the same row with fresh key material and clears the
+tombstone, so the list does not grow a second entry per device.
+
+**5. The scope check runs in `router::handle`, on every method, as an
+allowlist.** #19's file zone did not name the router, but "enforced at the
+HOST on every call, never trusted from the client" is not a property a
+per-handler check can have — the next handler somebody adds would not have it.
+The role is read from the `paired_devices` row on each request rather than
+cached at hello, which is what makes a revoke land on a device's *next call*
+instead of its next connection. `approver` gets the list from the research
+(Inbox, permission reply, read transcript, cancel) and nothing else, including
+methods that do not exist yet: a denylist would silently open every new
+surface to the least trusted device on the account.
+
+**6. `host/hello` gained a proof, and `hello_rejects_unknown_device` is
+untouched.** A paired device sends `auth: { counter, mac }`, an HMAC under the
+token its pairing derived, with a counter that must strictly exceed the last
+one this host accepted (stored per device, bumped in one guarded `UPDATE`).
+Without that, `deviceId` would be a bearer token on a wire the host does not
+yet control. Every way of failing — unknown id, revoked row, missing token,
+bad MAC, replayed counter — returns the same `UNPAIRED_DEVICE` the host has
+always returned, so the handshake cannot be used as an oracle. The local
+console still says hello with no proof at all: it spawned the host, and the
+research says to persist it as device #1 rather than make it a special case.
+
+**7. The token is derived on both sides and never transmitted; the host keeps
+it in the vault.** `token = base64url(HMAC(oobSecret, H[tokenDomain,
+transcript]))`. SQLite stores only `token_ref`, the vault account name — the
+same rule `store/secrets.rs` already holds. The cost is that where the vault
+cannot produce the bytes (a Linux host, a locked keychain) the host cannot
+check a proof and fails closed: the device must re-pair. That is the right
+direction for an unverifiable credential, but it does mean the e2e suite runs
+with `JABOT_SECRETS_BACKEND=memory` and therefore asserts the SQLite half of
+durability — the grant and the revoke survive a restart — rather than
+pretending a device can reconnect to a host whose vault was never persisted.
+
+**8. Migrations may now have gaps, and `schemaVersion` is asserted against the
+list.** Two waves were allocating migration numbers at once, so this one took
+`0008` while `0007` did not exist yet, and `migrate` refused any version that
+was not exactly `current + 1`. The contiguity rule was the wrong invariant:
+numbers are allocated per issue and branches land out of order. It is replaced
+by `check_order`, which still refuses a list that repeats or goes backwards —
+the mistake the old check was really for — and by `migrate::head()`, so a test
+about `host/hello`'s `schemaVersion` is a statement about the migrations that
+exist rather than a number every wave has to edit.
+
+**9. The store grew a module, as #20 did.** #19's file zone is `host/pairing/`,
+`identity.rs` and a migration, but "revocable and durable" is a table, and
+`Store` is the only thing that may open SQLite. One SQL module, five `Store`
+methods, two row structs. Nothing existing changed shape.
+
+### What #19 did not build
+
+- **A transport.** There is still one host and one colocated client (decision
+  #4). Everything here is exercised over the in-process session and over
+  `jabot-hostd`'s stdio, which is the same frames; nothing listens on a
+  network, no address is published in the QR (`addrs` is empty rather than a
+  guess), and no encryption of the wire is claimed. Rule 1 of the research —
+  TLS or Noise for anything that leaves the box — is the transport's job when
+  one exists. The handshake is designed to survive an untrusted wire, but this
+  build does not put it on one.
+- **A device being able to authenticate the host on later connections.** The
+  derived token is shared, so the material for a mutual challenge exists, but
+  `host/hello` only proves the device to the host. A phone that wants to know
+  it is talking to the same Mac as last time has the fingerprint to compare
+  and nothing yet that makes the host prove it.
+- **Any UI.** No QR is rendered, no safety-number sheet, no device list
+  screen. `pairing/start` returns the exact string to encode and
+  `pairing/status` returns the number to display, so the surface is a
+  component away, but MVP1 ships one device and drawing a pairing screen for
+  it would be inventing a feature nobody can use yet.
+- **Notifications.** The host UI learns that a device has claimed an offer by
+  polling `pairing/status`. A `pairing/update` notification would be nicer, but
+  the notification envelope is thread-shaped (`hostId`, `threadId`, `seq`) and
+  widening it for one poll-able screen was not worth the protocol change.
+- **`approver` step-up, and "always allow" from a phone.** The research says a
+  newly paired `approver` must not be able to widen host policy without a
+  `full` device confirming, and calls that "later, not MVP2". Nothing offers a
+  remembered scope yet (D-013), so there is nothing to widen; when there is,
+  it belongs behind the settings surface, not behind this role check.
+- **Multi-host anything.** Pairing is per host, as the research insists.
+  A phone that should steer two machines scans twice, and nothing here
+  coordinates that.

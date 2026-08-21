@@ -27,6 +27,13 @@ import {
   SESSION_PROMPT,
   SUPERVISOR_STATUS,
   SYNC_RESUME_FROM,
+  DEVICE_LIST,
+  DEVICE_REVOKE,
+  PAIRING_CANCEL,
+  PAIRING_CLAIM,
+  PAIRING_CONFIRM,
+  PAIRING_START,
+  PAIRING_STATUS,
   THREAD_ARCHIVE,
   THREAD_DELETE,
   THREAD_FOLD,
@@ -71,6 +78,18 @@ import {
   type PermissionReplyResult,
   type PromptParams,
   type PromptResult,
+  type DeviceListResult,
+  type DeviceRefParams,
+  type DeviceRevokeResult,
+  type PairingCancelResult,
+  type PairingClaimParams,
+  type PairingClaimResult,
+  type PairingConfirmParams,
+  type PairingConfirmResult,
+  type PairingRefParams,
+  type PairingStartParams,
+  type PairingStartResult,
+  type PairingStatusResult,
   type ResumeFromParams,
   type ResumeFromResult,
   type SessionCancelParams,
@@ -350,6 +369,61 @@ export class HostClient {
 
   async resumeFrom(params: ResumeFromParams): Promise<ResumeFromResult> {
     return this.request<ResumeFromResult>(SYNC_RESUME_FROM, params);
+  }
+
+  /**
+   * Put a pairing QR on the screen (#19). `full` devices only — the host
+   * refuses this from a phone, which is the point of the role.
+   *
+   * `secret` and `code` come back exactly once, here. Losing them means
+   * starting a new offer, not re-reading a live capability.
+   */
+  async startPairing(
+    params: PairingStartParams = {},
+  ): Promise<PairingStartResult> {
+    return this.request<PairingStartResult>(PAIRING_START, params);
+  }
+
+  /**
+   * Claim an offer as the *new* device. Answered before any `host/hello`,
+   * because a device that is not paired yet cannot say hello — the
+   * out-of-band secret stands in for one.
+   *
+   * The result deliberately carries no safety number: derive your own from
+   * the transcript (see `PairingClaimParams`) and show that.
+   */
+  async claimPairing(params: PairingClaimParams): Promise<PairingClaimResult> {
+    return this.request<PairingClaimResult>(PAIRING_CLAIM, params);
+  }
+
+  /** "The number on my screen is this one." Both sides must say it before
+      the host writes the grant. */
+  async confirmPairing(
+    params: PairingConfirmParams,
+  ): Promise<PairingConfirmResult> {
+    return this.request<PairingConfirmResult>(PAIRING_CONFIRM, params);
+  }
+
+  /** Live offers, without their credentials — including the safety number to
+      show the human once a device has claimed one. */
+  async pairingStatus(): Promise<PairingStatusResult> {
+    return this.request<PairingStatusResult>(PAIRING_STATUS);
+  }
+
+  async cancelPairing(params: PairingRefParams): Promise<PairingCancelResult> {
+    return this.request<PairingCancelResult>(PAIRING_CANCEL, params);
+  }
+
+  /** The revoke list: every device this host ever admitted, tombstones and
+      the local console included. */
+  async listDevices(): Promise<DeviceListResult> {
+    return this.request<DeviceListResult>(DEVICE_LIST);
+  }
+
+  /** Cut a device off. Durable before it is reported, and in force on that
+      device's very next call rather than its next connection. */
+  async revokeDevice(params: DeviceRefParams): Promise<DeviceRevokeResult> {
+    return this.request<DeviceRevokeResult>(DEVICE_REVOKE, params);
   }
 
   private async request<T>(method: string, params?: unknown): Promise<T> {

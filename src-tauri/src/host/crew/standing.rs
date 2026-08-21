@@ -28,8 +28,11 @@
 //! the `cwd` the adapter is spawned in, and an adapter cannot start in a
 //! directory that is not there.
 
+use super::super::lifecycle::state::ThreadState;
 use super::super::protocol::error::RpcError;
-use super::super::protocol::methods::{CrewRefParams, ThreadOpenParams, ThreadStateResult};
+use super::super::protocol::methods::{
+    CrewRefParams, ThreadOpenParams, ThreadRefParams, ThreadStateResult,
+};
 use super::super::store::BotRow;
 use super::super::HostSession;
 
@@ -37,7 +40,11 @@ use super::super::HostSession;
 /// collide with a `thread/open` from New Chat, which mints UUIDs.
 pub const STANDING_PREFIX: &str = "bot-";
 
-/// The one thread id this bot's standing conversation can ever have.
+/// How many tombstones this will step over before giving up. A user who has
+/// deleted twenty of one bot's threads has a different problem.
+const MAX_GENERATIONS: u32 = 20;
+
+/// The id this bot's standing conversation gets, all else being equal.
 pub fn thread_id_for(bot_id: &str) -> String {
     format!("{STANDING_PREFIX}{bot_id}")
 }
@@ -75,8 +82,19 @@ impl HostSession {
                 bot.name
             )));
         };
+        let thread_id = self.standing_thread_id(&bot.id)?;
+        // Archive is the user closing a conversation, not ending a bot. A
+        // handoff arriving afterwards has to land somewhere the human can see,
+        // so the thread comes back rather than the work going into a closed
+        // row. Folded is left alone on purpose: fold's promise is that the
+        // thread stays away until its own run brings it back (#15).
+        if let Some(row) = self.lifecycle_thread(&thread_id)? {
+            if row.state == ThreadState::Archived.as_str() && row.deleted_at.is_none() {
+                return self.thread_reopen(ThreadRefParams { thread_id });
+            }
+        }
         self.thread_open(ThreadOpenParams {
-            thread_id: Some(thread_id_for(&bot.id)),
+            thread_id: Some(thread_id),
             title: bot.name.clone(),
             cwd,
             harness_id: bot.harness_id.clone(),
@@ -90,6 +108,32 @@ impl HostSession {
             use_checkout: Some(true),
             base_ref: None,
         })
+    }
+
+    /// The derived id, unless it holds a tombstone.
+    ///
+    /// Delete is terminal (`state::next_state` refuses every move off it), so a
+    /// bot whose standing thread was deleted would otherwise have no thread it
+    /// could ever be handed work on again. The next generation gets a suffix,
+    /// the same way #23 finds a free branch name: the *live* standing thread is
+    /// still exactly one, and the deleted conversation stays deleted.
+    fn standing_thread_id(&self, bot_id: &str) -> Result<String, RpcError> {
+        let base = thread_id_for(bot_id);
+        let mut candidate = base.clone();
+        for generation in 2..=MAX_GENERATIONS {
+            // A tombstone is `deleted_at`, not the `state` column: `delete`
+            // leaves the row's last visible state alone so a late adapter
+            // event still has something to land on (#15).
+            match self.lifecycle_thread(&candidate)? {
+                Some(row) if row.deleted_at.is_some() => {
+                    candidate = format!("{base}-{generation}");
+                }
+                _ => return Ok(candidate),
+            }
+        }
+        Err(RpcError::Internal(format!(
+            "{base} has been deleted too many times to open another"
+        )))
     }
 
     pub(crate) fn bot_row(&self, bot_id: &str) -> Result<BotRow, RpcError> {

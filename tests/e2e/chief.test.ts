@@ -100,6 +100,46 @@ interface HttpMcpServer {
   headers: Array<{ name: string; value: string }>;
 }
 
+/** Just enough of MCP to assert on, typed rather than cast away. */
+interface JsonRpcAnswer {
+  result?: Record<string, unknown>;
+  error?: { code: number; message: string };
+}
+
+interface McpToolResult {
+  isError?: boolean;
+  content?: Array<{ type: string; text?: string }>;
+  structuredContent?: Record<string, unknown>;
+}
+
+interface CrewStatus {
+  crew: Array<{
+    botId: string;
+    name: string;
+    idle: boolean;
+    threads: Array<{ threadId: string; state: string }>;
+  }>;
+}
+
+interface HandoffResult {
+  handoffId: string;
+  bot: string;
+  threadId: string;
+  dispatched: boolean;
+}
+
+interface SpawnResult {
+  handoffId: string;
+  threadId: string;
+  folderId: string;
+}
+
+interface FoldResult {
+  threadId: string;
+  state: string;
+  foldPolicy: string;
+}
+
 /** Bring Chief up on the fake adapter and hand back its host-tool server. */
 async function chiefAtWork(dataDir: string) {
   const { host, client } = await connected({ dataDir });
@@ -126,7 +166,7 @@ async function mcp(
   method: string,
   params: unknown = {},
   bearer?: string,
-): Promise<{ status: number; body: Record<string, unknown> }> {
+): Promise<{ status: number; body: JsonRpcAnswer }> {
   const authorization =
     bearer ?? server.headers.find((header) => header.name === "Authorization")!.value;
   const response = await fetch(server.url, {
@@ -141,21 +181,24 @@ async function mcp(
   const text = await response.text();
   // A refusal is plain text; only a JSON-RPC answer is JSON.
   const isJson = response.headers.get("content-type")?.startsWith("application/json") ?? false;
-  return { status: response.status, body: isJson && text ? JSON.parse(text) : {} };
+  return {
+    status: response.status,
+    body: isJson && text ? (JSON.parse(text) as JsonRpcAnswer) : {},
+  };
 }
 
 /** `tools/call`, unwrapped to the structured result or the refusal text. */
-async function callTool(
+async function callTool<T>(
   server: HttpMcpServer,
   name: string,
   args: Record<string, unknown> = {},
-): Promise<{ ok: boolean; value: Record<string, any>; text: string }> {
+): Promise<{ ok: boolean; value: T; text: string }> {
   const { body } = await mcp(server, "tools/call", { name, arguments: args });
-  const result = (body as any).result;
-  expect((body as any).error, JSON.stringify(body)).toBeUndefined();
+  expect(body.error, JSON.stringify(body)).toBeUndefined();
+  const result = body.result as unknown as McpToolResult;
   return {
     ok: result.isError !== true,
-    value: result.structuredContent ?? {},
+    value: (result.structuredContent ?? {}) as T,
     text: result.content?.[0]?.text ?? "",
   };
 }
@@ -217,10 +260,12 @@ describe("Chief's host tools reach the session", () => {
     expect(server.headers[0].name).toBe("Authorization");
 
     const initialized = await mcp(server, "initialize", {});
-    expect((initialized.body as any).result.serverInfo.name).toBe("jabot");
+    const info = initialized.body.result?.serverInfo as { name: string } | undefined;
+    expect(info?.name).toBe("jabot");
 
     const listed = await mcp(server, "tools/list");
-    const names = (listed.body as any).result.tools.map((tool: any) => tool.name);
+    const tools = (listed.body.result?.tools ?? []) as Array<{ name: string }>;
+    const names = tools.map((tool) => tool.name);
     // Exactly the ids #17 compiled in as Chief's chips — no more, no fewer.
     expect(names).toEqual(chief.tools);
     expect(names).toEqual([
@@ -249,7 +294,7 @@ describe("handoff_to_bot", () => {
     const writer = named((await client.listCrew()).bots, "Writer");
     await client.updateBot({ botId: writer.botId, harnessId: "fake-acp" });
 
-    const handed = await callTool(server, "handoff_to_bot", {
+    const handed = await callTool<HandoffResult>(server, "handoff_to_bot", {
       bot: "Writer",
       task: "Draft the launch note",
       context: "Plain, short, no exclamation marks",
@@ -287,9 +332,9 @@ describe("handoff_to_bot", () => {
   });
 
   it("names the crew when asked for a bot nobody has, and writes nothing", async () => {
-    const { client, server } = await chiefAtWork(dataDirWithFakeHarness());
+    const { server } = await chiefAtWork(dataDirWithFakeHarness());
 
-    const refused = await callTool(server, "handoff_to_bot", {
+    const refused = await callTool<Record<string, never>>(server, "handoff_to_bot", {
       bot: "Gardener",
       task: "water the plants",
     });
@@ -299,8 +344,8 @@ describe("handoff_to_bot", () => {
     expect(refused.text).toContain("Gardener");
     expect(refused.text).toContain("Inbox Mgr");
 
-    const status = await callTool(server, "list_crew_status");
-    const working = status.value.crew.filter((bot: any) => !bot.idle).map((bot: any) => bot.name);
+    const status = await callTool<CrewStatus>(server, "list_crew_status");
+    const working = status.value.crew.filter((bot) => !bot.idle).map((bot) => bot.name);
     expect(working).toEqual(["Chief"]);
   });
 });
@@ -311,7 +356,7 @@ describe("spawn_code_session", () => {
     const { client, server } = await chiefAtWork(dataDirWithFakeHarness());
     const folder = await client.registerFolder({ path: repo, name: "Project" });
 
-    const spawned = await callTool(server, "spawn_code_session", {
+    const spawned = await callTool<SpawnResult>(server, "spawn_code_session", {
       folder: "Project",
       task: "Add a --version flag",
     });
@@ -334,7 +379,7 @@ describe("spawn_code_session", () => {
 
     // Folding it is the other half of the gesture: the job disappears from the
     // sidebar and stays on the roster, so Chief does not double-book the bot.
-    const folded = await callTool(server, "fold_thread", {
+    const folded = await callTool<FoldResult>(server, "fold_thread", {
       threadId: thread.threadId,
       policy: "wait_for_inbox",
     });
@@ -343,17 +388,17 @@ describe("spawn_code_session", () => {
     expect((await client.inbox()).sleeping.map((row) => row.threadId)).toContain(
       thread.threadId,
     );
-    const status = await callTool(server, "list_crew_status");
-    const code = status.value.crew.find((bot: any) => bot.name === "Code");
-    expect(code.idle).toBe(false);
-    expect(code.threads[0].state).toBe("folded");
+    const status = await callTool<CrewStatus>(server, "list_crew_status");
+    const code = status.value.crew.find((bot) => bot.name === "Code");
+    expect(code?.idle).toBe(false);
+    expect(code?.threads[0].state).toBe("folded");
   });
 
   it("says which folders exist when asked for one that does not", async () => {
     const { client, server } = await chiefAtWork(dataDirWithFakeHarness());
     await client.registerFolder({ path: repository(), name: "Project" });
 
-    const refused = await callTool(server, "spawn_code_session", {
+    const refused = await callTool<Record<string, never>>(server, "spawn_code_session", {
       folder: "Elsewhere",
       task: "fix it",
     });

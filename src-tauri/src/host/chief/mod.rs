@@ -333,42 +333,55 @@ impl HostSession {
 
     /// What every bot is working on, folded jobs included.
     fn tool_list_crew_status(&mut self) -> Result<Value, String> {
-        let store = self.store_or_err().map_err(|err| err.to_string())?;
-        let bots = store.list_bots().map_err(|err| err.to_string())?;
-        let mut crew = Vec::with_capacity(bots.len());
-        for bot in bots {
-            let threads = self
-                .store_or_err()
-                .map_err(|err| err.to_string())?
-                .list_bot_threads(&bot.id)
-                .map_err(|err| err.to_string())?;
-            let mut working = Vec::with_capacity(threads.len());
-            for thread in threads {
-                let latest = self
-                    .store_or_err()
-                    .map_err(|err| err.to_string())?
-                    .latest_run(&thread.id)
-                    .map_err(|err| err.to_string())?;
-                working.push(json!({
-                    "threadId": thread.id,
-                    "title": thread.title,
-                    "state": thread.state,
-                    "acpState": self.acp_state(&thread.id).as_str(),
-                    "repo": thread.repo,
-                    "branch": thread.branch,
-                    "run": latest.map(|run| json!({ "state": run.state, "startedAt": run.started_at })),
-                    "updatedAt": thread.updated_at,
-                }));
+        // The store is read out in one pass and the process axis added after,
+        // because `acp_state` is supervisor RAM (#5) and borrowing both at once
+        // would mean holding the connection open across every row.
+        let roster = {
+            let store = self.store_or_err().map_err(|err| err.to_string())?;
+            let mut roster = Vec::new();
+            for bot in store.list_bots().map_err(text)? {
+                let mut threads = Vec::new();
+                for thread in store.list_bot_threads(&bot.id).map_err(text)? {
+                    let run = store.latest_run(&thread.id).map_err(text)?;
+                    threads.push((thread, run));
+                }
+                roster.push((bot, threads));
             }
-            crew.push(json!({
-                "botId": bot.id,
-                "name": bot.name,
-                "isChief": bot.is_chief,
-                "harnessId": bot.harness_id,
-                "idle": working.is_empty(),
-                "threads": working,
-            }));
-        }
+            roster
+        };
+
+        let crew: Vec<Value> = roster
+            .into_iter()
+            .map(|(bot, threads)| {
+                let working: Vec<Value> = threads
+                    .into_iter()
+                    .map(|(thread, run)| {
+                        json!({
+                            "threadId": thread.id,
+                            "title": thread.title,
+                            // Folded is a legal answer here and a useful one:
+                            // the job is asleep, not finished.
+                            "state": thread.state,
+                            "acpState": self.acp_state(&thread.id).as_str(),
+                            "repo": thread.repo,
+                            "branch": thread.branch,
+                            "run": run.map(|run| {
+                                json!({ "state": run.state, "startedAt": run.started_at })
+                            }),
+                            "updatedAt": thread.updated_at,
+                        })
+                    })
+                    .collect();
+                json!({
+                    "botId": bot.id,
+                    "name": bot.name,
+                    "isChief": bot.is_chief,
+                    "harnessId": bot.harness_id,
+                    "idle": working.is_empty(),
+                    "threads": working,
+                })
+            })
+            .collect();
         Ok(json!({ "crew": crew }))
     }
 
@@ -541,6 +554,11 @@ impl HostSession {
     }
 }
 
+/// A store failure, as the sentence a model reads.
+fn text(err: super::store::StoreError) -> String {
+    err.to_string()
+}
+
 /// What the receiving agent actually reads.
 ///
 /// Named as a handoff on purpose: the bot on the other end is a fresh session
@@ -661,6 +679,61 @@ mod tests {
         ));
         let error = response.error.expect("no such bot");
         assert!(error.message.contains("nobody"), "{}", error.message);
+    }
+
+    /// Archive is a user closing a conversation, not a bot being retired. Work
+    /// handed over afterwards has to land where the human can see it.
+    #[test]
+    fn a_handoff_to_an_archived_standing_thread_brings_it_back() {
+        let (mut session, _dir) = host();
+        chief_at_work(&mut session);
+        let writer = ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }));
+        let thread_id = writer["threadId"].as_str().unwrap().to_string();
+        ok(
+            &mut session,
+            crate::host::protocol::THREAD_ARCHIVE,
+            json!({ "threadId": thread_id }),
+        );
+
+        let handed = call(
+            &mut session,
+            "handoff_to_bot",
+            json!({ "bot": "Writer", "task": "one more thing" }),
+        )
+        .expect("handoff");
+        assert_eq!(handed["threadId"], thread_id);
+
+        let state = ok(&mut session, THREAD_STATE, json!({ "threadId": thread_id }));
+        assert_eq!(state["state"], "active");
+        assert_eq!(state["handoff"]["task"], "one more thing");
+    }
+
+    /// Delete is terminal — the state machine refuses every move off it — so a
+    /// bot whose standing thread was deleted would otherwise be unreachable
+    /// forever. The next generation gets a suffix; the deleted one stays gone.
+    #[test]
+    fn a_deleted_standing_thread_is_replaced_rather_than_resurrected() {
+        let (mut session, _dir) = host();
+        let first = ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }));
+        let first_id = first["threadId"].as_str().unwrap().to_string();
+        ok(
+            &mut session,
+            crate::host::protocol::THREAD_DELETE,
+            json!({ "threadId": first_id }),
+        );
+
+        let second = ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }));
+        assert_ne!(second["threadId"], first["threadId"]);
+        assert_eq!(second["state"], "active");
+        assert_eq!(second["cwd"], first["cwd"]);
+        // And it is stable: asking again is the same live thread, not a third.
+        assert_eq!(
+            ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }))["threadId"],
+            second["threadId"]
+        );
+        // The deleted conversation is still deleted.
+        let gone = ok(&mut session, THREAD_STATE, json!({ "threadId": first_id }));
+        assert_eq!(gone["state"], "deleted");
     }
 
     // ---- handoff_to_bot --------------------------------------------------

@@ -118,6 +118,9 @@ export interface HelloDevice {
 export interface HelloParams {
   protocolVersion?: number;
   device?: HelloDevice;
+  /** Required for a paired device, absent for the local console (#19).
+      See `DeviceAuth`. */
+  auth?: DeviceAuth;
 }
 
 export interface HelloResult {
@@ -975,4 +978,207 @@ export const RPC_ERROR = {
       spawning the agent in whatever directory JaBot itself was launched from.
       `data.cwd` is the path that is missing. */
   CWD_MISSING: -32012,
+  /** The pairing handshake did not complete (#19). `data.reason` is coarse on
+      purpose — `unknown`, `expired`-shaped, `credential`, `proof`, `claimed`,
+      `sas`, `vault` — so the host cannot be used as an oracle while somebody
+      grinds an eight-character code. `sas` is the one to draw loudly: the two
+      safety numbers disagreed, which is what a man in the middle looks like. */
+  PAIRING_FAILED: -32013,
+  /** A paired device called something its role does not cover (#19). The role
+      comes from the host's `paired_devices` row, checked on every request, so
+      this can also appear mid-session after a device is narrowed or revoked.
+      `data.role` and `data.method` say which. */
+  DEVICE_SCOPE: -32014,
 } as const;
+
+// ---- Device pairing (#19) --------------------------------------------
+//
+// The handshake lives in `src-tauri/src/host/pairing/`. Its module docs are
+// the authority on what it guarantees; the derivations a client needs are on
+// `PairingClaimParams` below and in `protocol/methods.rs`.
+
+export const PAIRING_START = "pairing/start";
+export const PAIRING_CLAIM = "pairing/claim";
+export const PAIRING_CONFIRM = "pairing/confirm";
+export const PAIRING_CANCEL = "pairing/cancel";
+export const PAIRING_STATUS = "pairing/status";
+export const DEVICE_LIST = "device/list";
+export const DEVICE_REVOKE = "device/revoke";
+
+/** Proof that a paired device holds the token its pairing derived.
+
+    `mac = HMAC-SHA256(deviceToken, H["jabot/hello/v1", hostId, deviceId,
+    protocolVersion, counter])`, hex. `counter` must be strictly greater than
+    the last one the host accepted for this device — the replay guard, and the
+    reason a captured frame is not a credential. Absent for the local console,
+    which is implicitly paired because it spawned the host. */
+export interface DeviceAuth {
+  counter: number;
+  mac: string;
+}
+
+export interface PairingStartParams {
+  /** Seconds the offer stays scannable. The host clamps it. */
+  ttlSecs?: number;
+}
+
+/** Returned exactly once, by the call that creates the offer. No list method
+    ever hands `secret` or `code` back — a live capability is not something to
+    be able to re-read. */
+export interface PairingStartResult {
+  pairingId: string;
+  hostId: string;
+  hostName: string;
+  hostFingerprint: string;
+  hostNonce: string;
+  secret: string;
+  /** Eight Crockford characters, for a host with no screen to draw a QR on. */
+  code: string;
+  expiresAt: string;
+  /** The exact string to encode in the QR. */
+  qrPayload: string;
+}
+
+/** What `qrPayload` parses to. */
+export interface PairingQr {
+  v: number;
+  hostId: string;
+  hostName: string;
+  hostFingerprint: string;
+  pairingId: string;
+  hostNonce: string;
+  secret: string;
+  addrs: string[];
+}
+
+export interface PairingDevice {
+  deviceId: string;
+  name: string;
+  /** A commitment to the device's own long-term key material — the material
+      itself is never sent, and the host never needs it. */
+  fingerprint: string;
+  nonce: string;
+}
+
+/** Claim an offer with the out-of-band credential and a proof.
+
+    `H[a, b, …]` is SHA-256 over each field written as a 4-byte big-endian
+    length followed by its UTF-8 bytes; the framing stops one field absorbing
+    another's characters.
+
+    ```text
+    transcript = hex(H["jabot/pairing/v1", hostId, hostFingerprint, hostNonce,
+                       pairingId, deviceId, deviceFingerprint, deviceNonce, via])
+    key        = secret (via = "qr")  |  normalized code (via = "code")
+    bind(d)    = HMAC-SHA256(key, H[d, transcript])
+    mac        = hex(bind("jabot/pairing/claim/v1"))
+    hostMac    = hex(bind("jabot/pairing/host/v1"))
+    confirmMac = hex(bind("jabot/pairing/confirm/v1"))
+    sas        = eight decimal digits of bind("jabot/pairing/sas/v1"), "NNNN-NNNN"
+    token      = base64url(bind("jabot/pairing/device-token/v1"))
+    ```
+
+    A client MUST derive its own `sas` and show that. The host deliberately
+    does not return one: a number only one side computed proves nothing about
+    the other side. */
+export interface PairingClaimParams {
+  pairingId: string;
+  secret?: string;
+  code?: string;
+  device: PairingDevice;
+  mac: string;
+}
+
+export interface PairingClaimResult {
+  pairingId: string;
+  hostId: string;
+  hostName: string;
+  hostFingerprint: string;
+  hostNonce: string;
+  /** The host's own proof of holding the out-of-band credential. Verify it:
+      it is what says the far end is the machine whose screen you scanned. */
+  hostMac: string;
+  via: string;
+  expiresAt: string;
+  state: string;
+}
+
+export type PairingSide = "host" | "device";
+
+export interface PairingConfirmParams {
+  pairingId: string;
+  side: PairingSide;
+  /** The number on *this* screen. The host refuses unless both sides' numbers
+      agree with each other and with its own. */
+  sas: string;
+  /** Host side only: the scope granted. `approver` if unsaid. A device never
+      chooses its own. */
+  role?: DeviceRole;
+  /** Host side only: rename the device as it is admitted. */
+  name?: string;
+  /** Device side only: `confirmMac`. */
+  mac?: string;
+}
+
+export interface PairingConfirmResult {
+  pairingId: string;
+  /** `awaiting_device` | `awaiting_host` | `paired`. */
+  state: string;
+  device?: DeviceInfo;
+}
+
+export interface PairingRefParams {
+  pairingId: string;
+}
+
+export interface PairingCancelResult {
+  pairingId: string;
+  cancelled: boolean;
+}
+
+export interface PairingOfferView {
+  pairingId: string;
+  state: string;
+  expiresAt: string;
+  attempts: number;
+  hostConfirmed: boolean;
+  deviceConfirmed: boolean;
+  /** The number to put on the host's screen, once a device has claimed. */
+  sas?: string;
+  device?: PairingDevice;
+  via?: string;
+}
+
+export interface PairingStatusResult {
+  offers: PairingOfferView[];
+}
+
+export interface PairedDeviceView {
+  deviceId: string;
+  name: string;
+  role: DeviceRole;
+  fingerprint: string;
+  pairedVia: string;
+  sas: string;
+  createdAt: string;
+  lastSeenAt?: string;
+  revokedAt?: string;
+  /** The console that spawned this host. Implicitly paired, never revocable. */
+  local: boolean;
+  connected: boolean;
+}
+
+export interface DeviceListResult {
+  devices: PairedDeviceView[];
+}
+
+export interface DeviceRefParams {
+  deviceId: string;
+}
+
+export interface DeviceRevokeResult {
+  deviceId: string;
+  /** `false` when it was already revoked — the caller's intent still holds. */
+  revoked: boolean;
+  revokedAt?: string;
+}
