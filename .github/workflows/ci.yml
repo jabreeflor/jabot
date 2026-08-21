@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   # The full pipeline — typecheck, unit, fmt, clippy, rust tests, and the
@@ -33,8 +35,26 @@ jobs:
       - run: npm ci
       - run: ./scripts/verify.sh
 
-  # The thing users actually install. macOS-only because that is the target.
+  # The thing users actually install. macOS-only because that is the target —
+  # and macOS minutes bill at 10x, so this does NOT run per pull-request commit.
+  #
+  # At ~2.4 minutes a job that is ~24 billable minutes every time someone
+  # pushes, which is what exhausted this repo's allowance: the bundle job was
+  # ~86% of the spend while `verify` was doing ~100% of the catching. It now
+  # runs on merges to main, on release tags, and on demand.
+  #
+  # What that gives up is real but small: `verify` compiles the same crate and
+  # runs every test, so the only thing left to bundling is the packaging step
+  # itself — icons, plist, signing, the universal lipo. Breaking that is caught
+  # on the merge to main, before any tag is cut, rather than on the pull
+  # request.
+  #
+  # The config that step reads can be validated without macOS, and
+  # `scripts/verify.sh` is where that belongs — D-005 is the cautionary case, a
+  # `bundle.targets` edit that still builds and still ships a release with no
+  # updater archive.
   bundle:
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
