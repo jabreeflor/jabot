@@ -318,7 +318,7 @@ export function initialMockState(): MockState {
           kind: "notice",
           id: "chief-3",
           title: "Auth migration",
-          pill: "✳ Long-running",
+          pill: "Long-running",
           body: "Est. 40 min. If folded, this thread disappears and reappears in Inbox on done, failure, or question.",
           threadId: "auth",
           actions: [

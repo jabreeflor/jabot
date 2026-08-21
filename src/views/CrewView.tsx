@@ -6,6 +6,7 @@
 
 import { Blob } from "../components/Blob";
 import { HarnessChip } from "../components/HarnessChip";
+import { PlusIcon } from "../components/Icon";
 import type { Bot, HarnessCard, ToolOption } from "../components/types";
 
 export function CrewView({
@@ -77,7 +78,7 @@ export function CrewView({
 
             <button type="button" className="add-card" onClick={onAdd}>
               <span className="big" aria-hidden="true">
-                ＋
+                <PlusIcon />
               </span>
               Add a bot
             </button>

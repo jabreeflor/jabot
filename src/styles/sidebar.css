@@ -310,6 +310,11 @@
   padding: 0;
 }
 
+.folder-add svg {
+  width: 13px;
+  height: 13px;
+}
+
 .section-header .section-add {
   margin-left: auto;
 }
@@ -368,9 +373,15 @@
 }
 
 .thread-row .pip {
-  font-size: var(--fs-caps);
   flex: none;
+  display: grid;
+  place-items: center;
   color: var(--faint);
+}
+
+.thread-row .pip svg {
+  width: 9px;
+  height: 9px;
 }
 
 .thread-row .pip.running {

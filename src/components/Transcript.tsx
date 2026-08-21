@@ -7,6 +7,14 @@
 
 import { memo, useMemo } from "react";
 
+import {
+  CaretRightIcon,
+  CheckIcon,
+  CrossIcon,
+  DotIcon,
+  RingIcon,
+  SparkIcon,
+} from "./Icon";
 import type { ToolCall, ToolKind, TranscriptItem } from "./types";
 
 export function Transcript({
@@ -124,7 +132,12 @@ function Notice({
     <div className={item.resolved ? "notice leaving" : "notice"}>
       <div className="r1">
         <b>{item.title}</b>
-        {item.pill && <span className="pill">{item.pill}</span>}
+        {item.pill && (
+          <span className="pill">
+            <SparkIcon />
+            {item.pill}
+          </span>
+        )}
       </div>
       <p>{item.body}</p>
       <div className="acts">
@@ -168,7 +181,9 @@ function ToolBlockRow({ calls }: { calls: readonly ToolCall[] }) {
     <pre className="toolblock">
       {calls.map((call) => (
         <div className="call" key={call.id}>
-          <span className="verb">▸ {verb(call.kind).padEnd(5)}</span>{" "}
+          <span className="verb">
+            <CaretRightIcon /> {verb(call.kind).padEnd(5)}
+          </span>{" "}
           {call.target}
           <ToolMarker call={call} />
         </div>
@@ -184,15 +199,45 @@ function verb(kind: ToolKind): string {
 function ToolMarker({ call }: { call: ToolCall }) {
   switch (call.status) {
     case "pending":
-      return <span className="spin">{"  ◌ waiting"}</span>;
+      return (
+        <span className="spin">
+          {"  "}
+          <RingIcon />
+          {" waiting"}
+        </span>
+      );
     case "in_progress":
-      return <span className="spin">{`  ● ${call.note ?? "running…"}`}</span>;
+      return (
+        <span className="spin">
+          {"  "}
+          <DotIcon />
+          {` ${call.note ?? "running…"}`}
+        </span>
+      );
     case "completed":
-      return call.note ? <span className="tick">{`  ✓ ${call.note}`}</span> : null;
+      return call.note ? (
+        <span className="tick">
+          {"  "}
+          <CheckIcon />
+          {` ${call.note}`}
+        </span>
+      ) : null;
     case "failed":
-      return <span className="fail">{`  ✗ ${call.note ?? "failed"}`}</span>;
+      return (
+        <span className="fail">
+          {"  "}
+          <CrossIcon />
+          {` ${call.note ?? "failed"}`}
+        </span>
+      );
     case "cancelled":
-      return <span className="fail">{`  ✗ ${call.note ?? "cancelled"}`}</span>;
+      return (
+        <span className="fail">
+          {"  "}
+          <CrossIcon />
+          {` ${call.note ?? "cancelled"}`}
+        </span>
+      );
     // A status from an ACP version this build has never met. Returning
     // nothing at all from a component is a React error, so the line renders
     // without a marker rather than not rendering.

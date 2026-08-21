@@ -49,7 +49,7 @@
   color: var(--danger);
 }
 
-/* The 🖥 affordance. MVP1 only ever has one host, but the button exists so
+/* The host affordance. MVP1 only ever has one host, but the button exists so
    picking a host later is not a new piece of chrome. */
 .host-picker {
   margin-left: auto;
@@ -69,6 +69,11 @@
 .host-picker:hover {
   color: var(--ink);
   background: var(--raise2);
+}
+
+.host-picker svg {
+  width: 15px;
+  height: 15px;
 }
 
 .harness-chip {
@@ -170,6 +175,14 @@
   color: var(--ink);
 }
 
+/* Line markers are SVG in a `white-space: pre` block, so they size against
+   the mono line and sit on its baseline like the characters they replaced. */
+.toolblock svg {
+  width: 11px;
+  height: 11px;
+  vertical-align: -1.5px;
+}
+
 .toolblock .tick {
   color: var(--ok);
 }
@@ -214,6 +227,9 @@
 
 .notice .pill {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--amber);
   background: rgba(232, 163, 61, 0.12);
   font-size: 12px;
@@ -221,6 +237,12 @@
   border-radius: var(--r-pill);
   padding: 3px var(--sp-3);
   white-space: nowrap;
+}
+
+.notice .pill svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
 }
 
 .notice p {
@@ -286,6 +308,11 @@
   color: var(--ink);
 }
 
+.round-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
 /* Queued follow-ups (#14).
  *
  * ACP cannot inject a message into a turn that is already running, so what you
@@ -336,5 +363,4 @@
 /* Stop, in the mic's place while a turn is running. */
 .round-btn.stop {
   color: var(--amber);
-  font-size: 13px;
 }
