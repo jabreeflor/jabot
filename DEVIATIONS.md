@@ -2177,3 +2177,42 @@ side of the revoke. Both fail on the old gate.
   outstanding, its run stayed open and its #23 worktree was orphaned — and the
   row came back on the next `folder/list`. They now branch on `hostThreads` the
   way `foldThread` always did, and a refusal puts the row back and says why.
+
+---
+
+## D-020 — findings the audit under-rated, fixed anyway
+
+The final audit graded three findings "minor" that are worse than that label.
+Fixed with regression tests rather than filed.
+
+**1. `gh api` would read a file for an agent (`host/pr/github.rs`).** Values
+reaching `-F name=value` came from a repo's `origin` and from tool output an
+agent can influence, and were interpolated unchecked. The sharp edge is not
+the shell — `exec::run` takes argv, so there is no shell — it is `gh`'s own
+syntax: `-F name=@path` makes gh **read that file and send it**. An agent that
+could put `@~/.ssh/id_ed25519` into a value it controls would exfiltrate that
+file through a request JaBot makes with the user's own token. Values are now
+rejected if they lead with `@` or `-`, or contain anything outside the
+owner/name/number/branch character set, and `--hostname` must look like a
+hostname. Three tests cover it, including one asserting `fetch` refuses
+*before* it spawns anything.
+
+**2. Migration 0010 silently dropped an index.** Rebuilding `inbox_events`
+takes its indexes with it. 0010 recreated `inbox_events_thread` and forgot
+`inbox_events_unread`, which 0002 created for the unread-badge query that runs
+on every projection. Nothing fails — the badge just goes to a full scan, which
+is exactly the kind of regression that never gets noticed until the table is
+large. Recreated in 0010.
+
+**3. `permission/reply` accepted an option the agent never offered.** Any
+`optionId` was forwarded verbatim. Now checked against the options recorded
+for that request.
+
+The audit is also worth recording for what it caught at the top: **#22 was
+reported complete and was not built.** `src/App.tsx` still rendered
+`mock-host` fixtures, so every Inbox card the lifecycle group wrote was
+invisible in the app, and the desktop badge counted fixture rows through the
+renderer's own classification while the phone counted the host's — two numbers,
+two sources, same host. An implementer's report is not evidence; reading the
+code is. That is the argument for auditing against the issue text rather than
+against the summaries.

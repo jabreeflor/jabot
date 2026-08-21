@@ -93,3 +93,7 @@ DROP TABLE inbox_events;
 ALTER TABLE inbox_events_new RENAME TO inbox_events;
 
 CREATE INDEX inbox_events_thread ON inbox_events(thread_id, created_at);
+-- Rebuilding the table drops every index with it. 0002 created this one for
+-- the unread badge, which reads inbox_events on every projection; without it
+-- the nav badge goes to a full scan and nothing fails loudly enough to notice.
+CREATE INDEX inbox_events_unread ON inbox_events(read_at, created_at);

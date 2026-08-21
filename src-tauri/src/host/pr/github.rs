@@ -167,7 +167,58 @@ const PR_FIELDS_FRAGMENT: &str = "fragment PrFields on PullRequest {\n\
 /// The document goes in argv, which is safe: it contains no user data — every
 /// owner, name and number travels as a `-F` variable. Nothing here ever holds a
 /// token; `gh` reads its own.
+/// A DNS hostname, optionally with a port. Deliberately narrow: this becomes
+/// `gh --hostname`, and anything outside this set is a value we did not mean
+/// to send.
+fn is_hostname(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= 253
+        && host.split(':').next().is_some_and(|name| {
+            !name.is_empty()
+                && !name.starts_with(['-', '.'])
+                && !name.ends_with('.')
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        })
+        && host.matches(':').count() <= 1
+        && host
+            .split_once(':')
+            .is_none_or(|(_, port)| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()))
+}
+
+/// GraphQL variable names are identifiers; we send only ones we wrote.
+fn is_variable_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// The values we send are repository owners, names and numbers. `@` would make
+/// `gh` read a file; a leading `-` would make the value look like a flag.
+fn is_variable_value(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && !value.starts_with(['@', '-'])
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '/'))
+}
+
 pub fn fetch(host: &str, query: &Query) -> Result<Value, FetchError> {
+    // `host` and the variable values reach here from a repository's `origin`
+    // and from tool output an agent can influence, so they are checked before
+    // they become argv rather than trusted for having come from git.
+    //
+    // The sharp edge is `gh`'s own syntax, not the shell: `-F name=@path`
+    // makes gh READ THAT FILE and send it, so an agent that can put
+    // `@/Users/me/.ssh/id_ed25519` into a value it controls can exfiltrate a
+    // file through a request we make with the user's token. `@` is therefore
+    // rejected outright — no variable we send ever legitimately starts with
+    // one — and a leading `-` is rejected so a value cannot pose as a flag.
+    if !is_hostname(host) {
+        return Err(FetchError::Failed(format!("refusing hostname {host:?}")));
+    }
     let mut args: Vec<String> = vec![
         "api".into(),
         "graphql".into(),
@@ -177,6 +228,11 @@ pub fn fetch(host: &str, query: &Query) -> Result<Value, FetchError> {
         format!("query={}", query.document),
     ];
     for (name, value) in &query.variables {
+        if !is_variable_name(name) || !is_variable_value(value) {
+            return Err(FetchError::Failed(format!(
+                "refusing GraphQL variable {name}={value:?}"
+            )));
+        }
         args.push("-F".into());
         args.push(format!("{name}={value}"));
     }
@@ -754,5 +810,47 @@ mod tests {
             .expect("one row is a PR");
         assert_eq!(viewed.number, 8);
         assert_eq!(viewed.head_ref.as_deref(), Some("jabot/t1"));
+    }
+
+    /// `gh` reads `-F name=@path` from disk, so a value an agent can influence
+    /// must never reach argv with a leading `@` — that is a file exfiltrated
+    /// through a request we make with the user's token. A leading `-` would
+    /// let a value pose as a flag.
+    #[test]
+    fn a_variable_that_would_make_gh_read_a_file_is_refused() {
+        assert!(!is_variable_value("@/home/user/.ssh/id_ed25519"));
+        assert!(!is_variable_value("-X"));
+        assert!(is_variable_value("jabreeflor"));
+        assert!(is_variable_value("jabot"));
+        assert!(is_variable_value("feature/some-branch"));
+        assert!(!is_variable_value(""));
+        assert!(!is_variable_value("owner name"));
+        assert!(!is_variable_value("owner;rm -rf /"));
+    }
+
+    #[test]
+    fn a_hostname_is_a_hostname_and_not_a_flag() {
+        assert!(is_hostname("github.com"));
+        assert!(is_hostname("git.corp.example.com"));
+        assert!(is_hostname("localhost:8080"));
+        assert!(!is_hostname("--version"));
+        assert!(!is_hostname(""));
+        assert!(!is_hostname("has space.com"));
+        assert!(!is_hostname("host:notaport"));
+    }
+
+    #[test]
+    fn fetch_refuses_before_it_ever_spawns_gh() {
+        let query = Query {
+            document: "query { viewer { login } }".into(),
+            variables: vec![("owner".into(), "@/etc/passwd".into())],
+        };
+        // No gh on PATH in CI either way; the point is that the refusal is a
+        // validation error naming the variable, not a spawn failure.
+        let err = fetch("github.com", &query).expect_err("must refuse");
+        let FetchError::Failed(detail) = err else {
+            panic!("expected a validation refusal, got {err:?}");
+        };
+        assert!(detail.contains("owner"), "{detail}");
     }
 }
