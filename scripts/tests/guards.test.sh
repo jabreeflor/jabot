@@ -81,6 +81,13 @@ fi
 if [ -n "${STUB_COMMIT:-}" ]; then
   git commit -q --allow-empty -m "someone else committed"
 fi
+# Optional content sensitivity: red for one tree and green for another, so a
+# test can prove WHICH bytes this gate actually read. The real gates are
+# content-sensitive; a stub driven only by $STUB_EXIT cannot tell a hook that
+# checked the right tree from one that checked the wrong tree and got lucky.
+if [ -n "${STUB_RED_MARKER:-}" ] && grep -q "$STUB_RED_MARKER" src/marker.txt 2>/dev/null; then
+  exit 1
+fi
 # The real verify.sh ends this way: green run, tree still still, leave the note
 # the pre-push hook reads. Same function, from the same library, so the stamp
 # the hook is tested against is the stamp the real gate writes.
@@ -371,6 +378,77 @@ case_pre_push_allows_a_passing_push() {
   pass
 }
 
+case_pre_push_refuses_a_ref_it_did_not_verify() {
+  # The gate reads the worktree; the push carries commits. Nothing used to
+  # compare the two, so `git push origin some-branch` from a clean, unrelated
+  # checkout verified the files on disk, reported green, and shipped bytes no
+  # gate had ever read.
+  #
+  # A stub that is red only for BROKEN proves which tree was read: main says
+  # GOOD, the branch says BROKEN, the worktree is clean on main. If the hook
+  # ever runs the gate here it goes green — on the wrong bytes.
+  local d; d=$(new_repo pushotherbranch)
+  with_remote "$d"
+  export STUB_LOG="$SANDBOX/pushotherbranch.log" STUB_EXIT=0 STUB_RED_MARKER=BROKEN
+  printf 'GOOD\n' > "$d/src/marker.txt"
+  git -C "$d" add -A && git -C "$d" commit -q -m "good on main"
+  git -C "$d" checkout -q -b broken
+  printf 'BROKEN\n' > "$d/src/marker.txt"
+  git -C "$d" add -A && git -C "$d" commit -q -m "broken on a branch"
+  git -C "$d" checkout -q main
+  local out rc
+  out=$(cd "$d" && git push origin broken 2>&1); rc=$?
+  unset STUB_RED_MARKER
+  [ "$rc" -ne 0 ] || { fail "pushed a branch no gate ever read: $out"; return; }
+  assert_eq "" "$(git -C "$d.remote.git" rev-parse --quiet --verify refs/heads/broken 2>/dev/null)" \
+    "the unverified branch must not reach the remote" || return
+  assert_eq 0 "$(log_lines "$STUB_LOG")" "must not run a gate that cannot see the pushed bytes" || return
+  assert_contains "$out" "REFUSING THE PUSH" "should explain itself" || return
+  assert_contains "$out" "refs/heads/broken" "should name the ref that diverged" || return
+  pass
+}
+
+case_pre_push_refuses_when_the_disk_is_not_the_commit() {
+  # Same hole, everyday shape: uncommitted work on disk. The gates would check
+  # those files; the commit on the wire does not contain them.
+  local d; d=$(new_repo pushdirty)
+  with_remote "$d"
+  export STUB_LOG="$SANDBOX/pushdirty.log" STUB_EXIT=0
+  printf 'work\n' > "$d/src/work.txt"
+  git -C "$d" add -A && git -C "$d" commit -q -m "committed work"
+  printf 'not committed\n' > "$d/src/scratch.txt"
+  local out rc
+  out=$(cd "$d" && git push origin main 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || { fail "pushed while the disk was not the commit: $out"; return; }
+  assert_eq "" "$(git -C "$d.remote.git" rev-parse --quiet --verify refs/heads/main 2>/dev/null)" \
+    "nothing may reach the remote" || return
+  assert_contains "$out" "uncommitted changes" "should name the shape of the problem" || return
+  assert_eq 0 "$(log_lines "$STUB_LOG")" "must not spend the gate on bytes that are not being pushed" || return
+  pass
+}
+
+case_pre_push_refuses_a_tree_that_moved_during_the_gate() {
+  # The gates read the disk for ~90 seconds. A writer landing in that window
+  # breaks the agreement between disk and commit that was proved before they
+  # started, so the green describes neither. checkpoint.sh refuses to commit
+  # here; the hook must refuse to push.
+  local d; d=$(new_repo pushmoved)
+  with_remote "$d"
+  export STUB_LOG="$SANDBOX/pushmoved.log" STUB_EXIT=0
+  printf 'work\n' > "$d/src/work.txt"
+  git -C "$d" add -A && git -C "$d" commit -q -m "verified work"
+  export STUB_WRITE="$d/src/sneaked-in.txt"
+  local out rc
+  out=$(cd "$d" && git push origin main 2>&1); rc=$?
+  unset STUB_WRITE
+  [ "$rc" -ne 0 ] || { fail "pushed a green that describes a tree that no longer exists: $out"; return; }
+  assert_eq "" "$(git -C "$d.remote.git" rev-parse --quiet --verify refs/heads/main 2>/dev/null)" \
+    "nothing may reach the remote" || return
+  assert_contains "$out" "changed WHILE the gates ran" "should say what happened" || return
+  assert_contains "$out" "src/sneaked-in.txt" "should name what moved" || return
+  pass
+}
+
 case_pre_push_honours_no_verify() {
   local d; d=$(new_repo pushnoverify)
   with_remote "$d"
@@ -415,28 +493,43 @@ case_pre_push_trusts_a_fresh_matching_stamp() {
 }
 
 case_pre_push_distrusts_a_stamp_once_the_tree_moves() {
+  # The note names the tree checkpoint.sh verified. Edit and commit on top of
+  # it and the push is still coherent — disk and ref agree — but those bytes
+  # are not the ones in the note, so the gates have to run again.
   local d; d=$(new_repo pushstampdirty)
   with_remote "$d"
   export STUB_LOG="$SANDBOX/pushstampdirty.log" STUB_EXIT=0
   printf 'work\n' > "$d/src/work.txt"
   run_checkpoint "$d" -m "verified by checkpoint"
   assert_eq 0 "$RC" "checkpoint should have committed" || { fail "$OUT"; return; }
+  assert_eq 1 "$(log_lines "$STUB_LOG")" "one gate run so far" || return
   printf 'edited after verification\n' > "$d/src/work.txt"
-  ( cd "$d" && git push origin main >/dev/null 2>&1 )
-  assert_eq 2 "$(log_lines "$STUB_LOG")" "a moved worktree must invalidate the note and re-verify" || return
+  git -C "$d" add -A && git -C "$d" commit -q -m "edited after verification"
+  local rc
+  ( cd "$d" && git push origin main >/dev/null 2>&1 ); rc=$?
+  assert_eq 0 "$rc" "a coherent push of unverified bytes should verify, then go" || return
+  assert_eq 2 "$(log_lines "$STUB_LOG")" "a moved tree must invalidate the note and re-verify" || return
   pass
 }
 
 case_pre_push_distrusts_a_stamp_for_another_commit() {
-  # Worktree still matches the note, but the ref being pushed does not.
+  # Worktree still matches the note, so the skip-on-proof path is armed — but
+  # the ref being pushed carries different bytes. A note may not stand in for
+  # content it never covered, and the gates cannot check that content either
+  # (they read the disk), so the push is refused rather than waved through.
   local d; d=$(new_repo pushstampotherref)
   with_remote "$d"
   export STUB_LOG="$SANDBOX/pushstampotherref.log" STUB_EXIT=0
   printf 'work\n' > "$d/src/work.txt"
   run_checkpoint "$d" -m "verified by checkpoint"
   git -C "$d" branch older HEAD~1
-  ( cd "$d" && git push origin older >/dev/null 2>&1 )
-  assert_eq 2 "$(log_lines "$STUB_LOG")" "pushing a ref whose tree was never verified must re-verify" || return
+  local out rc
+  out=$(cd "$d" && git push origin older 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || { fail "a fresh note let an unrelated ref through: $out"; return; }
+  assert_eq "" "$(git -C "$d.remote.git" rev-parse --quiet --verify refs/heads/older 2>/dev/null)" \
+    "the ref the note never covered must not reach the remote" || return
+  assert_contains "$out" "REFUSING THE PUSH" "should explain itself" || return
+  assert_eq 1 "$(log_lines "$STUB_LOG")" "no gate can vouch for a ref that is not on disk" || return
   pass
 }
 

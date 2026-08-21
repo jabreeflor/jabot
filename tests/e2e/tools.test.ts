@@ -129,7 +129,23 @@ function credentialShaped(value: string): boolean {
   if (/\b(access|refresh|id)[_-]?token\b/i.test(value)) return true;
   // An opaque blob: nothing but token alphabet, long, no spaces or colons —
   // so a sentence, an email, an ISO timestamp and a URL all fall through.
-  return /^[A-Za-z0-9._~+/-]{24,}={0,2}$/.test(value);
+  if (/^[A-Za-z0-9._~+/-]{24,}={0,2}$/.test(value)) return true;
+  // ...and the same blob *inside* a sentence. The anchored test above only
+  // sees a value that is entirely a token, but `detail` is the one string on
+  // this surface the host does not author: `card()` assigns it from
+  // `row.last_error`, free text recorded from a provider or OAuth failure,
+  // which is exactly where an echoed token or a signed URL lands. So scan for
+  // a long run anywhere in the value.
+  //
+  // The run alphabet is narrower than the anchored one on purpose: `.` `-` `_`
+  // `/` `:` are what separate the legitimate long strings this surface
+  // publishes — hostnames (`agentclientprotocol.com`), URL slugs
+  // (`48855576908307-Guide-to-the-Slack-MCP-server`), scope URLs, ISO
+  // timestamps and the `Local server: <path>` detail, whose length comes from
+  // many short segments and not from one long one. Twenty-four unbroken
+  // alphanumerics is not a word, a hostname, a slug or a path segment; it is
+  // the body of an OAuth token, a JWT segment or an API key.
+  return /[A-Za-z0-9]{24,}/.test(value);
 }
 
 function expectNoCredentials(payload: unknown, allowed: string[]): void {

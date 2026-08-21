@@ -53,7 +53,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh` | before you commit anything; the whole gate, ~1.5 min |
 | `./scripts/verify.sh --fast` | tight iteration — skips building `jabot-hostd` and the e2e suite |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
-| `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes |
+| `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:e2e` | one slice, while you are working on it |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
@@ -129,6 +129,23 @@ done
 [`.githooks/pre-push`](.githooks/pre-push) runs `./scripts/verify.sh` and
 refuses the push if it fails. It is the last thing between a mistake and
 `main`, because CI is not going to look.
+
+It also refuses a push it *cannot* check. The gates read the files on disk; a
+push carries commits. When those are not the same content, a green run would be
+a statement about bytes that are not going anywhere — so instead of verifying
+one thing and shipping another, the hook stops before spending the 90 seconds
+and prints both tree OIDs. Two ways to land there:
+
+- **uncommitted work on disk.** Commit it (`./scripts/checkpoint.sh -m "..."`
+  does both) or stash it, then push.
+- **pushing a ref you do not have checked out** — `git push origin main` from a
+  feature branch, `git push --all`, `git push origin HEAD~1:main`,
+  `git push origin some-branch`. Check that branch out and push from there.
+
+It compares tree OIDs, not commits, so a rebase or an amended message that
+produces byte-identical content still counts as verified. And if the worktree
+moves *while* the gates are running, the green describes neither tree and the
+push is refused there too — the same rule `checkpoint.sh` applies to commits.
 
 It is usually free. `verify.sh` leaves a note in `.git/` naming the tree it
 passed; if the worktree is still exactly that tree and every commit being

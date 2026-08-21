@@ -30,7 +30,8 @@ npm install                              # deps, and installs the git hooks
 ```
 
 `git push` re-runs the gate through `.githooks/pre-push` unless you just
-verified those exact bytes. **[CONTRIBUTING.md](CONTRIBUTING.md)** has the
+verified those exact bytes, and refuses a push whose commits are not the files
+that gate can read. **[CONTRIBUTING.md](CONTRIBUTING.md)** has the
 whole local workflow: what every gate proves, what to do when each one fails,
 and the escape hatches.
 
