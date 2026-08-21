@@ -12,7 +12,8 @@
     "test:watch": "vitest --project unit",
     "test:e2e": "vitest run --project e2e",
     "typecheck": "tsc --noEmit",
-    "verify": "./scripts/verify.sh"
+    "verify": "./scripts/verify.sh",
+    "verify:fast": "./scripts/verify.sh --fast"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

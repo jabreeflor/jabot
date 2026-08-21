@@ -8,12 +8,27 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Minutes are metered on this private repo and have been exhausted once
+# already. A superseded push should not keep paying for the run it replaced.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  # The full pipeline — typecheck, unit, fmt, clippy, rust tests, and the
-  # TypeScript-against-real-Rust-host e2e suite. Runs on Linux because it does
-  # not need a webview: `jabot-hostd` is the host without the window.
+  # The full pipeline — toolchain, lockfiles, bundle-config, typecheck, unit,
+  # fmt, clippy, rust tests, and the TypeScript-against-real-Rust-host e2e
+  # suite. Runs on Linux because it does not need a webview: `jabot-hostd` is
+  # the host without the window.
+  #
+  # This job is `npm ci` plus `scripts/verify.sh` and nothing else, on purpose:
+  # every gate lives in the script, so running the script locally is running
+  # CI. The one thing the script cannot reproduce is the toolchain — CI
+  # installs current stable on every run — so the script prints its rustc,
+  # clippy and node versions at the top and warns when the local stable looks
+  # a release behind (DEVIATIONS.md D-014).
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -49,13 +64,17 @@ jobs:
   # on the merge to main, before any tag is cut, rather than on the pull
   # request.
   #
-  # The config that step reads can be validated without macOS, and
-  # `scripts/verify.sh` is where that belongs — D-005 is the cautionary case, a
-  # `bundle.targets` edit that still builds and still ships a release with no
-  # updater archive.
+  # The config that step reads is validated without macOS, by the
+  # `bundle-config` gate in scripts/verify.sh: tauri.conf.json parses, every
+  # icon it names exists, entitlements.plist parses as a plist,
+  # bundle.targets still contains "app", createUpdaterArtifacts is still false,
+  # default-run is set, and every binary under src-tauri/src/bin is still
+  # gated behind `dev-bins`. D-005 is the cautionary case — a `bundle.targets`
+  # edit that still builds and still ships a release with no updater archive.
   bundle:
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
