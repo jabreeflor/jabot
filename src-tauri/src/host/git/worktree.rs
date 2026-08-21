@@ -444,6 +444,21 @@ pub fn slug(thread_id: &str) -> String {
 #[cfg(test)]
 pub(crate) mod testing {
     use super::check;
+    use std::path::Path;
+
+    /// Every directory git believes is a working tree of this repository, main
+    /// checkout included. The question "did anything get registered as a linked
+    /// worktree here", asked of git rather than of our own bookkeeping.
+    pub fn worktree_paths(repo_root: &Path) -> Vec<String> {
+        let root = repo_root.to_string_lossy().into_owned();
+        check(&["-C", &root, "worktree", "list", "--porcelain"])
+            .expect("git worktree list")
+            .stdout
+            .lines()
+            .filter_map(|line| line.strip_prefix("worktree "))
+            .map(str::to_string)
+            .collect()
+    }
 
     /// What a file looks like at a ref, straight from git.
     ///

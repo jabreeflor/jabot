@@ -1239,3 +1239,212 @@ fn store_error(err: super::store::StoreError) -> RpcError {
         other => RpcError::Internal(other.to_string()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
+    use crate::host::protocol::{HOST_HELLO, THREAD_FOLD, THREAD_OPEN};
+
+    /// Wait for Inbox is the only place in this host that answers an agent
+    /// *without a human*. Every gate below is the difference between "the host
+    /// read a file while you were away" and "an agent did something you never
+    /// approved", so each one is asserted on its own rather than through a
+    /// single happy-path scenario that would still pass with any one of them
+    /// removed.
+    ///
+    /// `tests/lifecycle.rs` drives the two ordinary outcomes end to end through
+    /// a real adapter (a read is answered, an execute is not). What it cannot
+    /// reach is the shape of the *options*, because the fake agent decides
+    /// those — and "which of the agent's options did the host pick" is the half
+    /// of this decision that grants the permission.
+    fn session() -> (HostSession, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = HostSession::load(dir.path());
+        session.handle_request(JsonRpcRequest::new(RequestId::Number(1), HOST_HELLO, None));
+        (session, dir)
+    }
+
+    fn open(session: &mut HostSession, thread_id: &str) {
+        let response = session.handle_request(JsonRpcRequest::new(
+            RequestId::Number(2),
+            THREAD_OPEN,
+            Some(json!({
+                "threadId": thread_id,
+                "title": "Auth migration",
+                "cwd": std::env::temp_dir().to_string_lossy(),
+                "harnessId": "claude",
+            })),
+        ));
+        assert!(response.error.is_none(), "{:?}", response.error);
+    }
+
+    fn fold(session: &mut HostSession, thread_id: &str, policy: &str) {
+        let response = session.handle_request(JsonRpcRequest::new(
+            RequestId::Number(3),
+            THREAD_FOLD,
+            Some(json!({ "threadId": thread_id, "policy": policy })),
+        ));
+        assert!(response.error.is_none(), "{:?}", response.error);
+    }
+
+    /// A thread asleep under Wait for Inbox — the only configuration in which
+    /// anything may be auto-allowed at all.
+    fn quiet_thread(thread_id: &str) -> (HostSession, tempfile::TempDir) {
+        let (mut session, dir) = session();
+        open(&mut session, thread_id);
+        fold(&mut session, thread_id, "wait_for_inbox");
+        (session, dir)
+    }
+
+    fn read() -> Value {
+        json!({ "kind": "read", "title": "Read src/auth.ts" })
+    }
+
+    /// The options an agent actually offers, in ACP's spelling: an opaque
+    /// `optionId` with a `kind` that says what it means.
+    fn options(kinds: &[&str]) -> Value {
+        Value::Array(
+            kinds
+                .iter()
+                .map(
+                    |kind| json!({ "optionId": format!("opt-{kind}"), "name": kind, "kind": kind }),
+                )
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn a_folded_read_with_an_allow_once_on_offer_is_answered_by_the_host() {
+        let (session, _dir) = quiet_thread("t-read");
+        let disposition = session.lifecycle_permission_policy(
+            "t-read",
+            &read(),
+            &options(&["allow_once", "reject_once"]),
+        );
+        // The agent's own id for the option, not the word "allow_once": an
+        // answer naming an option the agent never offered is an answer it
+        // cannot act on.
+        assert_eq!(
+            disposition,
+            PermissionDisposition::AutoAllow {
+                option_id: "opt-allow_once".into()
+            }
+        );
+    }
+
+    /// The gate with the largest blast radius. `allow_always` is not a bigger
+    /// version of `allow_once` — it is a standing grant that outlives the turn,
+    /// the fold and the thread, and Wait for Inbox exists to answer *one* read
+    /// while the user is away. A policy that treated any allow-shaped option as
+    /// good enough would hand an agent a permanent permission for a question
+    /// the user never saw.
+    #[test]
+    fn a_folded_read_is_never_auto_allowed_always() {
+        let (session, _dir) = quiet_thread("t-always");
+        for offered in [
+            options(&["allow_always", "reject_once"]),
+            options(&["allow_always"]),
+            // Nothing to pick at all: an agent that offers only refusals.
+            options(&["reject_once", "reject_always"]),
+            json!([]),
+            // Not an array, and an option with no id — malformed input from an
+            // adapter must reach the human rather than be guessed at.
+            json!({ "allow_once": true }),
+            json!([{ "kind": "allow_once" }]),
+        ] {
+            assert_eq!(
+                session.lifecycle_permission_policy("t-always", &read(), &offered),
+                PermissionDisposition::Ask,
+                "auto-allowed against {offered}"
+            );
+        }
+    }
+
+    /// Everything that is not a read reaches a human, however quiet the thread
+    /// was asked to be. The list is spelled out because "read" is decided by a
+    /// string an adapter sends: an unrecognised kind, a missing one, or a
+    /// capitalised one must all fall to the safe side.
+    #[test]
+    fn only_a_read_is_ever_auto_allowed() {
+        let (session, _dir) = quiet_thread("t-kinds");
+        for subject in [
+            json!({ "kind": "execute", "title": "Run rm -rf /" }),
+            json!({ "kind": "delete", "title": "Delete src/" }),
+            json!({ "kind": "edit", "title": "Edit src/auth.ts" }),
+            json!({ "kind": "fetch", "title": "GET https://example.com" }),
+            json!({ "kind": "Read", "title": "Read src/auth.ts" }),
+            json!({ "kind": "read_and_execute", "title": "…" }),
+            json!({ "title": "no kind at all" }),
+            json!({ "kind": 7 }),
+            Value::Null,
+        ] {
+            assert_eq!(
+                session.lifecycle_permission_policy("t-kinds", &subject, &options(&["allow_once"])),
+                PermissionDisposition::Ask,
+                "auto-allowed {subject}"
+            );
+        }
+    }
+
+    /// Wait for Inbox is a property of a thread the user put to sleep and said
+    /// "do not wake me". A thread they are looking at, or one folded under the
+    /// default policy, has a human available — and asking a human who is there
+    /// costs nothing, while not asking them is the whole failure.
+    #[test]
+    fn a_thread_the_user_is_present_for_is_never_answered_for_them() {
+        let (mut session, _dir) = session();
+
+        // Active: the user is in the thread.
+        open(&mut session, "t-active");
+        assert_eq!(
+            session.lifecycle_permission_policy("t-active", &read(), &options(&["allow_once"])),
+            PermissionDisposition::Ask
+        );
+
+        // Folded, but under the default policy: fold is visibility, not consent.
+        open(&mut session, "t-plain");
+        fold(&mut session, "t-plain", "default");
+        assert_eq!(
+            session.lifecycle_permission_policy("t-plain", &read(), &options(&["allow_once"])),
+            PermissionDisposition::Ask
+        );
+
+        // A thread that is not in the store at all. The policy is read from the
+        // row, so no row means no evidence of consent.
+        assert_eq!(
+            session.lifecycle_permission_policy("t-ghost", &read(), &options(&["allow_once"])),
+            PermissionDisposition::Ask
+        );
+
+        // And a host with no store, which is the state a broken `jabot.sqlite`
+        // leaves the app in — still running, still reachable by an adapter.
+        let ephemeral = HostSession::ephemeral();
+        assert_eq!(
+            ephemeral.lifecycle_permission_policy("t-read", &read(), &options(&["allow_once"])),
+            PermissionDisposition::Ask
+        );
+    }
+
+    /// Waking the thread takes the standing consent with it: the user is back,
+    /// so the next question is theirs to answer.
+    #[test]
+    fn reopening_a_quiet_thread_stops_the_host_answering_for_it() {
+        let (mut session, _dir) = quiet_thread("t-woken");
+        assert!(matches!(
+            session.lifecycle_permission_policy("t-woken", &read(), &options(&["allow_once"])),
+            PermissionDisposition::AutoAllow { .. }
+        ));
+
+        let response = session.handle_request(JsonRpcRequest::new(
+            RequestId::Number(4),
+            crate::host::protocol::THREAD_REOPEN,
+            Some(json!({ "threadId": "t-woken" })),
+        ));
+        assert!(response.error.is_none(), "{:?}", response.error);
+        assert_eq!(
+            session.lifecycle_permission_policy("t-woken", &read(), &options(&["allow_once"])),
+            PermissionDisposition::Ask
+        );
+    }
+}

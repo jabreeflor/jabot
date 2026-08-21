@@ -901,6 +901,183 @@ mod tests {
         assert_eq!(path_of(&fx.state("t-folded"), "worktreePath"), folded);
     }
 
+    /// A repository whose `git add` cannot succeed.
+    ///
+    /// This is the git-lfs shape, which is the common one: a repo with
+    /// `filter=lfs` in `.gitattributes` and no `git-lfs` on the machine fails
+    /// every `add` of a matching file with `external filter ... failed`. A
+    /// `pre-commit` hook is *not* how this is reproduced — [`save_uncommitted`]
+    /// passes `--no-verify` precisely so hooks cannot cost the user their work,
+    /// and a test built on one would pass whatever the save did.
+    fn break_the_committing(repo: &Path) {
+        testing::run(repo, &["config", "filter.brokenlfs.clean", "false"]);
+        testing::run(repo, &["config", "filter.brokenlfs.required", "true"]);
+        std::fs::write(repo.join(".gitattributes"), "*.bin filter=brokenlfs\n").unwrap();
+        testing::run(repo, &["add", "-A"]);
+        testing::run(repo, &["commit", "-m", "lfs-tracked binaries"]);
+    }
+
+    /// The whole cleanup policy in one sentence: *nothing is removed until the
+    /// work in it is saved*. Every other test here exercises the branch where
+    /// the save succeeds — which is the branch where removing the tree is safe.
+    /// This is the other one.
+    ///
+    /// `release_at` documents the rule ("`Err` means the tree is still there,
+    /// and the caller must keep believing in it"), and archive is the mode that
+    /// honours it. If the save ever became best-effort — a `let _ =`, an
+    /// `unwrap_or_default`, an `Ok(None)` where an `Err` belonged — archive
+    /// would go on to `git worktree remove` a directory holding an hour of the
+    /// user's uncommitted work, log a line nobody reads, and report success.
+    #[test]
+    fn archive_keeps_a_tree_whose_work_it_could_not_commit() {
+        let mut fx = fixture(None, json!([]));
+        break_the_committing(fx.repo.path());
+        let thread = fx.open("t-unsaveable", json!({}));
+        let tree = path_of(&thread, "worktreePath");
+        std::fs::write(tree.join("model.bin"), "an hour of work").unwrap();
+        // The precondition the assertions below rest on: this really is work
+        // git will not take, not merely a tree we forgot to dirty.
+        assert!(worktree::is_dirty(&tree));
+        assert!(worktree::save_uncommitted(&tree, "probe").is_err());
+
+        let archived = ok(
+            &mut fx.session,
+            THREAD_ARCHIVE,
+            json!({ "threadId": "t-unsaveable" }),
+        );
+
+        // The state machine still moves — the thread is archived, the adapter
+        // is gone — but the directory is not, and neither is what was in it.
+        assert_eq!(archived["state"], "archived");
+        assert!(tree.exists(), "archive removed a tree it could not save");
+        assert_eq!(
+            std::fs::read_to_string(tree.join("model.bin")).unwrap(),
+            "an hour of work"
+        );
+        // And the row goes on claiming it. Clearing the column would tell the
+        // next boot's sweep, and every later reader, that there is nothing at
+        // this path — leaving a checkout on disk that nothing will ever collect
+        // and that reopening will not restore.
+        assert_eq!(path_of(&fx.state("t-unsaveable"), "worktreePath"), tree);
+
+        // Delete is the difference: the user said they meant it, so the same
+        // unsaveable tree goes. That asymmetry is the reason `Release` exists.
+        ok(
+            &mut fx.session,
+            THREAD_DELETE,
+            json!({ "threadId": "t-unsaveable" }),
+        );
+        assert!(!tree.exists());
+    }
+
+    /// The user tidied `~/Library/Application Support` and took the tree with
+    /// it, or a `git worktree prune` collected it. Archive must not treat a
+    /// path that is not there as a failure and keep claiming it forever, and
+    /// the stale `$GIT_DIR/worktrees` metadata it leaves behind must not make
+    /// the reopen fail with "already registered" at a path that does not exist.
+    #[test]
+    fn a_tree_the_user_deleted_by_hand_archives_cleanly_and_still_reopens() {
+        let mut fx = fixture(None, json!([]));
+        let thread = fx.open("t-vanished", json!({}));
+        let tree = path_of(&thread, "worktreePath");
+        let branch = thread["branch"].as_str().unwrap().to_string();
+        std::fs::write(tree.join("committed.txt"), "already safe").unwrap();
+        // Committed, because a `rm -rf` of the directory takes anything that
+        // was not — there is nothing left for the save to find.
+        testing::run(&tree, &["add", "-A"]);
+        testing::run(&tree, &["commit", "-m", "before the tidy-up"]);
+        std::fs::remove_dir_all(&tree).unwrap();
+
+        let archived = ok(
+            &mut fx.session,
+            THREAD_ARCHIVE,
+            json!({ "threadId": "t-vanished" }),
+        );
+        assert_eq!(archived["state"], "archived");
+        assert!(
+            archived["worktreePath"].is_null(),
+            "the row still claims a directory that is not there"
+        );
+
+        let reopened = ok(
+            &mut fx.session,
+            THREAD_REOPEN,
+            json!({ "threadId": "t-vanished" }),
+        );
+        assert_eq!(path_of(&reopened, "worktreePath"), tree);
+        assert_eq!(
+            std::fs::read_to_string(tree.join("committed.txt")).unwrap(),
+            "already safe"
+        );
+        assert_eq!(
+            worktree::head_branch(&tree).as_deref(),
+            Some(branch.as_str())
+        );
+    }
+
+    /// `useCheckout` is the advanced opt-out: this thread works in the user's
+    /// own repository, the one they have open in their editor, with their
+    /// uncommitted changes in it.
+    ///
+    /// Its row still carries `repoRoot` and `branch` — the stamp #16 writes for
+    /// every thread — and differs from a worktree thread only in that
+    /// `worktreePath` is NULL. Both halves of cleanup key off that one field,
+    /// so both are one refactor away from treating the user's checkout as a
+    /// tree the host owns: archive would `git add --all && git commit` in it
+    /// and then `git worktree remove --force` it, and reopen would try to
+    /// `worktree add` on top of it.
+    #[test]
+    fn archiving_a_thread_that_runs_in_the_users_own_checkout_never_touches_it() {
+        let mut fx = fixture(None, json!([]));
+        let thread = fx.open("t-mine", json!({ "useCheckout": true }));
+        assert!(thread["worktreePath"].is_null());
+        let checkout = PathBuf::from(thread["cwd"].as_str().unwrap());
+        // The user's own half-finished work, in their own checkout, on their
+        // own branch — none of it JaBot's to commit, move or remove.
+        std::fs::write(checkout.join("scratch.txt"), "the user's own edits").unwrap();
+        let head_before = worktree::resolve(&checkout.to_string_lossy(), "HEAD").unwrap();
+
+        ok(
+            &mut fx.session,
+            THREAD_ARCHIVE,
+            json!({ "threadId": "t-mine" }),
+        );
+        assert!(checkout.is_dir(), "archive removed the user's checkout");
+        assert_eq!(
+            std::fs::read_to_string(checkout.join("scratch.txt")).unwrap(),
+            "the user's own edits"
+        );
+        assert!(
+            worktree::is_dirty(&checkout),
+            "archive committed the user's uncommitted work for them"
+        );
+        assert_eq!(
+            worktree::resolve(&checkout.to_string_lossy(), "HEAD").unwrap(),
+            head_before,
+            "archive moved HEAD in the user's checkout"
+        );
+        assert_eq!(worktree::head_branch(&checkout).as_deref(), Some("main"));
+
+        ok(
+            &mut fx.session,
+            THREAD_REOPEN,
+            json!({ "threadId": "t-mine" }),
+        );
+        // Still the main checkout and nothing else: `git worktree list` sees
+        // one entry, so nothing was registered as a linked tree over the top.
+        let trees = worktree::testing::worktree_paths(fx.repo.path());
+        assert_eq!(
+            trees.len(),
+            1,
+            "the user's checkout gained a linked worktree: {trees:?}"
+        );
+        assert!(fx.state("t-mine")["worktreePath"].is_null());
+        assert_eq!(
+            std::fs::read_to_string(checkout.join("scratch.txt")).unwrap(),
+            "the user's own edits"
+        );
+    }
+
     #[test]
     fn a_named_base_ref_that_does_not_exist_refuses_the_spawn() {
         let mut fx = fixture(None, json!([]));

@@ -253,6 +253,64 @@ fn the_boot_pass_runs_once_however_often_the_host_is_relaunched() {
     assert_eq!(host.state("t-twice")["latestRun"]["state"], "lost");
 }
 
+/// A crash does not politely leave one run open.
+///
+/// A thread that was prompted, interrupted, prompted again and killed has
+/// several rows in `runs` still claiming work is in flight — and boot has to
+/// close all of them while telling the user about one. Both halves matter and
+/// they fail in opposite directions: a pass that only closed the newest leaves
+/// a ledger asserting processes that do not exist, and every later launch finds
+/// the next one still open and writes another card for it, forever. A pass that
+/// carded all of them buries the real question under strays that were already
+/// over.
+#[test]
+fn a_thread_a_crash_left_several_open_runs_on_gets_one_card_about_the_newest() {
+    let mut host = Host::start();
+    host.open_thread("t-strays", None);
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-strays" }));
+
+    // Written straight into the ledger: reproducing three interleaved runs
+    // through a live adapter would be a race, and what boot reads is the table.
+    let states = ["running", "running", "needs_you"];
+    let mut ids = Vec::new();
+    {
+        let store = host.session.store().expect("store");
+        for state in states {
+            let run = store.insert_run("t-strays", "prompt", None).expect("run");
+            store.set_run_state(&run.id, state, None).expect("state");
+            ids.push(run.id);
+        }
+    }
+
+    host.restart();
+
+    // Nothing is left claiming a process. `lost`, not `failed`: we do not know
+    // the work went wrong, only that we stopped being able to find out.
+    {
+        let store = host.session.store().expect("store");
+        for (id, was) in ids.iter().zip(states) {
+            let run = store.get_run(id).expect("read").expect("the run");
+            assert_eq!(run.state, "lost", "a run left {was} is still open");
+        }
+    }
+
+    // One card, and it is about the newest run — the one the user was actually
+    // waiting on — not about a stray that stopped mattering two prompts ago.
+    let inbox = host.inbox();
+    assert_eq!(kinds(&inbox), vec!["needs_you"]);
+    assert_eq!(inbox["events"][0]["summary"], WAS_WAITING_ON_YOU);
+    let notes = host.session.boot_notes();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert_eq!(notes[0].run_id.as_deref(), Some(ids[2].as_str()));
+    assert_eq!(notes[0].was, "needs_you");
+
+    // And the next launch has nothing left to find. A stray left open would
+    // surface here as a second card for a thread that already has one.
+    host.restart();
+    assert!(host.session.boot_notes().is_empty());
+    assert_eq!(kinds(&host.inbox()), vec!["needs_you"]);
+}
+
 #[test]
 fn work_that_finished_before_the_quit_is_left_alone() {
     let mut host = Host::start();
