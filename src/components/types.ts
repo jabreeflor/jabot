@@ -317,4 +317,5 @@ export type Selection =
   | { view: "thread"; threadId: string }
   | { view: "crew" }
   | { view: "inbox" }
-  | { view: "prs" };
+  | { view: "prs" }
+  | { view: "schedules" };

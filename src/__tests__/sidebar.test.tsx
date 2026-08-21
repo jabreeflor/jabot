@@ -81,6 +81,7 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
     onOpenCrew: vi.fn(),
     onOpenInbox: vi.fn(),
     onOpenPullRequests: vi.fn(),
+    onOpenSchedules: vi.fn(),
     onNewChat: vi.fn(),
     onThreadMenu: vi.fn(),
     ...over,

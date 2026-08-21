@@ -23,6 +23,11 @@ import {
   PERMISSION_PENDING,
   PERMISSION_REPLY,
   PROTOCOL_VERSION,
+  SCHEDULE_CREATE,
+  SCHEDULE_LIST,
+  SCHEDULE_REMOVE,
+  SCHEDULE_RUN,
+  SCHEDULE_UPDATE,
   SESSION_CANCEL,
   SESSION_PROMPT,
   SUPERVISOR_STATUS,
@@ -46,6 +51,13 @@ import {
   TOOLS_DISCONNECT,
   TOOLS_LIST,
   type BotView,
+  type ScheduleCreateParams,
+  type ScheduleListResult,
+  type ScheduleRefParams,
+  type ScheduleRemoveResult,
+  type ScheduleRunResult,
+  type ScheduleUpdateParams,
+  type ScheduleView,
   type CrewCreateParams,
   type CrewListResult,
   type CrewRefParams,
@@ -318,6 +330,34 @@ export class HostClient {
       so calling twice cannot make two threads. */
   async botThread(params: CrewRefParams): Promise<ThreadStateResult> {
     return this.request<ThreadStateResult>(CREW_THREAD, params);
+  }
+
+  /** Every recurring job, with its recent fires beside it (#25). */
+  async listSchedules(): Promise<ScheduleListResult> {
+    return this.request<ScheduleListResult>(SCHEDULE_LIST);
+  }
+
+  /** Add one. Throws `INVALID_PARAMS` naming the field when the cron does not
+      parse or the bot does not exist — a schedule that can never run is worse
+      than one that was refused, because nothing tells the user about it. */
+  async createSchedule(params: ScheduleCreateParams): Promise<ScheduleView> {
+    return this.request<ScheduleView>(SCHEDULE_CREATE, params);
+  }
+
+  /** Patch one. Editing the cron or the switch re-arms it from now; editing
+      the prompt deliberately does not move a job that is due in ten minutes. */
+  async updateSchedule(params: ScheduleUpdateParams): Promise<ScheduleView> {
+    return this.request<ScheduleView>(SCHEDULE_UPDATE, params);
+  }
+
+  async removeSchedule(params: ScheduleRefParams): Promise<ScheduleRemoveResult> {
+    return this.request<ScheduleRemoveResult>(SCHEDULE_REMOVE, params);
+  }
+
+  /** Run now. Its own occurrence, stamped with the moment the user asked: it
+      does not consume or move the schedule's next due time. */
+  async runSchedule(params: ScheduleRefParams): Promise<ScheduleRunResult> {
+    return this.request<ScheduleRunResult>(SCHEDULE_RUN, params);
   }
 
   /** Every registered folder with the threads the sidebar draws under it —

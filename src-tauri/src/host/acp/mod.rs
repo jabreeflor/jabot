@@ -166,6 +166,12 @@ impl HostSession {
         // whose process is gone, notice a machine that was asleep, and close
         // sessions nobody is using (#21). Rate-limited inside.
         self.supervisor_tick();
+        // The in-process cron rides it too (#25). Decision #4 keeps the host in
+        // the Tauri binary — no launchd, no daemon — so this pump *is* the only
+        // clock a schedule has. Rate-limited inside, and deliberately after the
+        // supervisor: a fire dispatched onto a thread whose adapter died this
+        // tick should find the reap already done.
+        self.schedule_tick();
     }
 
     /// Quit, in the sense decision #4 settled: kill the children, keep the

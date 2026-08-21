@@ -27,6 +27,7 @@ import {
 } from "./host";
 import { AddFolderModal } from "./components/AddFolderModal";
 import { BotEditorModal } from "./components/BotEditorModal";
+import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
 import { Sidebar } from "./components/Sidebar";
 import {
@@ -44,11 +45,17 @@ import type {
   ToolOption,
 } from "./components/types";
 import { useCrew } from "./views/crew";
+import {
+  useSchedules,
+  type ScheduleDraft,
+  type Schedules,
+} from "./views/schedules";
 import { allThreads, useFolders } from "./views/folders";
 import { ChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
 import { PullRequestsView } from "./views/PullRequestsView";
+import { SchedulesView } from "./views/SchedulesView";
 import { LiveThreadView, ThreadView } from "./views/ThreadView";
 import {
   BOT_TEMPLATES,
@@ -72,6 +79,9 @@ const USER_NAME = "Jabree Flor";
 
 type NewChatState = { open: false } | { open: true; folderId: string | null };
 type EditorState = { open: false } | { open: true; botId: string | null };
+type ScheduleEditorState =
+  | { open: false }
+  | { open: true; scheduleId: string | null };
 type MenuState = { thread: ThreadSummary; position: MenuPosition } | null;
 
 function App() {
@@ -87,9 +97,14 @@ function App() {
   const [menu, setMenu] = useState<MenuState>(null);
   const [leaving, setLeaving] = useState<readonly string[]>([]);
   const [addFolder, setAddFolder] = useState(false);
+  const [scheduleEditor, setScheduleEditor] = useState<ScheduleEditorState>({
+    open: false,
+  });
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const { client, hello, hostError, connecting } = useHost();
   const registered = useFolders(client);
   const crew = useCrew(client);
+  const schedules = useSchedules(client);
   // The host wins once it has answered, per source. A crew of `null` is "not
   // asked yet" — a preview build or a unit test — and the fixtures stand in;
   // a real answer always has Chief in it.
@@ -211,6 +226,31 @@ function App() {
     setEditorError(null);
   }
 
+  /** Like the bot editor, the schedule editor *is* the record: the modal stays
+      open until the host has taken it, because a refused cron is something to
+      correct rather than something to lose. */
+  function saveSchedule(draft: ScheduleDraft) {
+    if (!scheduleEditor.open) return;
+    setScheduleError(null);
+    schedules
+      .save(scheduleEditor.scheduleId, draft)
+      .then(() => closeScheduleEditor())
+      .catch((err) => setScheduleError(formatError(err)));
+  }
+
+  function removeSchedule(scheduleId: string) {
+    setScheduleError(null);
+    schedules
+      .remove(scheduleId)
+      .then(() => closeScheduleEditor())
+      .catch((err) => setScheduleError(formatError(err)));
+  }
+
+  function closeScheduleEditor() {
+    setScheduleEditor({ open: false });
+    setScheduleError(null);
+  }
+
   const host: HostTarget = {
     hostId: hello?.hostId ?? "local",
     name: hello?.hostName ?? "This Mac",
@@ -219,6 +259,12 @@ function App() {
   const editingBot =
     editor.open && editor.botId
       ? (bots.find((bot) => bot.id === editor.botId) ?? null)
+      : null;
+  const editingSchedule =
+    scheduleEditor.open && scheduleEditor.scheduleId
+      ? ((schedules.schedules ?? []).find(
+          (row) => row.scheduleId === scheduleEditor.scheduleId,
+        ) ?? null)
       : null;
 
   return (
@@ -242,6 +288,7 @@ function App() {
         onOpenCrew={() => setSelection({ view: "crew" })}
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
+        onOpenSchedules={() => setSelection({ view: "schedules" })}
         onNewChat={(folderId) => setNewChat({ open: true, folderId })}
         onThreadMenu={(thread, position) => setMenu({ thread, position })}
       />
@@ -250,6 +297,11 @@ function App() {
         <MainView
           client={client}
           state={state}
+          schedules={schedules}
+          onEditSchedule={(scheduleId) =>
+            setScheduleEditor({ open: true, scheduleId })
+          }
+          onAddSchedule={() => setScheduleEditor({ open: true, scheduleId: null })}
           bots={bots}
           tools={[...toolChips, ...hostToolChips]}
           harnesses={harnesses}
@@ -308,6 +360,28 @@ function App() {
         />
       )}
 
+      {scheduleEditor.open && (
+        <ScheduleEditorModal
+          schedule={
+            editingSchedule
+              ? {
+                  scheduleId: editingSchedule.scheduleId,
+                  botId: editingSchedule.botId,
+                  name: editingSchedule.name,
+                  cron: editingSchedule.cron,
+                  prompt: editingSchedule.prompt,
+                  catchUp: editingSchedule.catchUp,
+                }
+              : null
+          }
+          bots={bots}
+          error={scheduleError}
+          onSave={saveSchedule}
+          onRemove={removeSchedule}
+          onCancel={closeScheduleEditor}
+        />
+      )}
+
       {menu && (
         <ThreadContextMenu
           threadTitle={menu.thread.title}
@@ -343,6 +417,9 @@ function App() {
 function MainView({
   client,
   state,
+  schedules,
+  onEditSchedule,
+  onAddSchedule,
   bots,
   tools,
   harnesses,
@@ -361,6 +438,10 @@ function MainView({
       live — hydrated from `thread/transcript` and streamed from there (#14). */
   client: HostClient | null;
   state: MockState;
+  /** Recurring jobs, host-owned from the first answer (#25). */
+  schedules: Schedules;
+  onEditSchedule: (scheduleId: string) => void;
+  onAddSchedule: () => void;
   /** The crew, host-owned once `crew/list` has answered (#17). */
   bots: readonly Bot[];
   /** Every chip a crew card may have to name: the MCP catalog plus Chief's
@@ -398,6 +479,24 @@ function MainView({
           cards={state.inbox}
           onOpenThread={(threadId) => onSelect({ view: "thread", threadId })}
           onAction={onInboxAction}
+        />
+      );
+    case "schedules":
+      return (
+        <SchedulesView
+          schedules={schedules.schedules}
+          bots={bots}
+          error={schedules.error}
+          onReload={schedules.reload}
+          onAdd={onAddSchedule}
+          onEdit={onEditSchedule}
+          onToggle={(scheduleId, enabled) => {
+            void schedules.setEnabled(scheduleId, enabled);
+          }}
+          onRunNow={(scheduleId) => {
+            void schedules.runNow(scheduleId);
+          }}
+          onOpenThread={(threadId) => onSelect({ view: "thread", threadId })}
         />
       );
     case "prs":

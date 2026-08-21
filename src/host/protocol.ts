@@ -40,7 +40,15 @@ export const CREW_CREATE = "crew/create";
 export const CREW_UPDATE = "crew/update";
 export const CREW_REMOVE = "crew/remove";
 export const CREW_THREAD = "crew/thread";
+export const SCHEDULE_LIST = "schedule/list";
+export const SCHEDULE_CREATE = "schedule/create";
+export const SCHEDULE_UPDATE = "schedule/update";
+export const SCHEDULE_REMOVE = "schedule/remove";
+export const SCHEDULE_RUN = "schedule/run";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
+/** A new Inbox card on a thread that did *not* resurface — a schedule firing
+    on an active standing thread moves nothing in the sidebar (#25). */
+export const INBOX_EVENT = "inbox/event";
 
 export type RequestId = number | string | null;
 
@@ -133,6 +141,15 @@ export interface HelloResult {
   device: DeviceInfo;
   methods: string[];
   notifications: string[];
+  /** The subset of `methods` *this* device may call, per the role its
+      `paired_devices` row carries (#19's scope, surfaced for #29).
+
+      A phone could hard-code the approver list and the host would still be
+      what enforces it — but then the client's idea of what it may do and the
+      host's could drift apart in silence, and the symptom would be a button
+      that exists and always fails. Empty from a host too old to answer;
+      fall back to `methods` in that case. */
+  scopedMethods?: string[];
   store?: StoreStatus;
   storeError?: string;
 }
@@ -945,6 +962,110 @@ export interface PermissionResolvedParams extends Envelope {
 
 export interface InboxResurfaceParams extends Envelope {
   reason: ResurfaceReason;
+}
+
+export interface InboxEventParams extends Envelope {
+  /** `inbox_events.kind` — `done`, `failed`, and the rest of the closed list. */
+  kind: string;
+  title: string;
+  summary: string;
+}
+
+// ---- Schedules (#25) --------------------------------------------------
+//
+// A schedule belongs to a bot and runs on that bot's standing thread. `cron` is
+// evaluated in the Mac's *local* time — "9am" has to keep meaning 9am after the
+// clocks change — while every timestamp below is UTC, like every other
+// timestamp this host emits.
+
+/** What happens to an occurrence whose time passed while JaBot was closed.
+    `once` runs the most recent one and drops the rest; `skip` runs none. There
+    is deliberately no policy that replays a backlog. */
+export type CatchUpPolicy = "once" | "skip";
+
+/** `schedule_fires.state`. `dispatched` is the only non-final one. */
+export type ScheduleFireState =
+  | "dispatched"
+  | "skipped"
+  | "failed"
+  | "delivered";
+
+export interface ScheduleFireView {
+  fireId: string;
+  scheduleId: string;
+  threadId?: string;
+  runId?: string;
+  /** The occurrence this fire is for. */
+  dueAt: string;
+  /** When the host actually got to it. Hours later than `dueAt` if the Mac was
+      shut in between — which is the only place catch-up is visible. */
+  firedAt: string;
+  state: ScheduleFireState;
+  caughtUp: boolean;
+  /** Occurrences dropped in favour of (or alongside) this one. */
+  skippedCount: number;
+  detail?: string;
+  deliveredAt?: string;
+}
+
+export interface ScheduleView {
+  scheduleId: string;
+  botId: string;
+  botName: string;
+  name: string;
+  cron: string;
+  prompt: string;
+  enabled: boolean;
+  catchUp: CatchUpPolicy;
+  /** Absent for a disabled schedule: it owes nothing. */
+  nextRunAt?: string;
+  lastRunAt?: string;
+  /** The bot's standing thread, once a fire has opened one. */
+  threadId?: string;
+  lastFire?: ScheduleFireView;
+  recentFires: ScheduleFireView[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduleListResult {
+  schedules: ScheduleView[];
+}
+
+export interface ScheduleCreateParams {
+  botId: string;
+  name: string;
+  /** 5-field cron, 6 with a leading seconds field, or an `@daily` shorthand.
+      Refused at the door if it does not parse. */
+  cron: string;
+  prompt: string;
+  enabled?: boolean;
+  catchUp?: CatchUpPolicy;
+}
+
+/** A patch: an omitted field is left alone, so flipping the switch cannot
+    silently discard the prompt the user typed. */
+export interface ScheduleUpdateParams {
+  scheduleId: string;
+  name?: string;
+  cron?: string;
+  prompt?: string;
+  enabled?: boolean;
+  catchUp?: CatchUpPolicy;
+}
+
+export interface ScheduleRefParams {
+  scheduleId: string;
+}
+
+export interface ScheduleRemoveResult {
+  scheduleId: string;
+  removed: boolean;
+}
+
+export interface ScheduleRunResult {
+  scheduleId: string;
+  fire: ScheduleFireView;
 }
 
 export const RPC_ERROR = {

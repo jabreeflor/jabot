@@ -85,6 +85,15 @@ export interface HostdOptions {
   dataDir?: string;
   /** Extra environment for the host process; adapters inherit it when spawned. */
   env?: Record<string, string>;
+  /**
+   * Also listen on this Unix socket path (`--listen`), so a *second* client
+   * can attach to the same host (#29).
+   *
+   * The binary binds the socket before it reads its first byte of stdio, so
+   * any answer on stdio means the socket is already accepting — there is
+   * nothing to poll for.
+   */
+  socket?: string;
 }
 
 /**
@@ -112,6 +121,7 @@ export class HostdProcess implements HostTransport {
   private ownsDataDir = false;
 
   readonly dataDir?: string;
+  readonly socketPath?: string;
 
   constructor(options: HostdOptions = {}) {
     const args: string[] = [];
@@ -122,6 +132,10 @@ export class HostdProcess implements HostTransport {
       this.ownsDataDir = true;
     }
     if (this.dataDir) args.push("--data-dir", this.dataDir);
+    if (options.socket) {
+      this.socketPath = options.socket;
+      args.push("--listen", options.socket);
+    }
 
     this.child = spawn(hostdBinaryPath(), args, {
       stdio: ["pipe", "pipe", "pipe"],

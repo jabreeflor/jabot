@@ -1274,3 +1274,302 @@ methods, two row structs. Nothing existing changed shape.
 - **Multi-host anything.** Pairing is per host, as the research insists.
   A phone that should steer two machines scans twice, and nothing here
   coordinates that.
+
+---
+
+## D-014 — the local toolchain must match CI, or clippy is checked twice badly
+
+`rust-toolchain.toml` says `channel = "stable"`, so CI installs whatever stable
+is on the day. This container was pinned at 1.94 while CI ran 1.98, which meant
+`./scripts/verify.sh` passed locally and then failed `clippy -D warnings` in CI
+on lints the local compiler had never heard of. It happened twice:
+
+- `chunks_exact` → `as_chunks` in the SHA-256 block loop behind PKCE. Taking
+  clippy's advice would have been **wrong** — `slice::as_chunks` is newer than
+  the 1.85 floor `rust-toolchain.toml` declares, so the "fix" would have broken
+  the minimum version the project claims to support. The right answer was
+  `src-tauri/clippy.toml` with `msrv = "1.85"`, telling clippy the same thing
+  the toolchain file already says.
+- `useless_borrows_in_formatting` in the pairing SAS formatter — a genuine
+  redundant `&`, simply invisible to the older clippy.
+
+Fixed by running `rustup update stable` so the container tracks the same
+channel CI does. A gate that can only fail in CI is not a gate; it is a
+surprise. Anyone reproducing this locally should update before trusting
+`verify.sh`.
+
+---
+
+## D-016 — #29: the Mobile Inbox client, and the socket it needed to be a second device
+
+**Plan:** #29 ships "MVP2 — Mobile Inbox client": the phone reads the Inbox and
+answers permissions, over the socket-shaped host API (#8), as an `approver`
+device (#19), with the host enforcing the role. Decision #4 says the host stays
+in-process "until a second client exists", and
+[`protocol-and-reach.md`](docs/research/remote-and-mobile/protocol-and-reach.md)
+puts rung 0 of the reach ladder at a Unix domain socket.
+
+**Built:** `src/mobile/` — a client surface written against the *existing*
+protocol, plus the one host change a second client turned out to need.
+
+### What is in `src/mobile/`
+
+| File | What it is |
+|---|---|
+| `transport.ts` | `HostTransport` over any `LineChannel` — a duplex of NDJSON lines. A Unix socket, a WebSocket, an SSH tunnel: the reach ladder is a choice of channel, not of protocol. |
+| `session.ts` | `MobileSession`: hello-with-proof, the live Inbox projection, `answer` / `decline` / `cancel` / `transcript`. Wraps the production `HostClient`. |
+| `inbox.ts` | Needs you / done / still sleeping, from `inbox/list` + `permission/pending`. |
+| `ask.ts` | Defensive reading of the ACP subject and options the host passes through verbatim. |
+| `scope.ts` | The approver allowlist, mirrored from Rust, with a drift check. |
+| `InboxScreen.tsx` | The screen: the agent's options as buttons, sleeping cards with nothing to press. |
+
+**There is no mobile API.** Every method the phone calls already existed; the
+frames are the frames `jabot-hostd` has been answering since D-001. That was
+the point of decision #4, and the honest way to close #29 was to find out
+whether it held rather than to assert it.
+
+### The four host changes, and why each was unavoidable
+
+**1. A device binding is per *connection*, not per process.** `HostSession`
+had one `connected_device`, which is correct for one webview and wrong the
+instant two clients share a host: the phone's hello would have re-roled the
+desktop, and `host/pairing/scope.rs` would have been reading the wrong row.
+`handle_request_on(connection, request)` swaps the binding in around dispatch
+and stashes it back; `handle_request` is that, with the id nobody had to
+choose. Nothing else in `HostSession` was split — one store, one set of
+adapters, one broker is exactly right, and pretending otherwise would have
+been a rewrite rather than a second client.
+
+**2. `jabot-hostd --listen <path>`.** A second connection needs a second
+transport. The socket serves the same codec to every client, and notifications
+are **broadcast** — which is not a convenience, it is the research's contract:
+the host broadcasts `permission/ask` to everyone, the first authentic reply
+wins, and everyone else gets `permission/resolved`. This is still the dev/test
+binary (`dev-bins`); **nothing puts a listener inside JaBot.app**, so decision
+#4's "in-process until it is not" is untouched.
+
+**3. `host/hello` answers `scopedMethods`.** The host already knew what this
+device's role permits. A phone hard-coding that list is a phone whose buttons
+drift out of sync with the enforcement, and the symptom is a control that
+exists and always fails. The list is still enforced by `scope.rs` on every
+request; this only lets a client agree with it out loud, and
+`src/mobile/scope.ts` fails a test when the two part.
+
+**4. `permission/reply` no longer takes the caller's word for `deviceId`.**
+It was a client-supplied string, written into `permission_requests.decided_by`
+and broadcast in `permission/resolved`. With one device that was harmless. With
+two it is the field that says *the phone answered this*, so a client that could
+put the Mac's id in it could be recorded as the console it is deliberately not.
+The host now uses the device this connection said hello as and refuses a claim
+to be anybody else. Every existing caller already sent its own id, so nothing
+had to change but the guarantee.
+
+### What #29 did **not** build, and why
+
+- **A phone.** There is no app, no store listing, no push notification, no
+  React Native shell. What exists is the client surface and its protocol
+  conformance. `InboxScreen.tsx` is a DOM component; a real device replaces it
+  and keeps `session.ts` unchanged, which is the seam the split was for.
+- **A transport that leaves the machine.** The socket is rung 0 — loopback,
+  filesystem permissions, no TLS, no Noise, nothing bound to a network
+  interface. Rungs 1–3 (mDNS, Tailscale, an E2E relay) are reach work, and
+  `pairing-security-mobile.md`'s rule 1 — encrypt anything that leaves the box
+  — is the transport's job when one exists. The handshake was designed to
+  survive an untrusted wire (D-015); this still does not put it on one.
+- **Push, presence, and waking a sleeping phone.** The client applies a
+  `permission/ask` the moment it arrives, which is the half that is protocol.
+  Getting the device to be listening in the first place is APNs and a relay,
+  and both are the reach work above.
+- **Production pairing crypto in `src/mobile/`.** `MobileSession` takes a
+  `DeviceCredentials` and never sees the token: which enclave or keystore holds
+  it, and how the hello counter survives being killed, are device questions. The
+  derivations are documented on `PairingClaimParams` and implemented
+  independently in `tests/support/pairing.ts`, which is what the e2e drives.
+  A real app ports that to WebCrypto; writing a third copy here, with no device
+  to run it on, would have been code nothing tested against a real keystore.
+- **Reconnect and replay.** `sync/resumeFrom` is in the approver allowlist and
+  the host still logs per-thread `seq`, so a phone that drops mid-turn *can*
+  ask for the rest. `MobileSession` does not yet: it reconnects by saying hello
+  again and calling `refresh()`. That is correct and lossy — a `session/update`
+  that arrived while the phone was in a tunnel is not replayed into the
+  transcript view, because there is no transcript view yet.
+- **Prompting from the phone.** Deliberately out of scope: `session/prompt` is
+  not an approver method, and the research is explicit that the desktop stays
+  the admin console. The phone answers questions; it does not start work.
+
+### How it is proved
+
+`tests/e2e/mobile-inbox.test.ts` runs **two clients against one
+`jabot-hostd`** — the desktop on stdio, the phone on the socket — pairs the
+phone through #19's real handshake with the independent device implementation,
+and then asserts the thing the issue is actually about: the phone answers a
+`permission/ask` it received by broadcast, and **the ACP adapter's own stderr
+records the reply**. Asserting on the client's return value would have passed
+with nothing reaching ACP at all. The same file asserts the host refusing
+`thread/delete` from the phone, refusing the phone's attempt to be recorded as
+the Mac, and refusing a revoked device on its next connection.
+
+---
+
+## D-017 — #25: what the in-process cron does about a Mac that was shut
+
+**Plan:** #25 asks for an in-process cron in the host (decision #4: no launchd,
+no daemon in MVP1), a fire that creates a run and delivers its result to the
+Inbox, schedules that belong to a bot and run on its standing thread, a durable
+record, and a **decision** — stated here and in the notes — about what happens
+to an occurrence whose time passed while the app was closed.
+
+**Built:** `host/schedule/` (cron parser, catch-up policy, tick, five host
+methods), migration `0009`, `schedule_fires`, a `Schedules` screen in the
+renderer, and the seam that finally writes `runs.kind = 'schedule'`.
+
+### 1. The missed-fire decision: catch up once, never replay
+
+This is the ruling the issue asked for.
+
+| Case | What happens |
+|---|---|
+| Occurrence due while the host is running | Runs on the next tick (≤1s). |
+| Occurrences missed while JaBot was closed, `catchUp: once` (default) | **One** run, for the most recent occurrence. Every earlier one is dropped, counted, and reported. |
+| …and the most recent one is more than **12 hours** late | Nothing runs. The outage is recorded with the count. |
+| Occurrences missed, `catchUp: skip` | Nothing runs. The outage is recorded with the count. |
+| Any of the above | Exactly **one** `schedule_fires` row per outage, carrying `caughtUp` and `skippedCount`. |
+
+Three properties fall out of that, and each one is a bug avoided:
+
+- **A week of missed dailies is one run**, which is the failure the issue names.
+  Seven agents starting at once against a laptop that has just woken up, each
+  acting on a day that is over, is worse than six runs never happening.
+- **Twelve hours is where "late" becomes "wrong".** A standup summary produced
+  three days later is not the job the user wrote down. The window is a constant
+  (`catchup::STALE_AFTER`) rather than a setting, because #26 owns settings and
+  a knob nobody has asked for is worse than a number that can be moved.
+- **Nothing is silent.** A skipped outage still writes a fire row, so
+  `schedule/list` can say "6 runs were missed while JaBot was closed" — the
+  screen never quietly shows a green schedule that has not run since Tuesday.
+
+`skip` deliberately still runs an occurrence that is due *now*: the policy is
+about occurrences that were missed, and reading it as "never run" would make it
+a second off switch.
+
+### 2. `0001` already had a `schedules` table; this extends it rather than
+replacing it
+
+The schema sketch shipped `schedules` in the initial migration — id, bot_id,
+title, cron, prompt, enabled, last_run_at, next_run_at, last_thread_id — long
+before anything could run one. `0009` adds the one column a working cron needs
+(`catch_up`) and the `schedule_fires` table, and the store field names mirror
+the existing columns (`title`, not `name`) so a reader of `models.rs` and a
+reader of the schema are looking at the same thing. The rename to `name` on the
+wire happens once, in the view.
+
+The migration is numbered **0009**, not the free 0007. Filling a gap below a
+number that has already been applied on somebody's machine would mean that
+migration never runs for them — `migrate` skips anything `<= current`. D-015's
+`check_order` allows gaps for exactly this reason; it does not make them
+re-fillable.
+
+### 3. The cron is written here, and takes an optional seconds field
+
+No crate: it is a bitmask per field and one day-stepping search, and none of the
+crates answer the question this module exists for, which is *"what did this
+schedule owe between these two instants?"*. That needs `prev_at_or_before` as
+well as `next_after` — collapsing an outage by walking forward from the oldest
+missed occurrence costs a step per occurrence, and walking backwards from now
+costs a step per day.
+
+It is evaluated in **local time**, because "9am" has to keep meaning 9am after
+the clocks change. Two consequences are decided rather than inherited: a local
+time that does not exist (the hour spring-forward skips) is **not** an
+occurrence, and one that happens twice (autumn) fires on the **first**, so a
+1:30am job runs once on the night the clocks go back.
+
+Six fields with a leading seconds field are accepted alongside the usual five
+(the Quartz / robfig form). The UI only ever writes five. It is in for two
+reasons: sub-minute schedules are a real thing to want, and the end-to-end
+catch-up case — stop a host, wait, start it — cannot be tested at all if the
+finest granularity is a minute. `tests/e2e/schedules.test.ts` uses a
+two-second schedule to make a real quit-and-relaunch produce a real backlog.
+
+### 4. A fire never queues, and never overlaps its own last run
+
+`chief/mod.rs` delivers a handoff with `PromptMode::Queue`, so a busy bot ends
+up with both jobs. A schedule does the opposite: if the bot's standing thread
+has an open run or a queued prompt, the occurrence is **skipped** with a reason,
+not held. This is Kubernetes' `concurrencyPolicy: Forbid`, and it is the right
+default for a *timer*: a nightly job that overran would otherwise come back to N
+copies of itself, all acting on a day that has moved on. A user who wants the
+second job can press Run now.
+
+### 5. One card per fire, and a new notification to announce it
+
+A worker's standing thread is `active`, not folded, so #15's resurface path
+correctly does nothing when a scheduled run ends — there is no thread to bring
+back. The schedule therefore writes the `inbox_event` itself, titled with the
+*schedule's* name rather than the thread's.
+
+Two things follow. First, if the user has folded that thread, #15 has already
+written a card for the run, and the schedule writes none: the check is
+`inbox_events.run_id`, so one finished job is always exactly one row. The cost
+is that a folded thread's card says "Writer finished" rather than "Morning
+triage finished" — the schedule name survives in the fire row either way.
+
+Second, a new notification: **`inbox/event`**. `inbox/resurface` is a claim
+about the overlay ("a folded thread came back"), and emitting it for a thread
+that never moved would be a lie about the sidebar. `inbox/event` is the honest
+half — the Inbox changed, the thread did not.
+
+### 6. Delivery is a reconciliation against the ledger, not a callback
+
+`schedule_fires` rows are dispatched and then *watched*. Each tick asks the run
+ledger how the fire's run ended and writes the card when it is terminal —
+nothing is held in RAM between dispatch and delivery. That is what makes a fire
+survive a quit: #21's boot pass closes the run as `lost`, and the delivery pass
+turns that into a `failed` card on the next launch. A schedule whose result
+depended on the process that started it would lose exactly the runs a user most
+needs to hear about.
+
+This rides **#21's existing boot pass** rather than adding a second one:
+`reconcile_boot` ends with `reconcile_schedule_fires`. Deliberately only the
+delivery half — dispatching there would put an adapter spawn on the app's
+startup path, in front of the window opening, and the pump picks it up a tick
+later anyway.
+
+### 7. `runs.kind` was hard-coded, and now is not
+
+`lifecycle_run_started` wrote `"prompt"` for every run. It now asks
+`take_run_kind`, which returns `schedule` (plus a `trigger_json` naming the
+schedule, the fire and the occurrence) for exactly one run on exactly one
+thread — the one a dispatch has just claimed — and `prompt` for everything else.
+The ledger has accepted `kind = 'schedule'` since `0001`; this is the first
+thing to write it.
+
+The run id is captured as the run *opens*, not looked up afterwards: a fast
+agent finishes the whole turn inside `session_prompt`'s own pump, so by the time
+the call returns there is no open run to find. The same reentrancy is why
+`ScheduleState` carries a `dispatching` guard, exactly as `chief_dispatching`
+does (D-014) — a fire's own prompt pumps, and the pump ticks the cron.
+
+### What #25 did not build
+
+- **A Settings home for the cron interval and the staleness window.** Both are
+  constants (`JABOT_SCHEDULE_TICK_MS` exists only so a test does not wait out a
+  second). #26 owns settings.
+- **Native notification of a fire.** The host emits `inbox/event`; nothing
+  raises an OS notification. #27 owns that, as D-006 already recorded for
+  resurfaces.
+- **A real Inbox reading these cards.** `inbox/list` returns them and the e2e
+  asserts on them, but `App.tsx` still renders `InboxView` from `mock-host`
+  fixtures — swapping that is #22's slice, and doing it here would have been
+  rewriting someone else's view.
+- **A card for a fire that could not open a thread at all.** An `inbox_event`
+  needs a `thread_id`, so a bot with no workspace or no harness leaves the
+  failure on the `schedule_fires` row (visible in `schedule/list`) and nowhere
+  else. Inventing a thread to hang a card on would be worse.
+- **Schedules for the Code bot's folder threads.** A schedule opens the bot's
+  *standing* thread (decision #6), which Code does not use. A recurring job in a
+  repository would need `spawn_code_session`'s path and a worktree policy for
+  work nobody is watching; that is a bigger question than a timer.
+- **`approver` access.** `schedule/*` is absent from #19's allowlist, so a
+  paired phone cannot list or edit schedules. That is the default-deny working
+  as intended: the desktop stays the admin console.

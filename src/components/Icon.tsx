@@ -84,6 +84,16 @@ export function InboxIcon({ className }: IconProps) {
   );
 }
 
+/** Schedules. A clock, because the thing a schedule is about is a time. */
+export function ClockIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5.2l3.2 2" />
+    </Stroke>
+  );
+}
+
 export function FolderIcon({ className }: IconProps) {
   return (
     <Stroke className={className} width={1.8}>

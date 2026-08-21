@@ -11,6 +11,7 @@ mod models;
 mod overlay;
 mod pairing;
 mod permission;
+mod schedule;
 mod secrets;
 mod seed;
 
@@ -31,6 +32,11 @@ pub use models::*;
 /// same three words differently (#20).
 pub use permission::{
     ANSWERED as ASK_ANSWERED, CANCELLED as ASK_CANCELLED, PENDING as ASK_PENDING,
+};
+/// `schedules.catch_up` and `schedule_fires.state` (#25), so the tick, the
+/// wire and the SQL check constraints cannot spell the same words differently.
+pub use schedule::{
+    CATCH_UP_ONCE, CATCH_UP_SKIP, FIRE_DELIVERED, FIRE_DISPATCHED, FIRE_FAILED, FIRE_SKIPPED,
 };
 pub use secrets::{Secrets, SecretsBackend};
 
@@ -415,6 +421,100 @@ impl Store {
     /// Every handoff onto a thread, newest first.
     pub fn list_handoffs_to(&self, thread_id: &str) -> Result<Vec<HandoffRow>, StoreError> {
         handoff::list_handoffs_to(&self.conn, thread_id)
+    }
+
+    /// Schedules and their fires — see [`schedule`] (#25).
+    pub fn insert_schedule(&self, new: &NewSchedule) -> Result<ScheduleRow, StoreError> {
+        schedule::insert_schedule(&self.conn, new)
+    }
+
+    pub fn get_schedule(&self, id: &str) -> Result<Option<ScheduleRow>, StoreError> {
+        schedule::get_schedule(&self.conn, id)
+    }
+
+    pub fn list_schedules(&self) -> Result<Vec<ScheduleRow>, StoreError> {
+        schedule::list_schedules(&self.conn)
+    }
+
+    /// Enabled schedules whose due time has arrived — what the tick walks.
+    pub fn list_due_schedules(&self, now: &str) -> Result<Vec<ScheduleRow>, StoreError> {
+        schedule::list_due_schedules(&self.conn, now)
+    }
+
+    pub fn update_schedule(
+        &self,
+        id: &str,
+        patch: &SchedulePatch,
+    ) -> Result<ScheduleRow, StoreError> {
+        schedule::update_schedule(&self.conn, id, patch)
+    }
+
+    /// Move (or park) a schedule's claim on the clock.
+    pub fn set_schedule_due(&self, id: &str, next_run_at: Option<&str>) -> Result<(), StoreError> {
+        schedule::set_schedule_due(&self.conn, id, next_run_at)
+    }
+
+    /// Which thread the schedule's last fire landed on.
+    pub fn set_schedule_thread(&self, id: &str, thread_id: &str) -> Result<(), StoreError> {
+        schedule::set_schedule_thread(&self.conn, id, thread_id)
+    }
+
+    pub fn delete_schedule(&self, id: &str) -> Result<usize, StoreError> {
+        schedule::delete_schedule(&self.conn, id)
+    }
+
+    /// Take one occurrence exactly once — see [`schedule::claim_fire`].
+    pub fn claim_fire(
+        &self,
+        new: &NewScheduleFire,
+        next_run_at: Option<&str>,
+    ) -> Result<Option<ScheduleFireRow>, StoreError> {
+        schedule::claim_fire(&self.conn, new, next_run_at)
+    }
+
+    pub fn get_fire(&self, id: &str) -> Result<Option<ScheduleFireRow>, StoreError> {
+        schedule::get_fire(&self.conn, id)
+    }
+
+    pub fn set_fire_target(
+        &self,
+        id: &str,
+        thread_id: Option<&str>,
+        run_id: Option<&str>,
+    ) -> Result<(), StoreError> {
+        schedule::set_fire_target(&self.conn, id, thread_id, run_id)
+    }
+
+    pub fn set_fire_state(
+        &self,
+        id: &str,
+        state: &str,
+        detail: Option<&str>,
+        delivered: bool,
+    ) -> Result<(), StoreError> {
+        schedule::set_fire_state(&self.conn, id, state, detail, delivered)
+    }
+
+    /// Fires whose run has not been reported on yet.
+    pub fn list_undelivered_fires(&self) -> Result<Vec<ScheduleFireRow>, StoreError> {
+        schedule::list_undelivered_fires(&self.conn)
+    }
+
+    pub fn latest_fire(&self, schedule_id: &str) -> Result<Option<ScheduleFireRow>, StoreError> {
+        schedule::latest_fire(&self.conn, schedule_id)
+    }
+
+    pub fn list_fires(
+        &self,
+        schedule_id: &str,
+        limit: i64,
+    ) -> Result<Vec<ScheduleFireRow>, StoreError> {
+        schedule::list_fires(&self.conn, schedule_id, limit)
+    }
+
+    /// Whether a run already produced an Inbox card (#15's resurface path).
+    pub fn run_has_inbox_event(&self, run_id: &str) -> Result<bool, StoreError> {
+        schedule::run_has_inbox_event(&self.conn, run_id)
     }
 
     /// The permission broker's ledger — see [`permission`] (#20).
@@ -955,6 +1055,39 @@ pub(crate) fn map_handoff(row: &Row<'_>) -> rusqlite::Result<HandoffRow> {
         dispatched: row.get::<_, i64>(8)? != 0,
         detail: row.get(9)?,
         created_at: row.get(10)?,
+    })
+}
+
+pub(crate) fn map_schedule(row: &Row<'_>) -> rusqlite::Result<ScheduleRow> {
+    Ok(ScheduleRow {
+        id: row.get(0)?,
+        bot_id: row.get(1)?,
+        title: row.get(2)?,
+        cron: row.get(3)?,
+        prompt: row.get(4)?,
+        enabled: row.get::<_, i64>(5)? != 0,
+        catch_up: row.get(6)?,
+        last_run_at: row.get(7)?,
+        next_run_at: row.get(8)?,
+        last_thread_id: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
+pub(crate) fn map_schedule_fire(row: &Row<'_>) -> rusqlite::Result<ScheduleFireRow> {
+    Ok(ScheduleFireRow {
+        id: row.get(0)?,
+        schedule_id: row.get(1)?,
+        thread_id: row.get(2)?,
+        run_id: row.get(3)?,
+        due_at: row.get(4)?,
+        fired_at: row.get(5)?,
+        state: row.get(6)?,
+        caught_up: row.get::<_, i64>(7)? != 0,
+        skipped_count: row.get(8)?,
+        detail: row.get(9)?,
+        delivered_at: row.get(10)?,
     })
 }
 

@@ -94,6 +94,13 @@ impl HostSession {
             seen_thread = Some(run.thread_id.clone());
             self.reconcile_run(&run, latest);
         }
+        // Schedules ride this pass rather than opening a second one (#25).
+        // Every run above has just been closed as `lost`, and a schedule fire
+        // whose run is among them is exactly the one whose Inbox card nobody
+        // wrote — the host that dispatched it is gone. Deliberately only the
+        // *delivery* half: dispatching a job here would put an adapter spawn on
+        // the app's startup path, and the pump picks that up a tick later.
+        self.reconcile_schedule_fires();
     }
 
     fn reconcile_run(&mut self, run: &RunRow, latest: bool) {

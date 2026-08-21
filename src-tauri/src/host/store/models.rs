@@ -432,3 +432,91 @@ pub struct NewPairedDevice {
     pub paired_via: String,
     pub sas: String,
 }
+
+/// A recurring job (#25).
+///
+/// The columns are `0001_init.sql`'s, plus `catch_up` from `0009`. Field names
+/// mirror the columns rather than the wire — `title`, not `name` — so that a
+/// reader of this file and a reader of the schema are looking at the same
+/// thing; the rename happens once, in the view.
+///
+/// `next_run_at` is durable on purpose. The host only runs while JaBot does
+/// (decision #4), so the gap between this column and the wall clock at the next
+/// launch *is* the backlog — there is no other record of what the schedule owed
+/// while the Mac was shut.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRow {
+    pub id: String,
+    pub bot_id: String,
+    pub title: String,
+    pub cron: String,
+    pub prompt: String,
+    pub enabled: bool,
+    /// `once` or `skip` — see [`crate::host::CatchUp`].
+    pub catch_up: String,
+    pub last_run_at: Option<String>,
+    /// `None` only while a schedule is disabled and has no claim on the clock.
+    pub next_run_at: Option<String>,
+    /// The bot's standing thread, as of the last fire.
+    pub last_thread_id: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewSchedule {
+    pub bot_id: String,
+    pub title: String,
+    pub cron: String,
+    pub prompt: String,
+    pub enabled: bool,
+    pub catch_up: String,
+    pub next_run_at: Option<String>,
+}
+
+/// Every field optional: absent means "leave it", which is what lets the UI
+/// send only what the user touched.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulePatch {
+    pub title: Option<String>,
+    pub cron: Option<String>,
+    pub prompt: Option<String>,
+    pub enabled: Option<bool>,
+    pub catch_up: Option<String>,
+}
+
+/// One occurrence of a schedule, recorded before it is dispatched.
+///
+/// `due_at` is the occurrence; `fired_at` is when the host got to it. They are
+/// the same to within a tick on a machine that was awake, and hours apart on
+/// one that was not — which is the whole of what `caught_up` reports.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleFireRow {
+    pub id: String,
+    pub schedule_id: String,
+    pub thread_id: Option<String>,
+    pub run_id: Option<String>,
+    pub due_at: String,
+    pub fired_at: String,
+    pub state: String,
+    pub caught_up: bool,
+    /// Occurrences dropped in favour of this one. Non-zero only after an outage.
+    pub skipped_count: i64,
+    pub detail: Option<String>,
+    pub delivered_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewScheduleFire {
+    pub schedule_id: String,
+    pub due_at: String,
+    pub state: String,
+    pub caught_up: bool,
+    pub skipped_count: i64,
+    pub detail: Option<String>,
+}

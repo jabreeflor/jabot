@@ -22,6 +22,10 @@ use super::protocol::methods::{
     PairingStartParams, DEVICE_LIST, DEVICE_REVOKE, PAIRING_CANCEL, PAIRING_CLAIM, PAIRING_CONFIRM,
     PAIRING_START, PAIRING_STATUS,
 };
+use super::protocol::methods::{
+    ScheduleCreateParams, ScheduleRefParams, ScheduleUpdateParams, SCHEDULE_CREATE, SCHEDULE_LIST,
+    SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE,
+};
 use super::HostSession;
 
 pub fn dispatch(session: &mut HostSession, request: JsonRpcRequest) -> JsonRpcResponse {
@@ -208,6 +212,34 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             session.require_hello()?;
             let params: GithubStatusParams = parse_params_or_default(request.params.as_ref())?;
             to_value(session.github_status(params)?)
+        }
+        SCHEDULE_LIST => {
+            session.require_hello()?;
+            to_value(session.schedule_list()?)
+        }
+        SCHEDULE_CREATE => {
+            session.require_hello()?;
+            let params: ScheduleCreateParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.schedule_create(params)?)
+        }
+        SCHEDULE_UPDATE => {
+            session.require_hello()?;
+            let params: ScheduleUpdateParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.schedule_update(params)?)
+        }
+        SCHEDULE_REMOVE => {
+            session.require_hello()?;
+            let params: ScheduleRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.schedule_remove(params)?)
+        }
+        SCHEDULE_RUN => {
+            session.require_hello()?;
+            let params: ScheduleRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.schedule_run(params)?)
         }
         SYNC_RESUME_FROM => {
             session.require_hello()?;

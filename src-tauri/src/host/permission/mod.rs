@@ -195,6 +195,12 @@ impl HostSession {
         params: PermissionReplyParams,
     ) -> Result<PermissionReplyResult, RpcError> {
         let request_id = params.request_id.clone();
+        // Who answered is the host's fact, not the caller's claim (#29). The
+        // record and the `permission/resolved` broadcast are how every other
+        // client learns that the phone took this one, and a client that could
+        // write any id into that field could answer as the console it is
+        // deliberately not.
+        let device_id = self.answering_device(&params.device_id)?;
         let record = self.permission_record(&request_id);
         // Already decided: the second click, or one that raced the turn being
         // cancelled. Answered before anything is removed or sent, so a repeat
@@ -240,7 +246,7 @@ impl HostSession {
             } else {
                 ASK_ANSWERED
             },
-            &params.device_id,
+            &device_id,
             params.option_id.as_deref(),
             delivered,
         );
@@ -258,7 +264,7 @@ impl HostSession {
         self.notify_permission_resolved(
             &thread_id,
             &request_id,
-            &params.device_id,
+            &device_id,
             params.option_id.clone(),
             params.cancelled,
         );
@@ -276,6 +282,29 @@ impl HostSession {
             option_id: params.option_id,
             cancelled,
         })
+    }
+
+    /// The device this answer will be attributed to.
+    ///
+    /// A connection is bound to a device by `host/hello`, and since #29 that
+    /// binding is per connection, so the host always knows which client is
+    /// speaking. A caller that names itself correctly is fine; one that names
+    /// somebody else is refused rather than quietly corrected, because the
+    /// only reason to send a different id is to be recorded as a device you
+    /// are not.
+    fn answering_device(&self, claimed: &str) -> Result<String, RpcError> {
+        let Some(connected) = self.connected_device_id.as_deref() else {
+            // `require_hello` runs before this in the router; belt and braces
+            // for anyone calling the handler directly.
+            return Err(RpcError::HelloRequired);
+        };
+        let claimed = claimed.trim();
+        if !claimed.is_empty() && claimed != connected {
+            return Err(RpcError::InvalidParams(
+                "deviceId must be the device this connection said hello as".to_string(),
+            ));
+        }
+        Ok(connected.to_string())
     }
 
     /// Every ask still waiting on a human, oldest first — the live ones and
@@ -440,4 +469,47 @@ fn selected(option_id: &str) -> Value {
 
 fn cancelled_outcome() -> Value {
     json!({ "outcome": { "outcome": "cancelled" } })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::protocol::error::{HELLO_REQUIRED, INVALID_PARAMS};
+    use super::super::protocol::jsonrpc::{JsonRpcRequest, RequestId};
+    use super::super::protocol::HOST_HELLO;
+    use super::super::HostSession;
+
+    fn hello(session: &mut HostSession) -> String {
+        let response =
+            session.handle_request(JsonRpcRequest::new(RequestId::Number(1), HOST_HELLO, None));
+        response.result.expect("hello")["device"]["deviceId"]
+            .as_str()
+            .expect("deviceId")
+            .to_string()
+    }
+
+    /// Who answered is what `permission/resolved` broadcasts and what the
+    /// record keeps. A client that could put any id in that field could be
+    /// recorded as a device it is not — which is the whole point of a phone
+    /// being a *different* device from the Mac (#29).
+    #[test]
+    fn an_answer_is_attributed_to_the_connection_that_gave_it() {
+        let mut session = HostSession::ephemeral();
+        let device_id = hello(&mut session);
+
+        assert_eq!(session.answering_device(&device_id).unwrap(), device_id);
+        // Omitting it is fine: the host knows.
+        assert_eq!(session.answering_device("").unwrap(), device_id);
+        // Claiming to be somebody else is not.
+        let err = session
+            .answering_device("some-other-device")
+            .expect_err("a foreign device id must be refused");
+        assert_eq!(err.code(), INVALID_PARAMS);
+    }
+
+    #[test]
+    fn nobody_answers_before_saying_hello() {
+        let session = HostSession::ephemeral();
+        let err = session.answering_device("").expect_err("no hello yet");
+        assert_eq!(err.code(), HELLO_REQUIRED);
+    }
 }

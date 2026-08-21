@@ -594,7 +594,10 @@ impl HostSession {
             last_seen_at: None,
             revoked_at: None,
             local: true,
-            connected: self.connected_device_id.as_deref() == Some(local.device_id.as_str()),
+            // Not "is this the caller": with more than one client on one host
+            // (#29) the console asking this question wants to know whether the
+            // phone is up, and the phone is not the connection that asked.
+            connected: self.device_is_connected(&local.device_id),
         }];
 
         if let Some(store) = self.store.as_ref() {
@@ -603,7 +606,7 @@ impl HostSession {
                 .map_err(|e| RpcError::Internal(e.to_string()))?;
             for row in rows {
                 devices.push(PairedDeviceView {
-                    connected: self.connected_device_id.as_deref() == Some(row.device_id.as_str()),
+                    connected: self.device_is_connected(&row.device_id),
                     // A row whose role does not parse is shown as the narrow
                     // one, matching how it is enforced.
                     role: DeviceRole::parse(&row.role).unwrap_or(DeviceRole::Approver),
@@ -1192,7 +1195,7 @@ mod tests {
         assert_ne!(by_code.sas, by_qr.sas);
 
         // Typed the way a human types it.
-        let typed = format!("{}-{}", &start.code[..4].to_lowercase(), &start.code[4..]);
+        let typed = format!("{}-{}", start.code[..4].to_lowercase(), &start.code[4..]);
         let claim = session
             .pairing_claim(PairingClaimParams {
                 pairing_id: qr.pairing_id.clone(),

@@ -9,7 +9,13 @@ import { useState } from "react";
 import { BotStrip } from "./BotStrip";
 import { FolderList } from "./FolderList";
 import { initials } from "./format";
-import { InboxIcon, NewChatIcon, PullRequestIcon, SearchIcon } from "./Icon";
+import {
+  ClockIcon,
+  InboxIcon,
+  NewChatIcon,
+  PullRequestIcon,
+  SearchIcon,
+} from "./Icon";
 import type { MenuPosition } from "./ThreadContextMenu";
 import type {
   Bot,
@@ -35,6 +41,7 @@ export function Sidebar({
   onOpenCrew,
   onOpenInbox,
   onOpenPullRequests,
+  onOpenSchedules,
   onNewChat,
   onThreadMenu,
 }: {
@@ -59,6 +66,7 @@ export function Sidebar({
   onOpenCrew: () => void;
   onOpenInbox: () => void;
   onOpenPullRequests: () => void;
+  onOpenSchedules: () => void;
   /** null = ask which folder; a folder id = start there. */
   onNewChat: (folderId: string | null) => void;
   onThreadMenu: (thread: ThreadSummary, position: MenuPosition) => void;
@@ -157,6 +165,20 @@ export function Sidebar({
               {inboxCount}
             </span>
           )}
+        </button>
+
+        {/* Under the Inbox on purpose: a schedule's whole output *is* an
+            Inbox card, so the two belong next to each other. */}
+        <button
+          type="button"
+          className="nav-row"
+          aria-current={selection.view === "schedules"}
+          onClick={onOpenSchedules}
+        >
+          <span className="ic">
+            <ClockIcon />
+          </span>
+          Schedules
         </button>
 
         <FolderList

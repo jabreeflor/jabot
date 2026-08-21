@@ -45,6 +45,11 @@ pub const CREW_CREATE: &str = "crew/create";
 pub const CREW_UPDATE: &str = "crew/update";
 pub const CREW_REMOVE: &str = "crew/remove";
 pub const CREW_THREAD: &str = "crew/thread";
+pub const SCHEDULE_LIST: &str = "schedule/list";
+pub const SCHEDULE_CREATE: &str = "schedule/create";
+pub const SCHEDULE_UPDATE: &str = "schedule/update";
+pub const SCHEDULE_REMOVE: &str = "schedule/remove";
+pub const SCHEDULE_RUN: &str = "schedule/run";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
 pub const CLIENT_METHODS: &[&str] = &[
@@ -80,13 +85,27 @@ pub const CLIENT_METHODS: &[&str] = &[
     THREAD_TRANSCRIPT,
     THREAD_RESUME,
     SUPERVISOR_STATUS,
+    SCHEDULE_LIST,
+    SCHEDULE_CREATE,
+    SCHEDULE_UPDATE,
+    SCHEDULE_REMOVE,
+    SCHEDULE_RUN,
 ];
+
+/// A new Inbox card exists on a thread that did **not** resurface.
+///
+/// `inbox/resurface` says "a folded thread came back", which is a claim about
+/// the overlay. A schedule fire on an `active` standing thread produces a card
+/// and moves no thread, so announcing it as a resurface would be a lie about
+/// the sidebar. This is the honest half: the Inbox changed (#25).
+pub const INBOX_EVENT: &str = "inbox/event";
 
 pub const HOST_NOTIFICATIONS: &[&str] = &[
     SESSION_UPDATE,
     PERMISSION_ASK,
     PERMISSION_RESOLVED,
     INBOX_RESURFACE,
+    INBOX_EVENT,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,6 +169,20 @@ pub struct HelloResult {
     pub store: Option<StoreStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub store_error: Option<String>,
+    /// The subset of `methods` *this* device may call, per its role (#19's
+    /// scope, surfaced for #29).
+    ///
+    /// A phone could hard-code the approver list, and `host/pairing/scope.rs`
+    /// would still be the thing that enforces it — but then a client's idea of
+    /// what it may do and the host's could drift apart silently, and the
+    /// symptom would be a button that exists and always fails. The host
+    /// already knows the answer; saying it is cheaper than a second copy.
+    ///
+    /// `default` because a host older than this field is not lying, it simply
+    /// has nothing to say; a client that gets an empty list falls back to
+    /// `methods`.
+    #[serde(default)]
+    pub scoped_methods: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -918,6 +951,169 @@ pub struct InboxResurfaceParams {
     pub thread_id: String,
     pub seq: u64,
     pub reason: ResurfaceReason,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxEventParams {
+    pub host_id: String,
+    pub thread_id: String,
+    pub seq: u64,
+    /// `inbox_events.kind` — `done`, `failed`, and the rest of the closed list.
+    pub kind: String,
+    pub title: String,
+    pub summary: String,
+}
+
+// ---- Schedules (#25) --------------------------------------------------
+//
+// A schedule belongs to a bot and runs on that bot's standing thread. The
+// cron string is evaluated in the Mac's *local* time; every timestamp on the
+// wire is UTC, like every other timestamp this host emits.
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleCreateParams {
+    pub bot_id: String,
+    pub name: String,
+    /// 5-field cron, 6 with a leading seconds field, or an `@daily` shorthand.
+    pub cron: String,
+    /// What the bot is asked to do. Sent as an ordinary prompt on its thread.
+    pub prompt: String,
+    /// Defaults to on: a schedule nobody enabled is a schedule nobody wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// `once` (default) or `skip` — what happens to occurrences missed while
+    /// JaBot was closed. Nothing replays a backlog; see `host/schedule`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catch_up: Option<String>,
+}
+
+impl ScheduleCreateParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.bot_id, "botId")?;
+        require_non_empty(&self.name, "name")?;
+        require_non_empty(&self.cron, "cron")?;
+        require_non_empty(&self.prompt, "prompt")?;
+        Ok(())
+    }
+}
+
+/// Every field but the id optional: absent means "leave it", so the editor can
+/// send only what the user touched and a toggle is not a full rewrite.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleUpdateParams {
+    pub schedule_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catch_up: Option<String>,
+}
+
+impl ScheduleUpdateParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.schedule_id, "scheduleId")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRefParams {
+    pub schedule_id: String,
+}
+
+impl ScheduleRefParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.schedule_id, "scheduleId")
+    }
+}
+
+/// One occurrence of a schedule, as the UI reads it.
+///
+/// `dueAt` and `firedAt` are separate on purpose: they are the same to within a
+/// tick on a machine that was awake and hours apart on one that was not, and
+/// the difference is the only place the catch-up decision is visible.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleFireView {
+    pub fire_id: String,
+    pub schedule_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+    pub due_at: String,
+    pub fired_at: String,
+    /// `dispatched`, `skipped`, `failed` or `delivered`.
+    pub state: String,
+    /// The occurrence was already in the past when the host ruled on it.
+    pub caught_up: bool,
+    /// Occurrences dropped in favour of (or alongside) this one.
+    pub skipped_count: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivered_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleView {
+    pub schedule_id: String,
+    pub bot_id: String,
+    /// Resolved for display. The bot always exists — removing it removes the
+    /// schedule — so this is never a dangling name.
+    pub bot_name: String,
+    pub name: String,
+    pub cron: String,
+    pub prompt: String,
+    pub enabled: bool,
+    pub catch_up: String,
+    /// `None` for a disabled schedule: it owes nothing, and a stale due time
+    /// would make re-enabling it look like an outage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_run_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_run_at: Option<String>,
+    /// The bot's standing thread, once a fire has opened one. `None` for a
+    /// schedule that has never run: #24 derives the id, but a thread that does
+    /// not exist yet is not one the UI can open.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    /// The most recent occurrence, so the list can say what happened without a
+    /// second round trip.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_fire: Option<ScheduleFireView>,
+    pub recent_fires: Vec<ScheduleFireView>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleListResult {
+    pub schedules: Vec<ScheduleView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRemoveResult {
+    pub schedule_id: String,
+    pub removed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleRunResult {
+    pub schedule_id: String,
+    pub fire: ScheduleFireView,
 }
 
 /// Which tier of the catalog a card came from (#13). The UI shows all three

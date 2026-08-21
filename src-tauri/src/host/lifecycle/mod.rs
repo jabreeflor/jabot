@@ -372,6 +372,11 @@ impl HostSession {
 
     /// A prompt was accepted: open a run and stamp the session receipt.
     pub(crate) fn lifecycle_run_started(&mut self, thread_id: &str, acp_session_id: &str) {
+        // Who asked for this turn. `prompt` unless a schedule fire claimed the
+        // thread a moment ago (#25) — the ledger has accepted `schedule` since
+        // 0001 and this is what finally writes it. Taken before the store
+        // borrow below, and taken exactly once: the label belongs to this run.
+        let (run_kind, trigger_json) = self.take_run_kind(thread_id);
         {
             let entry = self.lifecycle.entry(thread_id);
             entry.connected = true;
@@ -397,7 +402,7 @@ impl HostSession {
                 );
             }
         }
-        let run = match store.insert_run(thread_id, "prompt", None) {
+        let run = match store.insert_run(thread_id, run_kind, trigger_json.as_deref()) {
             Ok(run) => run,
             Err(err) => {
                 eprintln!("failed to open a run for {thread_id}: {err}");
@@ -406,6 +411,10 @@ impl HostSession {
         };
         let _ = store.set_run_acp_session(&run.id, acp_session_id);
         let _ = store.set_run_state(&run.id, RunState::Running.as_str(), None);
+        // A schedule fire has to be able to name the run it produced, and it
+        // cannot look one up afterwards: a fast agent finishes the turn inside
+        // `session_prompt`'s own pump (#25).
+        self.note_scheduled_run(run_kind, &run.id);
         let fingerprint = self.fingerprint_for(&thread);
         if let Err(err) = self.store_or_err().and_then(|store| {
             store
