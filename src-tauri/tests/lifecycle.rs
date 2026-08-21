@@ -175,6 +175,11 @@ impl Host {
 
     fn sql(&self, statement: &str) {
         let conn = rusqlite::Connection::open(self.dir.path().join("jabot.sqlite")).unwrap();
+        // The host holds its own connection to this file. WAL lets both write,
+        // but a fresh connection defaults to giving up immediately on a busy
+        // lock, and a test that fails on a loaded machine is a test people
+        // learn to re-run.
+        conn.busy_timeout(Duration::from_secs(5)).unwrap();
         conn.execute_batch(statement).unwrap();
     }
 }
