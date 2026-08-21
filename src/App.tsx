@@ -49,7 +49,6 @@ import type {
 import { Onboarding } from "./onboarding/Onboarding";
 import {
   loadOnboarding,
-  resetOnboarding,
   saveOnboarding,
   type OnboardingProfile,
 } from "./onboarding/state";
@@ -110,16 +109,23 @@ function App() {
   const [profile, setProfile] = useState<OnboardingProfile | null>(
     loadOnboarding,
   );
+  // The record a re-run is editing. The gate is `if (!profile)` on state, so
+  // storage is never wiped while the takeover is open: `onFinish` overwrites
+  // it, quitting mid-re-run keeps it, and the seeded draft means Escape or
+  // Skip re-persists the name that was already there rather than "You".
+  const [editing, setEditing] = useState<OnboardingProfile | null>(null);
 
   if (!profile) {
     return (
       <Onboarding
         harnesses={HARNESSES}
+        profile={editing ?? undefined}
         hostLine={hostLine(host.hello, host.hostError, host.connecting)}
         hostOffline={host.hostError !== null}
         onFinish={(next) => {
           saveOnboarding(next);
           setProfile(next);
+          setEditing(null);
         }}
       />
     );
@@ -129,7 +135,7 @@ function App() {
       profile={profile}
       host={host}
       onRunSetup={() => {
-        resetOnboarding();
+        setEditing(profile);
         setProfile(null);
       }}
     />

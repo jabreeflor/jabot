@@ -31,6 +31,12 @@ describe("makeProfile", () => {
     expect(makeProfile({ userName: "Ada", harnessId: "", skipped: false }).harnessId).toBeNull();
     expect(makeProfile({ userName: "Ada", harnessId: "codex", skipped: false }).harnessId).toBe("codex");
   });
+
+  it("carries a newer version forward and floors the rest at 1", () => {
+    expect(makeProfile({ userName: "Ada", harnessId: null, skipped: false, version: 2 }).version).toBe(2);
+    expect(makeProfile({ userName: "Ada", harnessId: null, skipped: false }).version).toBe(1);
+    expect(makeProfile({ userName: "Ada", harnessId: null, skipped: false, version: 0 }).version).toBe(1);
+  });
 });
 
 describe("loadOnboarding", () => {
@@ -41,6 +47,23 @@ describe("loadOnboarding", () => {
     expect(loaded?.userName).toBe("Ada Lovelace");
     expect(loaded?.harnessId).toBe("codex");
     expect(loaded?.skipped).toBe(false);
+  });
+
+  it("round-trips skipped provenance", () => {
+    saveOnboarding(makeProfile({ userName: "", harnessId: null, skipped: true }));
+    expect(loadOnboarding()?.skipped).toBe(true);
+  });
+
+  it("reads the record from the pinned on-disk key", () => {
+    // Changing this key is a data migration, not a refactor: every existing
+    // install re-enters first-run setup and orphans its record.
+    window.localStorage.clear();
+    expect(ONBOARDING_KEY).toBe("jabot.onboarding.v1");
+    window.localStorage.setItem(
+      "jabot.onboarding.v1",
+      '{"version":1,"userName":"Ada","harnessId":null,"skipped":false,"completedAt":""}',
+    );
+    expect(loadOnboarding()?.userName).toBe("Ada");
   });
 
   it("treats a readable-but-empty store as a first run", () => {

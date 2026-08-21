@@ -38,14 +38,18 @@ export function makeProfile({
   userName,
   harnessId,
   skipped,
+  version,
 }: {
   userName: string;
   harnessId: string | null;
   skipped: boolean;
+  /** Carried from the record a re-run is editing, so a write never downgrades
+      a newer install's version. Absent means a fresh first run. */
+  version?: number;
 }): OnboardingProfile {
   const name = userName.trim();
   return {
-    version: 1,
+    version: Math.max(1, version ?? 1),
     userName: name === "" ? DEFAULT_USER_NAME : name,
     harnessId: harnessId ? harnessId : null,
     skipped,
@@ -123,6 +127,7 @@ export function saveOnboarding(profile: OnboardingProfile): void {
     userName: profile.userName,
     harnessId: profile.harnessId,
     skipped: profile.skipped,
+    version: profile.version,
   });
   try {
     window.localStorage.setItem(ONBOARDING_KEY, JSON.stringify(record));

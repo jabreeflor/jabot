@@ -29,29 +29,40 @@ import {
 
 export function Onboarding({
   harnesses,
+  profile,
   hostLine,
   hostOffline,
   onFinish,
 }: {
   harnesses: readonly HarnessCard[];
+  /** The record a re-run is editing, absent on a genuine first run. Seeds the
+      draft so "Run setup again" can *change* a name rather than only replace
+      it — and so Escape or Skip re-persists what was already there. */
+  profile?: OnboardingProfile;
   /** The hoisted handshake, made visible: which host, or why there isn't one. */
   hostLine: string;
   hostOffline: boolean;
   onFinish: (profile: OnboardingProfile) => void;
 }) {
   const [step, setStep] = useState(0);
-  const [name, setName] = useState("");
-  // Initialised to the first card so Continue is never blocked and Skip never
-  // produces a nonsense default.
+  // The fallback name is not a name anyone typed, so it seeds as an empty
+  // field (the placeholder says what blank means) rather than as literal text.
+  const [name, setName] = useState(
+    profile && profile.userName !== DEFAULT_USER_NAME ? profile.userName : "",
+  );
+  // Initialised to the record being edited, else the first card — so Continue
+  // is never blocked and Skip never produces a nonsense default.
   const [harnessId, setHarnessId] = useState<string | null>(
-    harnesses[0]?.id ?? null,
+    profile?.harnessId ?? harnesses[0]?.id ?? null,
   );
   const nameId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   function finish(skipped: boolean) {
-    onFinish(makeProfile({ userName: name, harnessId, skipped }));
+    onFinish(
+      makeProfile({ userName: name, harnessId, skipped, version: profile?.version }),
+    );
   }
 
   // Escape leaves setup the way Skip does — swallowing a platform key in a
@@ -80,7 +91,8 @@ export function Onboarding({
     <div className="setup">
       <div className="titlebar-drag" data-tauri-drag-region />
 
-      <div className="setup-stage">
+      {/* The one landmark on the first screen a user ever sees. */}
+      <main className="setup-stage">
         {step === 0 && (
           // A form, so Enter continues. The card is keyed by step so the
           // entry rise replays on advance.
@@ -109,7 +121,7 @@ export function Onboarding({
               className="mfield"
               type="text"
               value={name}
-              placeholder="Your name"
+              placeholder='Defaults to "You"'
               onChange={(event) => setName(event.target.value)}
             />
             <div className="setup-preview">
@@ -213,7 +225,7 @@ export function Onboarding({
             </div>
           </div>
         )}
-      </div>
+      </main>
 
       <div className={hostOffline ? "setup-host bad" : "setup-host"}>
         {hostLine}

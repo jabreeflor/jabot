@@ -110,6 +110,10 @@ describe("Onboarding", () => {
     await renderFirstRun();
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
+    // The first card is pre-selected before any click.
+    expect(
+      screen.getByRole("button", { name: /Claude Code/ }),
+    ).toHaveAttribute("aria-pressed", "true");
     await user.click(screen.getByRole("button", { name: /Codex/ }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Enter JaBot" }));
@@ -221,7 +225,7 @@ describe("Onboarding", () => {
     ).toHaveFocus();
   });
 
-  it("re-enters setup from Crew's Run setup again", async () => {
+  it("re-enters setup from Crew with the record intact and the draft seeded", async () => {
     const user = userEvent.setup();
     await renderFirstRun();
     await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
@@ -233,5 +237,65 @@ describe("Onboarding", () => {
     expect(
       screen.getByRole("heading", { name: /What should the crew call you/ }),
     ).toBeInTheDocument();
+    // The wipe is deferred until finish: quitting the app mid-re-run must not
+    // make the next launch a first run.
+    expect(window.localStorage.getItem(ONBOARDING_KEY)).not.toBeNull();
+    // And the draft starts from the record being edited — a re-run can
+    // *change* a name, not only replace it.
+    expect(screen.getByLabelText("YOUR NAME")).toHaveValue("Ada");
+  });
+
+  it("aborting a re-run keeps the stored name instead of resetting it", async () => {
+    const user = userEvent.setup();
+    await renderFirstRun();
+    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await walkToShell(user);
+
+    await user.click(screen.getByRole("button", { name: /Crew/ }));
+    await user.click(screen.getByRole("button", { name: "Run setup again" }));
+    await user.keyboard("{Escape}");
+
+    expect(screen.getByRole("button", { name: /^Inbox —/ })).toBeInTheDocument();
+    expect(screen.getByText("Ada")).toBeInTheDocument();
+    const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_KEY)!);
+    expect(stored.userName).toBe("Ada");
+  });
+
+  it("keeps a newer record's version across a re-run", async () => {
+    window.localStorage.setItem(
+      ONBOARDING_KEY,
+      '{"version":2,"userName":"Grace Hopper"}',
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole("button", { name: /^Inbox —/ });
+
+    await user.click(screen.getByRole("button", { name: /Crew/ }));
+    await user.click(screen.getByRole("button", { name: "Run setup again" }));
+    await user.keyboard("{Escape}");
+
+    // The re-run write carries the stored version instead of stamping 1 —
+    // an older build must never downgrade a newer install's record.
+    const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_KEY)!);
+    expect(stored.version).toBe(2);
+    expect(stored.userName).toBe("Grace Hopper");
+  });
+
+  it("does not run setup twice after Skip", async () => {
+    const user = userEvent.setup();
+    await renderFirstRun();
+    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.click(screen.getByRole("button", { name: "Skip setup" }));
+    cleanup();
+
+    // Skip must write the record too, or the takeover replays every launch.
+    render(<App />);
+    expect(
+      screen.queryByRole("heading", { name: /What should the crew call you/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /^Inbox —/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Ada")).toBeInTheDocument();
   });
 });
