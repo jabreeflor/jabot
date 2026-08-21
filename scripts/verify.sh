@@ -20,6 +20,7 @@
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors
+#   6b. cargo check   — the crate compiles WITHOUT dev-bins, i.e. what tauri build sees
 #   7. cargo test     — Rust host unit + integration tests
 #   8. build hostd    — the NDJSON stdio host the e2e suite drives
 #   9. vitest e2e     — TypeScript client against the real Rust host
@@ -45,9 +46,12 @@ MANIFEST=(--manifest-path src-tauri/Cargo.toml)
 # has the reason). Anything here that compiles, lints, or runs them has to ask.
 DEV_BINS=(--features dev-bins)
 # CI's cache hides a stale Cargo.lock; --locked makes a stale one a failure
-# here instead of a surprise later. It never reaches the network: if the lock
-# already satisfies the manifest nothing is resolved, and if it does not,
-# cargo refuses immediately rather than updating.
+# here instead of a surprise later. On the passing path it costs nothing and
+# touches nothing: the lock already satisfies the manifest, so there is no
+# resolution to do. On the failing path cargo says "cannot update the lock
+# file ... because --locked was passed" and stops; a manifest edit that also
+# needs a new *version* can send it to the index first, which is no more
+# network than the build it is replacing would have used.
 LOCKED=(--locked)
 FAILED=()
 WARNINGS=()
@@ -437,6 +441,13 @@ run "typecheck"      npx tsc --noEmit
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
 run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings
+# Everything else in this script compiles the crate with `dev-bins` on. That is
+# not the configuration `tauri build` compiles, and a cfg mistake between the
+# two is invisible until the macOS job runs — which is now only on main. This
+# is the one stage that compiles what actually ships. `check`, not `build`:
+# type and cfg errors are the class this is for, and codegen would double the
+# run. Costs ~1s when the Rust sources have not moved, ~20s when they have.
+run "default-features check" cargo check "${MANIFEST[@]}" "${LOCKED[@]}"
 run "rust tests"     cargo test "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}"
 
 if [[ $FAST -eq 0 ]]; then
