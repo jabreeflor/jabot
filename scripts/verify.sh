@@ -266,15 +266,58 @@ lockfiles() {
 #     included; it is merged in at release time with --config (D-005).
 #   - a missing icon or an unparseable entitlements.plist fails at package or
 #     codesign time, i.e. on macOS, i.e. now only on main.
-#   - an undeclared src/bin/*.rs is auto-discovered by cargo, copied into
+#   - an ungated extra binary is auto-discovered by cargo, copied into
 #     JaBot.app by the bundler, and kills the universal build after both full
 #     compiles have finished (src-tauri/Cargo.toml explains it at length).
+#     Cargo auto-discovers BOTH `src/bin/<name>.rs` and `src/bin/<name>/main.rs`,
+#     so the binary list is taken from cargo rather than read out of Cargo.toml.
 #   - default-run missing => "failed to find main binary".
 # ---------------------------------------------------------------------------
+binary_set() {
+  # `tauri build` copies EVERY binary cargo reports into the app bundle, and for
+  # --target universal-apple-darwin it lipos only the main one into the universal
+  # output directory — so a stray binary fails the copy on a path that was never
+  # written, AFTER both full compiles. That is why jabot-hostd and fake-acp-agent
+  # are behind `dev-bins` (see src-tauri/Cargo.toml).
+  #
+  # Cargo auto-discovers src/bin/*.rs and src/bin/<name>/main.rs. A scratch file
+  # left there is a fourth binary that `cargo check` compiles happily and every
+  # other gate ignores, so it reaches main and breaks the release build there.
+  # This pins the set instead.
+  local expected="fake-acp-agent jabot jabot-hostd"
+  local actual
+  actual=$(cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1 2>/dev/null \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
+        const p=JSON.parse(s).packages[0];
+        console.log(p.targets.filter(t=>t.kind.includes("bin")).map(t=>t.name).sort().join(" "));
+      })')
+  if [ "$actual" != "$expected" ]; then
+    printf '  the crate\x27s binaries are [%s]\n' "$actual"
+    printf '  expected [%s]\n' "$expected"
+    printf '  A stray binary breaks `tauri build` on main, after both compiles.\n'
+    printf '  Delete it, or declare it in Cargo.toml with required-features = ["dev-bins"].\n'
+    return 1
+  fi
+}
+
 bundle_config() {
   local ok=0
 
-  node - <<'NODE' || ok=1
+  # The binary list the bundler will see, straight from the resolver that
+  # produces it. --no-deps means no dependency resolution, so this is ~0.03s
+  # and provably offline; the lockfile gate above is what checks Cargo.lock.
+  local meta err
+  meta=/tmp/jabot-cargo-meta.$$
+  err=/tmp/jabot-cargo-meta-err.$$
+  if ! cargo metadata "${MANIFEST[@]}" --no-deps --offline --format-version 1 >"$meta" 2>"$err"; then
+    printf '  cargo metadata failed — src-tauri/Cargo.toml does not parse:\n'
+    sed 's/^/    /' "$err" | head -10
+    rm -f "$meta" "$err"
+    return 1
+  fi
+  rm -f "$err"
+
+  JABOT_CARGO_META="$meta" node - <<'NODE' || ok=1
 const fs = require('fs');
 const path = require('path');
 
@@ -354,42 +397,40 @@ for (const k of ['productName', 'identifier']) {
 }
 
 // ---- src-tauri/Cargo.toml -------------------------------------------------
+// Asked of cargo, not of a regex over Cargo.toml. Cargo auto-discovers
+// binaries it was never told about — `src/bin/<name>.rs`, `src/bin/<name>/main.rs`,
+// and whatever forms it learns next — and an undeclared one has no [[bin]]
+// section to match. What `cargo metadata` reports is exactly the target list
+// `tauri build` hands the bundler, so it is the thing worth checking.
 const C = 'src-tauri/Cargo.toml';
-const cargo = fs.readFileSync(C, 'utf8');
-
-if (!/^\s*default-run\s*=\s*"jabot"\s*$/m.test(cargo)) {
-  bad(`${C}: default-run = "jabot" is missing — \`tauri build\` fails with "failed to find main binary"`);
+const meta = JSON.parse(fs.readFileSync(process.env.JABOT_CARGO_META, 'utf8'));
+const pkgMeta = meta.packages.find((p) => p.name === 'jabot');
+if (!pkgMeta) {
+  console.log(`  ${C}: cargo metadata reports no package named "jabot"`);
+  process.exit(1);
 }
 
-// Every explicitly declared binary must be gated, and every file cargo would
-// auto-discover must be one of those declarations.
-const sections = cargo.split(/^\s*\[\[bin\]\]\s*$/m).slice(1);
-const declared = new Map();
-for (const sec of sections) {
-  const body = sec.split(/^\s*\[/m)[0];
-  const name = (/^\s*name\s*=\s*"([^"]+)"/m.exec(body) || [])[1];
-  const bin = (/^\s*path\s*=\s*"([^"]+)"/m.exec(body) || [])[1];
-  const feats = (/^\s*required-features\s*=\s*\[([^\]]*)\]/m.exec(body) || [])[1] || '';
-  if (!name) { bad(`${C}: a [[bin]] section has no name`); continue; }
-  if (!/"dev-bins"/.test(feats)) {
-    bad(`${C}: [[bin]] ${name} is not gated behind required-features = ["dev-bins"] — `
-      + 'the bundler copies every binary cargo reports into JaBot.app and the universal build then dies');
-  }
-  if (bin) declared.set(path.normalize(bin), name);
+if (pkgMeta.default_run !== 'jabot') {
+  bad(`${C}: default-run must be "jabot" (cargo reports ${JSON.stringify(pkgMeta.default_run)}) — `
+    + '`tauri build` fails with "failed to find main binary"');
+}
+
+// Exactly one binary may reach a plain build: the app. Every other bin target,
+// declared or auto-discovered, has to be invisible without the dev-bins feature.
+const bins = pkgMeta.targets.filter((t) => (t.kind || []).includes('bin'));
+const rel = (t) => path.relative(process.cwd(), t.src_path);
+const gated = [];
+for (const t of bins) {
+  if (t.name === 'jabot') continue;
+  if ((t['required-features'] || []).includes('dev-bins')) { gated.push(t.name); continue; }
+  bad(`${C}: bin target ${t.name} (${rel(t)}) is not gated behind required-features = ["dev-bins"] — `
+    + 'cargo reports it to tauri-bundler, which copies every binary into JaBot.app, and the universal build then dies');
+}
+if (!bins.some((t) => t.name === 'jabot')) {
+  bad(`${C}: no bin target named "jabot" — that is the app itself`);
 }
 for (const want of ['jabot-hostd', 'fake-acp-agent']) {
-  if (![...declared.values()].includes(want)) bad(`${C}: [[bin]] ${want} is gone; scripts/verify.sh builds it`);
-}
-const binDir = 'src-tauri/src/bin';
-if (fs.existsSync(binDir)) {
-  for (const f of fs.readdirSync(binDir)) {
-    if (!f.endsWith('.rs')) continue;
-    const rel = path.normalize(`src/bin/${f}`);
-    if (!declared.has(rel)) {
-      bad(`${binDir}/${f} is not declared as a gated [[bin]] in ${C} — cargo auto-discovers it, `
-        + 'so `tauri build` would copy it into the app and fail the universal lipo');
-    }
-  }
+  if (!bins.some((t) => t.name === want)) bad(`${C}: bin target ${want} is gone; scripts/verify.sh builds it`);
 }
 
 if (errs.length) {
@@ -397,8 +438,9 @@ if (errs.length) {
   process.exit(1);
 }
 console.log(`  ${T}: targets=${JSON.stringify(targets)}, ${icons.length} icons present, entitlements ${mac.entitlements}`);
-console.log(`  ${C}: default-run set, ${sections.length} dev-bins-gated [[bin]] target(s)`);
+console.log(`  ${C}: default-run=jabot, ${gated.length} dev-bins-gated bin target(s): ${gated.sort().join(', ')}`);
 NODE
+  rm -f "$meta"
 
   # A plist that does not parse fails at codesign time, which is macOS, which
   # is now only main. Prefer the real parsers; every one of these ships with
@@ -474,6 +516,7 @@ TREE_AT_START=$(jabot_tree_hash 2>/dev/null || printf '')
 run "toolchain"      toolchain
 run "lockfiles"      lockfiles
 run "bundle-config"  bundle_config
+run "binary set"     binary_set
 run "commit guards"  guards
 run "typecheck"      npx tsc --noEmit
 run "unit tests"     npx vitest run --project unit
