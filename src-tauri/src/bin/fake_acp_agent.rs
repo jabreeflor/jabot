@@ -181,6 +181,44 @@ fn main() {
                     }),
                 );
                 match mode.as_str() {
+                    // A shell call whose stdout is whatever the user typed.
+                    // `gh pr create` prints the new PR's URL and nothing else,
+                    // so a test can hand this agent that one line and exercise
+                    // the real linkage path end to end (#28).
+                    "execute" => {
+                        let said = prompt_text(&msg["params"]["prompt"]);
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "tool_call",
+                                "toolCallId": "call-shell",
+                                "title": "gh pr create --fill",
+                                "kind": "execute",
+                                "status": "in_progress"
+                            }),
+                        );
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "tool_call_update",
+                                "toolCallId": "call-shell",
+                                "status": "completed",
+                                "content": [{
+                                    "type": "content",
+                                    "content": { "type": "text", "text": said }
+                                }]
+                            }),
+                        );
+                        reply(
+                            &mut stdout,
+                            id,
+                            serde_json::json!({ "stopReason": "end_turn" }),
+                        );
+                    }
                     // Die with the pipe still open: the grandchild inherits
                     // stdout, so the host's reader never sees EOF and only a
                     // waitpid can notice the adapter is a corpse.
@@ -394,6 +432,27 @@ fn main() {
                 }
             }
         }
+    }
+}
+
+/// The text blocks of an ACP prompt, joined. The `execute` mode echoes them as
+/// shell output, so a test can decide exactly what the agent "printed".
+fn prompt_text(prompt: &serde_json::Value) -> String {
+    match prompt {
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|block| {
+                block.as_str().map(str::to_string).or_else(|| {
+                    block
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(str::to_string)
+                })
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        other => other.to_string(),
     }
 }
 

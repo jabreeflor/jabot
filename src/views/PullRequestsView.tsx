@@ -14,6 +14,7 @@ import { PullRequestIcon, PullRequestMergedIcon } from "../components/Icon";
 import { formatWhen } from "../components/format";
 import { prTag } from "../components/status";
 import { Tabs, tabButtonId, type TabSpec } from "../components/Tabs";
+import type { PrUnavailable } from "../host";
 import type { PullRequest } from "../components/types";
 
 type PrTab = "open" | "merged" | "drafts";
@@ -21,11 +22,20 @@ type PrTab = "open" | "merged" | "drafts";
 export function PullRequestsView({
   pullRequests,
   now,
+  unavailable,
+  error,
+  onRefresh,
   onOpenThread,
   onAction,
 }: {
   pullRequests: readonly PullRequest[];
   now?: Date;
+  /** Why the last poll did not reach GitHub, if it did not (#28). Drawn as a
+      strip rather than as an empty board: the rows are linkage, which needs no
+      credential, and they are still true when GitHub is unreachable. */
+  unavailable?: PrUnavailable | null;
+  error?: string | null;
+  onRefresh?: () => void;
   onOpenThread: (threadId: string) => void;
   onAction?: (prId: string, actionId: string) => void;
 }) {
@@ -71,6 +81,23 @@ export function PullRequestsView({
             <h1>Pull Requests</h1>
             <p>Opened by your coding sessions — review, merge, or send back</p>
           </div>
+
+          {(unavailable || error) && (
+            <div className="page-notice" role="status">
+              <span>
+                {unavailable
+                  ? `${unavailable.detail}${
+                      unavailable.remedy ? ` Try: ${unavailable.remedy}` : ""
+                    }`
+                  : error}
+              </span>
+              {onRefresh && (
+                <button type="button" className="btn" onClick={onRefresh}>
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
 
           <Tabs
             label="Pull request filter"

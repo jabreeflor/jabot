@@ -52,6 +52,10 @@ export const SCHEDULE_CREATE = "schedule/create";
 export const SCHEDULE_UPDATE = "schedule/update";
 export const SCHEDULE_REMOVE = "schedule/remove";
 export const SCHEDULE_RUN = "schedule/run";
+/** The Pull Requests view (#28). `pr/list` is a store read and never touches
+    the network; `pr/refresh` is the poll. */
+export const PR_LIST = "pr/list";
+export const PR_REFRESH = "pr/refresh";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 /** A new Inbox card on a thread that did *not* resurface — a schedule firing
     on an active standing thread moves nothing in the sidebar (#25). */
@@ -502,6 +506,9 @@ export interface ThreadStateResult {
   /** The most recent handoff onto this thread (#24). Absent for every thread
       the human started themselves, which is most of them. */
   handoff?: HandoffView;
+  /** The pull requests this thread opened (#28). Absent when it opened none,
+      which is every thread that is not a code thread and most that are. */
+  pullRequests?: PullRequestView[];
   unread: number;
 }
 
@@ -1354,4 +1361,100 @@ export interface DeviceRevokeResult {
   /** `false` when it was already revoked — the caller's intent still holds. */
   revoked: boolean;
   revokedAt?: string;
+}
+
+// ---- Pull Requests (#28) ----------------------------------------------
+//
+// Every row is a `thread_prs` row: a pull request one of this Mac's sessions
+// opened. `threadId` is required and always present, because that is how a PR
+// gets into the table — a coworker's pull request is deliberately never here.
+//
+// Two methods, and the split is the point. `pr/list` reads the store and is
+// instant; `pr/refresh` shells out to `gh` and is a network round trip. Poll
+// the second and open on the first, so a refresh that cannot happen costs
+// freshness and never the board.
+
+export interface PrListParams {
+  /** Narrow to one thread's PRs. Omit for the whole board. */
+  threadId?: string;
+}
+
+export interface PrRefreshParams {
+  threadId?: string;
+}
+
+/** `thread_prs.status`. */
+export type PrWireStatus = "open" | "draft" | "merged" | "closed";
+
+/** The three words a checks rollup collapses to. `null` on the wire means no
+    checks are configured, which is not the same as checks that have not
+    started — a PR with none is not "passing". */
+export type PrCheckStateWire = "passing" | "running" | "failing";
+
+/** GitHub's `reviewDecision`, lowercased. */
+export type PrReviewState = "approved" | "changes_requested" | "review_required";
+
+export interface PrCheckView {
+  label: string;
+  state: PrCheckStateWire;
+}
+
+/** A pull request as the host knows it. Facts only: the row's copy — "from
+    folded session", "2 of 3 checks done" — is composed in the renderer from
+    these fields, because it is presentation. */
+export interface PullRequestView {
+  id: string;
+  threadId: string;
+  /** So a row can name the session that opened it without a second lookup. */
+  threadTitle: string;
+  threadState: ThreadOverlayState;
+  provider: string;
+  forgeHost?: string;
+  /** `owner/name`. */
+  repo: string;
+  number: number;
+  url: string;
+  title: string;
+  status: PrWireStatus;
+  checkState?: PrCheckStateWire;
+  reviewState?: PrReviewState;
+  headRef?: string;
+  baseRef?: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  checks: PrCheckView[];
+  /** When GitHub last saw the PR change, falling back to when we linked it.
+      Never when the host last wrote the row — a poll that found nothing new
+      must not make the card read "just now". */
+  updatedAt: string;
+  /** `stdout` | `gh-pr-view` | `head-list` — how the link was established. */
+  detectedVia?: string;
+  /** Last successful refresh. Absent means "linked, never polled", which is
+      every row on a machine with no `gh` login. */
+  polledAt?: string;
+}
+
+/** Why a refresh did not reach GitHub. Not an error frame: a client polling
+    every fifteen seconds must be able to draw its board anyway. */
+export interface PrUnavailable {
+  host: string;
+  reason: "gh_missing" | "gh_failed" | "gh_timeout" | "gh_unparseable";
+  detail: string;
+  remedy?: string;
+}
+
+export interface PrListResult {
+  pullRequests: PullRequestView[];
+}
+
+export interface PrRefreshResult {
+  /** The board after the refresh, so a client never needs a second call. */
+  pullRequests: PullRequestView[];
+  checked: number;
+  updated: number;
+  /** Inbox cards written. Zero is the common answer and the healthy one. */
+  cards: number;
+  /** One entry per forge host that could not be reached. */
+  unavailable: PrUnavailable[];
 }

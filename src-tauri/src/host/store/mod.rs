@@ -11,6 +11,7 @@ mod models;
 mod overlay;
 mod pairing;
 mod permission;
+mod pr;
 mod schedule;
 mod secrets;
 mod seed;
@@ -32,6 +33,12 @@ pub use models::*;
 /// same three words differently (#20).
 pub use permission::{
     ANSWERED as ASK_ANSWERED, CANCELLED as ASK_CANCELLED, PENDING as ASK_PENDING,
+};
+/// `thread_prs.status`, `.check_state` and `.detected_via` (#28), so the poll,
+/// the wire and the SQL cannot spell the same words differently.
+pub use pr::{
+    CHECKS_FAILING, CHECKS_PASSING, CHECKS_RUNNING, STATUS_CLOSED, STATUS_DRAFT, STATUS_MERGED,
+    STATUS_OPEN, VIA_GH_PR_VIEW, VIA_HEAD_LIST, VIA_STDOUT,
 };
 /// `schedules.catch_up` and `schedule_fires.state` (#25), so the tick, the
 /// wire and the SQL check constraints cannot spell the same words differently.
@@ -421,6 +428,42 @@ impl Store {
     /// Every handoff onto a thread, newest first.
     pub fn list_handoffs_to(&self, thread_id: &str) -> Result<Vec<HandoffRow>, StoreError> {
         handoff::list_handoffs_to(&self.conn, thread_id)
+    }
+
+    /// Thread ↔ PR linkage and the poll's cache — see [`pr`] (#28).
+    ///
+    /// `link_pr` also reports whether the row is new, because a first sighting
+    /// is worth an Inbox card and the fourth detection of the same PR is not.
+    pub fn link_pr(&self, new: &NewThreadPr) -> Result<(ThreadPrRow, bool), StoreError> {
+        pr::link_pr(&self.conn, new)
+    }
+
+    /// Replace GitHub's half of a linked row, handing back before *and* after
+    /// so the caller can see what actually changed.
+    pub fn apply_pr_snapshot(
+        &self,
+        id: &str,
+        snapshot: &PrSnapshot,
+    ) -> Result<(ThreadPrRow, ThreadPrRow), StoreError> {
+        pr::apply_snapshot(&self.conn, id, snapshot)
+    }
+
+    pub fn get_pr(
+        &self,
+        provider: &str,
+        repo: &str,
+        number: i64,
+    ) -> Result<Option<ThreadPrRow>, StoreError> {
+        pr::get_pr(&self.conn, provider, repo, number)
+    }
+
+    /// Every linked PR whose thread still exists.
+    pub fn list_prs(&self) -> Result<Vec<ThreadPrRow>, StoreError> {
+        pr::list_prs(&self.conn)
+    }
+
+    pub fn list_prs_for_thread(&self, thread_id: &str) -> Result<Vec<ThreadPrRow>, StoreError> {
+        pr::list_prs_for_thread(&self.conn, thread_id)
     }
 
     /// Schedules and their fires — see [`schedule`] (#25).
@@ -1055,6 +1098,34 @@ pub(crate) fn map_handoff(row: &Row<'_>) -> rusqlite::Result<HandoffRow> {
         dispatched: row.get::<_, i64>(8)? != 0,
         detail: row.get(9)?,
         created_at: row.get(10)?,
+    })
+}
+
+pub(crate) fn map_thread_pr(row: &Row<'_>) -> rusqlite::Result<ThreadPrRow> {
+    Ok(ThreadPrRow {
+        id: row.get(0)?,
+        thread_id: row.get(1)?,
+        provider: row.get(2)?,
+        forge_host: row.get(3)?,
+        repo: row.get(4)?,
+        number: row.get(5)?,
+        url: row.get(6)?,
+        title: row.get(7)?,
+        status: row.get(8)?,
+        check_state: row.get(9)?,
+        review_state: row.get(10)?,
+        head_ref: row.get(11)?,
+        base_ref: row.get(12)?,
+        additions: row.get(13)?,
+        deletions: row.get(14)?,
+        changed_files: row.get(15)?,
+        checks_json: row.get(16)?,
+        pr_updated_at: row.get(17)?,
+        detected_via: row.get(18)?,
+        detected_at: row.get(19)?,
+        polled_at: row.get(20)?,
+        created_at: row.get(21)?,
+        updated_at: row.get(22)?,
     })
 }
 

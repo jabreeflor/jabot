@@ -47,6 +47,7 @@ import type {
   ToolOption,
 } from "./components/types";
 import { useCrew } from "./views/crew";
+import { usePullRequests, type PullRequests } from "./views/pulls";
 import {
   useSchedules,
   type ScheduleDraft,
@@ -109,6 +110,9 @@ function App() {
   const registered = useFolders(client);
   const crew = useCrew(client);
   const schedules = useSchedules(client);
+  // The PR board (#28). Two calls behind one hook: an instant store read on
+  // mount, and a poll that keeps it warm without ever being able to empty it.
+  const pulls = usePullRequests(client);
   // The host wins once it has answered, per source. A crew of `null` is "not
   // asked yet" — a preview build or a unit test — and the fixtures stand in;
   // a real answer always has Chief in it.
@@ -386,6 +390,7 @@ function App() {
           client={client}
           state={state}
           schedules={schedules}
+          pulls={pulls}
           onEditSchedule={(scheduleId) =>
             setScheduleEditor({ open: true, scheduleId })
           }
@@ -504,6 +509,7 @@ function MainView({
   client,
   state,
   schedules,
+  pulls,
   onEditSchedule,
   onAddSchedule,
   bots,
@@ -527,6 +533,8 @@ function MainView({
   state: MockState;
   /** Recurring jobs, host-owned from the first answer (#25). */
   schedules: Schedules;
+  /** The PR board, host-owned from the first answer (#28). */
+  pulls: PullRequests;
   onEditSchedule: (scheduleId: string) => void;
   onAddSchedule: () => void;
   /** The crew, host-owned once `crew/list` has answered (#17). */
@@ -591,8 +599,23 @@ function MainView({
     case "prs":
       return (
         <PullRequestsView
-          pullRequests={state.pullRequests}
+          // The fixtures stand in only until the host has answered — `null` is
+          // "not asked yet" (a preview build, a unit test), and an empty array
+          // is the real and common answer of "no open pull requests".
+          pullRequests={pulls.pullRequests ?? state.pullRequests}
+          unavailable={pulls.unavailable}
+          error={pulls.error}
+          onRefresh={() => void pulls.refresh()}
           onOpenThread={(threadId) => onSelect({ view: "thread", threadId })}
+          onAction={(prId, actionId) => {
+            if (actionId !== "diff") return;
+            const pr = (pulls.pullRequests ?? state.pullRequests).find(
+              (row) => row.id === prId,
+            );
+            // The PR itself is on GitHub; JaBot has no in-app diff for it and
+            // `pr-linkage.md` defers one. Opening the page is the honest verb.
+            if (pr) window.open(pr.url, "_blank", "noopener,noreferrer");
+          }}
         />
       );
     case "thread": {

@@ -53,6 +53,10 @@ pub const SCHEDULE_CREATE: &str = "schedule/create";
 pub const SCHEDULE_UPDATE: &str = "schedule/update";
 pub const SCHEDULE_REMOVE: &str = "schedule/remove";
 pub const SCHEDULE_RUN: &str = "schedule/run";
+/// The Pull Requests view (#28). `pr/list` is a store read and never touches
+/// the network; `pr/refresh` is the poll.
+pub const PR_LIST: &str = "pr/list";
+pub const PR_REFRESH: &str = "pr/refresh";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
 pub const CLIENT_METHODS: &[&str] = &[
@@ -94,6 +98,8 @@ pub const CLIENT_METHODS: &[&str] = &[
     SCHEDULE_REMOVE,
     SCHEDULE_RUN,
     NOTIFY_STATUS,
+    PR_LIST,
+    PR_REFRESH,
 ];
 
 /// A new Inbox card exists on a thread that did **not** resurface.
@@ -773,6 +779,13 @@ pub struct ThreadStateResult {
     /// the human started themselves, which is most of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub handoff: Option<HandoffView>,
+    /// The pull requests this thread opened (#28). Almost always none or one;
+    /// a stacked or follow-up PR makes it two. Served here as well as on
+    /// `pr/list` so a thread view can say "this produced PR #23" without
+    /// pulling the whole board — and because the link is a fact about the
+    /// thread, not only about the PR.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pull_requests: Vec<PullRequestView>,
     pub unread: i64,
 }
 
@@ -2211,4 +2224,135 @@ pub struct DeviceRevokeResult {
     pub revoked: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub revoked_at: Option<String>,
+}
+
+// ---- Pull Requests (#28) ----------------------------------------------
+//
+// Every row is a `thread_prs` row: a pull request one of *this* Mac's sessions
+// opened. `threadId` is required and always present, because that is how a PR
+// gets into the table — there is no unlinked case to model, and a coworker's
+// PR is deliberately never on this board.
+//
+// Two methods, and the split is the point. `pr/list` reads the store and is
+// instant; `pr/refresh` shells out to `gh` and is a network round trip. The
+// view opens on the first and polls the second, so a refresh that cannot
+// happen — no `gh`, no login, no network — costs the user their freshness and
+// never their board.
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrListParams {
+    /// Narrow to one thread's PRs. Absent means every linked PR.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrRefreshParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+}
+
+/// One line of the checks strip.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrCheckView {
+    pub label: String,
+    /// `passing` | `running` | `failing`.
+    pub state: String,
+}
+
+/// A pull request as the view draws it.
+///
+/// Facts only. The row's copy — "from folded session", "2 of 3 checks done" —
+/// is composed in the renderer from these fields, because it is presentation
+/// and because a second client will want to phrase it differently.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PullRequestView {
+    pub id: String,
+    pub thread_id: String,
+    /// So a row can say which session opened it without a second lookup. Empty
+    /// only for a thread the store has since lost, which the cascade prevents.
+    pub thread_title: String,
+    /// `threads.state` — what makes "from folded session" sayable.
+    pub thread_state: String,
+    pub provider: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forge_host: Option<String>,
+    /// `owner/name`.
+    pub repo: String,
+    pub number: i64,
+    pub url: String,
+    pub title: String,
+    /// `open` | `draft` | `merged` | `closed`.
+    pub status: String,
+    /// `passing` | `running` | `failing`. `null` means no checks are
+    /// configured, which is not the same as checks that have not started.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_state: Option<String>,
+    /// `approved` | `changes_requested` | `review_required`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+    pub additions: i64,
+    pub deletions: i64,
+    pub changed_files: i64,
+    pub checks: Vec<PrCheckView>,
+    /// When GitHub last saw the PR change, falling back to when we linked it.
+    /// Never when the host last wrote the row: a poll that found nothing new
+    /// must not make the card read "just now".
+    pub updated_at: String,
+    /// `stdout` | `gh-pr-view` | `head-list` — how the link was established.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detected_via: Option<String>,
+    /// Last successful refresh. `null` is "linked, never polled", which is
+    /// every row on a machine with no `gh` login — and is why the view can say
+    /// so rather than drawing a PR with no title and no diffstat as if that
+    /// were what GitHub said.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub polled_at: Option<String>,
+}
+
+/// Why a refresh did not reach GitHub.
+///
+/// Not an error frame: polling is a background loop, and a client that throws
+/// every fifteen seconds because `gh` is not installed is a client that cannot
+/// draw its own board. The three fields are the ones `github/status` already
+/// established are needed to say something a user can act on.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrUnavailable {
+    pub host: String,
+    /// `gh_missing` | `gh_failed` | `gh_timeout` | `gh_unparseable`.
+    pub reason: String,
+    pub detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remedy: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrListResult {
+    pub pull_requests: Vec<PullRequestView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrRefreshResult {
+    /// The board after the refresh, so a client never needs a second call.
+    pub pull_requests: Vec<PullRequestView>,
+    /// How many rows this refresh asked GitHub about.
+    pub checked: i64,
+    /// How many came back different from what was stored.
+    pub updated: i64,
+    /// Inbox cards written. Zero is the common answer and the healthy one.
+    pub cards: i64,
+    /// One entry per forge host that could not be reached. Empty on success,
+    /// and empty on a host with nothing linked to refresh.
+    pub unavailable: Vec<PrUnavailable>,
 }

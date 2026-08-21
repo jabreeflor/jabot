@@ -153,3 +153,35 @@
   font-size: var(--fs-ui);
   cursor: pointer;
 }
+
+/*
+ * An in-page strip: something is degraded, and the page below it is still
+ * true. Today only the PR board's "GitHub could not be reached" (#28).
+ *
+ * Amber and not red, and inside the page rather than over the shell, because
+ * it is not a refusal — the rows under it are linkage the host worked out
+ * without any credential at all, and they are as correct as they were before
+ * the poll failed. What is missing is freshness, so the strip says which
+ * command would restore it and stays out of the way.
+ */
+.page-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--edge-strong);
+  border-radius: 11px;
+  background: var(--raise2);
+  color: var(--amber);
+  font-size: var(--fs-meta);
+}
+
+.page-notice span {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-notice .btn {
+  flex: none;
+}

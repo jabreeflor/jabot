@@ -214,6 +214,10 @@ impl HostSession {
         // serving them should not outlive it (#24).
         self.drop_chief_bridge(thread_id);
         self.drop_prompt_queue(thread_id, "the adapter stopped");
+        // The tool-call ids this turn declared as `execute` describe a process
+        // that no longer exists; keeping them would let the next adapter's
+        // reuse of the same id be read as PR evidence (#28).
+        self.pr_forget_thread(thread_id);
         self.lifecycle_on_adapter_closed(thread_id, error);
     }
 
@@ -236,6 +240,7 @@ impl HostSession {
             conn.kill();
         }
         self.drop_chief_bridge(thread_id);
+        self.pr_forget_thread(thread_id);
     }
 
     /// The adapter's pid, for `thread/state` and `supervisor/status`.
@@ -321,6 +326,10 @@ impl HostSession {
                 // After the stream, so a client sees the chunk that ended the
                 // turn before it sees the Inbox card the turn produced.
                 self.lifecycle_on_update(thread_id, &acp);
+                // And after the lifecycle, for the same reason: a `PR #23
+                // opened` card is about work the turn did, so the turn's own
+                // events go out first (#28).
+                self.pr_observe_update(thread_id, &acp);
             }
             Inbound::Permission { acp_id, params } => {
                 self.open_permission_request(thread_id, acp_id, &params)
@@ -351,6 +360,10 @@ impl HostSession {
                 // adapter that does report a stop reason gets there first; the
                 // ledger transition is idempotent and this is then a no-op.
                 self.lifecycle_on_turn_end(thread_id, stop_reason.as_deref());
+                // A turn that talked about opening a pull request but never
+                // printed a URL gets asked about now, from the thread's own
+                // worktree — the authoritative check in `pr-linkage.md` (#28).
+                self.pr_on_turn_end(thread_id);
                 // The turn is over, so the session is free: anything the user
                 // said while it was busy goes out now, in the order they said
                 // it (#14 steer-vs-redispatch).

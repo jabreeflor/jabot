@@ -520,3 +520,99 @@ pub struct NewScheduleFire {
     pub skipped_count: i64,
     pub detail: Option<String>,
 }
+
+/// A pull request one of this Mac's sessions opened (#28).
+///
+/// Two halves in one row, and they age differently. **Linkage** — `thread_id`,
+/// `provider`, `repo`, `number`, `url`, `detected_via` — is written once, from
+/// evidence, and is never re-derived: a thread that opened PR #23 opened it
+/// whatever GitHub says next week. **GitHub state** — everything from `title`
+/// down — is a cached poll answer, replaced wholesale on every refresh and
+/// stale in exactly the way a poll is stale.
+///
+/// `thread_id` is NOT NULL because a PR gets into this table by a session
+/// opening it. There is no "orphan PR" case to model: an unlinked pull request
+/// is a coworker's, and the PR view deliberately never shows those.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadPrRow {
+    pub id: String,
+    pub thread_id: String,
+    /// `github` today. The column exists so a second forge is a value rather
+    /// than a schema change.
+    pub provider: String,
+    /// The host `gh` is addressed with (`--hostname`). `None` on rows written
+    /// before 0010 and on a linkage whose folder had no parseable origin.
+    pub forge_host: Option<String>,
+    /// `owner/name`, spelled the way [`super::super::repo::origin::Origin::slug`]
+    /// spells it.
+    pub repo: String,
+    pub number: i64,
+    pub url: String,
+    pub title: String,
+    /// `open` | `draft` | `merged` | `closed`.
+    pub status: String,
+    /// `passing` | `running` | `failing`, or `None` for a PR with no checks
+    /// configured — which is not the same as checks that have not started.
+    pub check_state: Option<String>,
+    /// GitHub `reviewDecision`, lowercased: `approved` | `changes_requested` |
+    /// `review_required`.
+    pub review_state: Option<String>,
+    pub head_ref: Option<String>,
+    pub base_ref: Option<String>,
+    pub additions: i64,
+    pub deletions: i64,
+    pub changed_files: i64,
+    /// `[{ "label": …, "state": … }]` — the checks line, as JSON.
+    pub checks_json: String,
+    /// When GitHub last saw the PR change. Distinct from `updated_at`, which is
+    /// when *we* last wrote the row: a poll that finds nothing new still moves
+    /// ours, and the card's "38m ago" must not move with it.
+    pub pr_updated_at: Option<String>,
+    /// `stdout` | `gh-pr-view` | `head-list` — how the link was established.
+    pub detected_via: Option<String>,
+    pub detected_at: Option<String>,
+    /// Last successful refresh. `None` means linked but never polled, which is
+    /// every row on a machine with no `gh` login.
+    pub polled_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// The linkage half, as the detector hands it over.
+///
+/// Deliberately not the whole row: a detector knows which thread opened which
+/// PR and nothing else about it. Everything GitHub owns arrives later, from
+/// [`PrSnapshot`], and a link that is never polled is still a real link.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewThreadPr {
+    pub thread_id: String,
+    pub provider: String,
+    pub forge_host: Option<String>,
+    pub repo: String,
+    pub number: i64,
+    pub url: String,
+    pub detected_via: String,
+}
+
+/// What one poll learned about one pull request.
+///
+/// Every field is `Option`-free where GitHub always answers and optional where
+/// it genuinely may not, so "GitHub said nothing about the review" and "GitHub
+/// said nobody has reviewed" stay different facts.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrSnapshot {
+    pub title: String,
+    pub status: String,
+    pub check_state: Option<String>,
+    pub review_state: Option<String>,
+    pub head_ref: Option<String>,
+    pub base_ref: Option<String>,
+    pub additions: i64,
+    pub deletions: i64,
+    pub changed_files: i64,
+    /// `[{ label, state }]`, already flattened out of `statusCheckRollup`.
+    pub checks_json: String,
+    pub pr_updated_at: Option<String>,
+    pub url: Option<String>,
+}

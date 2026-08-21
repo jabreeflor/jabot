@@ -250,6 +250,21 @@ fn mentions_unknown_reason(err: &GitFailure) -> bool {
 /// work. Ignored files (`node_modules`, the copied `.env`) are deliberately not
 /// counted: they were put there by setup, not by the agent, and git will not
 /// let them block a removal either.
+/// The branch checked out in a directory right now, or `None` for a detached
+/// HEAD — and for a directory that is not a checkout at all.
+///
+/// Read rather than remembered. `threads.branch` is what the thread was *given*
+/// at spawn (#23); an agent that rebased, or the `jabot/<id>-rescue` branch a
+/// detached HEAD earns on save, has moved on from it. PR linkage asks "which
+/// branch would a pull request have been opened from", and only the tree can
+/// answer that (#28).
+pub fn head_branch(dir: &Path) -> Option<String> {
+    let dir = dir.to_string_lossy().into_owned();
+    run(&["-C", &dir, "branch", "--show-current"])
+        .ok()
+        .and_then(|out| out.line())
+}
+
 pub fn is_dirty(path: &Path) -> bool {
     let dir = path.to_string_lossy().into_owned();
     match run(&["-C", &dir, "status", "--porcelain"]) {
@@ -448,13 +463,9 @@ mod tests {
     use crate::host::repo::git::testing;
 
     /// The branch checked out in a tree — what "each thread gets its own
-    /// branch" means, asked of git rather than of our own bookkeeping.
-    fn branch_of(path: &Path) -> Option<String> {
-        let dir = path.to_string_lossy().into_owned();
-        run(&["-C", &dir, "branch", "--show-current"])
-            .ok()
-            .and_then(|out| out.line())
-    }
+    /// branch" means, asked of git rather than of our own bookkeeping. The
+    /// production reader is the same question, so it is the same function.
+    use super::head_branch as branch_of;
 
     /// Every path git believes is a worktree of this repository, main tree
     /// included.
@@ -728,5 +739,31 @@ mod tests {
         assert_eq!(slug("t/../x"), "t----x");
         assert_eq!(slug("....."), "thread");
         assert_eq!(slug("t-repo"), "t-repo");
+    }
+
+    /// PR linkage asks this of a directory it has no other knowledge of, so
+    /// both "not a checkout" and "detached HEAD" have to come back as "no
+    /// branch" rather than as a wrong one (#28).
+    #[test]
+    fn a_detached_head_and_a_plain_directory_have_no_branch() {
+        let repo = repo();
+        assert_eq!(head_branch(repo.path()).as_deref(), Some("main"));
+
+        let head = check(&["-C", &repo.path().to_string_lossy(), "rev-parse", "HEAD"])
+            .expect("rev-parse")
+            .line()
+            .expect("a commit");
+        check(&[
+            "-C",
+            &repo.path().to_string_lossy(),
+            "checkout",
+            "--detach",
+            &head,
+        ])
+        .expect("detach");
+        assert_eq!(head_branch(repo.path()), None);
+
+        let plain = tempfile::tempdir().unwrap();
+        assert_eq!(head_branch(plain.path()), None);
     }
 }

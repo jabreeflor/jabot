@@ -264,6 +264,9 @@ impl HostSession {
         // (#24). One indexed lookup, and it is the only place a reader of a
         // suddenly-busy standing thread can find out who asked.
         let handoff = self.handoff_view(&row.id);
+        // The PRs this thread produced (#28). One indexed read, and it is the
+        // thread half of a link the PR board already draws the other way.
+        let pull_requests = super::pr::thread_prs(self.store_or_err()?, &row.id);
         Ok(ThreadStateResult {
             thread_id: row.id.clone(),
             title: row.title.clone(),
@@ -295,6 +298,7 @@ impl HostSession {
             runs,
             receipt,
             handoff,
+            pull_requests,
             unread,
         })
     }

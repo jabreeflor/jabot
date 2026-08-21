@@ -13,6 +13,7 @@ mod lifecycle;
 mod log;
 mod pairing;
 mod permission;
+mod pr;
 mod procgroup;
 mod protocol;
 mod repo;
@@ -43,6 +44,12 @@ pub use lifecycle::{
     receipt::{drift, DriftField, SessionFingerprint},
     state::ThreadState,
 };
+/// Pull Requests (#28). The detector and the GitHub mapping are exported so a
+/// test can assert on them without a live host — everything the poll believes
+/// about a PR comes from `pr::github::snapshot`, and everything the linkage
+/// believes comes from `pr::detect::scan`.
+#[allow(unused_imports)]
+pub use pr::{card::PrEvent, detect::PrLink, github::PrKey};
 #[allow(unused_imports)]
 pub use protocol::methods::{
     client_methods, DeviceAuth, DeviceListResult, DeviceRefParams, DeviceRevokeResult,
@@ -81,6 +88,11 @@ pub use protocol::{
 /// platform framework never becomes a dependency of the JSON-RPC layer.
 #[allow(unused_imports)]
 pub use protocol::{NotifyStatusResult, NOTIFY_STATUS};
+#[allow(unused_imports)]
+pub use protocol::{
+    PrCheckView, PrListParams, PrListResult, PrRefreshParams, PrRefreshResult, PrUnavailable,
+    PullRequestView, PR_LIST, PR_REFRESH,
+};
 #[allow(unused_imports)]
 pub use protocol::{
     INBOX_EVENT, SCHEDULE_CREATE, SCHEDULE_LIST, SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE,
@@ -154,6 +166,11 @@ pub struct HostSession {
     /// the same spirit as `connections`: a queued prompt has not been said to
     /// the agent, so nothing durable should claim it has.
     prompt_queue: HashMap<String, VecDeque<transcript::queue::QueuedPrompt>>,
+    /// Per-turn PR linkage state: which tool calls this thread's adapter called
+    /// `execute`, and whether anything in the turn suggested a pull request
+    /// (#28). RAM, and rightly so — it describes one turn, and the post-turn
+    /// `gh` fallback is what covers a turn a restart interrupted.
+    pr_watch: pr::PrWatchMap,
     lifecycle: LifecycleState,
     /// Keep-alive, resume, and what this launch found on the ledger (#21).
     supervisor: SupervisorState,
@@ -267,6 +284,7 @@ impl HostSession {
             connect_flows: HashMap::new(),
             mcp_profiles: HashMap::new(),
             prompt_queue: HashMap::new(),
+            pr_watch: HashMap::new(),
             lifecycle: LifecycleState::from_env(),
             supervisor: SupervisorState::from_env(),
             pairing: pairing::PairingState::default(),

@@ -24,6 +24,8 @@ import {
   NOTIFY_STATUS,
   PERMISSION_PENDING,
   PERMISSION_REPLY,
+  PR_LIST,
+  PR_REFRESH,
   PROTOCOL_VERSION,
   SCHEDULE_CREATE,
   SCHEDULE_LIST,
@@ -92,6 +94,10 @@ import {
   type PermissionPendingResult,
   type PermissionReplyParams,
   type PermissionReplyResult,
+  type PrListParams,
+  type PrListResult,
+  type PrRefreshParams,
+  type PrRefreshResult,
   type PromptParams,
   type PromptResult,
   type DeviceListResult,
@@ -391,6 +397,22 @@ export class HostClient {
   /** Remove the sidebar row. Never the directory, never the threads. */
   async forgetFolder(params: FolderRefParams): Promise<FolderForgetResult> {
     return this.request<FolderForgetResult>(FOLDER_FORGET, params);
+  }
+
+  /** The PR board: every pull request a session on this Mac opened (#28).
+      A store read — it never touches the network, so a user with no GitHub
+      login still gets their board. */
+  async listPullRequests(params: PrListParams = {}): Promise<PrListResult> {
+    return this.request<PrListResult>(PR_LIST, params);
+  }
+
+  /** Ask GitHub what those pull requests look like now. Resolves even when
+      GitHub could not be reached — the reason is in `unavailable`, because a
+      poll that throws every fifteen seconds takes the board down with it. */
+  async refreshPullRequests(
+    params: PrRefreshParams = {},
+  ): Promise<PrRefreshResult> {
+    return this.request<PrRefreshResult>(PR_REFRESH, params);
   }
 
   /** Whether the host can act as the user on GitHub, and as whom. Never

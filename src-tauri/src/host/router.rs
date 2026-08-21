@@ -22,6 +22,7 @@ use super::protocol::methods::{
     PairingStartParams, DEVICE_LIST, DEVICE_REVOKE, PAIRING_CANCEL, PAIRING_CLAIM, PAIRING_CONFIRM,
     PAIRING_START, PAIRING_STATUS,
 };
+use super::protocol::methods::{PrListParams, PrRefreshParams, PR_LIST, PR_REFRESH};
 use super::protocol::methods::{
     ScheduleCreateParams, ScheduleRefParams, ScheduleUpdateParams, SCHEDULE_CREATE, SCHEDULE_LIST,
     SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE,
@@ -246,6 +247,18 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: ScheduleRefParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.schedule_run(params)?)
+        }
+        // Both take an optional `threadId`, so both accept no params at all:
+        // "the whole board" is the ordinary call.
+        PR_LIST => {
+            session.require_hello()?;
+            let params: PrListParams = parse_params_or_default(request.params.as_ref())?;
+            to_value(session.pr_list(params)?)
+        }
+        PR_REFRESH => {
+            session.require_hello()?;
+            let params: PrRefreshParams = parse_params_or_default(request.params.as_ref())?;
+            to_value(session.pr_refresh(params)?)
         }
         SYNC_RESUME_FROM => {
             session.require_hello()?;

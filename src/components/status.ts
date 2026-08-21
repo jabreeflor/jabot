@@ -66,6 +66,10 @@ export const NEEDS_YOU_KINDS: readonly InboxKind[] = [
   "stuck",
   "failed",
   "lost",
+  // A pull request whose checks went red, or whose reviewer asked for changes,
+  // is work waiting on a person. So is one that has just been opened — it is
+  // the outcome of the session, and nobody else is going to merge it (#28).
+  "pr",
 ];
 
 /**
@@ -90,6 +94,11 @@ export function inboxTag(kind: InboxKind): Tag {
       return { label: "LOST", tone: "bad" };
     case "folded":
       return { label: "SLEEPING", tone: "quiet" };
+    case "pr":
+      // Amber and not red: a PR card is always something to look at and
+      // sometimes something that went wrong, and the card's own copy says
+      // which. A red pill on "PR #23 opened" would read as a failure (#28).
+      return { label: "PULL REQUEST", tone: "needs" };
   }
 }
 

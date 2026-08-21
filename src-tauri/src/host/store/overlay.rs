@@ -381,8 +381,13 @@ pub fn insert_inbox_event(
     payload_json: Option<&str>,
 ) -> Result<InboxEventRow, StoreError> {
     match kind {
+        // `pr` (#28) is a card about a pull request rather than about a run.
+        // It is its own kind because the run kinds would each say something
+        // untrue: `failed` claims the turn failed, `needs_you` claims an agent
+        // is blocked on the human. Neither is what "checks went red an hour
+        // after the session finished" is.
         "folded" | "done" | "failed" | "needs_you" | "judgment_call" | "permission" | "lost"
-        | "stuck" => {}
+        | "stuck" | "pr" => {}
         _ => return Err(StoreError::invalid(format!("invalid inbox kind {kind}"))),
     }
     if title.trim().is_empty() {
@@ -617,6 +622,13 @@ pub fn list_inbox_events(
 /// from both the sidebar and the Inbox — a badge for a thread the user has
 /// archived points at a row that is not there any more, and nothing in the UI
 /// could ever clear it.
+///
+/// A `pr` card (#28) is the one exception, and it is an exception because it is
+/// not a claim about the thread at all: "checks went red" is about a pull
+/// request that is still open on GitHub, and the session that opened it is
+/// *expected* to be finished and archived by then. Gating it on the overlay
+/// would mean the only cards this kind ever produces are cards nobody is told
+/// about. Deleted threads still take theirs with them.
 pub fn count_unread_inbox(conn: &Connection, thread_id: Option<&str>) -> Result<i64, StoreError> {
     conn.query_row(
         "SELECT COUNT(*) FROM inbox_events
@@ -624,7 +636,8 @@ pub fn count_unread_inbox(conn: &Connection, thread_id: Option<&str>) -> Result<
            AND (?1 IS NULL OR thread_id = ?1)
            AND thread_id IN (
                 SELECT id FROM threads
-                WHERE deleted_at IS NULL AND state IN ('folded', 'resurfaced')
+                WHERE deleted_at IS NULL
+                  AND (state IN ('folded', 'resurfaced') OR inbox_events.kind = 'pr')
            )",
         [thread_id],
         |row| row.get(0),

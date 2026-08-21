@@ -57,7 +57,12 @@ export type InboxKind =
   | "judgment_call"
   | "permission"
   | "lost"
-  | "stuck";
+  | "stuck"
+  /** A pull request one of the sessions opened changed in a way worth saying
+      out loud — it exists, its checks went red, a reviewer asked for work
+      (#28). Its own kind because it is not a claim about a run: the session is
+      usually finished and archived by the time its CI fails. */
+  | "pr";
 
 /** `thread_prs.status`. */
 export type PrStatus = "open" | "draft" | "merged" | "closed";
