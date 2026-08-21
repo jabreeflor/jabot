@@ -30,7 +30,12 @@
   font-weight: 700;
 }
 
-.modal .mlab {
+/* .mlab is emitted by FieldLabel, .mfield by any text field wearing the modal
+   recipe. Both are used outside modals too (first-run setup shares this rule
+   by selector rather than restating it), so the bare classes ride along —
+   additively, keeping every existing modal byte-identical. */
+.modal .mlab,
+.mlab {
   color: var(--faint);
   font-size: var(--fs-caps);
   font-weight: 600;
@@ -39,7 +44,8 @@
 }
 
 .modal select,
-.modal input[type="text"] {
+.modal input[type="text"],
+.mfield {
   width: 100%;
   background: var(--raise);
   border: 1px solid var(--edge-strong);
@@ -65,7 +71,8 @@
 
 .modal select:focus,
 .modal input[type="text"]:focus,
-.modal textarea:focus {
+.modal textarea:focus,
+.mfield:focus {
   border-color: var(--dim);
 }
 
