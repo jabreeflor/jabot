@@ -31,11 +31,9 @@ export function canFold(state: ThreadState): boolean {
 
 export function FoldButton({
   onFold,
-  busy = false,
 }: {
   /** `undefined` policy is "Disappear until done" — keep the current one. */
   onFold: (policy?: FoldPolicy) => void;
-  busy?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -70,7 +68,6 @@ export function FoldButton({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        disabled={busy}
         onClick={() => setOpen((was) => !was)}
       >
         <InboxIcon /> Fold

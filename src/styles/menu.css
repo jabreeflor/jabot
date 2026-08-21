@@ -83,11 +83,6 @@
   height: 14px;
 }
 
-.fold-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .fold-menu {
   position: absolute;
   z-index: 300;

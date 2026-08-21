@@ -1630,3 +1630,105 @@ does (D-014) — a fire's own prompt pumps, and the pump ticks the cron.
 - **`approver` access.** `schedule/*` is absent from #19's allowlist, so a
   paired phone cannot list or edit schedules. That is the default-deny working
   as intended: the desktop stays the admin console.
+
+---
+
+## D-018 — #26: what the fold path actually needed, and what it turned out already to have
+
+**Plan:** #26 wires Fold and "Wait for Inbox" to real sessions on top of #15
+(the fold transition, `fold_policy`, the resurface reasons), #20 (the broker and
+its auto-allow-reads policy), #21 (keep-alive) and #22 (the Inbox).
+
+**Built:** the affordance, the client wiring, and — mostly — the proof. The
+honest headline is that **the host needed no production change at all**. Every
+host-side claim in the issue already held; what did not exist was a test that
+folded a session while it was *genuinely running*, and a UI that folded anything
+but a fixture.
+
+### 1. Every existing fold test folded an idle thread. That was the hole.
+
+`src-tauri/tests/lifecycle.rs` and `tests/e2e/lifecycle.test.ts` between them
+covered fold-then-prompt, fold-after-the-turn-ended, stuck, failed, needs-you
+and the away log. Not one of them folded a thread whose adapter was *mid-turn*,
+which is the only shape that proves the product's premise: the row leaves the
+sidebar, the subprocess keeps working, and the thread comes back on its own.
+
+Proving it needs an agent that will not finish until the test says so. A sleep
+would make the ordering a race the test usually wins, so the fake agent got a
+**`gated`** mode instead: the turn stays open until a gate file appears, and the
+file's contents are a small script — a stop reason (`end_turn`, `max_tokens`),
+or a comma-separated list of ACP tool kinds to ask permission for first
+(`read,delete`). One mode covers finishing, failing, going quiet, and asking two
+different questions in one turn.
+
+That is new test machinery, not new product machinery. It is why
+`tests/e2e/fold.test.ts` can fold a live session, watch it go on running, and
+only then decide how the work it was already doing ends.
+
+### 2. The host was right, and now says so out loud
+
+Six new cases (three Rust, five TypeScript) assert what was previously only
+implied: a folded-while-running thread keeps `process.connected`, keeps
+`acpState: running`, keeps the *same run id*, disappears from `folder/list`,
+appears under `sleeping` with `runState: running`, and resurfaces `done`,
+`failed` or `stuck` with the right card. `failed` and `stuck` are asserted
+against each other, because they are the pair the prototype conflated.
+
+Each was checked against a deliberate regression before being kept — dropping
+the adapter in `thread_fold` fails the live-fold case; always sending a `policy`
+fails the "Disappear until done" case.
+
+### 3. "Disappear until done" sends **no** policy, and that is deliberate
+
+`state-machine.md` gives the in-chat fold the thread's *existing* `foldPolicy`
+and reserves the policy change for Wait for Inbox. So the plain fold omits the
+field entirely rather than sending `default`, which would silently undo a
+quieter policy the user chose earlier. `thread/fold` already behaved this way;
+the renderer now matches it, and so does `mock-host` — which had been
+hard-coding `wait_for_inbox` on every fold. That drift was a mock making a
+promise the host does not make, and `src/__tests__/mock-host.test.ts` now
+asserts the host's rule instead.
+
+### 4. The fold items are hidden where the fold is illegal
+
+The transition table refuses `resurfaced → folded`, and the sidebar shows
+resurfaced rows. Rather than let the user press a menu item that can only
+produce `IllegalTransition`, `canFold` gates both fold items on `active`. The
+error path still exists and is still tested — the host is the authority, and a
+race can still lose — but it is no longer the ordinary outcome of a visible
+affordance.
+
+### 5. A refused fold puts the row back
+
+The shell animates the row out before the call lands, so `useFoldThread` runs
+its reload in a `finally`: on success the row is gone because the host says so,
+and on failure it returns because the host says so. The alternative — reloading
+only on success — leaves the sidebar hiding a thread that is still active.
+
+### What #26 did **not** build
+
+- **A live Inbox.** `inbox/list` returns the sleeping row and the resurfaced
+  card, and `tests/e2e/fold.test.ts` asserts on both, but `App.tsx` still
+  renders `InboxView` from `mock-host` fixtures. That swap is #22's, exactly as
+  D-017 recorded for #25's cards. The consequence is visible: folding the thread
+  you are reading navigates to the Inbox — the right destination, and the place
+  fold promises the work will come back — but until #22 lands, that Inbox is
+  showing fixtures rather than the row that was just folded.
+- **Folding a thread with no folder.** The shell finds host threads through
+  `folder/list`, so a folder-less row — a bot's standing thread — takes the
+  fixture branch. Nothing creates one yet (D-009 leaves the standing thread to
+  #22/#24), so there is no such row to fold; when there is, the lookup is the
+  one line that has to change.
+- **Chief's card against a real Chief.** The fold on Chief's notice card now
+  goes to the host whenever the card names a thread the host owns, and there is
+  a test for exactly that. Chief's transcript itself is still fixtures, so today
+  the card in the shipping app names a fixture thread and takes the reducer
+  branch. Wiring Chief's own conversation is #22/#24's.
+- **A settings home for the fold defaults.** D-006, D-013 and D-017 each parked
+  something here — the idle-timeout threshold (`JABOT_IDLE_TIMEOUT_MS`), a
+  remembered permission scope, the cron interval. #26 added the *per-fold*
+  policy choice, which is the affordance those settings would default; it did
+  not add a Settings surface. That is still unowned, and naming #26 for it was
+  optimistic: nothing in this issue's scope creates a place to put it.
+- **An OS notification when a folded thread resurfaces.** Still #27's, as D-006
+  recorded.
