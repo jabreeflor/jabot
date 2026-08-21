@@ -153,6 +153,7 @@ if [ "$TREE_STAGED" != "$TREE_BEFORE" ]; then
   # A write landed between step 5 and here. The index is now something nobody
   # verified, so stop before it becomes a commit.
   moved "$TREE_BEFORE" "$TREE_STAGED"
+  fail "(the index holds that unverified content now — \`git reset\` if you want it unstaged.)"
   exit 2
 fi
 
