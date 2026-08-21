@@ -16,6 +16,7 @@
 #   0. toolchain      — versions printed, MSRV floor enforced, drift from CI warned
 #   1. lockfiles      — package-lock.json and Cargo.lock agree with their manifests
 #   2. bundle-config  — what the macOS `bundle` job reads, checked without macOS
+#   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   3. tsc            — renderer types
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
@@ -28,6 +29,10 @@
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+# jabot_tree_hash / jabot_stamp_verified — see the end of this file for why a
+# verification run has to know whether the thing it verified stayed still.
+# shellcheck source=lib/tree-hash.sh
+. "scripts/lib/tree-hash.sh"
 
 FAST=0
 CHECK_TOOLCHAIN=0
@@ -433,10 +438,43 @@ NODE
 }
 
 # ---------------------------------------------------------------------------
+# 2b. commit guards
+#
+# scripts/checkpoint.sh and .githooks/pre-push are what stops an unverified
+# tree becoming a commit now that CI is not the safety net. They are shell, so
+# nothing else here would ever notice them breaking — and a guard that has
+# quietly stopped guarding is worse than no guard, because everyone still
+# believes it.
+#
+# scripts/tests/guards.test.sh builds throwaway repos with a stubbed gate and
+# checks the refusals actually happen: a tree that moves mid-verification, a
+# red gate, a push with a failing gate, --no-verify still working. ~5s, no
+# network, no display. It never touches this repo.
+# ---------------------------------------------------------------------------
+guards() {
+  local ok=0
+  ./scripts/tests/guards.test.sh || ok=1
+
+  # Hooks live in git config, not in the tree, so a fresh clone has none until
+  # someone runs the installer (`npm install` does it). Warn rather than fail:
+  # a CI checkout is allowed to be unhooked, a laptop really is not.
+  if ! ./scripts/install-hooks.sh --check >/dev/null 2>&1; then
+    warn "git hooks are not installed in this clone — nothing would stop an unverified push. Run ./scripts/install-hooks.sh (CONTRIBUTING.md)."
+  fi
+  return $ok
+}
+
+# ---------------------------------------------------------------------------
+# The tree this run is about to describe.
+#
+# Empty when this is not a git worktree (a tarball, a vendored copy); every
+# use below is guarded.
+TREE_AT_START=$(jabot_tree_hash 2>/dev/null || printf '')
 
 run "toolchain"      toolchain
 run "lockfiles"      lockfiles
 run "bundle-config"  bundle_config
+run "commit guards"  guards
 run "typecheck"      npx tsc --noEmit
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
@@ -463,6 +501,33 @@ if [[ $FAST -eq 0 ]]; then
 fi
 
 run "renderer build" npx vite build
+
+# ---------------------------------------------------------------------------
+# Did the thing being checked hold still while it was checked?
+#
+# This run takes about 90 seconds. An agent, a watch task, a formatter-on-save
+# or a second terminal can write into the tree during them, and then "verify
+# passed" is a statement about a tree that no longer exists. That is exactly
+# how `error TS6133: 'client' is declared but its value is never read` reached
+# CI from a green local run — the file was written after the check.
+#
+# So: say so. And when nothing moved and nothing failed, leave a note naming
+# the tree that passed, which .githooks/pre-push uses to let the push straight
+# through instead of spending another 90 seconds on identical bytes.
+# scripts/checkpoint.sh is the strict version of this — it refuses to commit a
+# tree that moved, where this only reports it.
+# ---------------------------------------------------------------------------
+if [[ -n "$TREE_AT_START" ]]; then
+  TREE_AT_END=$(jabot_tree_hash 2>/dev/null || printf '')
+  if [[ -n "$TREE_AT_END" && "$TREE_AT_END" != "$TREE_AT_START" ]]; then
+    printf '\n'
+    warn "the working tree changed WHILE these checks ran; the result above describes neither tree. Re-run, or use ./scripts/checkpoint.sh, which refuses to commit in this situation."
+    git diff --name-status "$TREE_AT_START" "$TREE_AT_END" 2>/dev/null | sed 's/^/     /'
+  elif [[ -n "$TREE_AT_END" && ${#FAILED[@]} -eq 0 ]]; then
+    if [[ $FAST -eq 1 ]]; then STAMP_MODE=fast; else STAMP_MODE=full; fi
+    jabot_stamp_verified "$TREE_AT_START" "$STAMP_MODE" || true
+  fi
+fi
 
 printf '\n'
 if [[ ${#WARNINGS[@]} -gt 0 ]]; then

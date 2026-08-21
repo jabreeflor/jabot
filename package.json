@@ -13,7 +13,12 @@
     "test:e2e": "vitest run --project e2e",
     "typecheck": "tsc --noEmit",
     "verify": "./scripts/verify.sh",
-    "verify:fast": "./scripts/verify.sh --fast"
+    "verify:fast": "./scripts/verify.sh --fast",
+    "checkpoint": "./scripts/checkpoint.sh",
+    "test:guards": "./scripts/tests/guards.test.sh",
+    "hooks:install": "./scripts/install-hooks.sh",
+    "hooks:check": "./scripts/install-hooks.sh --check",
+    "prepare": "./scripts/install-hooks.sh --quiet || true"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
