@@ -1,0 +1,87 @@
+{
+  "data": {
+    "viewer": {
+      "login": "jabreeflor",
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 41,
+            "title": "Sign in with GitHub from the PR board",
+            "url": "https://github.com/jabreeflor/jabot/pull/41",
+            "isDraft": false,
+            "state": "OPEN",
+            "additions": 612,
+            "deletions": 88,
+            "changedFiles": 17,
+            "headRefName": "pull-requests-github-signin",
+            "baseRefName": "main",
+            "reviewDecision": "REVIEW_REQUIRED",
+            "updatedAt": "2026-08-21T11:02:40Z",
+            "repository": { "nameWithOwner": "jabreeflor/jabot" },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": {
+                      "state": "SUCCESS",
+                      "contexts": {
+                        "nodes": [
+                          {
+                            "__typename": "CheckRun",
+                            "name": "verify",
+                            "status": "COMPLETED",
+                            "conclusion": "SUCCESS"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 7,
+            "title": "Bump the pinned toolchain",
+            "url": "https://github.com/someone-else/infra/pull/7",
+            "isDraft": true,
+            "state": "OPEN",
+            "additions": 4,
+            "deletions": 4,
+            "changedFiles": 1,
+            "headRefName": "toolchain",
+            "baseRefName": "trunk",
+            "reviewDecision": null,
+            "updatedAt": "2026-08-20T17:45:00Z",
+            "repository": { "nameWithOwner": "someone-else/infra" },
+            "commits": {
+              "nodes": [
+                {
+                  "commit": {
+                    "statusCheckRollup": null
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "number": 99,
+            "title": "A node whose repository the token cannot see",
+            "url": "https://github.com/hidden/hidden/pull/99",
+            "isDraft": false,
+            "state": "OPEN",
+            "additions": 1,
+            "deletions": 0,
+            "changedFiles": 1,
+            "headRefName": "x",
+            "baseRefName": "main",
+            "reviewDecision": null,
+            "updatedAt": "2026-08-20T09:00:00Z",
+            "repository": null,
+            "commits": { "nodes": [] }
+          }
+        ]
+      }
+    }
+  }
+}

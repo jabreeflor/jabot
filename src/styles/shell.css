@@ -185,3 +185,18 @@
 .page-notice .btn {
   flex: none;
 }
+
+/* An offer, not a warning. The sign-in strip sits in the same slot as the
+   "gh is not installed" notice and must not read like one: nothing is wrong
+   with a board that has not signed in. */
+.page-notice.offer {
+  color: var(--dim);
+}
+
+/* Who the board belongs to, once it belongs to somebody. Quiet on purpose —
+   it is a caption for the rows, not a control. */
+.page-account {
+  margin-top: var(--sp-4);
+  color: var(--faint);
+  font-size: var(--fs-meta);
+}

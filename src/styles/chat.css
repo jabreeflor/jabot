@@ -84,12 +84,11 @@
   white-space: nowrap;
 }
 
-.harness-chip i {
-  width: var(--sp-3);
-  height: var(--sp-3);
-  border-radius: 50%;
-  font-style: normal;
-  background: var(--dot, var(--faint));
+.harness-chip .hmark {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--dot, var(--faint));
 }
 
 .chat-scroll {

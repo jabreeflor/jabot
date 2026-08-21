@@ -252,7 +252,10 @@ export interface InboxDetail {
  */
 export interface PullRequest {
   id: string;
-  threadId: string;
+  /** The session that opened it. Absent for one of the user's own pull
+      requests written somewhere else (#28) — the board shows those too once
+      they have signed in, and they have no thread here to reopen. */
+  threadId?: string;
   provider: string;
   repo: string;
   number: number;

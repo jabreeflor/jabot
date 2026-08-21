@@ -2237,3 +2237,77 @@ If it is picked up later, the question to settle first is what `busy` should
 say about the bot that is *asking*: Chief calls `list_crew_status` from inside
 its own turn, so under a strict run-state reading Chief reports itself idle
 while demonstrably working.
+
+---
+
+## D-025 — #28: a sign-in the PR tab can actually offer, and a board that stops being only about linkage
+
+**Plan:** `pr-linkage.md` and `folders-and-auth.md` settle two things that
+pull in opposite directions once somebody opens the Pull Requests tab.
+
+Auth: **no JaBot GitHub App and no OAuth client id for MVP.** A public native
+binary cannot keep a client secret, every coding agent on this Mac already
+runs `gh`, and reusing that login means one identity and one org SSO dance.
+The host reads the login on demand (`github/status`, #16) and never holds a
+token.
+
+The board: **linked PRs only.** `thread_prs.thread_id` is NOT NULL, the poll
+names each `(owner, name, number)` we have a row for, and the view's premise
+is that every row on it was opened by a session here — which is what makes
+"Reopen thread" always have somewhere to go.
+
+**Asked for:** "my pull requests tab should let me sign in with github so i can
+see all my open pull requests." Both halves are outside what was built: there
+was no sign-in anywhere in the UI (`githubStatus` existed on the client and no
+component called it), and the board could not show a pull request that no
+session here had opened.
+
+**Built:**
+
+- **`github/login`** — one method, one direction. It takes a token the user
+  created on GitHub and hands it to `gh auth login --with-token` **on stdin**,
+  then answers with the same three-fact `github/status` result. No client id
+  was invented, nothing is stored by JaBot, and `gh` keeps the credential
+  where it keeps its own. `exec::Spawn` gained a `stdin` field for this, which
+  is the only way a secret reaches a child here: this host runs children whose
+  command lines any process on the Mac can read.
+- **`GithubLoginParams` redacts its own `Debug`.** It is the only request
+  frame in the protocol that carries a secret, and `{:?}` on a frame is the
+  cheapest way to leak one. `a_login_frame_cannot_print_its_own_token` holds
+  it; the e2e case asserts the same property from the outside, by reading
+  every argv the fake `gh` was ever called with.
+- **`pr/mine`** — `viewer.pullRequests(states: OPEN)`, deliberately not
+  `search(query: "is:pr is:open author:@me")`: a search string would have to be
+  written into the document (it is not a value `fetch` would let through as a
+  variable), and `viewer` needs none — authorship is resolved from the token.
+  A PR that is *also* linked comes back carrying its thread, looked up on the
+  same `(provider, repo, number)` the linkage dedupes on, so the row keeps its
+  "Reopen thread".
+- **The renderer folds the two boards into one list** (`mergeBoards`). GitHub
+  wins where they overlap because its answer is always fresh, but the row
+  inherits the linked row's `id` so signing in re-labels the rows React is
+  already drawing. A linked PR that `pr/mine` did not mention is kept —
+  `pr/mine` asks only for what is open, and dropping the rest would empty the
+  Merged tab the moment somebody signed in.
+
+**Why this shape:** the alternative sign-in is a device flow, and a device
+flow needs a registered client id, which is exactly what the decision refuses
+to ship. A token paste is the one flow that reaches `gh`'s own credential
+store without inventing an app — so the deviation is in the *surface* (there
+is now a dialog) and not in the decision (there is still no JaBot OAuth app,
+and the host still holds no token).
+
+**What is deliberately still true:** the board is never gated on a login.
+Linkage needs no credential, it is still drawn for a user who will never sign
+in, and the strip above it is an offer rather than a wall. `PullRequest.threadId`
+became optional to say the one new thing honestly — a PR written somewhere
+else has no session here — and a row without one simply does not offer a
+button that would go nowhere.
+
+**Also in this change, and unrelated to GitHub:** the harness picker and the
+header chip drew a coloured dot per engine. Five dots in five accents is a
+legend you have to learn, so they now draw a mark per harness
+(`components/HarnessIcon.tsx`), in the same accent the dot used. The marks are
+written for this file in the stroke style of `Icon.tsx` rather than vendored
+from anybody's brand kit, and an id this renderer has never heard of — every
+tier-3 harness a user brings (#13) — still gets a glyph.

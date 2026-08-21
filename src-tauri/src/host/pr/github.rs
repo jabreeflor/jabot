@@ -8,10 +8,13 @@
 //! token is never read into this process at all. `gh auth token` stays the
 //! documented auth story (#16); this is the same login, one layer up.
 //!
-//! **Linked PRs only.** The document names each `(owner, name, number)` we have
-//! a row for, under an alias. Never `repository.pullRequests(first: 30)` —
-//! that would list a coworker's PRs on the user's board, and the PR view's
-//! premise is that every row here was opened by a session.
+//! **Linked PRs only, on the refresh path.** The document names each `(owner,
+//! name, number)` we have a row for, under an alias. Never
+//! `repository.pullRequests(first: 30)` — that would list a coworker's PRs on
+//! the user's board. The one query that is not about linkage is
+//! [`mine_query`], and it is scoped by *authorship* rather than by repository:
+//! `viewer.pullRequests` is the signed-in user's own, which is what the board
+//! offers to sign in for.
 //!
 //! **Every value is a GraphQL variable.** Owner and repo names come out of a
 //! git remote, which is a string a repository controls; interpolating one into
@@ -146,6 +149,107 @@ pub fn build_query(keys: &[PrKey]) -> Query {
         document,
         variables,
     }
+}
+
+/// How many of the user's own pull requests one `pr/mine` asks for.
+///
+/// Same reasoning as [`BATCH`], one step sharper: every node here drags a
+/// check rollup behind it, and somebody with eighty open PRs wants the eighty
+/// most recently touched far less than they want the page to draw.
+pub const MINE_LIMIT: usize = 25;
+
+/// Every open pull request the signed-in user wrote.
+///
+/// `viewer.pullRequests` and deliberately not `search(query: "is:pr is:open
+/// author:@me")`: the search string would have to be built into the document
+/// (a search query is not a variable this module would let through), `@me` is
+/// a convenience of the search *UI* rather than a documented GraphQL literal,
+/// and `viewer` needs neither — it is authorship, resolved from the token
+/// itself. Nothing in this document comes from outside this file, so there is
+/// nothing here to inject into.
+pub fn mine_query() -> Query {
+    let document = format!(
+        "query {{\n\
+        \x20 viewer {{\n\
+        \x20   login\n\
+        \x20   pullRequests(states: OPEN, first: {MINE_LIMIT}, \
+        orderBy: {{field: UPDATED_AT, direction: DESC}}) {{\n\
+        \x20     nodes {{ ...PrFields repository {{ nameWithOwner }} }}\n\
+        \x20   }}\n\
+        \x20 }}\n\
+        }}\n{PR_FIELDS_FRAGMENT}"
+    );
+    Query {
+        document,
+        variables: Vec::new(),
+    }
+}
+
+/// One of the viewer's pull requests: GitHub's answer, plus the two facts the
+/// snapshot does not carry because a linked row already knew them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MinePr {
+    /// `owner/name`, from `repository.nameWithOwner`.
+    pub repo: String,
+    pub number: i64,
+    pub snapshot: PrSnapshot,
+}
+
+/// The viewer, and what they have open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MineAnswer {
+    /// GitHub's own name for the token holder — the account the board is
+    /// showing. `None` only if GitHub answered without one.
+    pub login: Option<String>,
+    pub pull_requests: Vec<MinePr>,
+}
+
+/// Split one `viewer` response into rows.
+///
+/// A response with no `viewer` at all is a *failure* rather than an empty
+/// board: that is what a bad token, a rate limit and an SSO block all look
+/// like, and reporting them as "no pull requests" would tell a signed-out user
+/// they have none. An empty `nodes` array is the opposite — a real, and
+/// entirely ordinary, answer.
+pub fn parse_mine(body: &Value) -> Result<MineAnswer, FetchError> {
+    let Some(viewer) = body.get("data").and_then(|data| data.get("viewer")) else {
+        let message = body
+            .get("errors")
+            .and_then(Value::as_array)
+            .and_then(|errors| errors.first())
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str)
+            .unwrap_or("GitHub did not answer with a viewer.");
+        return Err(FetchError::Failed(message.to_string()));
+    };
+    let nodes = viewer
+        .get("pullRequests")
+        .and_then(|prs| prs.get("nodes"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let pull_requests = nodes
+        .iter()
+        .filter_map(|node| {
+            let repo = node
+                .get("repository")
+                .and_then(|repo| repo.get("nameWithOwner"))
+                .and_then(Value::as_str)?;
+            let number = node.get("number").and_then(Value::as_i64)?;
+            Some(MinePr {
+                repo: repo.to_string(),
+                number,
+                snapshot: snapshot(node),
+            })
+        })
+        .collect();
+    Ok(MineAnswer {
+        login: viewer
+            .get("login")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        pull_requests,
+    })
 }
 
 const PR_FIELDS_FRAGMENT: &str = "fragment PrFields on PullRequest {\n\
@@ -618,6 +722,7 @@ mod tests {
             "pull_requests" => include_str!("fixtures/graphql_pull_requests.json"),
             "partial_errors" => include_str!("fixtures/graphql_partial_errors.json"),
             "pr_view" => include_str!("fixtures/gh_pr_view.json"),
+            "viewer" => include_str!("fixtures/graphql_viewer_pull_requests.json"),
             other => panic!("no fixture {other}"),
         };
         serde_json::from_str(raw).expect("fixture parses")
@@ -696,6 +801,81 @@ mod tests {
         assert_eq!(checks[2].state, CHECKS_PASSING, "SKIPPED is not a failure");
         assert_eq!(checks[3].label, "ci/legacy");
         assert_eq!(checks[3].state, CHECKS_PASSING);
+    }
+
+    #[test]
+    fn the_viewers_own_query_names_authorship_and_nothing_else() {
+        let query = mine_query();
+        assert!(query.document.contains("viewer {"));
+        assert!(query.document.contains("states: OPEN"));
+        assert!(query.document.contains(&format!("first: {MINE_LIMIT}")));
+        assert!(query.document.contains("repository { nameWithOwner }"));
+        assert!(query.document.contains("fragment PrFields on PullRequest"));
+        // No repository, owner or search string is interpolated — there is
+        // nothing in this document that came from outside the module, which is
+        // why it needs no variables at all.
+        assert!(query.variables.is_empty());
+    }
+
+    #[test]
+    fn the_viewers_own_pull_requests_become_rows() {
+        let answer = parse_mine(&fixture("viewer")).expect("the fixture names a viewer");
+        assert_eq!(answer.login.as_deref(), Some("jabreeflor"));
+        // Three nodes, one of them in a repository the token cannot name. A row
+        // with no `owner/name` cannot be drawn or deduped, so it is dropped
+        // rather than shown as a PR in nowhere.
+        assert_eq!(answer.pull_requests.len(), 2);
+
+        let own = &answer.pull_requests[0];
+        assert_eq!(own.repo, "jabreeflor/jabot");
+        assert_eq!(own.number, 41);
+        assert_eq!(own.snapshot.status, STATUS_OPEN);
+        assert_eq!(own.snapshot.check_state.as_deref(), Some(CHECKS_PASSING));
+        assert_eq!(
+            own.snapshot.review_state.as_deref(),
+            Some("review_required")
+        );
+        assert_eq!(own.snapshot.additions, 612);
+        assert_eq!(
+            own.snapshot.url.as_deref(),
+            Some("https://github.com/jabreeflor/jabot/pull/41")
+        );
+
+        // Somebody else's repository, which is the entire point of this query:
+        // a PR the user wrote is theirs to see wherever it lives.
+        let elsewhere = &answer.pull_requests[1];
+        assert_eq!(elsewhere.repo, "someone-else/infra");
+        assert_eq!(elsewhere.snapshot.status, STATUS_DRAFT);
+        // No rollup at all reads as "no checks", never as "checks passed".
+        assert_eq!(elsewhere.snapshot.check_state, None);
+    }
+
+    #[test]
+    fn a_response_with_no_viewer_is_a_failure_and_not_an_empty_board() {
+        // What a dead token looks like. Reporting it as "you have no pull
+        // requests" would be a lie told to somebody who has plenty.
+        let body: Value =
+            serde_json::from_str(r#"{"data": null, "errors": [{"message": "Bad credentials"}]}"#)
+                .unwrap();
+        let err = parse_mine(&body).expect_err("no viewer is a failure");
+        assert_eq!(err.reason(), "gh_failed");
+        assert_eq!(err.detail(), "Bad credentials");
+        // And an auth failure carries the way out of it.
+        assert_eq!(
+            err.remedy("github.com").as_deref(),
+            Some("gh auth login --hostname github.com")
+        );
+    }
+
+    #[test]
+    fn a_viewer_with_nothing_open_is_an_answer() {
+        let body: Value = serde_json::from_str(
+            r#"{"data": {"viewer": {"login": "octocat", "pullRequests": {"nodes": []}}}}"#,
+        )
+        .unwrap();
+        let answer = parse_mine(&body).expect("an empty board is still an answer");
+        assert_eq!(answer.login.as_deref(), Some("octocat"));
+        assert!(answer.pull_requests.is_empty());
     }
 
     #[test]
