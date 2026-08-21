@@ -6,9 +6,12 @@
 //! the handshake it performs, the frames it emits, and the fact that a card
 //! disappears when *another* device answers.
 
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { HostTransport, NotificationHandler } from "../../host/client";
+import * as protocol from "../../host/protocol";
 import {
   HOST_HELLO,
   INBOX_LIST,
@@ -19,6 +22,7 @@ import {
   PERMISSION_RESOLVED,
   SESSION_CANCEL,
   SESSION_PROMPT,
+  THREAD_TRANSCRIPT,
   type JsonRpcNotification,
   type JsonRpcRequest,
   type JsonRpcResponse,
@@ -113,6 +117,41 @@ function askNotification(requestId = "req-1"): JsonRpcNotification {
   };
 }
 
+
+/**
+ * Every wire method `MobileSession` is capable of emitting.
+ *
+ * Read out of the two files rather than listed here, because a list here is
+ * the thing that goes stale: `client.ts` says which constant each `HostClient`
+ * method sends, `session.ts` says which of those methods the phone touches.
+ * Add `this.client.prompt(...)` to the phone and `session/prompt` appears in
+ * this set without anybody remembering to add it.
+ */
+function methodsTheSessionCanEmit(): string[] {
+  const wire = new Map<string, string>();
+  for (const block of readFileSync("src/host/client.ts", "utf8").split(/\n  async /)) {
+    const name = /^(\w+)\s*\(/.exec(block)?.[1];
+    const konst = /this\.request(?:<[^>]*>)?\(\s*([A-Z][A-Z0-9_]*)/.exec(block)?.[1];
+    if (!name || !konst) continue;
+    const value = (protocol as unknown as Record<string, unknown>)[konst];
+    if (typeof value === "string") wire.set(name, value);
+  }
+
+  const session = readFileSync("src/mobile/session.ts", "utf8");
+  const reached = new Set<string>();
+  for (const [, call] of session.matchAll(/this\.client\.(\w+)\s*\(/g)) {
+    const method = wire.get(call);
+    // `connect`, `disconnect` and `onNotification` are transport plumbing, not
+    // requests; anything else that is not in the map is a `HostClient` change
+    // this parser has not kept up with, and that must not read as "allowed".
+    if (method) reached.add(method);
+    else if (!["connect", "disconnect", "onNotification"].includes(call)) {
+      throw new Error(`client.${call} is not a request this test can classify`);
+    }
+  }
+  return [...reached].sort();
+}
+
 describe("the phone client", () => {
   it("says hello as its own device, with the proof its pairing derived", async () => {
     const host = new FakeHost();
@@ -130,7 +169,34 @@ describe("the phone client", () => {
     expect(session.scopedMethods).toEqual(APPROVER_METHODS);
   });
 
-  it("never sends a method an approver may not call", async () => {
+  /**
+   * The version of this that came before could not fail.
+   *
+   * It drove the four operations the session has, then asserted every request
+   * it saw was in `APPROVER_METHODS` — but all four are in `APPROVER_METHODS`
+   * by construction, so the loop held whether or not `assertAllowed` existed
+   * at all. Deleting the local allowlist check from `session.ts` left the
+   * whole unit suite green. What it was trying to say is a statement about
+   * the client's *capabilities*, not about one scripted run, so it is now
+   * read out of the source: whatever `MobileSession` can reach on `HostClient`
+   * resolves, through `client.ts`, to a wire method — and every one of those
+   * has to be inside the role.
+   */
+  it("cannot reach a host method outside the approver role", () => {
+    const emitted = methodsTheSessionCanEmit();
+
+    // Sanity on the extraction itself: a parse that found nothing would make
+    // the assertion below vacuous in exactly the way this test replaces.
+    expect(emitted).toEqual(
+      expect.arrayContaining([HOST_HELLO, INBOX_LIST, PERMISSION_PENDING, PERMISSION_REPLY]),
+    );
+    expect(emitted.filter((method) => !APPROVER_METHODS.includes(method))).toEqual([]);
+    // The one that must never appear, named so the guard above has teeth for
+    // a reader as well as for the runner.
+    expect(emitted).not.toContain(SESSION_PROMPT);
+  });
+
+  it("sends exactly the calls its four operations need, and no others", async () => {
     const host = new FakeHost();
     const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
     await session.connect();
@@ -140,13 +206,18 @@ describe("the phone client", () => {
     await session.cancelThread("t9").catch(() => {});
     await session.transcript("t9").catch(() => {});
 
-    // The host enforces this on every request from the `paired_devices` row;
-    // what is asserted here is that the client cannot even *emit* something
-    // outside the role, so there is no button that always fails.
-    for (const request of host.sent) {
-      expect(APPROVER_METHODS).toContain(request.method);
-    }
-    expect(APPROVER_METHODS).not.toContain(SESSION_PROMPT);
+    // An exact set, not a containment: a call this client did not used to make
+    // is a change to what the phone does, and has to be looked at.
+    expect([...new Set(host.sent.map((r) => r.method))].sort()).toEqual(
+      [
+        HOST_HELLO,
+        INBOX_LIST,
+        PERMISSION_PENDING,
+        PERMISSION_REPLY,
+        SESSION_CANCEL,
+        THREAD_TRANSCRIPT,
+      ].sort(),
+    );
   });
 
   /// Drift, in the direction that matters: the host narrowed the role and this

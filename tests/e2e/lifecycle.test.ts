@@ -211,22 +211,45 @@ describe("run ledger", () => {
 });
 
 describe("resurface", () => {
-  it("has the Inbox card on disk before it says the thread came back", async () => {
+  /**
+   * What a renderer gets: the frame arrives, it asks for the Inbox, and the
+   * card the frame named is there with the same copy on it.
+   *
+   * Deliberately *not* claiming to pin persist-then-notify. The host answers
+   * one request at a time, so `inbox/list` cannot be served until the
+   * `thread/fold` handler has returned and both halves have happened — this
+   * race is one a notify-then-persist host would also win, and this case
+   * passes against one. The order is pinned where it is observable, in
+   * `src-tauri/tests/lifecycle.rs::a_resurface_whose_write_fails_notifies_nobody`,
+   * by making the write fail and asserting the silence.
+   */
+  it("hands a client a card that is already readable, with matching copy", async () => {
     const { host, client } = await connected();
     await openThread(client, "t-order");
     await client.prompt({ threadId: "t-order", content: "hi" });
     await settle(client, "t-order", (s) => s.latestRun?.state === "succeeded");
 
     // Ask for the Inbox the instant the notification lands — the same race a
-    // renderer runs. Persist-then-notify is what makes it never lose.
-    const readOnNotify = new Promise<InboxListResult>((resolve, reject) => {
+    // renderer runs.
+    const readOnNotify = new Promise<{
+      announced: InboxResurfaceParams;
+      inbox: InboxListResult;
+    }>((resolve, reject) => {
       host
         .waitFor(
           (n: JsonRpcNotification) =>
             n.method === INBOX_RESURFACE &&
             (n.params as InboxResurfaceParams).threadId === "t-order",
         )
-        .then(() => client.inbox().then(resolve, reject), reject);
+        .then(
+          (n) =>
+            client.inbox().then(
+              (inbox) =>
+                resolve({ announced: n.params as InboxResurfaceParams, inbox }),
+              reject,
+            ),
+          reject,
+        );
     });
 
     const folded = await client.fold({ threadId: "t-order" });
@@ -234,7 +257,7 @@ describe("resurface", () => {
     expect(folded.state).toBe("resurfaced");
     expect(folded.resurfacedReason).toBe("done");
 
-    const inbox = await readOnNotify;
+    const { announced, inbox } = await readOnNotify;
     expect(kinds(inbox)).toEqual(["done"]);
     expect(inbox.events[0]).toMatchObject({
       threadId: "t-order",
@@ -243,6 +266,10 @@ describe("resurface", () => {
       runId: folded.latestRun?.id,
     });
     expect(inbox.unread).toBe(1);
+    // The frame and the row are one card, not two sources that can disagree.
+    expect(announced.reason).toBe(inbox.events[0].kind);
+    expect(announced.title).toBe(inbox.events[0].title);
+    expect(announced.summary).toBe(inbox.events[0].summary);
   });
 
   it("comes back as needs_you while a permission is outstanding", async () => {

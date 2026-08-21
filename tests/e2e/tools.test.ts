@@ -84,6 +84,78 @@ async function sessionNewParams(
   }
 }
 
+
+/**
+ * The complete published shape of each tools response. Anything else on the
+ * wire is a field nobody has decided is safe to hand a client.
+ */
+const CARD_FIELDS = [
+  "id",
+  "label",
+  "blurb",
+  "transport",
+  "mcp",
+  "provider",
+  "providerLabel",
+  "scopes",
+  "status",
+  "detail",
+  "account",
+  "expiresAt",
+  "authorizeUrl",
+  "redirectUri",
+  "docsUrl",
+];
+const CONNECT_FIELDS = [
+  "toolId",
+  "provider",
+  "status",
+  "authorizeUrl",
+  "redirectUri",
+  "affects",
+];
+const DISCONNECT_FIELDS = ["toolId", "provider", "disconnected", "affects"];
+
+/**
+ * `authorizeUrl` is the consent page the user is sent to: it legitimately
+ * carries the PKCE challenge and the CSRF state, both of which are long
+ * opaque strings. Every other field is prose, an id, a URL or a timestamp.
+ */
+const OPAQUE_ALLOWED = new Set(["authorizeUrl"]);
+
+/** What a credential looks like, rather than what one is called. */
+function credentialShaped(value: string): boolean {
+  if (/\bbearer\b/i.test(value)) return true;
+  if (/\b(access|refresh|id)[_-]?token\b/i.test(value)) return true;
+  // An opaque blob: nothing but token alphabet, long, no spaces or colons —
+  // so a sentence, an email, an ISO timestamp and a URL all fall through.
+  return /^[A-Za-z0-9._~+/-]{24,}={0,2}$/.test(value);
+}
+
+function expectNoCredentials(payload: unknown, allowed: string[]): void {
+  const record = payload as Record<string, unknown>;
+  expect(
+    Object.keys(record).filter((key) => !allowed.includes(key)),
+    `undeclared field on ${JSON.stringify(payload)}`,
+  ).toEqual([]);
+  for (const [key, value] of Object.entries(record)) {
+    if (OPAQUE_ALLOWED.has(key)) continue;
+    for (const text of typeof value === "string" ? [value] : []) {
+      expect(credentialShaped(text), `${key} looks like a credential: ${text}`).toBe(
+        false,
+      );
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item !== "string") continue;
+        expect(credentialShaped(item), `${key}[] looks like a credential: ${item}`).toBe(
+          false,
+        );
+      }
+    }
+  }
+}
+
 describe("tool catalog", () => {
   it("advertises its methods and lists every chip with a status", async () => {
     const { client, hello } = await connected();
@@ -161,17 +233,39 @@ describe("tool catalog", () => {
     expect(byId(after.tools, "gmail").status).toBe("needs_auth");
   });
 
-  /** No response on this surface may carry credential material. */
-  it("never puts a token in a tool response", async () => {
-    const { client, host } = await connected();
-    await client.connectTool({ toolId: "notion" });
-    const rendered = JSON.stringify(await client.listTools());
+  /**
+   * No response on this surface may carry credential material.
+   *
+   * The version of this that came before only grepped the rendered JSON for
+   * the *words* `access_token`, `refresh_token` and `authorization`, on a
+   * store that held no grant at all — so there was no secret anywhere in the
+   * system for it to find, and a real leak does not spell itself. Putting a
+   * bearer into the `account` field of every connecting chip left it green.
+   *
+   * What can fail is the shape: the fields this surface is allowed to have,
+   * named one by one, and every string value on it checked against what a
+   * credential looks like rather than against what one is called. A new field
+   * on `ToolCardView` fails this until somebody decides it is safe to publish.
+   */
+  it("puts nothing on the tool surface but the fields a chip is allowed", async () => {
+    const { client } = await connected();
 
+    const started = await client.connectTool({ toolId: "notion" });
+    expectNoCredentials(started, CONNECT_FIELDS);
+
+    const listed = await client.listTools();
+    expect(listed.tools.length).toBeGreaterThan(0);
+    for (const tool of listed.tools) expectNoCredentials(tool, CARD_FIELDS);
+
+    const stopped = await client.disconnectTool({ toolId: "notion" });
+    expectNoCredentials(stopped, DISCONNECT_FIELDS);
+
+    // The names too, because a field called `accessToken` would be caught by
+    // the allowlist above but should also be obvious in the failure message.
+    const rendered = JSON.stringify(listed);
     expect(rendered).not.toMatch(/access[_-]?token/i);
     expect(rendered).not.toMatch(/refresh[_-]?token/i);
     expect(rendered).not.toMatch(/"authorization"/i);
-    await client.disconnectTool({ toolId: "notion" });
-    expect(host.notifications()).toBeDefined();
   });
 });
 

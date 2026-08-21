@@ -98,12 +98,23 @@ describe("framing", () => {
     expect(health.connected).toBe(true);
   });
 
+  /**
+   * Correlation, not just survival. Two `health` calls answer with the same
+   * bytes, so a host that handed each promise the other's response would look
+   * identical; the calls below have different result shapes, so a mix-up
+   * shows up as a missing field rather than as nothing at all.
+   */
   it("handles several frames arriving in one chunk", async () => {
-    const { host, client } = await connected();
+    const { client } = await connected();
 
-    const [a, b] = await Promise.all([client.health(), client.health()]);
-    expect(a.hostId).toBe(b.hostId);
-    expect(host.notifications()).toBeDefined();
+    const [health, notify, harnesses] = await Promise.all([
+      client.health(),
+      client.notifyStatus(),
+      client.listHarnesses(),
+    ]);
+    expect(health.connected).toBe(true);
+    expect(notify.kinds).toEqual(["needs_you", "done", "failed"]);
+    expect(harnesses.harnesses.length).toBeGreaterThan(0);
   });
 });
 

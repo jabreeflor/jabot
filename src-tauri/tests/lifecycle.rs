@@ -157,6 +157,26 @@ impl Host {
         self.session.pump_acp();
         self.session.take_outbound()
     }
+
+    /// Make every `inbox_events` insert abort, from a second connection to the
+    /// same file. The host keeps its own connection and its own transaction;
+    /// what it loses is the ability to write the card, which is the only way
+    /// "persist, then notify" becomes observable from outside the host.
+    fn break_inbox_writes(&self) {
+        self.sql(
+            "CREATE TRIGGER no_inbox_writes BEFORE INSERT ON inbox_events
+             BEGIN SELECT RAISE(ABORT, 'inbox_events is unavailable'); END",
+        );
+    }
+
+    fn mend_inbox_writes(&self) {
+        self.sql("DROP TRIGGER no_inbox_writes");
+    }
+
+    fn sql(&self, statement: &str) {
+        let conn = rusqlite::Connection::open(self.dir.path().join("jabot.sqlite")).unwrap();
+        conn.execute_batch(statement).unwrap();
+    }
 }
 
 fn fake_agent() -> String {
@@ -456,16 +476,21 @@ fn a_session_receipt_is_written_and_survives_the_process() {
     assert_eq!(stored.acp_session_id, "sess-fake-1");
 }
 
+/// The card the notification announces is readable, and survives losing it.
+///
+/// Note what this does *not* prove: by the time `thread/fold` has answered,
+/// both the write and the notification have happened, so folding and then
+/// looking cannot tell persist-then-notify from notify-then-persist. That
+/// ordering is pinned by `a_resurface_whose_write_fails_notifies_nobody`.
 #[test]
-fn the_inbox_card_lands_before_the_notification_and_outlives_a_dropped_one() {
+fn the_announced_card_is_readable_and_outlives_a_dropped_notification() {
     let mut host = Host::start();
     host.open_thread("t-order", None);
     host.prompt("t-order");
     host.settle("t-order", |s| s["latestRun"]["state"] == "succeeded");
     host.ok(THREAD_FOLD, json!({ "threadId": "t-order" }));
 
-    // Persist-then-notify: by the time the notification exists, the card it
-    // announces is already readable.
+    // The frame and the durable row carry the same card.
     let notifications = host.drain();
     let resurfaced = notifications
         .iter()
@@ -485,10 +510,11 @@ fn the_inbox_card_lands_before_the_notification_and_outlives_a_dropped_one() {
 }
 
 #[test]
-fn a_resurface_that_cannot_be_persisted_notifies_nobody() {
-    // An ephemeral host has no store, so the card has nowhere to land. The
-    // rule is that the notification is downstream of the write: no write, no
-    // notification, and no client told about a result that does not exist.
+fn a_fold_on_a_host_with_no_store_is_refused_before_anything_resurfaces() {
+    // An ephemeral host has no store, so `thread/fold` is refused outright.
+    // This is the *refusal*, not the persist-then-notify order: the resurface
+    // path is never entered, so no ordering inside it can be observed here.
+    // `a_resurface_whose_write_fails_notifies_nobody` is the ordering guard.
     let mut session = HostSession::ephemeral();
     session.handle_request(req(1, HOST_HELLO, None));
     let response = session.handle_request(req(2, THREAD_FOLD, Some(json!({ "threadId": "t-x" }))));
@@ -497,6 +523,47 @@ fn a_resurface_that_cannot_be_persisted_notifies_nobody() {
         .take_outbound()
         .iter()
         .all(|n| n.method != INBOX_RESURFACE));
+}
+
+/// Persist-then-notify, stated so that inverting it fails.
+///
+/// Nothing downstream of the host can see which of the two happened first:
+/// both are done by the time `thread/fold` answers, so a test that folds and
+/// then looks passes either way. The order only becomes observable when the
+/// write *fails* — persist-first emits nothing, notify-first has already told
+/// a client about a card that does not exist. So this makes the write fail,
+/// with a real store present and a real thread to resurface, and asserts the
+/// silence. Swap the two statements in `resurface_and_notify` and this is the
+/// test that goes red.
+#[test]
+fn a_resurface_whose_write_fails_notifies_nobody() {
+    let mut host = Host::start();
+    host.open_thread("t-broken", None);
+    host.prompt("t-broken");
+    host.settle("t-broken", |s| s["latestRun"]["state"] == "succeeded");
+    host.drain();
+
+    // The Inbox insert now aborts, inside the same transaction that moves the
+    // thread to `resurfaced` — so the resurface cannot be persisted at all.
+    host.break_inbox_writes();
+
+    host.call(THREAD_FOLD, json!({ "threadId": "t-broken" }));
+
+    let announced = host
+        .drain()
+        .into_iter()
+        .filter(|n| n.method == INBOX_RESURFACE)
+        .count();
+    assert_eq!(
+        announced, 0,
+        "a resurface that was never written must not be announced"
+    );
+
+    // And the store agrees with the silence: nothing was left half-applied.
+    host.mend_inbox_writes();
+    let inbox = host.ok(INBOX_LIST, json!({}));
+    assert_eq!(kinds(&inbox), Vec::<String>::new());
+    assert_ne!(host.state("t-broken")["state"], "resurfaced");
 }
 
 #[test]
