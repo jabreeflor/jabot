@@ -1,5 +1,5 @@
 /**
- * Fold, from the affordance to the host call (#26).
+ * Fold, Archive and Delete, from the affordance to the host call (#26).
  *
  * `tests/e2e/fold.test.ts` proves what the *host* does with a live session.
  * What is checked here is the half a live host cannot check: that the three
@@ -13,6 +13,12 @@
  * done" sends *no* `policy` field, because `state-machine.md` gives that
  * gesture the thread's existing policy; sending `default` would silently undo
  * a quieter one the user chose earlier.
+ *
+ * The other two items on the same menu are here for a blunter reason: they
+ * used to reach the mock reducer even for a thread the host owned. A Delete
+ * that only hides a row leaves the adapter running, the permissions
+ * outstanding, the run open and the worktree orphaned — and the row comes back
+ * on the next `folder/list`.
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -161,12 +167,16 @@ describe("ThreadContextMenu", () => {
 describe("folding a host-owned thread", () => {
   const listFolders = vi.fn<() => Promise<FolderListResult>>();
   const fold = vi.fn<(params: unknown) => Promise<ThreadStateResult>>();
+  const archiveThread = vi.fn<(params: unknown) => Promise<ThreadStateResult>>();
+  const deleteThread = vi.fn<(params: unknown) => Promise<ThreadStateResult>>();
 
   function client(): HostClient {
     return {
       disconnect: vi.fn(),
       listFolders,
       fold,
+      archiveThread,
+      deleteThread,
       onNotification: vi.fn(() => () => {}),
       threadTranscript: vi.fn(async () => ({
         threadId: "t-auth",
@@ -182,6 +192,8 @@ describe("folding a host-owned thread", () => {
   beforeEach(() => {
     listFolders.mockReset();
     fold.mockReset();
+    archiveThread.mockReset();
+    deleteThread.mockReset();
     // The host writes the row before it answers, so the `folder/list` that
     // follows a fold has to have lost the thread. A static mock would let the
     // "row leaves the sidebar" assertion pass on a detail the host does not
@@ -193,6 +205,16 @@ describe("folding a host-owned thread", () => {
     fold.mockImplementation(async () => {
       asleep = true;
       return folded;
+    });
+    // Archive and Delete take the row out of `folder/list` for good, the same
+    // way the host does — the row is written before the call answers.
+    archiveThread.mockImplementation(async () => {
+      asleep = true;
+      return { ...folded, state: "archived" };
+    });
+    deleteThread.mockImplementation(async () => {
+      asleep = true;
+      return { ...folded, state: "deleted" };
     });
     vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
   });
@@ -251,6 +273,61 @@ describe("folding a host-owned thread", () => {
     await waitFor(() =>
       expect(
         screen.getByRole("heading", { level: 1, name: "Inbox" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("sends thread/archive from the row's menu rather than moving a fixture", async () => {
+    await renderApp();
+    await userEvent.pointer({ keys: "[MouseRight]", target: authRow() });
+    await userEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
+
+    // The reducer knows how to hide a row. Only the host withdraws the
+    // outstanding permissions, drains the queued prompts, closes the run and
+    // releases the worktree — all of which would have kept running behind a
+    // row that had quietly stopped being drawn.
+    await waitFor(() =>
+      expect(archiveThread).toHaveBeenCalledWith({ threadId: "t-auth" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /Auth migration/ }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("sends thread/delete from the row's menu rather than moving a fixture", async () => {
+    await renderApp();
+    await userEvent.pointer({ keys: "[MouseRight]", target: authRow() });
+    await userEvent.click(screen.getByRole("menuitem", { name: /Delete/ }));
+
+    await waitFor(() =>
+      expect(deleteThread).toHaveBeenCalledWith({ threadId: "t-auth" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /Auth migration/ }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("puts the row back and says why when the host refuses an archive", async () => {
+    archiveThread.mockRejectedValue(
+      new HostRpcError({
+        code: RPC_ERROR.ILLEGAL_TRANSITION,
+        message: "cannot archive an archived thread",
+      }),
+    );
+    await renderApp();
+    await userEvent.pointer({ keys: "[MouseRight]", target: authRow() });
+    await userEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "That thread is already archived.",
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Auth migration/ }),
       ).toBeInTheDocument(),
     );
   });

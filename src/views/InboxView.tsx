@@ -28,12 +28,19 @@ const TABS: readonly TabSpec<InboxTab>[] = [
 export function InboxView({
   cards,
   now,
+  error,
+  loading,
   onOpenThread,
   onAction,
 }: {
   cards: readonly InboxCard[];
   /** Injected so "10:12" is not a moving target in tests. */
   now?: Date;
+  /** Why the host's answer did not arrive. Said here rather than in the app
+      banner: an Inbox that cannot be read is a fact about this pane. */
+  error?: string | null;
+  /** The host has been asked and has not answered yet. */
+  loading?: boolean;
   onOpenThread: (threadId: string) => void;
   onAction?: (cardId: string, actionId: string) => void;
 }) {
@@ -67,12 +74,20 @@ export function InboxView({
             onChange={setTab}
           />
 
+          {error && (
+            <div className="page-empty" role="alert">
+              {error}
+            </div>
+          )}
+
           <div
             id="inbox-panel"
             role="tabpanel"
             aria-labelledby={tabButtonId("inbox-panel", tab)}
           >
-            {resurfaced.length === 0 && sleeping.length === 0 && (
+            {loading && <div className="page-empty">Checking the Inbox…</div>}
+
+            {!loading && resurfaced.length === 0 && sleeping.length === 0 && (
               <div className="page-empty">Nothing waiting. Enjoy it.</div>
             )}
 
@@ -165,11 +180,13 @@ function InboxRow({
         {open && card.detail && (
           <div className="card-detail">
             <div className="path">{card.detail.path}</div>
-            <ul>
-              {card.detail.bullets.map((bullet) => (
-                <li key={bullet}>{bullet}</li>
-              ))}
-            </ul>
+            {card.detail.bullets.length > 0 && (
+              <ul>
+                {card.detail.bullets.map((bullet) => (
+                  <li key={bullet}>{bullet}</li>
+                ))}
+              </ul>
+            )}
             <div className="acts">
               {card.detail.actions.map((action) => (
                 <button

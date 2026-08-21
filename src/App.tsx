@@ -2,10 +2,10 @@
 //!
 //! Two data sources meet here and they are deliberately separate. The *real*
 //! host connection (#8) supplies who and where the host is, the registered
-//! folders and the threads inside them (#16), and the crew, its templates, the
-//! tool chips and the harness cards (#17). The rest still comes from
-//! `mock-host`, and swapping it for host RPC is what #14, #22 and #28 each do
-//! for their slice.
+//! folders and the threads inside them (#16), the crew, its templates, the
+//! tool chips and the harness cards (#17), and the Inbox — the cards, the
+//! badge and what its buttons do (#22). What is left on `mock-host` is the
+//! bot conversations and Chief's notices, which #24 owns.
 //!
 //! Where the two meet, the host wins *once it has answered*. A `null` folder
 //! list is "the host has not said yet" — a preview build, a unit test, a host
@@ -54,7 +54,8 @@ import {
   type Schedules,
 } from "./views/schedules";
 import { allThreads, useFolders } from "./views/folders";
-import { useFoldThread } from "./views/fold";
+import { useThreadActions } from "./views/fold";
+import { useInbox, type HostInbox } from "./views/inbox";
 import { ChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
@@ -108,6 +109,9 @@ function App() {
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const { client, hello, hostError, connecting } = useHost();
   const registered = useFolders(client);
+  // The Inbox (#22). Reloads the sidebar too: reopening a card's thread puts
+  // its row back, and archiving one takes it away.
+  const inbox = useInbox(client, registered.reload);
   const crew = useCrew(client);
   const schedules = useSchedules(client);
   // The PR board (#28). Two calls behind one hook: an instant store read on
@@ -127,14 +131,18 @@ function App() {
   const folders = registered.folders ?? sidebarFolders(state);
   const hostThreads = registered.folders ? allThreads(registered.folders) : [];
 
-  // Fold is a host call for a host row (#26). `registered.reload` runs whether
-  // the host took it or not: the leave animation has already pulled the row off
-  // screen, so a refusal has to put it back rather than leave the sidebar
-  // showing a thread that is still active and no longer drawn.
-  const { fold, error: foldError, clearError: clearFoldError } = useFoldThread(
-    client,
-    registered.reload,
-  );
+  // Fold, Archive and Delete are host calls for a host row (#26).
+  // `registered.reload` runs whether the host took them or not: the leave
+  // animation has already pulled the row off screen, so a refusal has to put it
+  // back rather than leave the sidebar showing a thread that is still active
+  // and no longer drawn.
+  const {
+    fold,
+    archive,
+    remove,
+    error: foldError,
+    clearError: clearFoldError,
+  } = useThreadActions(client, registered.reload);
 
   const timers = useRef<number[]>([]);
   useEffect(() => {
@@ -207,6 +215,66 @@ function App() {
         );
       });
     });
+  }
+
+  /**
+   * Archive a thread: close it out for good.
+   *
+   * A row the host owns is archived on the host, because the archive is what
+   * withdraws the outstanding permissions, drains the queued prompts, closes
+   * the run and releases the worktree (#26). Only the fixtures fall back to the
+   * reducer — a `dispatch` here for a real thread would animate the row away
+   * and leave every one of those still running.
+   */
+  function archiveThread(threadId: string) {
+    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    leaveThread(threadId, () => {
+      if (!onHost) {
+        dispatch({ type: "archiveThread", threadId });
+        return;
+      }
+      void archive(threadId).then((archived) => {
+        if (!archived) return;
+        setSelection((current) =>
+          current.view === "thread" && current.threadId === threadId
+            ? { view: "inbox" }
+            : current,
+        );
+      });
+    });
+  }
+
+  /** Delete a thread. Same split as archive, and the same reason. */
+  function deleteThread(threadId: string) {
+    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    leaveThread(threadId, () => {
+      if (!onHost) {
+        dispatch({ type: "deleteThread", threadId });
+        return;
+      }
+      void remove(threadId).then((deleted) => {
+        if (!deleted) return;
+        setSelection((current) =>
+          current.view === "thread" && current.threadId === threadId
+            ? { view: "inbox" }
+            : current,
+        );
+      });
+    });
+  }
+
+  /**
+   * Open the thread an Inbox card is about.
+   *
+   * Opening it is a state change, not a navigation: `thread/reopen` clears the
+   * thread's badge, puts an archived thread's worktree back, and moves the row
+   * out of Still Sleeping and into the sidebar (#22). The hook decides whether
+   * this thread is somewhere `reopen` is legal from; the pane points at it
+   * either way, because a card the user clicked has to open something.
+   */
+  function openInboxThread(threadId: string) {
+    setSelection({ view: "thread", threadId });
+    void inbox.open(threadId);
   }
 
   /**
@@ -360,7 +428,11 @@ function App() {
         foldersEmpty={registered.folders?.length === 0}
         onAddFolder={client ? () => setAddFolder(true) : undefined}
         selection={selection}
-        inboxCount={needsYouCount(state)}
+        // The host's own count, not a second classification of the rows this
+        // renderer happens to be holding: `count_unread_inbox` is the badge
+        // `resurface.md` specifies, and it is the number the phone already
+        // draws. Two devices disagreeing about one host would be two products.
+        inboxCount={inbox.unread ?? needsYouCount(state)}
         openPrCount={openPrCount(state)}
         userName={USER_NAME}
         hostLine={hostLine(hello, hostError, connecting)}
@@ -389,6 +461,7 @@ function App() {
         <MainView
           client={client}
           state={state}
+          inbox={inbox}
           schedules={schedules}
           pulls={pulls}
           onEditSchedule={(scheduleId) =>
@@ -407,7 +480,15 @@ function App() {
             dispatch({ type: "sendMessage", conversationId, text })
           }
           onNotice={answerNotice}
+          onOpenInboxThread={openInboxThread}
           onInboxAction={(cardId, actionId) => {
+            // A host card's buttons reach the host: Archive is `thread/archive`
+            // and an `ask:` button is `permission/reply`. The reducer only ever
+            // knew how to hide a fixture.
+            if (inbox.cards) {
+              void inbox.act(cardId, actionId);
+              return;
+            }
             if (actionId === "archive") {
               dispatch({ type: "dismissInboxCard", cardId });
             }
@@ -483,16 +564,8 @@ function App() {
           position={menu.position}
           onClose={() => setMenu(null)}
           onFold={(policy) => foldThread(menu.thread.id, policy)}
-          onArchive={() =>
-            leaveThread(menu.thread.id, () =>
-              dispatch({ type: "archiveThread", threadId: menu.thread.id }),
-            )
-          }
-          onDelete={() =>
-            leaveThread(menu.thread.id, () =>
-              dispatch({ type: "deleteThread", threadId: menu.thread.id }),
-            )
-          }
+          onArchive={() => archiveThread(menu.thread.id)}
+          onDelete={() => deleteThread(menu.thread.id)}
         />
       )}
     </div>
@@ -508,6 +581,7 @@ function App() {
 function MainView({
   client,
   state,
+  inbox,
   schedules,
   pulls,
   onEditSchedule,
@@ -522,6 +596,7 @@ function MainView({
   onFoldThread,
   onSend,
   onNotice,
+  onOpenInboxThread,
   onInboxAction,
   onEditBot,
   onAddBot,
@@ -531,6 +606,8 @@ function MainView({
       live — hydrated from `thread/transcript` and streamed from there (#14). */
   client: HostClient | null;
   state: MockState;
+  /** The Inbox, host-owned from the first answer (#22). */
+  inbox: HostInbox;
   /** Recurring jobs, host-owned from the first answer (#25). */
   schedules: Schedules;
   /** The PR board, host-owned from the first answer (#28). */
@@ -553,6 +630,8 @@ function MainView({
   onFoldThread: (threadId: string, policy?: FoldPolicy) => void;
   onSend: (conversationId: string, text: string) => void;
   onNotice: (conversationId: string, itemId: string, actionId: string) => void;
+  /** Open a card's thread — a reopen on the host, not just a navigation. */
+  onOpenInboxThread: (threadId: string) => void;
   onInboxAction: (cardId: string, actionId: string) => void;
   onEditBot: (botId: string) => void;
   onAddBot: () => void;
@@ -573,8 +652,13 @@ function MainView({
     case "inbox":
       return (
         <InboxView
-          cards={state.inbox}
-          onOpenThread={(threadId) => onSelect({ view: "thread", threadId })}
+          // The fixtures stand in only until the host has answered — `null` is
+          // "not asked yet" (a preview build, a unit test), and an empty array
+          // is the real answer of a morning with nothing waiting.
+          cards={inbox.cards ?? state.inbox}
+          error={inbox.error}
+          loading={inbox.loading && inbox.cards === null}
+          onOpenThread={onOpenInboxThread}
           onAction={onInboxAction}
         />
       );

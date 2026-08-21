@@ -37,10 +37,12 @@ import {
   PAIRING_START,
   PERMISSION_ASK,
   PERMISSION_RESOLVED,
+  PROTOCOL_VERSION,
   RPC_ERROR,
   SESSION_UPDATE,
   THREAD_DELETE,
   THREAD_TRANSCRIPT,
+  type JsonRpcNotification,
   type PairingQr,
   type PairingStartResult,
   type PermissionAskParams,
@@ -418,6 +420,61 @@ describe("the Mobile Inbox client", () => {
     // thing standing between them and the host.
     expect(statSync(host.socketPath!).mode & 0o777).toBe(0o600);
     expect(statSync(path.dirname(host.socketPath!)).mode & 0o077).toBe(0);
+  });
+
+  it("stops streaming to a phone that is revoked while it is still connected", async () => {
+    const { host, desktop } = await twoClientHost();
+    const { phone, qr, derived } = await pairPhone(desktop);
+
+    // The phone's own connection, driven by hand so the test can see every
+    // frame the host pushes down it rather than only the projection the client
+    // builds out of them.
+    const channel = connectUnixSocket(host.socketPath!);
+    await channel.ready;
+    const transport = createLineTransport(channel);
+    const overheard: JsonRpcNotification[] = [];
+    await transport.subscribe((notification) => overheard.push(notification));
+    const admitted = await transport.request({
+      jsonrpc: JSONRPC_VERSION,
+      id: "phone-hello",
+      method: HOST_HELLO,
+      params: {
+        protocolVersion: PROTOCOL_VERSION,
+        device: { deviceId: phone.deviceId, name: phone.name },
+        auth: phone.helloAuth(qr.hostId, derived.token, 1),
+      },
+    });
+    expect(admitted.error).toBeUndefined();
+
+    // While it is paired it hears everything, which is what makes the second
+    // half of this test an assertion rather than a coincidence.
+    await openThread(desktop, "t-before", "echo");
+    await desktop.prompt({ threadId: "t-before", content: "before the revoke" });
+    await until(() =>
+      overheard.some((n) => JSON.stringify(n.params).includes("before the revoke")),
+    );
+
+    await desktop.revokeDevice({ deviceId: phone.deviceId });
+
+    // Nothing hung up. A stolen phone does not hang up, and that is the case
+    // revoke exists for: the socket is open, the binding was made at hello,
+    // and only the broadcast gate stands between it and the prompt text, the
+    // agent's replies, and the command in the next `permission/ask`.
+    overheard.length = 0;
+    await openThread(desktop, "t-after", "echo");
+    await desktop.prompt({ threadId: "t-after", content: "after the revoke" });
+    await host.waitFor(
+      (n) =>
+        n.method === SESSION_UPDATE &&
+        JSON.stringify(n.params).includes("after the revoke"),
+    );
+    // Delivery to the socket would be a separate write under the same lock,
+    // so give it far longer than it could need to show up.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(overheard).toEqual([]);
+
+    transport.close();
+    channel.close();
   });
 
   it("refuses a phone that was revoked, on its next connection", async () => {

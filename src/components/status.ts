@@ -55,9 +55,16 @@ export interface Tag {
 }
 
 /**
- * The kinds that are actually asking the human something. The sidebar badge
- * counts these and only these — a folded thread is *not* a notification, which
- * is the entire point of folding it (#5).
+ * The kinds that are actually asking the human something: what falls under
+ * "Needs you" on both devices, in the Inbox's own tab and in the phone's
+ * sections. A folded thread is not one of them, which is the entire point of
+ * folding it (#5).
+ *
+ * Not the sidebar badge. That is `InboxListResult.unread` — the host's
+ * `count_unread_inbox`, which is `resurface.md`'s resurfaced-and-unread and
+ * therefore counts a `done` card too: work that came back while you were away
+ * and you have not looked at yet. Classifying the rows a second time here
+ * would give the Mac and the phone two different numbers for one host (#22).
  */
 export const NEEDS_YOU_KINDS: readonly InboxKind[] = [
   "needs_you",

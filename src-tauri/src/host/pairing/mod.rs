@@ -655,6 +655,13 @@ impl HostSession {
     /// Cut a device off. Durable before it is reported, and in force on that
     /// device's very next call — [`HostSession::connected_grant`] re-reads the
     /// row rather than trusting what hello decided.
+    ///
+    /// Requests are only half of it. Notifications are *pushed*, so a device
+    /// that is revoked while its socket is open must also stop being handed
+    /// `session/update` and `permission/ask` — the prompt text and the command
+    /// being approved. The binding is dropped here and the broadcast gate
+    /// re-reads the row anyway ([`HostSession::connection_has_device`]), so
+    /// neither half waits for a stolen phone to hang up.
     pub fn device_revoke(
         &mut self,
         params: DeviceRefParams,
@@ -674,6 +681,8 @@ impl HostSession {
             .and_then(|row| row.revoked_at);
 
         if revoked {
+            // Out of the live stream in the same breath as out of the list.
+            self.disconnect_device(&params.device_id);
             // Belt and braces: the tombstone is what enforces the revoke, and
             // this makes the token unusable even to a future bug that forgets
             // to check it.
@@ -968,6 +977,88 @@ mod tests {
 
     fn qr_of(start: &PairingStartResult) -> PairingQr {
         serde_json::from_str(&start.qr_payload).expect("the QR payload is the offer")
+    }
+
+    /// The whole handshake, for tests that are about what happens *after* it.
+    /// `a_scanned_qr_pairs_a_phone_and_the_phone_can_then_say_hello` is the
+    /// one that asserts each step; this only has to end in a paired device.
+    fn pair(session: &mut HostSession, phone: &Phone, role: DeviceRole) -> Derived {
+        let start = session
+            .pairing_start(PairingStartParams::default())
+            .expect("start");
+        let qr = qr_of(&start);
+        let derived = phone.derive(&qr, &qr.secret, Channel::Qr);
+        session
+            .pairing_claim(PairingClaimParams {
+                pairing_id: qr.pairing_id.clone(),
+                device: phone.device(),
+                mac: derived.claim_mac.clone(),
+            })
+            .expect("claim");
+        for side in [PairingSide::Device, PairingSide::Host] {
+            session
+                .pairing_confirm(PairingConfirmParams {
+                    pairing_id: qr.pairing_id.clone(),
+                    side,
+                    sas: derived.sas.clone(),
+                    role: Some(role),
+                    name: Some(phone.name.clone()),
+                    mac: Some(derived.confirm_mac.clone()),
+                })
+                .expect("confirm");
+        }
+        derived
+    }
+
+    /// A revoke has to cut the *stream*, not only the next request.
+    ///
+    /// `session/update` and `permission/ask` are pushed, and the only gate on
+    /// them is [`HostSession::connection_has_device`]. The binding it used to
+    /// read is RAM that nothing but a disconnect cleared, so a phone revoked
+    /// while its socket is open kept receiving the prompt text and the command
+    /// being approved for as long as it cared to hold the connection — and the
+    /// stolen phone a revoke exists for is exactly the one that will not hang
+    /// up. This asks the transport's question either side of the revoke.
+    #[test]
+    fn revoking_a_connected_device_takes_it_off_the_notification_stream() {
+        let (_dir, mut session) = host();
+        let phone = Phone::new("Jabree's iPhone");
+        let derived = pair(&mut session, &phone, DeviceRole::Approver);
+
+        let auth =
+            serde_json::to_value(phone.hello_auth(&session.identity.host_id, &derived.token, 1))
+                .expect("auth");
+        let hello = session.handle_request_on(
+            "socket-1",
+            JsonRpcRequest::new(
+                RequestId::Number(1),
+                HOST_HELLO,
+                Some(serde_json::json!({
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "device": { "deviceId": phone.device_id },
+                    "auth": auth,
+                })),
+            ),
+        );
+        assert!(hello.error.is_none(), "a paired device connects");
+        assert!(session.connection_has_device("socket-1"));
+        assert!(session.device_is_connected(&phone.device_id));
+
+        session
+            .device_revoke(DeviceRefParams {
+                device_id: phone.device_id.clone(),
+            })
+            .expect("revoke");
+
+        // The socket is still open: nothing hung up, and nothing asked this
+        // connection to say hello again. The gate is all there is.
+        assert!(
+            !session.connection_has_device("socket-1"),
+            "a revoked device must not keep the notification stream"
+        );
+        assert!(!session.device_is_connected(&phone.device_id));
+        // And the console it was revoked from is untouched.
+        assert!(session.connection_has_device(crate::host::LOCAL_CONNECTION));
     }
 
     /// The whole flow, both confirmations, ending in a device that can connect.

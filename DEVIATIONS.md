@@ -2051,3 +2051,129 @@ against a `gh` that could answer.
   *is* implemented is the batch: 25 PRs per document, least-recently-polled
   first, so a long board still refreshes every row eventually rather than the
   same 25 for ever.
+
+---
+
+## D-021 — #22: the Inbox on real data, and the revoke that only cut half the wire
+
+**Plan:** #22 is "Inbox view on real data", blocked by #11 and #15. Decision #5
+settles what that data *is*: the thread overlay plus a `runs` table, and "Inbox
+is a projection of run events".
+
+**Why this is an entry rather than a slice built in order:** it was not built in
+order. #26, #27, #28 and #29 were all closed on top of it — D-018, D-019 and
+D-020 each name #22 as the owner of the swap they were leaving undone, and
+`src/views/InboxView.tsx` went on rendering `mock-host.ts`'s three fixture cards
+the whole time. The consequence was that the entire lifecycle group terminated
+in a screen nobody could see: fold a live thread and the shell navigated to an
+Inbox showing three fake rows and not the one just folded; a `resurface_and_notify`
+card never appeared; the away-log `judgment_call` rows never appeared; clicking
+a #27 banner opened the thread with fixtures still behind it. This entry records
+what closing it actually took.
+
+### What was built
+
+- **`src/views/inbox.ts`** — `useInbox(client, onThreadChanged)`, the same shape
+  as `folders.ts` / `crew.ts` / `pulls.ts`: `null` until the host answers, then
+  the host wins. It calls `inbox/list` and `permission/pending`, re-reads itself
+  on `inbox/resurface`, `inbox/event`, `permission/ask` and
+  `permission/resolved`, and exposes the two verbs a card has — `open` and
+  `act`.
+- **`App` prefers it over `state.inbox`** whenever it has an answer, and passes
+  the host's error and its first-load state to the pane, which now says why it
+  is empty instead of looking empty.
+- **The card's buttons reach the host.** Open thread is `thread/reopen` — not a
+  navigation: reopen is what clears the thread's badge (`resurface.md`), puts an
+  archived thread's worktree back (#23), and moves the row out of Still Sleeping
+  into the sidebar. It is sent only from the states the transition table allows
+  it from, which the card knows because `InboxEventView` carries `threadState`.
+  Archive is `thread/archive`. An `ask:` button is `permission/reply`.
+
+**The projection is the phone's, deliberately.** `src/views/inbox.ts` imports
+`projectInbox` from `src/mobile/inbox.ts` rather than restating it. That file
+lives under `src/mobile/` only because #29 needed it first, and its own module
+docs say two devices disagreeing about what needs you would be two products; a
+second copy in `src/views/` is exactly the drift it warns about. What the
+desktop adds on top is presentation — the journey line, the buttons — which is
+where the two clients are allowed to differ.
+
+**An outstanding permission is a card here too.** The desktop draws an ask
+inline in the transcript (#20), which is the right place when you are reading
+the thread and no place at all when you are not. Folding in
+`permission/pending` is what makes the Inbox answerable, and it collapses with
+the thread's own `needs_you` card because two rows for one question is how a
+human answers twice. D-013 left "the Inbox's read/dismiss rules" here; the rule
+this took is the one already implemented in the host — **opening the thread is
+what marks it read** (`thread_reopen` → `mark_inbox_read`) — so no new method
+was invented for it.
+
+### The badge: one definition, not two
+
+The sidebar badge was `needsYouCount(state)` — the renderer's own
+`NEEDS_YOU_KINDS` filter over the fixture array — while the phone has always
+drawn `InboxListResult.unread`, the host's `count_unread_inbox`. Those are two
+different numbers over two different sources, and `resurface.md` only specifies
+one of them: resurfaced-and-unread, which counts a `done` card too, because work
+that came back while you were away and has not been looked at is what the badge
+is for. The desktop now draws `unread`; `NEEDS_YOU_KINDS` keeps the job it is
+actually right for, which is the "Needs you" tab and the phone's sections. The
+fixture count survives only as the fallback for a shell with no host answer.
+
+### What #22 did **not** build
+
+- **A dismiss that is not an archive.** `inbox_events.dismissed_at` exists and
+  `resurface_and_notify` writes it when a thread comes back again, but there is
+  no `inbox/dismiss` method and this did not add one. A card the user is done
+  with is a *thread* they are done with, and `thread/archive` says that in a way
+  the host already acts on. A per-card dismiss that left the thread resurfaced
+  would be a third state of "handled" with nothing reading it.
+- **A face on a card.** `inbox/list` does not say which bot a card came from —
+  the row is about a thread, and a folded thread is in no list that carries a
+  colour — so every host card draws the code-session avatar. Inventing a bot for
+  it would be worse than the honest icon.
+- **Marking a card read without opening it.** Same reason as dismiss: the host's
+  only read rule is `thread/reopen`, and the away-log entries the host writes on
+  its own behalf are already stamped read when they are written.
+- **A Delete button on a card.** Delete is on the row's context menu, where the
+  thread is. Two places to destroy a thread from is one more than the number of
+  places a user expects to find it.
+
+### The revoke that only cut half the wire (a host fix, not a renderer one)
+
+Found while auditing this work and fixed here because it is one line of the same
+sentence D-016 §6 wrote: *"`Clients::broadcast` now asks the session whether that
+connection has a device before each frame, so the answer follows a revoke rather
+than being latched at accept."* It did not follow a revoke. The question it asked
+was `connection_devices.contains_key(connection)` — a RAM map written by `hello`
+and cleared only by `drop_connection` — and `device_revoke` touched neither. A
+paired `approver` revoked **while its socket was open** kept receiving every
+broadcast frame: `session/update` (the prompt text, the agent's replies, the
+command in each tool call), `permission/ask`, `inbox/resurface`, for as long as
+it cared to hold the connection. The case revoke exists for is a stolen or
+hostile phone, which is precisely the one that will not hang up.
+
+Both halves are now real: `device_revoke` drops the device's bindings, and
+`connection_has_device` re-reads `paired_devices` on every frame the way
+`connected_grant` re-reads it on every request, so a revoked row stops the
+stream at the next frame rather than at the next reconnect. It fails closed on a
+store it cannot read. `tests/e2e/mobile-inbox.test.ts` revokes a phone mid-
+connection and asserts it hears nothing of the next prompt while the desktop
+hears all of it; `host::pairing::tests` asks the transport's own question either
+side of the revoke. Both fail on the old gate.
+
+### How it is proved
+
+- `src/__tests__/inbox-host.test.tsx` — the host's cards replace the fixtures,
+  the badge is the host's `unread` and not a second tally of the same rows,
+  Open thread sends `thread/reopen`, Archive sends `thread/archive`, an
+  `inbox/resurface` notification re-reads the list with nobody looking at it, an
+  ask is answered with the agent's own option id, and a host that will not
+  answer says so instead of showing an empty pane. Six of the seven fail on the
+  fixture shell.
+- `src/__tests__/fold.test.tsx` gains the other two items on #26's first
+  checklist line: Archive and Delete from the row's menu were still being
+  dispatched to the mock reducer for host-owned threads, so a real thread was
+  animated away while its adapter kept running, its permissions stayed
+  outstanding, its run stayed open and its #23 worktree was orphaned — and the
+  row came back on the next `folder/list`. They now branch on `hostThreads` the
+  way `foldThread` always did, and a refusal puts the row back and says why.

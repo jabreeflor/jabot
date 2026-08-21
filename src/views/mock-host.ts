@@ -968,7 +968,8 @@ export function sidebarFolders(state: MockState): FolderWithThreads[] {
   }));
 }
 
-/** The red badge: work that is actually asking for you. */
+/** The red badge, for a shell with no host answer yet. Once `inbox/list` has
+    answered, the badge is the host's own `unread` (#22). */
 export function needsYouCount(state: MockState): number {
   return state.inbox.filter((card) => NEEDS_YOU_KINDS.includes(card.kind))
     .length;

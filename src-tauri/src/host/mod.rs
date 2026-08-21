@@ -718,7 +718,7 @@ impl HostSession {
                 .any(|device| device.device_id == device_id)
     }
 
-    /// Has this connection completed a `host/hello`?
+    /// May this connection be handed the live notification stream?
     ///
     /// Asked by the transport rather than by the router: `require_hello`
     /// refuses *requests* from a connection that has not identified itself,
@@ -727,8 +727,54 @@ impl HostSession {
     /// live `session/update` / `permission/ask` stream — that stream carries
     /// the prompt text and the adapter's output, which is precisely what
     /// `pairing-security-mobile.md` rule 2 says must not leak.
+    ///
+    /// Saying hello is necessary and not sufficient. The binding is RAM and
+    /// only a disconnect clears it, so a device that is revoked *while its
+    /// socket is open* would keep the stream until it chose to hang up — and
+    /// the phone a revoke exists for is precisely the one that will not.
+    /// The grant is therefore re-read from `paired_devices` on every frame,
+    /// exactly as [`HostSession::connected_grant`] re-reads it on every
+    /// request: a revoke stops the stream at the next frame.
     pub fn connection_has_device(&self, connection: &str) -> bool {
-        self.connection_devices.contains_key(connection)
+        let Some(device) = self.connection_devices.get(connection) else {
+            return false;
+        };
+        self.device_grant_stands(&device.device_id)
+    }
+
+    /// Is this device still paired? The console always is — it *is* the host's
+    /// own client, and it cannot be revoked.
+    ///
+    /// A store that cannot be read answers no. Failing closed here costs a
+    /// connected device its stream until the read works again; failing open
+    /// would keep streaming to a device this host can no longer vouch for.
+    fn device_grant_stands(&self, device_id: &str) -> bool {
+        if device_id == self.identity.local_device.device_id {
+            return true;
+        }
+        match self.store.as_ref() {
+            Some(store) => matches!(
+                store.get_paired_device(device_id),
+                Ok(Some(row)) if !row.is_revoked()
+            ),
+            None => false,
+        }
+    }
+
+    /// Cut a device out of the live stream, now rather than when it hangs up.
+    ///
+    /// Called by [`HostSession::device_revoke`]. The gate above already stops
+    /// the frames on its own; dropping the binding as well is what makes
+    /// `device/list` stop reporting the device as connected, and what forces a
+    /// fresh `host/hello` — which a revoked device can no longer pass — if the
+    /// socket is somehow kept open.
+    pub(crate) fn disconnect_device(&mut self, device_id: &str) {
+        self.connection_devices
+            .retain(|_, device| device.device_id != device_id);
+        if self.connected_device_id.as_deref() == Some(device_id) {
+            self.connected_device = None;
+            self.connected_device_id = None;
+        }
     }
 
     /// Whether the caller is the client that started this host, rather than
