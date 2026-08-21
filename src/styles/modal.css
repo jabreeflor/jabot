@@ -14,7 +14,7 @@
 }
 
 .modal {
-  width: 440px;
+  width: 460px;
   max-width: 92vw;
   max-height: 88vh;
   overflow-y: auto;
@@ -28,14 +28,24 @@
 .modal h2 {
   font-size: 17px;
   font-weight: 700;
+  margin-bottom: var(--sp-5);
 }
 
+/* The vertical rhythm of every card: a group is a label, its control, and
+   whatever the control needs explained. 22px between groups against 8px
+   inside one is what makes them read as groups and not as one long column. */
 .modal .mlab {
   color: var(--faint);
   font-size: var(--fs-caps);
   font-weight: 600;
   letter-spacing: 0.09em;
-  margin: 18px 0 var(--sp-3);
+  margin: 22px 0 var(--sp-3);
+}
+
+/* The heading already spaces the first group; a second margin on top of it
+   would open a gap the card never asked for. */
+.modal .mlab:first-of-type {
+  margin-top: 0;
 }
 
 .modal select,
@@ -44,7 +54,7 @@
   background: var(--raise);
   border: 1px solid var(--edge-strong);
   border-radius: 11px;
-  padding: var(--sp-3) 13px;
+  padding: 10px 13px;
   font-size: var(--fs-ui);
   color: var(--ink);
   outline: 0;
@@ -72,7 +82,7 @@
 /* What the host said went wrong — the only place a registration failure can
    be read, since the modal stays open on error rather than losing the form. */
 .modal-error {
-  margin-top: 14px;
+  margin-top: var(--sp-5);
   color: var(--red);
   font-size: var(--fs-meta);
 }
@@ -81,7 +91,7 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-3);
-  margin-top: 22px;
+  margin-top: var(--sp-6);
 }
 
 .modal .macts .danger {

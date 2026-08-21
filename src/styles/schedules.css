@@ -42,15 +42,19 @@
   background: rgba(232, 163, 61, 0.12);
 }
 
+/* Two by two, not a ragged wrap. Four presets at four different widths break
+   3 + 1 in the card, and an orphan on its own row reads as a fifth thing that
+   failed to fit rather than as one of four equals. */
 .sched-presets {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
+  margin-bottom: var(--sp-3);
 }
 
 .sched-preset {
   border: 1px solid transparent;
+  padding: var(--sp-2) var(--sp-4);
   cursor: pointer;
 }
 
@@ -59,8 +63,12 @@
   border-color: var(--dim);
 }
 
+/* A hint belongs to the control above it, so it sits close to it — but it is
+   still a line of prose and needs room to be one. The negative top margin this
+   used to carry pulled it flush against the field's border. */
 .sched-hint {
   color: var(--faint);
   font-size: 12px;
-  margin: calc(-1 * var(--sp-2)) 0 var(--sp-3);
+  line-height: 1.45;
+  margin: var(--sp-2) 0 0;
 }
