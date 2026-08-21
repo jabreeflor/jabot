@@ -32,7 +32,7 @@
 }
 
 .sched-detail {
-  font-size: 12px;
+  font-size: var(--fs-meta);
 }
 
 /* A caught-up run is the one thing on this screen a user did not ask for, so
@@ -48,27 +48,56 @@
 .sched-presets {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   margin-bottom: var(--sp-3);
 }
 
+/* Its own control, not a .minichip with six overrides. A minichip is the 11px
+   status tag on a crew card — shrink-to-fit, stadium radius, not clickable.
+   This is a 200px-wide interactive cell, and inheriting a 99px radius onto one
+   leaves 13px of pure geometry hanging off each end of centred text.
+
+   The surface matters too: on --raise the chips were the same fill as the cron
+   input directly below them, and the whole block read as one grey mass. --raise2
+   puts them under the field they fill, which is where they belong. */
 .sched-preset {
-  border: 1px solid transparent;
-  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--dim);
+  background: var(--raise2);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-lg);
+  padding: var(--sp-1) var(--sp-4);
   cursor: pointer;
 }
 
+.sched-preset:hover {
+  border-color: var(--dim);
+}
+
+/* Chosen says it the way the harness cards next door say it — a full-strength
+   border. A darker-to-lighter fill between two neighbouring greys is a 1.1:1
+   change nobody can see from more than a foot away, so the border has to carry
+   it whether or not the fill helps. */
 .sched-preset[aria-pressed="true"] {
   color: var(--ink);
-  border-color: var(--dim);
+  background: var(--raise);
+  border-color: var(--ink);
 }
 
 /* A hint belongs to the control above it, so it sits close to it — but it is
    still a line of prose and needs room to be one. The negative top margin this
    used to carry pulled it flush against the field's border. */
 .sched-hint {
-  color: var(--faint);
-  font-size: 12px;
+  color: var(--dim);
+  font-size: var(--fs-meta);
   line-height: 1.45;
   margin: var(--sp-2) 0 0;
+}
+
+/* A hint that closes a group needs more room under it than a control does. Two
+   greys of small text stacked 20px apart read as one couplet, and the label
+   belongs to the field under it, not to the sentence over it. */
+.modal .sched-hint + .mlab {
+  margin-top: 26px;
 }
