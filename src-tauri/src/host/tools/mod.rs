@@ -22,7 +22,7 @@
 
 pub mod catalog;
 mod clients;
-mod crypto;
+pub(crate) mod crypto;
 mod flow;
 mod http;
 mod loopback;
@@ -220,7 +220,19 @@ impl HostSession {
                 skipped.tool_id, skipped.reason
             );
         }
-        plan.as_params()
+        let mut servers = plan.as_params();
+        // Chief's host tools ride the same array (#24). They are not catalog
+        // entries and never were — `crew::HOST_TOOLS` is a separate list for
+        // exactly this reason — but from the adapter's side one `mcpServers`
+        // list is the only seam there is, so the host puts its own server on
+        // it. Last, so a provider chip the user pressed is never displaced by
+        // one they did not.
+        if let (Some(array), Some(host_tools)) =
+            (servers.as_array_mut(), self.chief_mcp_server(thread_id))
+        {
+            array.push(host_tools);
+        }
+        servers
     }
 
     /// A bot's `tools[]`, resolved through the thread.

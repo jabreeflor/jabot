@@ -32,6 +32,7 @@
 //! in a bot directory.
 
 mod memory;
+pub(crate) mod standing;
 mod templates;
 
 use std::path::PathBuf;

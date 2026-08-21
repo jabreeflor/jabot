@@ -5,9 +5,11 @@
 
 mod catalog;
 mod error;
+mod handoff;
 mod migrate;
 mod models;
 mod overlay;
+mod pairing;
 mod permission;
 mod secrets;
 mod seed;
@@ -17,6 +19,13 @@ use std::path::{Path, PathBuf};
 use rusqlite::{Connection, Row};
 
 pub use error::StoreError;
+/// `handoffs.kind`, so #24's two dispatch tools and the SQL check constraint
+/// cannot spell the same two words differently.
+pub use handoff::{KIND_CODE_SESSION as HANDOFF_CODE_SESSION, KIND_HANDOFF};
+/// The schema version a freshly opened store lands on (`store::migrate`).
+/// Exported so callers assert against the migrations that exist rather than
+/// against a number copied into a test.
+pub use migrate::head as schema_head;
 pub use models::*;
 /// `permission_requests.state`, so the broker and the SQL cannot spell the
 /// same three words differently (#20).
@@ -230,6 +239,12 @@ impl Store {
         overlay::list_threads_by_state(&self.conn, state)
     }
 
+    /// Every live thread one bot is working on — see
+    /// [`overlay::list_bot_threads`].
+    pub fn list_bot_threads(&self, bot_id: &str) -> Result<Vec<ThreadRow>, StoreError> {
+        overlay::list_bot_threads(&self.conn, bot_id)
+    }
+
     /// The sidebar's rows for one folder — see [`overlay::list_folder_threads`].
     pub fn list_folder_threads(&self, folder_id: &str) -> Result<Vec<ThreadRow>, StoreError> {
         overlay::list_folder_threads(&self.conn, folder_id)
@@ -375,6 +390,31 @@ impl Store {
     /// Runs a stopped host left open, for boot reconciliation (#21).
     pub fn list_open_runs(&self) -> Result<Vec<RunRow>, StoreError> {
         overlay::list_open_runs(&self.conn)
+    }
+
+    /// The handoff trail — see [`handoff`] (#24).
+    pub fn insert_handoff(&self, new: &NewHandoff) -> Result<HandoffRow, StoreError> {
+        handoff::insert_handoff(&self.conn, new)
+    }
+
+    /// Record whether the dispatched prompt actually reached an agent.
+    pub fn set_handoff_dispatched(
+        &self,
+        id: &str,
+        dispatched: bool,
+        detail: Option<&str>,
+    ) -> Result<(), StoreError> {
+        handoff::set_handoff_dispatched(&self.conn, id, dispatched, detail)
+    }
+
+    /// Where this thread's work came from, if a bot sent it.
+    pub fn latest_handoff_to(&self, thread_id: &str) -> Result<Option<HandoffRow>, StoreError> {
+        handoff::latest_handoff_to(&self.conn, thread_id)
+    }
+
+    /// Every handoff onto a thread, newest first.
+    pub fn list_handoffs_to(&self, thread_id: &str) -> Result<Vec<HandoffRow>, StoreError> {
+        handoff::list_handoffs_to(&self.conn, thread_id)
     }
 
     /// The permission broker's ledger — see [`permission`] (#20).
@@ -902,6 +942,22 @@ pub(crate) fn map_thread(row: &Row<'_>) -> rusqlite::Result<ThreadRow> {
     })
 }
 
+pub(crate) fn map_handoff(row: &Row<'_>) -> rusqlite::Result<HandoffRow> {
+    Ok(HandoffRow {
+        id: row.get(0)?,
+        kind: row.get(1)?,
+        to_thread_id: row.get(2)?,
+        to_bot_id: row.get(3)?,
+        from_thread_id: row.get(4)?,
+        from_bot_id: row.get(5)?,
+        task: row.get(6)?,
+        context: row.get(7)?,
+        dispatched: row.get::<_, i64>(8)? != 0,
+        detail: row.get(9)?,
+        created_at: row.get(10)?,
+    })
+}
+
 pub(crate) fn map_run(row: &Row<'_>) -> rusqlite::Result<RunRow> {
     Ok(RunRow {
         id: row.get(0)?,
@@ -1004,6 +1060,62 @@ pub(crate) fn map_tool_connection(row: &Row<'_>) -> rusqlite::Result<ToolConnect
     })
 }
 
+pub(crate) fn map_paired_device(row: &Row<'_>) -> rusqlite::Result<PairedDeviceRow> {
+    Ok(PairedDeviceRow {
+        device_id: row.get(0)?,
+        name: row.get(1)?,
+        role: row.get(2)?,
+        fingerprint: row.get(3)?,
+        token_ref: row.get(4)?,
+        auth_counter: row.get(5)?,
+        paired_via: row.get(6)?,
+        sas: row.get(7)?,
+        created_at: row.get(8)?,
+        last_seen_at: row.get(9)?,
+        revoked_at: row.get(10)?,
+    })
+}
+
+/// Paired devices — see [`pairing`] and `migrations/0008_pairing.sql` (#19).
+impl Store {
+    /// Admit a device, or re-issue the grant of one that was revoked.
+    pub fn upsert_paired_device(
+        &self,
+        new: &NewPairedDevice,
+    ) -> Result<PairedDeviceRow, StoreError> {
+        pairing::upsert_paired_device(&self.conn, new)
+    }
+
+    /// The row as it stands, tombstone included. Read on every call a paired
+    /// device makes, so a revoke lands on the next request rather than the
+    /// next reconnect.
+    pub fn get_paired_device(
+        &self,
+        device_id: &str,
+    ) -> Result<Option<PairedDeviceRow>, StoreError> {
+        pairing::get_paired_device(&self.conn, device_id)
+    }
+
+    pub fn list_paired_devices(&self) -> Result<Vec<PairedDeviceRow>, StoreError> {
+        pairing::list_paired_devices(&self.conn)
+    }
+
+    /// Cut a device off. `false` means it was already revoked or never paired.
+    pub fn revoke_paired_device(&self, device_id: &str) -> Result<bool, StoreError> {
+        pairing::revoke_paired_device(&self.conn, device_id)
+    }
+
+    /// Accept a `host/hello` proof counter strictly greater than the last one.
+    /// `false` is a replay, or a device revoked in the meantime.
+    pub fn bump_device_auth_counter(
+        &self,
+        device_id: &str,
+        counter: i64,
+    ) -> Result<bool, StoreError> {
+        pairing::bump_device_auth_counter(&self.conn, device_id, counter)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1082,7 +1194,9 @@ mod tests {
     fn open_uses_wal_and_seeds_catalog() {
         let (store, _dir) = open_store();
         assert_eq!(store.journal_mode().unwrap(), "wal");
-        assert_eq!(store.schema_version().unwrap(), 5);
+        // Derived, not written down twice: whoever lands the next migration
+        // should not have to edit this line to keep it true.
+        assert_eq!(store.schema_version().unwrap(), migrate::head());
         // Both compiled-in tiers land as rows, because `threads.harness_id`
         // is a foreign key and a preset has to be nameable by a thread (#13).
         let harnesses = store.list_harnesses().unwrap();

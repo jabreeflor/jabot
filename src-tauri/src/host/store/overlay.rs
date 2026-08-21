@@ -110,6 +110,27 @@ pub fn list_folder_threads(
     Ok(rows)
 }
 
+/// Every live thread one bot is working on (#24's `list_crew_status`).
+///
+/// **Folded rows are included here**, which is the opposite of
+/// [`list_folder_threads`], and deliberately so: fold hides a thread from the
+/// human's sidebar, not from the crew roster. "What is everyone working on"
+/// that silently omitted the long job Chief folded away an hour ago would be
+/// answering a different question than the one asked. Archived and deleted
+/// rows are gone: nothing is working on those.
+pub fn list_bot_threads(conn: &Connection, bot_id: &str) -> Result<Vec<ThreadRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {THREAD_COLUMNS} FROM threads
+         WHERE bot_id = ?1 AND deleted_at IS NULL
+           AND state IN ('active', 'folded', 'resurfaced')
+         ORDER BY updated_at DESC"
+    ))?;
+    let rows = stmt
+        .query_map([bot_id], map_thread)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// Every thread that still claims a worktree.
 ///
 /// Archived and deleted rows are excluded on purpose: their trees have been

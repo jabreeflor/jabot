@@ -39,6 +39,7 @@ export const CREW_LIST = "crew/list";
 export const CREW_CREATE = "crew/create";
 export const CREW_UPDATE = "crew/update";
 export const CREW_REMOVE = "crew/remove";
+export const CREW_THREAD = "crew/thread";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 
 export type RequestId = number | string | null;
@@ -471,7 +472,35 @@ export interface ThreadStateResult {
   latestRun?: RunView;
   runs: RunView[];
   receipt?: ReceiptView;
+  /** The most recent handoff onto this thread (#24). Absent for every thread
+      the human started themselves, which is most of them. */
+  handoff?: HandoffView;
   unread: number;
+}
+
+/** How a bot dispatched work: onto a crew member's standing thread, or into a
+    fresh coding thread in a folder. */
+export type HandoffKind = "handoff" | "code_session";
+
+/** Where a thread's work came from, when a bot sent it rather than the human
+    (#24). Chief routes by handing off, and without this the human reading that
+    thread tomorrow cannot tell whether they asked for it or Chief did. */
+export interface HandoffView {
+  handoffId: string;
+  kind: HandoffKind;
+  task: string;
+  context?: string;
+  fromThreadId?: string;
+  fromBotId?: string;
+  /** Resolved for display. Absent once the sending bot has been removed — the
+      trail survives the crew member. */
+  fromBotName?: string;
+  /** Whether the task actually reached an agent. A handoff to a bot whose
+      harness is not installed is still a real handoff; this is what says
+      nobody heard it, and `detail` says why. */
+  dispatched: boolean;
+  detail?: string;
+  createdAt: string;
 }
 
 export interface InboxListParams {

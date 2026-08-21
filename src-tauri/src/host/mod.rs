@@ -4,12 +4,14 @@
 //! session — Tauri IPC now, Unix socket later, same messages.
 
 mod acp;
+mod chief;
 mod crew;
 mod git;
 mod harness;
 mod identity;
 mod lifecycle;
 mod log;
+mod pairing;
 mod permission;
 mod procgroup;
 mod protocol;
@@ -23,6 +25,8 @@ mod transcript;
 
 #[allow(unused_imports)]
 pub use acp::AdapterWake;
+#[allow(unused_imports)]
+pub use chief::{MCP_SERVER_NAME, MCP_VERSION};
 #[allow(unused_imports)]
 pub use crew::{is_known_tool, BOT_COLORS, HOST_TOOLS};
 #[allow(unused_imports)]
@@ -39,30 +43,41 @@ pub use lifecycle::{
     state::ThreadState,
 };
 #[allow(unused_imports)]
+pub use protocol::methods::{
+    client_methods, DeviceAuth, DeviceListResult, DeviceRefParams, DeviceRevokeResult,
+    PairedDeviceView, PairingCancelResult, PairingClaimParams, PairingClaimResult,
+    PairingConfirmParams, PairingConfirmResult, PairingDevice, PairingOfferView, PairingQr,
+    PairingRefParams, PairingSide, PairingStartParams, PairingStartResult, PairingStatusResult,
+    DEVICE_LIST, DEVICE_REVOKE, PAIRING_CANCEL, PAIRING_CLAIM, PAIRING_CONFIRM, PAIRING_METHODS,
+    PAIRING_START, PAIRING_STATUS,
+};
+#[allow(unused_imports)]
 pub use protocol::{
     decode_frame, decode_frames, encode_frame, BotTemplateView, BotView, CrewCreateParams,
     CrewHostToolView, CrewListResult, CrewRefParams, CrewRemoveResult, CrewUpdateParams,
     DeviceInfo, DeviceRole, Envelope, FolderForgetResult, FolderListResult, FolderOriginView,
-    FolderThreadView, FolderView, GithubStatusResult, HarnessCardView, HarnessDoctorResult,
-    HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams, HelloResult,
-    JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse,
-    PendingPermissionView, PermissionPendingParams, PermissionPendingResult, PermissionReplyParams,
-    PermissionReplyResult, PromptMode, QueuedPromptView, RequestId, ResumeOutcome, ResurfaceReason,
-    RpcError, StoreStatus, SupervisorStatusResult, ThreadResumeResult, ThreadStateResult,
-    ThreadTranscriptParams, ThreadTranscriptResult, ToolCardView, ToolConnectResult,
-    ToolConnectionStatus, ToolDisconnectResult, ToolListResult, ToolRefParams, ToolTransport,
-    TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE,
-    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR,
-    HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE,
-    JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_PENDING, PERMISSION_REPLY, PERMISSION_RESOLVED,
-    PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE, SUPERVISOR_STATUS,
-    THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME,
-    THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    FolderThreadView, FolderView, GithubStatusResult, HandoffView, HarnessCardView,
+    HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams,
+    HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
+    JsonRpcResponse, PendingPermissionView, PermissionPendingParams, PermissionPendingResult,
+    PermissionReplyParams, PermissionReplyResult, PromptMode, QueuedPromptView, RequestId,
+    ResumeOutcome, ResurfaceReason, RpcError, StoreStatus, SupervisorStatusResult,
+    ThreadResumeResult, ThreadStateResult, ThreadTranscriptParams, ThreadTranscriptResult,
+    ToolCardView, ToolConnectResult, ToolConnectionStatus, ToolDisconnectResult, ToolListResult,
+    ToolRefParams, ToolTransport, TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST,
+    CREW_REMOVE, CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
+    FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
+    HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
+    PERMISSION_PENDING, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL,
+    SESSION_PROMPT, SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
+    THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT,
+    TOOLS_DISCONNECT, TOOLS_LIST,
 };
-#[allow(unused_imports)]
 pub use repo::{gh::GhAuth, git::RepoProbe, origin::Origin};
 #[allow(unused_imports)]
-pub use store::{NewFolder, NewThread, Secrets, Store, StoreError, ThreadRepo, ThreadRow};
+pub use store::{
+    schema_head, NewFolder, NewThread, Secrets, Store, StoreError, ThreadRepo, ThreadRow,
+};
 #[allow(unused_imports)]
 pub use supervisor::{ResumeReadiness, Supervisor, DEFAULT_SLEEP_GAP};
 #[allow(unused_imports)]
@@ -125,6 +140,23 @@ pub struct HostSession {
     lifecycle: LifecycleState,
     /// Keep-alive, resume, and what this launch found on the ledger (#21).
     supervisor: SupervisorState,
+    /// Pairing offers that are on somebody's screen right now (#19). RAM by
+    /// design: a QR photographed off a monitor must be worthless the moment
+    /// the host restarts, and the durable half of pairing is the grant, not
+    /// the invitation. See `host/pairing/offer.rs`.
+    pairing: pairing::PairingState,
+    /// Who is on the other end, as the *host* understands them — the local
+    /// console, or a paired device with the role its row carries. Set by
+    /// `host/hello`; never taken from a later request.
+    connected_device: Option<DeviceInfo>,
+    /// One loopback MCP server per thread whose bot carries Chief's host
+    /// tools (#24). Not persisted, and rightly so: it is a socket, and the
+    /// port a dead process was listening on is worth nothing to this one.
+    chief_bridges: HashMap<String, chief::Bridge>,
+    /// True while a host tool call is being answered. A handoff prompts
+    /// another thread, prompting pumps, and the pump comes back here — the
+    /// guard is what keeps that from being recursion.
+    chief_dispatching: bool,
 }
 
 impl HostSession {
@@ -196,6 +228,10 @@ impl HostSession {
             prompt_queue: HashMap::new(),
             lifecycle: LifecycleState::from_env(),
             supervisor: SupervisorState::from_env(),
+            pairing: pairing::PairingState::default(),
+            connected_device: None,
+            chief_bridges: HashMap::new(),
+            chief_dispatching: false,
         }
     }
 
@@ -270,6 +306,7 @@ impl HostSession {
         match device_id {
             None => {
                 self.connected_device_id = Some(self.identity.local_device.device_id.clone());
+                self.connected_device = Some(self.identity.local_device_info());
             }
             Some(id) if id == self.identity.local_device.device_id => {
                 if let Some(device) = params.device.as_ref() {
@@ -280,8 +317,18 @@ impl HostSession {
                     }
                 }
                 self.connected_device_id = Some(id.to_string());
+                self.connected_device = Some(self.identity.local_device_info());
             }
-            Some(_) => return Err(RpcError::UnpairedDevice),
+            // Not this host's own console. Since #19 that is no longer
+            // automatically a stranger — it may be a device the two humans
+            // paired — but it is a stranger until it proves it, and every way
+            // of failing to prove it comes back as the same
+            // `UnpairedDevice` this arm has always returned.
+            Some(id) => {
+                let device = self.authenticate_paired_device(id, params.auth.as_ref())?;
+                self.connected_device_id = Some(device.device_id.clone());
+                self.connected_device = Some(device);
+            }
         }
 
         Ok(self.hello_result())
@@ -415,8 +462,11 @@ impl HostSession {
             host_mode: HOST_MODE.to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             platform: std::env::consts::OS.to_string(),
-            device: self.identity.local_device_info(),
-            methods: CLIENT_METHODS.iter().map(|m| (*m).to_string()).collect(),
+            device: self
+                .connected_device
+                .clone()
+                .unwrap_or_else(|| self.identity.local_device_info()),
+            methods: protocol::methods::client_methods(),
             notifications: HOST_NOTIFICATIONS
                 .iter()
                 .map(|m| (*m).to_string())
@@ -694,7 +744,10 @@ mod tests {
         let response = session.handle_request(req(1, HOST_HELLO, None));
         let value = result_value(&response);
         assert_eq!(value["store"]["journalMode"], "wal");
-        assert_eq!(value["store"]["schemaVersion"], 5);
+        // The head of the migration list rather than a number copied here:
+        // two issues landing migrations at once should not both have to edit
+        // this line, and what hello promises is "the schema you have".
+        assert_eq!(value["store"]["schemaVersion"], schema_head());
         assert_eq!(value["store"]["botCount"], 6);
         // Three shipped cards plus the two presets, all seeded as rows so a
         // thread can name any of them (#13).

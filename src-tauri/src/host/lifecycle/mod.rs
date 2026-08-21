@@ -260,6 +260,10 @@ impl HostSession {
             .count_unread_inbox(Some(&row.id))
             .map_err(store_error)?;
         let process = self.process_view(&row);
+        // Where this work came from, when a bot sent it rather than the human
+        // (#24). One indexed lookup, and it is the only place a reader of a
+        // suddenly-busy standing thread can find out who asked.
+        let handoff = self.handoff_view(&row.id);
         Ok(ThreadStateResult {
             thread_id: row.id.clone(),
             title: row.title.clone(),
@@ -290,6 +294,7 @@ impl HostSession {
             latest_run: runs.first().cloned(),
             runs,
             receipt,
+            handoff,
             unread,
         })
     }

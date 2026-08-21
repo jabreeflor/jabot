@@ -356,3 +356,79 @@ pub struct StoreStatus {
     pub harness_count: i64,
     pub bot_count: i64,
 }
+
+/// One dispatch Chief made: a task put on another crew member's thread (#24).
+///
+/// The row hangs off the *receiving* thread, because that is where the
+/// question gets asked — a standing thread that is suddenly busy has to be
+/// able to say who asked. `dispatched` is the honest half: the record that the
+/// work was handed over survives even when no agent could be started to hear
+/// it, and `detail` says why.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffRow {
+    pub id: String,
+    pub kind: String,
+    pub to_thread_id: String,
+    pub to_bot_id: Option<String>,
+    pub from_thread_id: Option<String>,
+    pub from_bot_id: Option<String>,
+    pub task: String,
+    pub context: Option<String>,
+    pub dispatched: bool,
+    pub detail: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewHandoff {
+    pub kind: String,
+    pub to_thread_id: String,
+    pub to_bot_id: Option<String>,
+    pub from_thread_id: Option<String>,
+    pub from_bot_id: Option<String>,
+    pub task: String,
+    pub context: Option<String>,
+    pub dispatched: bool,
+    pub detail: Option<String>,
+}
+
+/// A device this host has been paired with (#19).
+///
+/// `token_ref` names a vault account; the token itself is never in SQLite and
+/// never in this struct. `revoked_at` is the tombstone that makes a revoke
+/// survive a restart — see `migrations/0008_pairing.sql`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairedDeviceRow {
+    pub device_id: String,
+    pub name: String,
+    pub role: String,
+    pub fingerprint: String,
+    pub token_ref: String,
+    pub auth_counter: i64,
+    pub paired_via: String,
+    pub sas: String,
+    pub created_at: String,
+    pub last_seen_at: Option<String>,
+    pub revoked_at: Option<String>,
+}
+
+impl PairedDeviceRow {
+    pub fn is_revoked(&self) -> bool {
+        self.revoked_at.is_some()
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewPairedDevice {
+    pub device_id: String,
+    pub name: String,
+    pub role: String,
+    pub fingerprint: String,
+    pub token_ref: String,
+    pub paired_via: String,
+    pub sas: String,
+}

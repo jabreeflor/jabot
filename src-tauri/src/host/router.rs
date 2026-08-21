@@ -10,12 +10,17 @@ use super::protocol::methods::{
     FolderUpdateParams, GithubStatusParams, HarnessDoctorParams, HelloParams, InboxListParams,
     PermissionPendingParams, PermissionReplyParams, PromptParams, ResumeFromParams,
     SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
-    ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE,
-    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS, HARNESS_DOCTOR,
-    HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PERMISSION_PENDING, PERMISSION_REPLY,
-    SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE,
-    THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME, THREAD_STATE,
-    THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_THREAD,
+    CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS,
+    HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PERMISSION_PENDING,
+    PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM,
+    THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME,
+    THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+};
+use super::protocol::methods::{
+    DeviceRefParams, PairingClaimParams, PairingConfirmParams, PairingRefParams,
+    PairingStartParams, DEVICE_LIST, DEVICE_REVOKE, PAIRING_CANCEL, PAIRING_CLAIM, PAIRING_CONFIRM,
+    PAIRING_START, PAIRING_STATUS,
 };
 use super::HostSession;
 
@@ -31,6 +36,13 @@ pub fn dispatch(session: &mut HostSession, request: JsonRpcRequest) -> JsonRpcRe
 }
 
 fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, RpcError> {
+    // Scope, before anything else and for *every* method (#19). A paired
+    // device's role is read from its row here rather than trusted from the
+    // client or cached at hello, so revoking or narrowing a device lands on
+    // its next request. It is an allowlist, so a method added below is closed
+    // to an `approver` until somebody decides otherwise.
+    session.require_device_scope(&request.method)?;
+
     match request.method.as_str() {
         HOST_HELLO => {
             let params: HelloParams = parse_params_or_default(request.params.as_ref())?;
@@ -186,6 +198,12 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             params.validate()?;
             to_value(session.crew_remove(params)?)
         }
+        CREW_THREAD => {
+            session.require_hello()?;
+            let params: CrewRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.crew_thread(params)?)
+        }
         GITHUB_STATUS => {
             session.require_hello()?;
             let params: GithubStatusParams = parse_params_or_default(request.params.as_ref())?;
@@ -196,6 +214,42 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: ResumeFromParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.resume_from(params))
+        }
+        PAIRING_START => {
+            session.require_hello()?;
+            let params: PairingStartParams = parse_params_or_default(request.params.as_ref())?;
+            to_value(session.pairing_start(params)?)
+        }
+        // No `require_hello`: the device claiming an offer is by definition
+        // not paired yet, so it cannot have said hello. The out-of-band secret
+        // is what stands in for one — see `host/pairing/scope.rs`.
+        PAIRING_CLAIM => {
+            let params: PairingClaimParams = parse_params(request.params.as_ref())?;
+            to_value(session.pairing_claim(params)?)
+        }
+        // Likewise for the device half; the host half checks `require_hello`
+        // itself, because only one of the two sides is a console.
+        PAIRING_CONFIRM => {
+            let params: PairingConfirmParams = parse_params(request.params.as_ref())?;
+            to_value(session.pairing_confirm(params)?)
+        }
+        PAIRING_CANCEL => {
+            session.require_hello()?;
+            let params: PairingRefParams = parse_params(request.params.as_ref())?;
+            to_value(session.pairing_cancel(params)?)
+        }
+        PAIRING_STATUS => {
+            session.require_hello()?;
+            to_value(session.pairing_status()?)
+        }
+        DEVICE_LIST => {
+            session.require_hello()?;
+            to_value(session.device_list()?)
+        }
+        DEVICE_REVOKE => {
+            session.require_hello()?;
+            let params: DeviceRefParams = parse_params(request.params.as_ref())?;
+            to_value(session.device_revoke(params)?)
         }
         _ => Err(RpcError::MethodNotFound),
     }

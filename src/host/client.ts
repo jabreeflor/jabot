@@ -6,6 +6,7 @@ import {
   CREW_CREATE,
   CREW_LIST,
   CREW_REMOVE,
+  CREW_THREAD,
   CREW_UPDATE,
   FOLDER_FORGET,
   FOLDER_LIST,
@@ -290,6 +291,14 @@ export class HostClient {
       and its threads and its memory directory stay. */
   async removeBot(params: CrewRefParams): Promise<CrewRemoveResult> {
     return this.request<CrewRemoveResult>(CREW_REMOVE, params);
+  }
+
+  /** Open (or return) a bot's standing thread — the one conversation every
+      non-Code crew member has, running in its memory directory with no
+      worktree (#24, decision #6). Idempotent: the id is derived from the bot,
+      so calling twice cannot make two threads. */
+  async botThread(params: CrewRefParams): Promise<ThreadStateResult> {
+    return this.request<ThreadStateResult>(CREW_THREAD, params);
   }
 
   /** Every registered folder with the threads the sidebar draws under it —

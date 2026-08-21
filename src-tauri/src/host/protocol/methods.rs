@@ -44,6 +44,7 @@ pub const CREW_LIST: &str = "crew/list";
 pub const CREW_CREATE: &str = "crew/create";
 pub const CREW_UPDATE: &str = "crew/update";
 pub const CREW_REMOVE: &str = "crew/remove";
+pub const CREW_THREAD: &str = "crew/thread";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
 pub const CLIENT_METHODS: &[&str] = &[
@@ -75,6 +76,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     CREW_CREATE,
     CREW_UPDATE,
     CREW_REMOVE,
+    CREW_THREAD,
     THREAD_TRANSCRIPT,
     THREAD_RESUME,
     SUPERVISOR_STATUS,
@@ -122,6 +124,14 @@ pub struct HelloParams {
     pub protocol_version: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device: Option<HelloDevice>,
+    /// Proof that a *paired* device is the device it says it is (#19).
+    ///
+    /// Absent for the local console, which is implicitly paired because it
+    /// spawned the host. Required for anything else: `device.deviceId` on its
+    /// own has never been enough, and this is what a second device presents
+    /// instead. See [`DeviceAuth`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<DeviceAuth>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -632,6 +642,38 @@ pub struct SupervisorStatusResult {
     pub sleeps_observed: u64,
 }
 
+/// Where a thread's work came from, when a bot sent it rather than the human
+/// (#24).
+///
+/// Chief routes by *handing off*: the receiving agent gets a prompt, and
+/// without this the human reading that thread tomorrow has no way to tell
+/// whether they asked for it or Chief did. `dispatched` is the honest half —
+/// the handoff was recorded even if no agent could be started to hear it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoffView {
+    pub handoff_id: String,
+    /// `handoff` (a task on a crew member's standing thread) or `code_session`
+    /// (a fresh coding thread in a registered folder).
+    pub kind: String,
+    pub task: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_bot_id: Option<String>,
+    /// Resolved for display. `None` once the sending bot has been removed —
+    /// the trail survives the crew member (#17 detaches rather than deletes).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from_bot_name: Option<String>,
+    /// Whether the task actually reached an agent.
+    pub dispatched: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadStateResult {
@@ -690,6 +732,10 @@ pub struct ThreadStateResult {
     pub runs: Vec<RunView>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub receipt: Option<ReceiptView>,
+    /// The most recent handoff onto this thread (#24). Absent for every thread
+    /// the human started themselves, which is most of them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<HandoffView>,
     pub unread: i64,
 }
 
@@ -1609,4 +1655,322 @@ mod envelope_tests {
             assert!(envelope.seq > 0, "{label}");
         }
     }
+}
+
+// ---- Device pairing (#19) --------------------------------------------
+//
+// The handshake in `host/pairing/`. Method names, field names and the
+// derivations behind `mac` / `sas` are the contract a phone client written in
+// another language implements, so they are documented on the types rather than
+// only in the module.
+
+pub const PAIRING_START: &str = "pairing/start";
+pub const PAIRING_CLAIM: &str = "pairing/claim";
+pub const PAIRING_CONFIRM: &str = "pairing/confirm";
+pub const PAIRING_CANCEL: &str = "pairing/cancel";
+pub const PAIRING_STATUS: &str = "pairing/status";
+pub const DEVICE_LIST: &str = "device/list";
+pub const DEVICE_REVOKE: &str = "device/revoke";
+
+/// The methods added by #19, appended to [`CLIENT_METHODS`] by
+/// [`client_methods`] so the two waves that both touch this file cannot lose
+/// each other's entries.
+pub const PAIRING_METHODS: &[&str] = &[
+    PAIRING_START,
+    PAIRING_CLAIM,
+    PAIRING_CONFIRM,
+    PAIRING_CANCEL,
+    PAIRING_STATUS,
+    DEVICE_LIST,
+    DEVICE_REVOKE,
+];
+
+/// Every method a client may call, in one list — what `host/hello` advertises.
+pub fn client_methods() -> Vec<String> {
+    CLIENT_METHODS
+        .iter()
+        .chain(PAIRING_METHODS.iter())
+        .map(|method| (*method).to_string())
+        .collect()
+}
+
+impl DeviceRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::Approver => "approver",
+        }
+    }
+
+    /// Parse a stored role. `None` for anything else — a row whose role does
+    /// not parse is not treated as `full`, it is treated as unusable, which is
+    /// the only safe direction for a value that decides what a device may do.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "full" => Some(Self::Full),
+            "approver" => Some(Self::Approver),
+            _ => None,
+        }
+    }
+}
+
+/// Proof that a connecting device holds the token its pairing derived.
+///
+/// `mac = HMAC-SHA256(deviceToken, H["jabot/hello/v1", hostId, deviceId,
+/// protocolVersion, counter])`, hex, where `H` is the length-framed transcript
+/// hash described on [`PairingClaimParams`]. `counter` must be strictly
+/// greater than the last one this host accepted for the device, which is what
+/// stops a captured proof from being replayed on a wire with no
+/// confidentiality of its own.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceAuth {
+    pub counter: u64,
+    pub mac: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingStartParams {
+    /// Seconds the offer stays scannable. Clamped by the host; the caller is
+    /// asking, not deciding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl_secs: Option<u64>,
+}
+
+/// What the host draws. `secret` and `code` are returned exactly once, here —
+/// no list method ever hands them back, so a client that loses them starts a
+/// new offer instead of re-reading a live capability.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingStartResult {
+    pub pairing_id: String,
+    pub host_id: String,
+    pub host_name: String,
+    pub host_fingerprint: String,
+    pub host_nonce: String,
+    /// The QR channel credential: 256 bits, base64url.
+    pub secret: String,
+    /// The typed channel credential for a host with no screen: eight Crockford
+    /// characters. Low entropy on purpose — it is a code a human reads aloud —
+    /// which is why the offer expires, is single-use, and stops answering
+    /// after three wrong tries.
+    pub code: String,
+    pub expires_at: String,
+    /// The exact string to put in the QR: the fields above as compact JSON.
+    pub qr_payload: String,
+}
+
+/// The device's half of the QR, as it appears inside `qrPayload`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingQr {
+    pub v: u32,
+    pub host_id: String,
+    pub host_name: String,
+    pub host_fingerprint: String,
+    pub pairing_id: String,
+    pub host_nonce: String,
+    pub secret: String,
+    /// Where to reach this host. Empty in MVP1 — the only client is colocated,
+    /// and publishing an address the host does not listen on would be a lie.
+    pub addrs: Vec<String>,
+}
+
+/// Who is claiming. `fingerprint` is a commitment to the device's own
+/// long-term key material — the device never sends the material itself, and
+/// the host never needs it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingDevice {
+    pub device_id: String,
+    pub name: String,
+    pub fingerprint: String,
+    pub nonce: String,
+}
+
+/// Claim an offer, presenting the out-of-band credential and a proof.
+///
+/// The derivations, once, for a client in another language. `H[a, b, …]` is
+/// SHA-256 over each field written as a 4-byte big-endian length followed by
+/// its UTF-8 bytes — the framing is what stops one field absorbing another's
+/// characters.
+///
+/// ```text
+/// transcript = hex(H["jabot/pairing/v1", hostId, hostFingerprint, hostNonce,
+///                    pairingId, deviceId, deviceFingerprint, deviceNonce, via])
+/// key        = secret (via = "qr")  |  normalized code (via = "code")
+/// bind(d)    = HMAC-SHA256(key, H[d, transcript])
+/// mac        = hex(bind("jabot/pairing/claim/v1"))
+/// hostMac    = hex(bind("jabot/pairing/host/v1"))
+/// confirmMac = hex(bind("jabot/pairing/confirm/v1"))
+/// sas        = eight decimal digits of bind("jabot/pairing/sas/v1"), "NNNN-NNNN"
+/// token      = base64url(bind("jabot/pairing/device-token/v1"))
+/// ```
+///
+/// The safety number therefore depends on both fingerprints and both nonces.
+/// A client MUST derive its own rather than display one the host sent it: a
+/// number only one side computed proves nothing about the other side.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingClaimParams {
+    pub pairing_id: String,
+    /// Present when the QR was scanned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret: Option<String>,
+    /// Present when the code was typed. Case, spaces and dashes are ignored,
+    /// and `I`/`L`/`O` fold onto `1`/`1`/`0`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    pub device: PairingDevice,
+    pub mac: String,
+}
+
+/// The host's answer, including its own proof of holding the same credential.
+///
+/// Deliberately *not* the safety number: the claiming device derives that
+/// itself. What comes back is what the device cannot compute — that the party
+/// on the other end of the wire also knows the out-of-band secret.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingClaimResult {
+    pub pairing_id: String,
+    pub host_id: String,
+    pub host_name: String,
+    pub host_fingerprint: String,
+    pub host_nonce: String,
+    pub host_mac: String,
+    pub via: String,
+    pub expires_at: String,
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PairingSide {
+    /// The machine that can run `rm -rf`. Requires a `full` device to have
+    /// said hello, and is where the role is chosen.
+    Host,
+    /// The device that scanned. Proves itself with `confirmMac`.
+    Device,
+}
+
+/// "I am looking at this safety number and it matches."
+///
+/// Both sides send the number they derived. The host refuses to pair unless
+/// the two agree with each other *and* with its own — which is what makes a
+/// man in the middle who substituted key material fail rather than merely look
+/// suspicious.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingConfirmParams {
+    pub pairing_id: String,
+    pub side: PairingSide,
+    pub sas: String,
+    /// Host side only. The scope this device is granted; `approver` if unsaid.
+    /// A device-side value is ignored — a client never chooses its own grant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<DeviceRole>,
+    /// Host side only: rename the device as it is admitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Device side only: `confirmMac` from [`PairingClaimParams`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingConfirmResult {
+    pub pairing_id: String,
+    /// `awaiting_device` | `awaiting_host` | `paired`.
+    pub state: String,
+    /// Present once both sides have confirmed and the row is on disk.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device: Option<DeviceInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingRefParams {
+    pub pairing_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingCancelResult {
+    pub pairing_id: String,
+    pub cancelled: bool,
+}
+
+/// One live offer as the host operator sees it. No credentials, ever.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingOfferView {
+    pub pairing_id: String,
+    pub state: String,
+    pub expires_at: String,
+    pub attempts: u32,
+    pub host_confirmed: bool,
+    pub device_confirmed: bool,
+    /// The safety number to put on the host's screen, once a device has
+    /// claimed and the host has something to compare against.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sas: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub device: Option<PairingDevice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairingStatusResult {
+    pub offers: Vec<PairingOfferView>,
+}
+
+/// A device on the revoke list. `revokedAt` set means it is refused; the row
+/// is kept so the list can answer "was this phone ever paired, and when did we
+/// cut it off".
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PairedDeviceView {
+    pub device_id: String,
+    pub name: String,
+    pub role: DeviceRole,
+    pub fingerprint: String,
+    pub paired_via: String,
+    /// The safety number the two humans compared when this device was let in.
+    pub sas: String,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seen_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<String>,
+    /// The colocated device that spawned this host. Implicitly paired, and it
+    /// cannot be revoked — that would lock the desktop out of its own host.
+    pub local: bool,
+    pub connected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceListResult {
+    pub devices: Vec<PairedDeviceView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceRefParams {
+    pub device_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceRevokeResult {
+    pub device_id: String,
+    /// `false` when it was already revoked — the caller's intent still holds.
+    pub revoked: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revoked_at: Option<String>,
 }

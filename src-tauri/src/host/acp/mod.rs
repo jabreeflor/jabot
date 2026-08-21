@@ -156,6 +156,9 @@ impl HostSession {
                 self.handle_inbound(&thread_id, event);
             }
         }
+        // Chief's host tools arrive on their own loopback threads and are
+        // answered here, on the one thread that owns the session (#24).
+        self.pump_chief_tools();
         // The stuck backstop needs a clock, and this is the only thing the host
         // runs on a timer. It is a comparison per live thread.
         self.lifecycle_tick();
@@ -176,6 +179,8 @@ impl HostSession {
         for (_, mut conn) in self.connections.drain() {
             conn.kill();
         }
+        // Quit takes the listeners with the children (decision #4).
+        self.chief_bridges.clear();
     }
 
     pub fn adapter_wake(&self) -> std::sync::Arc<AdapterWake> {
@@ -199,6 +204,9 @@ impl HostSession {
         }
         self.withdraw_pending_permissions(thread_id, "adapter closed", Withdrawal::Cancelled);
         self.connections.remove(thread_id);
+        // The session that was being served host tools is gone; the listener
+        // serving them should not outlive it (#24).
+        self.drop_chief_bridge(thread_id);
         self.drop_prompt_queue(thread_id, "the adapter stopped");
         self.lifecycle_on_adapter_closed(thread_id, error);
     }
@@ -221,6 +229,7 @@ impl HostSession {
             }
             conn.kill();
         }
+        self.drop_chief_bridge(thread_id);
     }
 
     /// The adapter's pid, for `thread/state` and `supervisor/status`.

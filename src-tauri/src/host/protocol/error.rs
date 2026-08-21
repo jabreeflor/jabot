@@ -22,6 +22,8 @@ pub const FOLDER_EXISTS: i64 = -32009;
 pub const CHIEF_REQUIRED: i64 = -32010;
 pub const WORKTREE_FAILED: i64 = -32011;
 pub const CWD_MISSING: i64 = -32012;
+pub const PAIRING_FAILED: i64 = -32013;
+pub const DEVICE_SCOPE: i64 = -32014;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -101,6 +103,24 @@ pub enum RpcError {
     /// at the real conversation (#21).
     #[error("{cwd} is gone; {thread_id} cannot run until it is back")]
     CwdMissing { thread_id: String, cwd: String },
+    /// The handshake did not complete (#19): the offer is gone, expired or
+    /// spent, a proof did not verify, or the two safety numbers disagree.
+    ///
+    /// One error code for all of them on purpose. The `reason` is coarse
+    /// enough to draw a useful screen ("that code has expired") and never says
+    /// *which* byte was wrong, so a caller cannot use the host as an oracle
+    /// while grinding an eight-character code.
+    #[error("pairing failed: {detail}")]
+    PairingFailed {
+        reason: &'static str,
+        detail: String,
+    },
+    /// A paired device asked for something its role does not cover (#19).
+    ///
+    /// The role comes from the `paired_devices` row, read on every call — not
+    /// from anything the client said about itself.
+    #[error("a {role} device cannot call {method}")]
+    DeviceScope { role: &'static str, method: String },
 }
 
 impl RpcError {
@@ -124,6 +144,8 @@ impl RpcError {
             Self::ChiefRequired { .. } => CHIEF_REQUIRED,
             Self::WorktreeFailed { .. } => WORKTREE_FAILED,
             Self::CwdMissing { .. } => CWD_MISSING,
+            Self::PairingFailed { .. } => PAIRING_FAILED,
+            Self::DeviceScope { .. } => DEVICE_SCOPE,
         }
     }
 
@@ -184,6 +206,14 @@ impl RpcError {
             Self::CwdMissing { thread_id, cwd } => Some(serde_json::json!({
                 "threadId": thread_id,
                 "cwd": cwd,
+            })),
+            Self::PairingFailed { reason, detail } => Some(serde_json::json!({
+                "reason": reason,
+                "detail": detail,
+            })),
+            Self::DeviceScope { role, method } => Some(serde_json::json!({
+                "role": role,
+                "method": method,
             })),
             _ => None,
         }
