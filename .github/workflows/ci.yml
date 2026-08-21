@@ -3,23 +3,78 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+# Minutes are metered on this private repo and have been exhausted once
+# already. A superseded push should not keep paying for the run it replaced.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  frontend:
+  # The full pipeline — toolchain, lockfiles, bundle-config, typecheck, unit,
+  # fmt, clippy, rust tests, and the TypeScript-against-real-Rust-host e2e
+  # suite. Runs on Linux because it does not need a webview: `jabot-hostd` is
+  # the host without the window.
+  #
+  # This job is `npm ci` plus `scripts/verify.sh` and nothing else, on purpose:
+  # every gate lives in the script, so running the script locally is running
+  # CI. The one thing the script cannot reproduce is the toolchain — CI
+  # installs current stable on every run — so the script prints its rustc,
+  # clippy and node versions at the top and warns when the local stable looks
+  # a release behind (DEVIATIONS.md D-014).
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libsoup-3.0-dev
       - run: npm ci
-      - run: npm run build
+      - run: ./scripts/verify.sh
 
-  rust-host:
+  # The thing users actually install. macOS-only because that is the target —
+  # and macOS minutes bill at 10x, so this does NOT run per pull-request commit.
+  #
+  # At ~2.4 minutes a job that is ~24 billable minutes every time someone
+  # pushes, which is what exhausted this repo's allowance: the bundle job was
+  # ~86% of the spend while `verify` was doing ~100% of the catching. It now
+  # runs on merges to main, on release tags, and on demand.
+  #
+  # What that gives up is real but small: `verify` compiles the same crate and
+  # runs every test, so the only thing left to bundling is the packaging step
+  # itself — icons, plist, signing, the universal lipo. Breaking that is caught
+  # on the merge to main, before any tag is cut, rather than on the pull
+  # request.
+  #
+  # The config that step reads is validated without macOS, by the
+  # `bundle-config` gate in scripts/verify.sh: tauri.conf.json parses, every
+  # icon it names exists, entitlements.plist parses as a plist,
+  # bundle.targets still contains "app", createUpdaterArtifacts is still false,
+  # default-run is set, and every binary under src-tauri/src/bin is still
+  # gated behind `dev-bins`. D-005 is the cautionary case — a `bundle.targets`
+  # edit that still builds and still ships a release with no updater archive.
+  bundle:
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -27,6 +82,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - run: npm ci
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: npm run tauri build

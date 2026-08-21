@@ -1,0 +1,100 @@
+/*
+ * Crew management. Every bot is a card you can open and rewrite — the crew is
+ * the user's, not a fixed cast — so the add tile is the same size as a bot and
+ * sits in the same grid rather than hiding behind a toolbar button.
+ */
+
+.crew-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sp-4);
+  margin-top: var(--sp-2);
+}
+
+.crew-card {
+  background: var(--raise2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-xl);
+  padding: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  --blob-size: 44px;
+}
+
+.crew-card .r1 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.crew-card .nm {
+  font-weight: 700;
+  font-size: var(--fs-title);
+}
+
+.crew-card .role {
+  color: var(--dim);
+  font-size: 13px;
+  margin-top: 1px;
+}
+
+.chief-badge {
+  margin-left: auto;
+  font-size: var(--fs-caps);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--amber);
+  background: rgba(232, 163, 61, 0.12);
+  border-radius: var(--r-pill);
+  padding: 3px 9px;
+  align-self: flex-start;
+}
+
+.crew-card .tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.minichip {
+  font-size: var(--fs-caps);
+  font-weight: 600;
+  color: var(--dim);
+  background: var(--raise);
+  border-radius: var(--r-pill);
+  padding: 3px var(--sp-3);
+}
+
+.crew-card .acts {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: auto;
+}
+
+.add-card {
+  border: 1.5px dashed var(--edge-menu);
+  background: transparent;
+  border-radius: var(--r-xl);
+  min-height: 130px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  color: var(--faint);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--fs-body);
+}
+
+.add-card:hover {
+  color: var(--ink);
+  border-color: var(--dim);
+}
+
+.add-card .big {
+  font-size: 26px;
+  font-weight: 400;
+}

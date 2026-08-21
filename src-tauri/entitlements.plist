@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  JaBot entitlements — Developer ID + Hardened Runtime, not Mac App Store.
+
+  This file is the audit, not just the grant list. Every entitlement JaBot
+  could plausibly want is accounted for below, each with the reason it is
+  absent. The dict is deliberately empty: nothing JaBot does today needs an
+  entitlement. Adding a key here widens what a compromised adapter subprocess
+  can reach, so a key without a justification is a bug — and a justification
+  has to describe what the key actually permits, not what we hope it permits.
+
+  Hardened Runtime is required for notarization and is enabled in
+  tauri.conf.json (`bundle.macOS.hardenedRuntime`). App Sandbox is
+  deliberately off: a sandboxed app cannot exec `claude` / `codex` / a custom
+  harness from the user's PATH, cannot open arbitrary registered folders as
+  ACP `cwd`, and cannot supervise grandchild process groups. JaBot is a
+  process supervisor; the sandbox is the wrong box, and that is also why the
+  Mac App Store is not the channel (docs/research/app-shell/process-architecture.md).
+-->
+<plist version="1.0">
+<dict>
+	<!--
+	  Audited and deliberately NOT declared:
+
+	  com.apple.security.cs.disable-library-validation
+	      The obvious candidate, and the wrong one. Library validation governs
+	      code loaded INTO this process — dylibs, bundles, plug-ins — not
+	      programs this process execs. ACP adapters are spawned with
+	      fork/exec (host/acp/spawn.rs), and macOS evaluates a child's
+	      signature on its own terms; the parent's library-validation setting
+	      is not inherited and does not gate the launch. So this key would buy
+	      nothing for the adapters while giving up a real protection in the
+	      process that holds the keychain-backed harness credentials (#9):
+	      with it set, any ad-hoc or foreign-team dylib may be loaded here.
+	      Nothing in the dependency set wants it either — rusqlite is
+	      `bundled` (static), `keyring` talks to Apple-signed system
+	      frameworks. If a signed, notarized build ever does fail to load
+	      something, add it back with the observed error recorded here, not a
+	      predicted one.
+
+	  com.apple.security.network.client / .server
+	      Sandbox-only keys. Outgoing HTTPS to harness APIs and to the update
+	      feed already works for a non-sandboxed Developer ID app; declaring
+	      them here would be cargo cult. They become required the day anyone
+	      proposes the App Store — which is the day to re-read the note above.
+
+	  keychain-access-groups
+	      Only needed to SHARE keychain items with another app of ours. The
+	      secrets vault (#9) reads and writes items JaBot itself created under
+	      its own access group, which needs no entitlement.
+
+	  com.apple.security.cs.allow-jit / .allow-unsigned-executable-memory
+	      WKWebView evaluates JavaScript in a system-provided WebContent XPC
+	      process with its own entitlements, not inside JaBot.
+
+	  com.apple.security.cs.allow-dyld-environment-variables
+	      The host sets env vars FOR adapter children (e.g.
+	      HERMES_ACP_SKIP_CONFIGURED_MCP=1). It never needs DYLD_* injected
+	      into itself.
+
+	  com.apple.security.cs.debugger / get-task-allow
+	      get-task-allow must be absent or notarization rejects the build.
+	      Debug builds are unsigned and never go through this path.
+
+	  Camera, microphone, location, address book, calendars, photos
+	      JaBot touches none of them. Adding an unused device entitlement
+	      still shows up in the Gatekeeper consent prompts users see.
+	-->
+</dict>
+</plist>

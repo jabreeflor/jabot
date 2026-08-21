@@ -1,18 +1,17 @@
 //! Built-in harness catalog and core crew. Idempotent: builtins upsert;
 //! crew rows are inserted only on an empty `bots` table.
+//!
+//! The harness rows are written from the runtime catalog in `host/harness`
+//! rather than a second list here: `threads.harness_id` is a foreign key, so
+//! every compiled-in card has to exist as a row before a thread can name it,
+//! and two hand-maintained lists of the same cards would drift the first time
+//! one of them gained a preset.
 
 use rusqlite::{params, Connection};
 
+use super::super::harness::catalog::compiled_in;
 use super::error::StoreError;
 use super::now_utc;
-
-struct BuiltinHarness {
-    id: &'static str,
-    label: &'static str,
-    command: &'static str,
-    args_json: &'static str,
-    install_hint: &'static str,
-}
 
 struct SeedBot {
     id: &'static str,
@@ -24,38 +23,14 @@ struct SeedBot {
     sort_order: i64,
 }
 
-/// Compiled-in New Chat cards (Buzz tier 1). Custom JSON is user-added (#13).
-const BUILTIN_HARNESSES: &[BuiltinHarness] = &[
-    BuiltinHarness {
-        id: "claude",
-        label: "Claude Code",
-        command: "claude-agent-acp",
-        args_json: "[]",
-        install_hint: "Install Claude Code, then `claude-agent-acp` on PATH.",
-    },
-    BuiltinHarness {
-        id: "codex",
-        label: "Codex",
-        command: "codex-acp",
-        args_json: "[]",
-        install_hint: "Install Codex, then `codex-acp` on PATH.",
-    },
-    BuiltinHarness {
-        id: "pi",
-        label: "Pi",
-        command: "pi-acp",
-        args_json: "[]",
-        install_hint: "Install Pi, then `pi-acp` on PATH.",
-    },
-];
-
 /// Prototype CREW[]. Default harness is `claude` until the user picks otherwise (#6).
 const SEED_BOTS: &[SeedBot] = &[
     SeedBot {
         id: "chief",
         name: "Chief",
         color: "b-teal",
-        instructions: "Route work across the crew. Fold long tasks away, surface only what matters.",
+        instructions:
+            "Route work across the crew. Fold long tasks away, surface only what matters.",
         tools_json: r#"["handoff_to_bot","spawn_code_session","fold_thread","list_crew_status"]"#,
         is_chief: 1,
         sort_order: 0,
@@ -116,25 +91,30 @@ pub fn seed(conn: &Connection) -> Result<(), StoreError> {
 
 fn seed_harnesses(conn: &Connection) -> Result<(), StoreError> {
     let now = now_utc();
-    for harness in BUILTIN_HARNESSES {
+    for descriptor in compiled_in() {
+        let launch = descriptor.primary();
+        let args_json = serde_json::to_string(&launch.args)?;
+        let env_json = serde_json::to_string(&descriptor.env)?;
         conn.execute(
             "INSERT INTO harnesses (
                 id, label, command, args_json, env_json, install_hint,
                 is_builtin, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, '{}', ?5, 1, ?6, ?6)
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?7)
              ON CONFLICT(id) DO UPDATE SET
                 label = excluded.label,
                 command = excluded.command,
                 args_json = excluded.args_json,
+                env_json = excluded.env_json,
                 install_hint = excluded.install_hint,
                 updated_at = excluded.updated_at
              WHERE harnesses.is_builtin = 1",
             params![
-                harness.id,
-                harness.label,
-                harness.command,
-                harness.args_json,
-                harness.install_hint,
+                descriptor.id,
+                descriptor.label,
+                launch.command,
+                args_json,
+                env_json,
+                descriptor.install_hint,
                 now
             ],
         )?;

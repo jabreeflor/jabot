@@ -1,0 +1,319 @@
+/**
+ * The Inbox on real data (#22): the swap, the badge, and the buttons.
+ *
+ * `tests/e2e/lifecycle.test.ts` proves what the *host* writes into
+ * `inbox_events` and what `inbox/list` answers. What is checked here is the
+ * half a live host cannot check — that the desktop actually shows it.
+ *
+ * The regression these are written against is a specific one: the shell used
+ * to render `mock-host`'s three fixture cards no matter what the host said, so
+ * every card the lifecycle group wrote was invisible, the badge counted the
+ * fixtures, and Archive dismissed a fixture id the host had never heard of.
+ * Each case below fails on that shell.
+ */
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import App from "../App";
+import {
+  connectHost,
+  INBOX_RESURFACE,
+  type FolderListResult,
+  type HelloResult,
+  type HostClient,
+  type InboxListResult,
+  type JsonRpcNotification,
+  type PermissionPendingResult,
+  type ThreadStateResult,
+} from "../host";
+
+vi.mock("../host", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../host")>();
+  return { ...actual, connectHost: vi.fn() };
+});
+
+const HELLO: HelloResult = {
+  protocolVersion: 1,
+  hostId: "host-1",
+  hostName: "This Mac",
+  hostMode: "in-process",
+  version: "0.1.0",
+  platform: "macos",
+  device: { deviceId: "dev-1", name: "This Mac", role: "full" },
+  methods: [],
+  notifications: [],
+};
+
+/** One card per state of mind: back and finished, back and asking, asleep. */
+const INBOX: InboxListResult = {
+  events: [
+    {
+      id: "ev-done",
+      threadId: "t-sidebar",
+      threadTitle: "Sidebar overflow fix",
+      threadState: "resurfaced",
+      kind: "done",
+      title: "Sidebar overflow fix finished",
+      summary: "1 file changed · tests green",
+      createdAt: "2026-08-20T13:52:00Z",
+    },
+    {
+      id: "ev-stuck",
+      threadId: "t-auth",
+      threadTitle: "Auth migration",
+      threadState: "resurfaced",
+      kind: "stuck",
+      title: "Auth migration has gone quiet",
+      summary: "no output for 20 minutes",
+      createdAt: "2026-08-20T13:20:00Z",
+    },
+  ],
+  sleeping: [
+    {
+      threadId: "t-nas",
+      title: "Nightly NAS backup",
+      foldPolicy: "wait_for_inbox",
+      foldedAt: "2026-08-20T12:00:00Z",
+      acpState: "running",
+    },
+  ],
+  // Deliberately not the number of "needs you" rows above: this is the host's
+  // own `count_unread_inbox`, and the badge has to be *that*.
+  unread: 3,
+};
+
+const NO_ASKS: PermissionPendingResult = { requests: [] };
+
+const FOLDERS: FolderListResult = {
+  folders: [
+    {
+      folderId: "f-jabot",
+      name: "jabot",
+      path: "/Users/j/code/jabot",
+      cwd: "/Users/j/code/jabot",
+      isGit: false,
+      filesToCopy: [],
+      sortOrder: 0,
+      threads: [],
+    },
+  ],
+};
+
+const reopened: ThreadStateResult = {
+  threadId: "t-sidebar",
+  title: "Sidebar overflow fix",
+  state: "active",
+  foldPolicy: "default",
+  cwd: "/Users/j/code/jabot",
+  harnessId: "claude",
+  process: {
+    connected: false,
+    acpState: "idle",
+    pendingPermissions: 0,
+    resumable: true,
+  },
+  runs: [],
+  unread: 0,
+};
+
+const inbox = vi.fn<() => Promise<InboxListResult>>();
+const pendingPermissions = vi.fn<() => Promise<PermissionPendingResult>>();
+const reopenThread = vi.fn<(p: unknown) => Promise<ThreadStateResult>>();
+const archiveThread = vi.fn<(p: unknown) => Promise<ThreadStateResult>>();
+const replyPermission = vi.fn<(p: unknown) => Promise<unknown>>();
+type Notify = (notification: JsonRpcNotification) => void;
+const handlers = new Set<Notify>();
+
+function client(): HostClient {
+  return {
+    disconnect: vi.fn(),
+    deviceId: "dev-1",
+    listFolders: vi.fn(async () => FOLDERS),
+    inbox,
+    pendingPermissions,
+    reopenThread,
+    archiveThread,
+    replyPermission,
+    onNotification: (handler: Notify) => {
+      handlers.add(handler);
+      return () => handlers.delete(handler);
+    },
+    threadTranscript: vi.fn(async () => ({
+      threadId: "t-sidebar",
+      headSeq: 0,
+      events: [],
+      truncated: false,
+      queued: [],
+    })),
+  } as unknown as HostClient;
+}
+
+beforeEach(() => {
+  handlers.clear();
+  inbox.mockReset().mockResolvedValue(INBOX);
+  pendingPermissions.mockReset().mockResolvedValue(NO_ASKS);
+  reopenThread.mockReset().mockResolvedValue(reopened);
+  archiveThread.mockReset().mockResolvedValue({ ...reopened, state: "archived" });
+  replyPermission.mockReset().mockResolvedValue({ delivered: true });
+  vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+});
+
+async function openInbox() {
+  render(<App />);
+  await screen.findByText("This Mac · v0.1.0");
+  await userEvent.click(await screen.findByRole("button", { name: /^Inbox —/ }));
+  return screen.getByRole("heading", { level: 1, name: "Inbox" });
+}
+
+/**
+ * Open a card's disclosure.
+ *
+ * `InboxView` opens the first card that has one by itself, and whether that is
+ * this card depends on whether the host had answered before the pane mounted —
+ * so this asks the row rather than assuming, and a test about the buttons does
+ * not become a test about that race.
+ */
+async function expand(name: RegExp) {
+  const card = await screen.findByRole("button", { name });
+  if (card.getAttribute("aria-expanded") === "false") {
+    await userEvent.click(card);
+  }
+  return card;
+}
+
+describe("the Inbox on real data", () => {
+  it("draws the host's cards and not the fixtures", async () => {
+    await openInbox();
+
+    await screen.findByText("Sidebar overflow fix finished");
+    expect(screen.getByText("Auth migration has gone quiet")).toBeInTheDocument();
+    // Still Sleeping is `threads.state = folded`, projected — not an event.
+    expect(screen.getByText("Nightly NAS backup")).toBeInTheDocument();
+    expect(screen.getByText("STILL SLEEPING")).toBeInTheDocument();
+
+    // The fixtures the shell used to show regardless of the host.
+    expect(screen.queryByText("Inbox Manager needs a call")).toBeNull();
+    expect(screen.queryByText("Weekly digest draft ready")).toBeNull();
+  });
+
+  it("badges the nav with the host's count, not its own tally of the rows", async () => {
+    render(<App />);
+
+    // Three: what `count_unread_inbox` answered. A renderer-side count of the
+    // "needs you" kinds in the same list would say one, and the phone — which
+    // has always drawn `unread` — would then disagree with the Mac.
+    expect(
+      await screen.findByRole("button", { name: "Inbox — 3 waiting" }),
+    ).toBeInTheDocument();
+  });
+
+  it("reopens the thread on the host when a card is opened", async () => {
+    await openInbox();
+    await screen.findByText("Sidebar overflow fix finished");
+
+    await expand(/^Sidebar overflow fix finished/);
+    await userEvent.click(screen.getByRole("button", { name: "Open thread" }));
+
+    // Not a navigation: `thread/reopen` is what clears the badge and puts the
+    // row back in the sidebar.
+    await waitFor(() =>
+      expect(reopenThread).toHaveBeenCalledWith({ threadId: "t-sidebar" }),
+    );
+  });
+
+  it("archives the card's thread on the host", async () => {
+    await openInbox();
+    await screen.findByText("Sidebar overflow fix finished");
+
+    await expand(/^Sidebar overflow fix finished/);
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    await waitFor(() =>
+      expect(archiveThread).toHaveBeenCalledWith({ threadId: "t-sidebar" }),
+    );
+    // And the list is re-read, because the card is gone from the host's answer.
+    expect(inbox.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("re-reads itself when a thread resurfaces while nobody is looking", async () => {
+    await openInbox();
+    await screen.findByText("Sidebar overflow fix finished");
+    inbox.mockResolvedValue({
+      ...INBOX,
+      events: [
+        {
+          id: "ev-new",
+          threadId: "t-nas",
+          threadTitle: "Nightly NAS backup",
+          threadState: "resurfaced",
+          kind: "failed",
+          title: "Nightly NAS backup failed",
+          summary: "rsync exited 23",
+          createdAt: "2026-08-20T14:00:00Z",
+        },
+      ],
+      unread: 4,
+    });
+
+    for (const handler of handlers) {
+      handler({
+        jsonrpc: "2.0",
+        method: INBOX_RESURFACE,
+        params: { threadId: "t-nas", reason: "failed" },
+      });
+    }
+
+    expect(await screen.findByText("Nightly NAS backup failed")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Inbox — 4 waiting" }),
+    ).toBeInTheDocument();
+  });
+
+  it("answers an outstanding permission from the card", async () => {
+    pendingPermissions.mockResolvedValue({
+      requests: [
+        {
+          requestId: "req-1",
+          threadId: "t-auth",
+          title: "Run a command",
+          subject: { title: "Run a command", command: "rm -rf build" },
+          options: [
+            { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
+            { optionId: "reject_once", name: "Deny", kind: "reject_once" },
+          ],
+          createdAt: "2026-08-20T13:59:00Z",
+          stale: false,
+        },
+      ],
+    });
+    await openInbox();
+
+    // The ask replaces the thread's `stuck` card rather than sitting beside
+    // it: two rows for one question is how a human answers twice.
+    const card = await expand(/^Run a command/);
+    expect(screen.queryByText("Auth migration has gone quiet")).toBeNull();
+    // The command, not just the title: "Run ls" and "Run rm -rf build" have
+    // the same title and are not the same decision.
+    expect(within(card).getByText("rm -rf build")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Allow once" }));
+
+    await waitFor(() =>
+      expect(replyPermission).toHaveBeenCalledWith({
+        requestId: "req-1",
+        deviceId: "dev-1",
+        optionId: "allow_once",
+      }),
+    );
+  });
+
+  it("says why rather than showing an empty pane when the host will not answer", async () => {
+    inbox.mockRejectedValue(new Error("store is unavailable"));
+    await openInbox();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "store is unavailable",
+    );
+  });
+});

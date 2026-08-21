@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+#
+# pre-push — do not let unverified commits leave this machine.
+#
+# CI is not the safety net right now. This repo's Actions minutes are spent;
+# the macOS `bundle` job no longer runs on pull requests at all, and the
+# `verify` job is `npm ci` + scripts/verify.sh, which is what this runs. So the
+# gate is here, on the way out, or it is nowhere.
+#
+# Install:      ./scripts/install-hooks.sh      (or `npm install`, which runs it)
+# Emergency:    git push --no-verify            (git skips this file entirely)
+# Faster:       JABOT_PREPUSH=fast git push     (skips the e2e suite — see below)
+#
+# What it costs: ~1.5 minutes on a warm build tree, most of it cargo. That is
+# the whole gate, e2e included, because on this repo the full run is only about
+# ten seconds more than --fast once Rust has been compiled once. If you are
+# pushing repeatedly and want the short one, JABOT_PREPUSH=fast skips building
+# `jabot-hostd` and the 123-case e2e suite — everything that drives the real
+# Rust host over real NDJSON. Nothing else is skipped.
+#
+# Deleting a branch (`git push --delete`) pushes no content and is not gated.
+set -uo pipefail
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$ROOT" || exit 0
+
+red()  { printf '\033[31m%s\033[0m\n' "$*" >&2; }
+bold() { printf '\033[1m%s\033[0m\n' "$*" >&2; }
+
+ZERO='0000000000000000000000000000000000000000'
+
+# stdin: <local ref> <local sha> <remote ref> <remote sha>, one line per ref.
+# One line per *ref*, so `local_sha` is a tip: the intermediate commits of a
+# multi-commit push are not listed here and are not separately gated, exactly
+# as CI would only ever have built the tip.
+PUSH_REFS=()
+PUSH_SHAS=()
+while read -r local_ref local_sha _remote_ref _remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
+  case "$local_sha" in
+    "$ZERO"|'') continue ;;               # branch deletion: no content
+  esac
+  PUSH_REFS+=("${local_ref:-(unnamed ref)}")
+  PUSH_SHAS+=("$local_sha")
+done
+
+if [ "${#PUSH_SHAS[@]}" -eq 0 ]; then
+  exit 0
+fi
+
+if [ ! -x scripts/verify.sh ]; then
+  red "pre-push: scripts/verify.sh is missing or not executable — refusing to push blind."
+  red "          (git push --no-verify overrides this, if you know why.)"
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+MODE="${JABOT_PREPUSH:-full}"
+case "$MODE" in
+  full) ARGS=() ;;
+  fast) ARGS=(--fast) ;;
+  *)    red "pre-push: JABOT_PREPUSH must be 'full' or 'fast', got '$MODE'"; exit 1 ;;
+esac
+
+# ---------------------------------------------------------------------------
+# What the gates can read, and what is actually going out.
+#
+# scripts/verify.sh reads the files on disk. A push carries commits. Those are
+# usually the same content, and this hook used to assume they always were: it
+# verified the worktree and exited 0 regardless of what the refs on the wire
+# contained. Every one of these verified one thing and shipped another, with a
+# green message on screen and no warning:
+#
+#     git push origin some-branch    # from a clean, unrelated checkout
+#     git push origin main           # ...while a feature branch is checked out
+#     git push --all
+#     git push origin HEAD~1:main
+#     git push                       # with uncommitted work on disk
+#
+# So compare, and refuse. Tree OIDs rather than commit OIDs, because the gates
+# are a function of content: a rebase, a cherry-pick or an amended message that
+# yields byte-identical content really has been through them.
+#
+# This runs before the gates, not after, so the refusal costs a second rather
+# than ninety — there is no point spending the gate on bytes that are not on
+# the wire. When the worktree cannot be hashed at all we say so and fall
+# through: no worse than this hook has always been, and not a reason to brick
+# a push.
+# ---------------------------------------------------------------------------
+LIVE_TREE=''
+# shellcheck source=../scripts/lib/tree-hash.sh
+if . "$ROOT/scripts/lib/tree-hash.sh" 2>/dev/null; then
+  LIVE_TREE=$(jabot_tree_hash 2>/dev/null || printf '')
+fi
+
+tree_of() { git rev-parse --verify --quiet "$1^{tree}" 2>/dev/null || printf 'unreadable'; }
+
+if [ -n "$LIVE_TREE" ]; then
+  DIVERGENT=''
+  i=0
+  while [ "$i" -lt "${#PUSH_SHAS[@]}" ]; do
+    pushed_tree=$(tree_of "${PUSH_SHAS[$i]}")
+    if [ "$pushed_tree" != "$LIVE_TREE" ]; then
+      DIVERGENT="${DIVERGENT}${PUSH_REFS[$i]} ${pushed_tree}
+"
+    fi
+    i=$((i + 1))
+  done
+
+  if [ -n "$DIVERGENT" ]; then
+    red ""
+    red "pre-push: REFUSING THE PUSH — the gates cannot see what you are pushing."
+    red ""
+    red "          ./scripts/verify.sh checks the files on disk. These commits carry"
+    red "          different content, so a green run here would be a statement about"
+    red "          bytes that are not going anywhere."
+    red ""
+    red "          on disk:     ${LIVE_TREE:0:12}  (what the gates would check)"
+    printf '%s' "$DIVERGENT" | while read -r ref t; do
+      red "          on the wire: ${t:0:12}  $ref"
+    done
+    red ""
+    if [ "$(tree_of HEAD)" != "$LIVE_TREE" ]; then
+      red "          You have uncommitted changes, so the files on disk are not the"
+      red "          commit on the wire. Commit them — ./scripts/checkpoint.sh -m \"...\""
+      red "          verifies and commits in one step — or stash them, then push."
+    else
+      red "          You are pushing a ref you do not have checked out. Check it out"
+      red "          and push from there, so the gates run on those bytes."
+    fi
+    red "          git push --no-verify skips this hook entirely, if you have a"
+    red "          reason and will say so."
+    exit 1
+  fi
+else
+  bold "pre-push: could not hash the working tree, so the commits being pushed"
+  bold "          cannot be compared with the files the gates below check."
+  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    bold "          The tree is also dirty: what is checked is not what is pushed."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Skip only on proof.
+#
+# scripts/verify.sh leaves a note in .git/ naming the tree it just passed
+# green (scripts/lib/tree-hash.sh has the format). If the worktree is still
+# exactly that tree, and every commit being pushed carries that same tree,
+# then the content on the wire has already been through these gates and
+# running them again would check the same bytes with the same compiler.
+#
+# That is the ordinary path: `./scripts/checkpoint.sh -m ...` verifies and
+# commits, and the push right after it is free. It is also why this hook can
+# afford to default to the *full* gate.
+#
+# Every way this can go wrong costs 90 seconds, not safety: an absent,
+# unreadable, stale or mismatched note means the gates simply run. There is no
+# path here that lets unverified content through.
+#
+# The note expires after 24h, because the gates are not a pure function of the
+# content: rust-toolchain.toml tracks `stable`, CI installs the newest one on
+# every run, and clippy gains lints between releases. A tree that passed last
+# week can fail today (DEVIATIONS.md D-014). A `fast` note never satisfies a
+# `full` push — it never ran the e2e suite.
+# ---------------------------------------------------------------------------
+STAMP_MAX_AGE=86400
+if [ -n "$LIVE_TREE" ] && jabot_read_stamp 2>/dev/null; then
+  mode_ok=0
+  [ "$JABOT_STAMP_MODE" = "$MODE" ] && mode_ok=1
+  [ "$JABOT_STAMP_MODE" = full ] && mode_ok=1
+  # "and every commit being pushed carries that tree" is not re-checked here,
+  # because the refusal above already exited on any pushed ref whose tree is not
+  # $LIVE_TREE. That is load-bearing: this is the one path that exits 0 without
+  # running a gate, and it is only sound while the divergence refusal stays
+  # ABOVE it. Re-checking it here is measurably dead code — delete the loop and
+  # every guard case still passes — so the invariant is written down instead.
+  if [ "$mode_ok" -eq 1 ] &&
+     [ "$JABOT_STAMP_AGE" -lt "$STAMP_MAX_AGE" ] &&
+     [ "$LIVE_TREE" = "$JABOT_STAMP_TREE" ]
+  then
+    bold "pre-push: tree ${JABOT_STAMP_TREE:0:12} passed ./scripts/verify.sh ($JABOT_STAMP_MODE)"
+    bold "          $((JABOT_STAMP_AGE / 60))m ago and has not changed since. Not re-running the gates."
+    exit 0
+  fi
+fi
+
+bold "pre-push: running ./scripts/verify.sh ${ARGS[*]-} (~1.5 min; git push --no-verify skips it)"
+if [ "$MODE" = fast ]; then
+  bold "          JABOT_PREPUSH=fast: NOT running the e2e suite (TS client vs real Rust host)."
+fi
+
+if [ ${#ARGS[@]} -eq 0 ]; then
+  ./scripts/verify.sh
+else
+  ./scripts/verify.sh "${ARGS[@]}"
+fi
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  red ""
+  red "pre-push: REFUSING THE PUSH — scripts/verify.sh failed (exit $status)."
+  red "          CI is not going to catch this: the macOS bundle job does not run on"
+  red "          pull requests and this repo's Actions minutes are exhausted."
+  red "          Fix it, or push with --no-verify if you have a reason and will say so."
+  exit "$status"
+fi
+
+# The gates took ~90 seconds and read the files on disk the whole time. An
+# agent, a watch task or a formatter-on-save writing into the tree during them
+# breaks the equality proved above, and the green is then about a tree that no
+# longer matches the commits on the wire. checkpoint.sh refuses to commit in
+# this situation; refuse to push in it too.
+if [ -n "$LIVE_TREE" ]; then
+  after_tree=$(jabot_tree_hash 2>/dev/null || printf '')
+  if [ -n "$after_tree" ] && [ "$after_tree" != "$LIVE_TREE" ]; then
+    red ""
+    red "pre-push: REFUSING THE PUSH — the working tree changed WHILE the gates ran."
+    red "          The green above describes neither the files on disk now nor the"
+    red "          commits you are pushing. What moved:"
+    git diff --name-status "$LIVE_TREE" "$after_tree" 2>/dev/null | sed 's/^/            /' >&2
+    red "          Push again once it holds still, or use ./scripts/checkpoint.sh,"
+    red "          which commits only a tree that did not move."
+    exit 1
+  fi
+fi
+exit 0

@@ -1,0 +1,8 @@
+{
+  "templateId": "ops",
+  "name": "Ops / On-call",
+  "color": "b-orange",
+  "instructions": "Watch deploys and alerts. Wake me only for real fires; everything else goes in the morning digest.",
+  "tools": ["terminal", "slack"],
+  "harnessId": "codex"
+}

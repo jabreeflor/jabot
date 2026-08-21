@@ -1,0 +1,237 @@
+/*
+ * Row cards shared by Inbox and Pull Requests. Both answer the same question —
+ * "what came back while I was not looking?" — so they are one row type with
+ * one expanded detail panel, not two lookalikes that drift apart.
+ */
+
+.tabs {
+  display: flex;
+  gap: var(--sp-3);
+  margin: var(--sp-5) 0 var(--sp-3);
+}
+
+.tab {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+  background: var(--raise2);
+  border-radius: var(--r-pill);
+  padding: var(--sp-2) 14px;
+  cursor: pointer;
+  border: 0;
+}
+
+.tab:hover {
+  color: var(--ink);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--bub-me);
+  color: var(--bub-me-ink);
+}
+
+.card-row {
+  display: flex;
+  gap: 13px;
+  padding: 13px 14px;
+  border-radius: var(--r-xl);
+  align-items: flex-start;
+  background: transparent;
+}
+
+.card-row:hover,
+.card-row.open {
+  background: var(--raise2);
+}
+
+/* Only the summary is the button — the expanded detail holds buttons of its
+   own, and a button inside a button is not a thing. */
+.card-summary {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card-row .blob {
+  --blob-size: 38px;
+  margin-top: 2px;
+}
+
+.card-row .codeav {
+  margin-top: 2px;
+}
+
+.card-row .bd {
+  min-width: 0;
+  flex: 1;
+}
+
+.card-row .r1 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+}
+
+.card-row .ti {
+  font-weight: 600;
+  font-size: var(--fs-chat);
+}
+
+.card-row .when {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: var(--fs-meta);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-row .de {
+  display: block;
+  color: var(--dim);
+  font-size: var(--fs-body);
+  margin-top: 2px;
+}
+
+/* Dimmed = nothing is being asked of you: sleeping work, merged PRs. */
+.card-row.dim .ti {
+  color: var(--dim);
+  font-weight: 500;
+}
+
+.tagpill {
+  display: inline-block;
+  font-size: var(--fs-caps);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  border-radius: var(--r-pill);
+  padding: 2.5px 9px;
+  margin-top: var(--sp-3);
+}
+
+.tagpill.done {
+  background: rgba(93, 187, 110, 0.14);
+  color: var(--ok);
+}
+
+.tagpill.needs {
+  background: rgba(232, 163, 61, 0.14);
+  color: var(--amber);
+}
+
+.tagpill.merged {
+  background: rgba(167, 139, 250, 0.14);
+  color: var(--violet);
+}
+
+.tagpill.bad {
+  background: rgba(232, 105, 93, 0.14);
+  color: var(--danger);
+}
+
+.tagpill.quiet {
+  background: var(--raise);
+  color: var(--faint);
+}
+
+.card-detail {
+  margin-top: var(--sp-4);
+  background: var(--side);
+  border: 1px solid var(--edge);
+  border-radius: 14px;
+  padding: 14px var(--sp-5);
+}
+
+.card-detail .path {
+  color: var(--faint);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+
+.card-detail .path b {
+  color: var(--dim);
+  font-weight: 600;
+}
+
+.card-detail ul {
+  margin: var(--sp-3) 0 0 18px;
+  color: var(--dim);
+  font-size: var(--fs-body);
+}
+
+.card-detail li {
+  margin-bottom: var(--sp-1);
+}
+
+.card-detail .acts {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.checkline {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--dim);
+  font-size: 13px;
+  margin-top: var(--sp-3);
+}
+
+.checkline .tick {
+  color: var(--ok);
+}
+
+.checkline .spin {
+  color: var(--amber);
+}
+
+.checkline .fail {
+  color: var(--danger);
+}
+
+.diffstat {
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.diffstat .a {
+  color: var(--ok);
+}
+
+.diffstat .d {
+  color: var(--danger);
+}
+
+/* The PR glyph carries state by colour: open green, merged violet, draft grey. */
+.prav {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  margin-top: 2px;
+  border-radius: 11px;
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+}
+
+.prav svg {
+  width: 18px;
+  height: 18px;
+}
+
+.prav.open {
+  color: var(--ok);
+}
+
+.prav.merged {
+  color: var(--violet);
+}

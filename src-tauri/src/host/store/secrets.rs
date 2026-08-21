@@ -3,13 +3,29 @@
 //! MVP is macOS Keychain (bundle id service). Linux/Windows put() fails
 //! closed until a real OS store is wired. Tests use the in-memory backend.
 //! Never log secret bytes; never write them into SQLite.
+//!
+//! This is also where the *pointers* for tool credentials live (#18). An OAuth
+//! grant is two halves: the tokens, which are vault bytes like any other
+//! secret, and `tool_connections`, which records only what a chip needs to
+//! draw itself. Keeping both halves in one module is deliberate — the
+//! invariant that one never leaks into the other is easier to hold when the
+//! writes are next to each other.
 
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
 use super::error::StoreError;
-use super::models::SecretRefRow;
-use super::{map_secret_ref, now_utc, secret_account};
+use super::models::{SecretRefRow, ToolConnectionRow};
+use super::{map_secret_ref, map_tool_connection, now_utc, secret_account};
+
+/// Opt into a process-local vault where the OS store is absent.
+///
+/// Set to `memory`, this makes [`Secrets::platform`] return the in-RAM vault
+/// instead of failing closed. It is not a persistence path and cannot become
+/// one: the bytes live in this process and die with it. It exists so the OAuth
+/// flow can be exercised on Linux CI, where there is no Keychain and every
+/// `put` would otherwise fail — never as a way to keep tokens on disk.
+const BACKEND_ENV: &str = "JABOT_SECRETS_BACKEND";
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const KEYCHAIN_SERVICE: &str = "com.jabot.app";
@@ -66,6 +82,9 @@ impl Secrets {
     }
 
     pub fn platform() -> Self {
+        if std::env::var(BACKEND_ENV).is_ok_and(|value| value == "memory") {
+            return Self::memory();
+        }
         #[cfg(target_os = "macos")]
         {
             Self::Os
@@ -211,4 +230,95 @@ pub fn list_secret_refs(conn: &Connection) -> Result<Vec<SecretRefRow>, StoreErr
         .query_map([], map_secret_ref)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// Write (or replace) the non-secret half of a provider grant.
+///
+/// `secret_ref_id` is a pointer, never bytes: the caller has already put the
+/// token bundle in the vault. Upsert rather than insert because a re-consent
+/// is the same grant with new tokens, and a provider must not accumulate rows.
+#[allow(clippy::too_many_arguments)]
+pub fn upsert_tool_connection(
+    conn: &Connection,
+    provider: &str,
+    status: &str,
+    account: Option<&str>,
+    scopes_json: &str,
+    secret_ref_id: Option<&str>,
+    client_id: Option<&str>,
+    expires_at: Option<&str>,
+    last_error: Option<&str>,
+) -> Result<ToolConnectionRow, StoreError> {
+    if provider.trim().is_empty() {
+        return Err(StoreError::invalid("tool connection provider is required"));
+    }
+    let now = now_utc();
+    conn.execute(
+        "INSERT INTO tool_connections (
+            provider, status, account, scopes_json, secret_ref_id, client_id,
+            expires_at, last_error, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)
+         ON CONFLICT(provider) DO UPDATE SET
+            status = excluded.status,
+            account = excluded.account,
+            scopes_json = excluded.scopes_json,
+            secret_ref_id = excluded.secret_ref_id,
+            client_id = excluded.client_id,
+            expires_at = excluded.expires_at,
+            last_error = excluded.last_error,
+            updated_at = excluded.updated_at",
+        params![
+            provider,
+            status,
+            account,
+            scopes_json,
+            secret_ref_id,
+            client_id,
+            expires_at,
+            last_error,
+            now
+        ],
+    )?;
+    get_tool_connection(conn, provider)?.ok_or_else(|| StoreError::NotFound(provider.into()))
+}
+
+pub fn get_tool_connection(
+    conn: &Connection,
+    provider: &str,
+) -> Result<Option<ToolConnectionRow>, StoreError> {
+    conn.query_row(
+        "SELECT provider, status, account, scopes_json, secret_ref_id, client_id,
+                expires_at, last_error, created_at, updated_at
+         FROM tool_connections WHERE provider = ?1",
+        [provider],
+        map_tool_connection,
+    )
+    .optional()
+    .map_err(Into::into)
+}
+
+pub fn list_tool_connections(conn: &Connection) -> Result<Vec<ToolConnectionRow>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT provider, status, account, scopes_json, secret_ref_id, client_id,
+                expires_at, last_error, created_at, updated_at
+         FROM tool_connections ORDER BY provider",
+    )?;
+    let rows = stmt
+        .query_map([], map_tool_connection)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn delete_tool_connection(
+    conn: &Connection,
+    provider: &str,
+) -> Result<Option<ToolConnectionRow>, StoreError> {
+    let row = get_tool_connection(conn, provider)?;
+    if row.is_some() {
+        conn.execute(
+            "DELETE FROM tool_connections WHERE provider = ?1",
+            [provider],
+        )?;
+    }
+    Ok(row)
 }

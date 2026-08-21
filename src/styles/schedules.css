@@ -1,0 +1,66 @@
+/*
+ * Schedules (#25). One column rather than the crew's two: a schedule row is a
+ * sentence — when, as whom, what happened last — and two columns of sentences
+ * read as a wall.
+ */
+
+.sched-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin-top: var(--sp-2);
+}
+
+.sched-card .r1 {
+  align-items: flex-start;
+}
+
+.sched-switch {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-caps);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.sched-prompt {
+  margin-top: 0;
+}
+
+.sched-detail {
+  font-size: 12px;
+}
+
+/* A caught-up run is the one thing on this screen a user did not ask for, so
+   it is the one chip that is allowed to be loud. */
+.sched-caught {
+  color: var(--amber);
+  background: rgba(232, 163, 61, 0.12);
+}
+
+.sched-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.sched-preset {
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.sched-preset[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: var(--dim);
+}
+
+.sched-hint {
+  color: var(--faint);
+  font-size: 12px;
+  margin: calc(-1 * var(--sp-2)) 0 var(--sp-3);
+}

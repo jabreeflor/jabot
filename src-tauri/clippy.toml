@@ -1,0 +1,6 @@
+# The toolchain file declares `min-version = "1.85"`, so clippy is told the
+# same thing. Without it, a newer clippy suggests APIs that did not exist at
+# our floor — `slice::as_chunks` in the SHA-256 block loop is the one that
+# caught us — and CI, which installs current stable, fails a lint that the
+# minimum supported compiler could not have satisfied anyway.
+msrv = "1.85"

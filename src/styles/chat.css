@@ -1,0 +1,340 @@
+/*
+ * Transcript and composer — the iMessage grammar the prototype set:
+ * cream bubble right for me, graphite bubble left for the bot, both with a
+ * squared-off tail corner; monospace toolblocks sunk below the chat ground so
+ * machine output never competes with speech.
+ */
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 14px 20px;
+  --blob-size: 28px;
+}
+
+.chat-head h2 {
+  font-size: var(--fs-title);
+  font-weight: 600;
+}
+
+.chat-head .codeav {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+}
+
+.chat-head .codeav svg {
+  width: 14px;
+  height: 14px;
+}
+
+.chat-head .status {
+  color: var(--dim);
+  font-size: var(--fs-meta);
+}
+
+/* The status line is a live reading once a thread is streaming (#14): a stop
+   reason, or the agent's own plan position. Same three tones as the sidebar's
+   pip, so "running" means the same colour wherever it is read. */
+.chat-head .status[data-tone="running"] {
+  color: var(--amber);
+}
+
+.chat-head .status[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.chat-head .status[data-tone="bad"] {
+  color: var(--danger);
+}
+
+/* The 🖥 affordance. MVP1 only ever has one host, but the button exists so
+   picking a host later is not a new piece of chrome. */
+.host-picker {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: none;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.host-picker:hover {
+  color: var(--ink);
+  background: var(--raise2);
+}
+
+.harness-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--raise);
+  border-radius: var(--r-pill);
+  padding: var(--sp-1) var(--sp-4);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.harness-chip i {
+  width: var(--sp-3);
+  height: var(--sp-3);
+  border-radius: 50%;
+  font-style: normal;
+  background: var(--dot, var(--faint));
+}
+
+.chat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-4) var(--sp-6);
+}
+
+.transcript {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.stamp {
+  text-align: center;
+  color: var(--faint);
+  font-size: var(--fs-meta);
+  margin: var(--sp-3) 0 var(--sp-2);
+}
+
+.sys {
+  text-align: center;
+  color: var(--faint);
+  font-size: var(--fs-body);
+  margin: var(--sp-2) 0;
+}
+
+.msg {
+  display: flex;
+}
+
+.msg.me {
+  justify-content: flex-end;
+}
+
+.bubble {
+  max-width: 72%;
+  padding: 11px var(--sp-5);
+  border-radius: var(--r-bubble);
+  font-size: var(--fs-chat);
+  line-height: var(--lh-chat);
+  white-space: pre-line;
+  background: var(--bub-bot);
+  align-self: flex-start;
+  border-bottom-left-radius: var(--r-tail);
+}
+
+.msg.me .bubble {
+  background: var(--bub-me);
+  color: var(--bub-me-ink);
+  border-bottom-left-radius: var(--r-bubble);
+  border-bottom-right-radius: var(--r-tail);
+}
+
+/* A run of consecutive tool calls is one block — the agent did one thing with
+   several steps, and six separate cards would read as six turns. */
+.toolblock {
+  align-self: flex-start;
+  max-width: 72%;
+  background: var(--sunk);
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-lg);
+  padding: 11px var(--sp-5);
+  font: var(--fs-meta) / var(--lh-mono) var(--font-mono);
+  color: var(--dim);
+  margin: 0;
+  overflow-x: auto;
+}
+
+.toolblock .call {
+  white-space: pre;
+}
+
+.toolblock .verb {
+  color: var(--ink);
+}
+
+.toolblock .tick {
+  color: var(--ok);
+}
+
+.toolblock .spin {
+  color: var(--amber);
+}
+
+.toolblock .fail {
+  color: var(--danger);
+}
+
+/* Decision cards: the fold offer today, permission prompts in #20. */
+.notice {
+  align-self: flex-start;
+  max-width: 72%;
+  background: var(--raise2);
+  border-radius: var(--r-xl);
+  padding: 14px var(--sp-5);
+  transition:
+    opacity var(--t-exit),
+    transform var(--t-exit);
+}
+
+.notice.leaving {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.97);
+  pointer-events: none;
+}
+
+.notice .r1 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.notice .r1 b {
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  color: var(--dim);
+}
+
+.notice .pill {
+  margin-left: auto;
+  color: var(--amber);
+  background: rgba(232, 163, 61, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: var(--r-pill);
+  padding: 3px var(--sp-3);
+  white-space: nowrap;
+}
+
+.notice p {
+  color: var(--dim);
+  font-size: var(--fs-ui);
+  margin-top: var(--sp-2);
+}
+
+.notice .acts {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+
+.composer {
+  padding: 14px var(--sp-6) 20px;
+}
+
+.composer form {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.composer input {
+  flex: 1;
+  min-width: 0;
+  background: var(--raise);
+  border: 0;
+  outline: 0;
+  border-radius: var(--r-pill);
+  padding: 11px 18px;
+  font-size: var(--fs-chat);
+  color: var(--ink);
+}
+
+.composer input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.composer input::placeholder {
+  color: var(--faint);
+}
+
+.round-btn {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--raise);
+  border: 0;
+  color: var(--dim);
+  font-size: 18px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.round-btn:hover {
+  color: var(--ink);
+}
+
+/* Queued follow-ups (#14).
+ *
+ * ACP cannot inject a message into a turn that is already running, so what you
+ * type while the agent is working is *held* — and the difference between held
+ * and delivered has to be visible, or the UI is indistinguishable from one
+ * that dropped it. "Send now" stops the turn, which is what lets the queue go.
+ */
+.queued {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-meta);
+  color: var(--dim);
+}
+
+.queued-count {
+  color: var(--amber);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.queued-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}
+
+.queued .btn {
+  flex: none;
+}
+
+/* A host error on this thread. Loud enough to read, quiet enough not to be a
+   modal: the transcript above it is still the thing you are looking at. */
+.chat-error {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-meta);
+  color: var(--red);
+}
+
+/* Stop, in the mic's place while a turn is running. */
+.round-btn.stop {
+  color: var(--amber);
+  font-size: 13px;
+}

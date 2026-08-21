@@ -1,0 +1,187 @@
+/*
+ * The window frame. The prototype drew fake traffic lights in a .winbar; the
+ * real app gets `titleBarStyle: "Overlay"` from tauri.conf.json, so the OS
+ * draws the buttons over our content. Two consequences live here:
+ *
+ *   1. A drag region across the top, inset past the native buttons so it never
+ *      swallows their clicks.
+ *   2. Both columns pad down by --titlebar-h, or the first sidebar row would
+ *      sit under the lights.
+ */
+
+.app-shell {
+  display: flex;
+  height: 100%;
+}
+
+.titlebar-drag {
+  position: fixed;
+  top: 0;
+  left: var(--traffic-lights-w);
+  right: 0;
+  height: var(--titlebar-h);
+  z-index: 100;
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--chat);
+  padding-top: var(--titlebar-h);
+}
+
+/* Only the selected view is mounted, so `.view` has no on/off state — the
+   prototype's `.view.on` toggle was a stand-in for a router. */
+.view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Inbox, Pull Requests, and Crew are documents, not transcripts: one scroll
+   column at reading width. */
+.page-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-6) 32px;
+}
+
+.page {
+  max-width: var(--page-max);
+  margin: 0 auto;
+}
+
+.page-top {
+  padding: 18px 0 var(--sp-2);
+}
+
+.page-top h1 {
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.page-top p {
+  color: var(--dim);
+  font-size: var(--fs-body);
+  margin-top: 3px;
+}
+
+.page-section {
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  font-weight: 600;
+  letter-spacing: var(--track-caps);
+  margin: 20px var(--sp-1) var(--sp-3);
+}
+
+.page-empty {
+  color: var(--faint);
+  font-size: var(--fs-body);
+  padding: 18px var(--sp-1);
+}
+
+/* Shared pill button. `.main` is the affirmative action, `.danger` destroys. */
+.btn {
+  font: 13px var(--font-ui);
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: var(--r-pill);
+  padding: 7px 14px;
+  border: 0;
+  background: var(--raise);
+  color: var(--ink);
+}
+
+.btn:hover {
+  background: #333336;
+}
+
+.btn.primary {
+  background: var(--bub-me);
+  color: var(--bub-me-ink);
+}
+
+.btn.danger {
+  color: var(--danger);
+}
+
+/* A button waiting on the host. Still readable — it says what it is doing. */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.host-error {
+  color: var(--red);
+}
+
+/*
+ * A shell-level refusal — today only a fold the host would not take (#26).
+ *
+ * It sits above the sidebar and the main pane because the action that caused it
+ * spans both: the row was animated out of the sidebar and the pane may have
+ * moved. Dismissible rather than timed, because the sentence tells the user
+ * what to do next and reading it is not a race.
+ */
+.app-error {
+  position: fixed;
+  z-index: 400;
+  top: var(--sp-3);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  max-width: 520px;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--edge-menu);
+  border-radius: 11px;
+  background: var(--raise2);
+  color: var(--red);
+  font-size: var(--fs-meta);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+.app-error button {
+  background: none;
+  border: 0;
+  color: var(--dim);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+
+/*
+ * An in-page strip: something is degraded, and the page below it is still
+ * true. Today only the PR board's "GitHub could not be reached" (#28).
+ *
+ * Amber and not red, and inside the page rather than over the shell, because
+ * it is not a refusal — the rows under it are linkage the host worked out
+ * without any credential at all, and they are as correct as they were before
+ * the poll failed. What is missing is freshness, so the strip says which
+ * command would restore it and stays out of the way.
+ */
+.page-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--edge-strong);
+  border-radius: 11px;
+  background: var(--raise2);
+  color: var(--amber);
+  font-size: var(--fs-meta);
+}
+
+.page-notice span {
+  flex: 1;
+  min-width: 0;
+}
+
+.page-notice .btn {
+  flex: none;
+}

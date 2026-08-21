@@ -1,0 +1,29 @@
+{
+  "data": {
+    "pr0": null,
+    "pr1": {
+      "pullRequest": {
+        "number": 21,
+        "title": "Add retry logic to NAS backup",
+        "url": "https://github.com/jabreeflor/globnet-sync/pull/21",
+        "isDraft": false,
+        "state": "OPEN",
+        "additions": 64,
+        "deletions": 12,
+        "changedFiles": 2,
+        "headRefName": "jabot/t-retry",
+        "baseRefName": "main",
+        "reviewDecision": "REVIEW_REQUIRED",
+        "updatedAt": "2026-08-21T06:40:00Z",
+        "commits": { "nodes": [] }
+      }
+    }
+  },
+  "errors": [
+    {
+      "type": "NOT_FOUND",
+      "path": ["pr0"],
+      "message": "Could not resolve to a Repository with the name 'jabreeflor/gone'."
+    }
+  ]
+}

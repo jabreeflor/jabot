@@ -11,7 +11,7 @@ pub mod jsonrpc;
 pub mod methods;
 
 pub use error::RpcError;
-pub use frame::{decode_frame, encode_frame};
+pub use frame::{decode_frame, decode_frames, encode_frame};
 pub use jsonrpc::{
     JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId,
     JSONRPC_VERSION,
