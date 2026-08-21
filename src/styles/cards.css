@@ -184,6 +184,12 @@
   margin-top: var(--sp-3);
 }
 
+.checkline svg {
+  width: 12px;
+  height: 12px;
+  vertical-align: -1.5px;
+}
+
 .checkline .tick {
   color: var(--ok);
 }

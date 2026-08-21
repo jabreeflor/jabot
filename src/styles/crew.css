@@ -95,6 +95,11 @@
 }
 
 .add-card .big {
-  font-size: 26px;
-  font-weight: 400;
+  display: grid;
+  place-items: center;
+}
+
+.add-card .big svg {
+  width: 26px;
+  height: 26px;
 }

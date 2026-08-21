@@ -150,8 +150,14 @@
   background: none;
   border: 0;
   color: var(--dim);
-  font-size: var(--fs-ui);
   cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.app-error button svg {
+  width: 13px;
+  height: 13px;
 }
 
 /*
