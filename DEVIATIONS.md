@@ -2216,3 +2216,24 @@ renderer's own classification while the phone counted the host's — two numbers
 two sources, same host. An implementer's report is not evidence; reading the
 code is. That is the argument for auditing against the issue text rather than
 against the summaries.
+## D-024 — `list_crew_status` keeps "idle = no threads"; a refinement was reverted
+
+A wave-6 fix agent began changing `idle` in Chief's `list_crew_status` from
+"this bot has no threads" to "this bot has no *busy* threads", threading an
+`is_busy(run, acp_state)` through the roster and adding a per-thread `busy`
+field. It is a defensible reading — a bot whose only thread is sitting idle is
+arguably not working — but it was left unfinished: it broke two `chief.test.ts`
+cases (`names the crew when asked for a bot nobody has` expects Chief to read
+as working while it is mid-tool-call, and `spawn_code_session ... its own
+worktree` fails downstream of the same change), and the agent did not
+reconcile them.
+
+Reverted to the committed behaviour, which is green: at HEAD all seven Chief
+cases pass. The refinement is recorded here rather than half-applied, because
+a partially-changed definition of "working" is worse than either definition
+consistently applied — Chief routes work by this field.
+
+If it is picked up later, the question to settle first is what `busy` should
+say about the bot that is *asking*: Chief calls `list_crew_status` from inside
+its own turn, so under a strict run-state reading Chief reports itself idle
+while demonstrably working.
