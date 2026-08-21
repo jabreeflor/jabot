@@ -147,4 +147,29 @@ describe("the Inbox as the phone sees it", () => {
     // An id nobody has heard of leaves the snapshot alone, identity included.
     expect(withoutAsk(added, "req-nope")).toBe(added);
   });
+
+  /**
+   * A PR card is its own kind (#28). The phone's fallback turns anything it
+   * does not recognise into `needs_you`, so a kind the host has and this list
+   * has not draws "checks failed" under a NEEDS YOU pill — a claim that an
+   * agent is blocked on the human, about a session that finished yesterday.
+   */
+  it("draws a pull request card as a pull request", () => {
+    const inbox = projectInbox(
+      list({
+        events: [
+          event({
+            id: "pr-1",
+            kind: "pr",
+            threadState: "archived",
+            title: "PR #23 · checks failed",
+            summary: "jabreeflor/jabot · tests failed",
+          }),
+        ],
+      }),
+    );
+    const card = inbox.needs[0];
+    expect(card.kind).toBe("pr");
+    expect(card.tag.label).toBe("PULL REQUEST");
+  });
 });

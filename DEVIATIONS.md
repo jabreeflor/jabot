@@ -1876,3 +1876,178 @@ delivered, and no banner has ever been clicked.** What *was* done:
 - **A user-facing on/off switch, or per-bot notification settings.** The budget
   is a constant. Making it configurable needs the same missing Settings home.
 - **Anything on the Dock icon.** See §4.
+
+---
+
+## D-020 — #28: how a thread proves it opened a PR, and how much of GitHub had to be faked
+
+**Plan:** #28 asks for the Pull Requests view on real data, a link between a
+thread and the PR its branch opened (`thread_prs.thread_id` NOT NULL,
+`provider + repo + number` as the dedupe key), PR state / checks / review state
+in the view, Inbox cards for PR events worth surfacing, and `gh auth token` as
+the auth story with no JaBot GitHub App and no token in SQLite.
+
+**Built:** `src-tauri/src/host/pr/` — `detect.rs` (linkage from ACP traffic),
+`github.rs` (the GraphQL document, the parser, the `gh pr view` / `gh pr list`
+fallbacks), `card.rs` (which change earns an Inbox row) — over a new
+`store/pr.rs` and migration `0010_pull_requests`. Two host methods (`pr/list`,
+`pr/refresh`), one new field on `ThreadStateResult` (`pullRequests`), one new
+`inbox_events.kind` (`pr`), `git::worktree::head_branch`, and
+`src/views/pulls.ts` + the `PullRequestsView` props that put the board on real
+data. Nine things departed from the obvious reading.
+
+**1. Two methods, because they fail differently.** The obvious design is one
+`pr/list` that refreshes as it reads. That makes the board unavailable to
+everyone the poll cannot serve — and the poll needs `gh`, a login, and a
+network, while the *linkage* needs none of them. So `pr/list` is a store read
+that cannot fail, `pr/refresh` is the network, and a refresh that reaches
+nobody is **not an error frame**: it resolves with the rows intact and the
+reason in `unavailable`, in the same three-fact shape (`reason` / `detail` /
+`remedy`) `github/status` already established. A client polls this every fifteen
+seconds; one that throws because `gh` is not installed is a client that takes
+its own board down.
+
+**2. The host asks GitHub through `gh api graphql`, so the token is never read
+into this process.** #16's brief says auth is `gh auth token`, and
+`repo::gh::token` exists for it. Using it here would mean a token in this
+process's memory, in an argv or an environment somewhere, for every poll —
+where `pr-linkage.md` explicitly allows "`gh api graphql` … fine as the first
+implementation (no extra dep)". Letting `gh` make the request is the same login
+one layer up and one fewer place a credential can leak from. It also avoids
+adding an HTTP+TLS stack to a crate that deliberately has none (D-008 made the
+same call for OAuth, and reached for `curl` for the same reason). Nothing here
+writes a token to SQLite, logs one, or puts one on the wire.
+
+**3. `statusCheckRollup` hangs off the commit, not off the pull request.**
+`pr-linkage.md`'s sketch puts it on `PullRequest`; that field does not exist in
+GitHub's schema and the query would not resolve. The document built here walks
+`commits(last: 1) { nodes { commit { statusCheckRollup } } }`, which is the path
+`gh pr checks` itself uses. Worth recording because the research file is
+otherwise the spec and someone will read it and wonder why the code disagrees.
+
+**4. Every owner and repo name is a GraphQL *variable*.** Aliases (`pr0`, `pr1`,
+…) are the only thing this code writes into the document. An owner/name comes
+out of a git remote, which is a string a repository controls, and interpolating
+one into a query is an injection with the user's own token behind it. There is a
+test that fails if a repository name ever appears in the document text.
+
+**5. Only `execute` output is evidence, and what the agent *says* is not.**
+`pr-linkage.md`'s ladder is stdout → `gh pr view` → head-branch match → chat
+text, and the last rung is explicitly not allowed to write a row. Two guards
+make that real. Tool-call output is scanned only for calls the adapter declared
+as `kind: "execute"` — a `tool_call_update` need not repeat the kind, so the
+execute ids are remembered per thread, per turn, in RAM — because an agent that
+*reads a file* mentioning a pull request has not opened one, and a link is
+written once and never re-derived. And a compare URL is refused outright: `git
+push` prints one on every single push, it names no PR, and linking it would
+attach a number that does not exist. Agent prose only *arms* the post-turn `gh`
+call.
+
+**6. A link is refused for a repository the thread has nothing to do with.**
+An agent that runs `gh pr view --repo somebody/else` would otherwise attach a
+stranger's PR to this conversation permanently. A link is accepted for the
+thread's own `repo`, or for a repository of the same *name* under a different
+owner — which is what a fork's `gh pr create` prints, since it opens against
+upstream. A thread with no repo stamped on it accepts nothing at all
+(decision #6: workers have no checkout).
+
+**7. The first thread to claim a PR keeps it.** `(provider, repo, number)` is
+the dedupe key and `thread_id` is not in it, so a second detection updates
+GitHub's half of the row and leaves the link alone. Re-pointing would make the
+board's "Reopen thread" silently change which conversation it opens, on evidence
+no stronger than what wrote it. The one thing that removes a link is the thread
+going: the foreign key cascades. The key is also **not** widened to include
+`forge_host`, even though the column was added — a UNIQUE constraint cannot be
+altered in SQLite without rebuilding the table, and the case it would catch (the
+same `owner/name` on github.com *and* on a GHES host, both linked on this Mac)
+is rarer than the cost. `forge_host` exists because `gh` is addressed per host.
+
+**8. `inbox_events.kind` gained `pr`, and the table was rebuilt for it.** Every
+existing kind is a claim about a *run*: `failed` over a green run whose CI went
+red an hour later says the turn failed, and `needs_you` says an agent is blocked
+on the human. Both are lies the Inbox would then have to draw, about a session
+that is usually finished and archived by the time its checks go red. The kind is
+a CHECK constraint and SQLite cannot alter one, so `0010` copies the table,
+drops it and renames — safe because nothing has a foreign key *into*
+`inbox_events`. Two consequences:
+
+- `count_unread_inbox` gained one exception. It counted only threads in
+  `folded` / `resurfaced`, on the reasoning that an archived thread's badge
+  points at a row that is not there. A `pr` card is not about the thread, so
+  gating it that way would mean the only cards this kind produces are cards
+  nobody is told about. `pr` counts for any non-deleted thread; everything else
+  is unchanged.
+- The card goes out as `inbox/event`, never `inbox/resurface` — it moves no
+  thread, which is exactly the distinction #25 drew for schedule fires.
+
+**9. Cards are written on *transitions*, never on states.** The poll runs every
+fifteen seconds while checks are moving. `card::transition` compares the row
+before against the row after, so a PR that has been red since lunch produces one
+card, not one every fifteen seconds; red *and* reviewed in the same poll is one
+interruption, about the fire. Three events clear the bar — opened, checks
+failed, changes requested. Deliberately not cards: a merge (the user did that,
+usually in the browser they are looking at), an approval (good news, not a task
+— it shows on the row), and checks going green again (the absence of the red
+card is that news).
+
+### What could not be exercised, and what that leaves unproven
+
+**There is no GitHub credential here and no egress to the API, so no GitHub
+endpoint has ever answered this code.** What is tested, and how:
+
+- The GraphQL **parser** runs against fixtures in `host/pr/fixtures/`. Those
+  fixtures are **hand-built from the documented schema, not captured from a live
+  API** — there was no token to capture with. They cover the two
+  `statusCheckRollup.contexts` union members (`CheckRun`, `StatusContext`), a
+  draft, a merged PR with no rollup at all, and a `data` + `errors` partial
+  failure.
+- The **transport** runs for real in `tests/e2e/pr.test.ts`: a `gh` script is
+  put on the host's PATH and answers `gh api graphql` from a file, so the query
+  the host builds, the argv it runs, the JSON it parses, the row it writes and
+  the card it earns are all production code. Only the network is a fixture.
+- **Linkage** is end-to-end against a real `fake-acp-agent` subprocess and a real
+  git repository (`src-tauri/tests/pr.rs`, plus the e2e file), using a new
+  `execute` mode on the fake agent that echoes the prompt as shell output.
+
+What a real token would still have to prove: that GitHub's field names and enum
+spellings match what `snapshot()` reads (they are from the published schema, but
+`reviewDecision` and the rollup states are the kind of thing that has variants
+in the wild); that a GHES instance answers the same document; that the rate-limit
+behaviour of a 15-second poll over a real board is as cheap as the research says;
+and that `gh pr view` in a #23 worktree resolves the branch's PR — the fallback
+is implemented and its JSON parsing is fixture-tested, but it has never been run
+against a `gh` that could answer.
+
+### What #28 did not build
+
+- **The desktop Inbox rendering these cards.** The host writes them, `inbox/list`
+  serves them, and the *mobile* Inbox (#29) draws them today because it already
+  reads the host. `src/views/InboxView.tsx` still renders `mock-host.ts`'s
+  fixtures — swapping that is #22's, and doing it here would have meant
+  rewriting the projection for every card kind, not just this one. The pieces
+  this issue owes it are in place: `InboxKind` has `pr`, `inboxTag` draws it,
+  and `NEEDS_YOU_KINDS` counts it.
+- **A native banner for a PR card.** #27's budget is `needs_you` / `done` /
+  `failed` and was left alone. Widening the noise budget is that issue's call,
+  and "your CI went red" is exactly the kind of thing that should be argued for
+  rather than added quietly.
+- **Merge from JaBot.** `pr-linkage.md` defers it and there is no host method for
+  it, so the row's buttons are "View on GitHub" and "Reopen thread". A Merge
+  button that opened a browser would be worse than the link that is honest.
+- **An in-app diff.** Same file, same reason. The thread's own diffs are #14's;
+  the PR diff is GitHub's, after the push.
+- **A closed PR anywhere on the board.** `PullRequestsView`'s sections are
+  open / draft / merged (#11), so a `closed` row is stored, refreshed, and never
+  drawn. Adding a section is a view decision nobody has made.
+- **Background polling while the app is in the Dock.** `usePullRequests` polls
+  only while the renderer is mounted, at the two cadences `pr-linkage.md` gives
+  (15s with checks in flight, 60s otherwise). The research's "app backgrounded"
+  and "laptop sleep" rows would need the poll to move into the host beside #21's
+  keep-alive, which is where it belongs the day the Inbox badge has to be right
+  without anyone looking at the PR tab.
+- **ETag / conditional requests and rate-limit headers.** GraphQL has no ETag
+  story and `gh` owns the response headers, so respecting
+  `x-ratelimit-remaining` would mean reading them back out of `gh`. The cap that
+  *is* implemented is the batch: 25 PRs per document, least-recently-polled
+  first, so a long board still refreshes every row eventually rather than the
+  same 25 for ever.

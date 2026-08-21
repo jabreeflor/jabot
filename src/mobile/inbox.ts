@@ -39,6 +39,9 @@ const KNOWN_KINDS: readonly InboxKind[] = [
   "permission",
   "lost",
   "folded",
+  // #28. Without it a PR card degrades to `needs_you` and the phone draws
+  // "checks failed" under a NEEDS YOU pill, which claims an agent is blocked.
+  "pr",
 ];
 
 export interface MobileCard {
