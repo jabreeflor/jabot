@@ -15,6 +15,7 @@ import { useEffect } from "react";
 
 import type { ScheduleView } from "../host";
 import type { Bot } from "../components/types";
+import { PlusIcon } from "../components/Icon";
 import { describeCron, describeFire, shortTime } from "./schedules";
 
 /** Slow on purpose: `schedule/list` is a couple of SQLite reads, and nothing
@@ -92,7 +93,7 @@ export function SchedulesView({
 
             <button type="button" className="add-card" onClick={onAdd}>
               <span className="big" aria-hidden="true">
-                ＋
+                <PlusIcon />
               </span>
               Add a schedule
             </button>
