@@ -17,7 +17,13 @@
 
 import { useState } from "react";
 
-import { PullRequestIcon, PullRequestMergedIcon } from "../components/Icon";
+import {
+  CheckIcon,
+  CrossIcon,
+  DotIcon,
+  PullRequestIcon,
+  PullRequestMergedIcon,
+} from "../components/Icon";
 import { formatWhen } from "../components/format";
 import { prTag } from "../components/status";
 import { Tabs, tabButtonId, type TabSpec } from "../components/Tabs";
@@ -289,11 +295,13 @@ function PrRow({
                           : "fail"
                     }
                   >
-                    {check.state === "passing"
-                      ? "✓"
-                      : check.state === "running"
-                        ? "●"
-                        : "✗"}
+                    {check.state === "passing" ? (
+                      <CheckIcon />
+                    ) : check.state === "running" ? (
+                      <DotIcon />
+                    ) : (
+                      <CrossIcon />
+                    )}
                   </span>{" "}
                   {check.label}
                 </span>

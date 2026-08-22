@@ -92,7 +92,11 @@ export function ScheduleEditorModal({
       </select>
 
       <FieldLabel htmlFor={cronId}>WHEN</FieldLabel>
-      <div className="sched-presets">
+      <div
+        className="sched-presets"
+        role="group"
+        aria-label="Schedule presets"
+      >
         {PRESETS.map((preset) => (
           <button
             key={preset.cron}
@@ -110,11 +114,17 @@ export function ScheduleEditorModal({
         type="text"
         value={cron}
         placeholder="0 9 * * 1-5"
-        aria-describedby={`${cronId}-hint`}
+        // The host refuses a schedule over its cron and nothing else, so an
+        // error is always this field's — and an error 300px below the box it
+        // is about is an error the user has to go hunting for.
+        aria-invalid={error ? true : undefined}
+        aria-describedby={
+          error ? `${cronId}-hint ${cronId}-error` : `${cronId}-hint`
+        }
         onChange={(event) => setCron(event.target.value)}
       />
       <p id={`${cronId}-hint`} className="sched-hint">
-        Cron, in this Mac’s local time. Minute, hour, day, month, weekday.
+        Minute, hour, day, month, weekday — in this Mac’s local time.
       </p>
 
       <FieldLabel htmlFor={promptId}>WHAT SHOULD IT DO?</FieldLabel>
@@ -122,7 +132,7 @@ export function ScheduleEditorModal({
         id={promptId}
         type="text"
         value={prompt}
-        placeholder="e.g. Summarise overnight mail and flag anything urgent"
+        placeholder="e.g. Summarise overnight mail, flag anything urgent"
         onChange={(event) => setPrompt(event.target.value)}
       />
 
@@ -130,17 +140,22 @@ export function ScheduleEditorModal({
       <select
         id={catchUpId}
         value={catchUp}
+        aria-describedby={catchUp === "once" ? `${catchUpId}-hint` : undefined}
         onChange={(event) => setCatchUp(event.target.value as CatchUpPolicy)}
       >
         <option value="once">Run the most recent missed one, once</option>
         <option value="skip">Skip it — only run on time</option>
       </select>
-      <p className="sched-hint">
-        Never more than one catch-up run, however long the Mac was off.
-      </p>
+      {/* Only under "once". Skipping has no catch-up run to bound, so the
+          sentence was describing behaviour the user had just turned off. */}
+      {catchUp === "once" && (
+        <p id={`${catchUpId}-hint`} className="sched-hint">
+          At most one catch-up run, however long this Mac was off.
+        </p>
+      )}
 
       {error && (
-        <p className="modal-error" role="alert">
+        <p id={`${cronId}-error`} className="modal-error" role="alert">
           {error}
         </p>
       )}

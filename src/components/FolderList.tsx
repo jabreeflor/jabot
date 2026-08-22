@@ -15,7 +15,7 @@
 
 import { useState } from "react";
 
-import { ChevronDownIcon, FolderIcon } from "./Icon";
+import { ChevronDownIcon, DotIcon, FolderIcon, PlusIcon, RingIcon } from "./Icon";
 import { threadStatus } from "./status";
 import type { FolderWithThreads, Selection, ThreadSummary } from "./types";
 import type { MenuPosition } from "./ThreadContextMenu";
@@ -82,7 +82,7 @@ export function FolderList({
                 aria-label={`New thread in ${folder.name}`}
                 onClick={() => onNewThread(folder.id)}
               >
-                ＋
+                <PlusIcon />
               </button>
             </div>
             {open &&
@@ -129,7 +129,7 @@ function ThreadRow({
       }}
     >
       <span className={`pip ${status.tone}`} aria-hidden="true">
-        {status.tone === "quiet" ? "◌" : "●"}
+        {status.tone === "quiet" ? <RingIcon /> : <DotIcon />}
       </span>
       <span className="title">{thread.title}</span>
       <span className="state">{status.label}</span>

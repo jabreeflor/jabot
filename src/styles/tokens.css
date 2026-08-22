@@ -23,7 +23,10 @@
   /* text */
   --ink: #f2f2f2;
   --dim: #98989e;
-  --faint: #6e6e73;
+  /* One step up the same system-gray ramp the prototype drew from. The
+     original #6e6e73 was 3.4:1 on the card ground — below AA for every size it
+     is used at, and the uppercase 11px form labels are its worst case. */
+  --faint: #8e8e93;
 
   /* bubbles — cream for me, graphite for the bot (iMessage grammar) */
   --bub-bot: #2c2c2e;

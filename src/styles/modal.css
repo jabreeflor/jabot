@@ -14,38 +14,70 @@
 }
 
 .modal {
-  width: 440px;
+  width: 460px;
   max-width: 92vw;
   max-height: 88vh;
   overflow-y: auto;
   background: var(--side);
   border: 1px solid #333336;
   border-radius: var(--r-modal);
-  padding: var(--sp-6);
+  padding: var(--sp-6) var(--sp-6) 0;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 }
 
 .modal h2 {
   font-size: 17px;
   font-weight: 700;
+  margin-bottom: var(--sp-6);
 }
 
-.modal .mlab {
+/* The vertical rhythm of every card: a group is a label, its control, and
+   whatever the control needs explained. 20px between groups against 6px
+   inside one is what makes them read as groups and not as one long column.
+   `display: block` is what makes those numbers real: FieldLabel renders a
+   <label> when it has an htmlFor, an inline box has no vertical margins, and
+   every gap in this file was therefore whatever the line box happened to
+   leave. The schedule editor is all <label>, which is why it was the card
+   that felt tight.
+
+   `line-height: 1.2` for the same reason: the card's 14px/1.45 strut wraps
+   8px of caps in a 20px line box, so six dead pixels sit above and below the
+   label whatever the margins say — and a label you cannot tighten to its own
+   control is a label that belongs to neither.
+
+   .mlab is emitted by FieldLabel, .mfield by any text field wearing the modal
+   recipe. Both are used outside modals too (first-run setup shares this rule
+   by selector rather than restating it), so the bare classes ride along —
+   additively, keeping every existing modal byte-identical. */
+.modal .mlab,
+.mlab {
+  display: block;
+  line-height: 1.2;
   color: var(--faint);
   font-size: var(--fs-caps);
   font-weight: 600;
-  letter-spacing: 0.09em;
-  margin: 18px 0 var(--sp-3);
+  letter-spacing: var(--track-caps);
+  margin: 20px 0 var(--sp-2);
+}
+
+/* The heading already spaces the first group; a second margin on top of it
+   would open a gap the card never asked for. Keyed on the heading rather than
+   on :first-of-type — FieldLabel renders a <label> when it has an htmlFor and
+   a <div> when it does not, and :first-of-type would zero the first of *each*,
+   which is New Chat's FOLDER and the bot editor's COLOR. */
+.modal h2 + .mlab {
+  margin-top: 0;
 }
 
 .modal select,
 .modal input[type="text"],
-.modal input[type="password"] {
+.modal input[type="password"],
+.mfield {
   width: 100%;
   background: var(--raise);
   border: 1px solid var(--edge-strong);
   border-radius: 11px;
-  padding: var(--sp-3) 13px;
+  padding: 10px 13px;
   font-size: var(--fs-ui);
   color: var(--ink);
   outline: 0;
@@ -55,19 +87,27 @@
   width: 100%;
   min-height: 74px;
   resize: vertical;
+  /* Block, or the inline baseline leaves a phantom gap under the box that no
+     margin explains. */
+  display: block;
   background: var(--raise);
   border: 1px solid var(--edge-strong);
   border-radius: 11px;
-  padding: var(--sp-3) 13px;
-  font: var(--fs-body) / var(--lh-chat) var(--font-ui);
+  padding: 10px 13px;
+  font: var(--fs-ui) / var(--lh-ui) var(--font-ui);
   color: var(--ink);
   outline: 0;
+}
+
+.modal input[type="text"][aria-invalid="true"] {
+  border-color: var(--red);
 }
 
 .modal select:focus,
 .modal input[type="text"]:focus,
 .modal input[type="password"]:focus,
-.modal textarea:focus {
+.modal textarea:focus,
+.mfield:focus {
   border-color: var(--dim);
 }
 
@@ -100,16 +140,26 @@
 /* What the host said went wrong — the only place a registration failure can
    be read, since the modal stays open on error rather than losing the form. */
 .modal-error {
-  margin-top: 14px;
+  margin-top: var(--sp-6);
   color: var(--red);
   font-size: var(--fs-meta);
 }
 
+/* Sticky, because `max-height: 88vh` means a long card scrolls and Save is the
+   one control that must never be the thing below the fold. The card's bottom
+   padding lives on this row rather than on `.modal` because WebKit — which is
+   what Tauri renders in on macOS — does not count a scroll container's
+   block-end padding, and Save resting on the rounded edge is the bug that
+   causes. */
 .modal .macts {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-3);
-  margin-top: 22px;
+  margin-top: 30px;
+  padding: var(--sp-4) 0 var(--sp-6);
+  background: var(--side);
 }
 
 .modal .macts .danger {

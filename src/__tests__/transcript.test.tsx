@@ -92,7 +92,7 @@ describe("Transcript", () => {
       kind: "notice",
       id: "n1",
       title: "Auth migration",
-      pill: "✳ Long-running",
+      pill: "Long-running",
       body: "Est. 40 min.",
       threadId: "auth",
       actions: [
