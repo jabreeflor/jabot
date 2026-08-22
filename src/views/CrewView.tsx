@@ -16,6 +16,7 @@ export function CrewView({
   onEdit,
   onAdd,
   onRemove,
+  onRunSetup,
 }: {
   bots: readonly Bot[];
   harnesses: readonly HarnessCard[];
@@ -23,6 +24,8 @@ export function CrewView({
   onEdit: (botId: string) => void;
   onAdd: () => void;
   onRemove: (botId: string) => void;
+  /** Re-run first-run setup — the one in-app way to change your name. */
+  onRunSetup?: () => void;
 }) {
   return (
     <div className="view">
@@ -31,6 +34,15 @@ export function CrewView({
           <div className="page-top">
             <h1>Your Crew</h1>
             <p>Edit, add, or remove bots — each one is yours to customize</p>
+            {onRunSetup && (
+              <button
+                type="button"
+                className="btn setup-again"
+                onClick={onRunSetup}
+              >
+                Run setup again
+              </button>
+            )}
           </div>
 
           <div className="crew-grid">

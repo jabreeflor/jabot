@@ -43,8 +43,14 @@
    `line-height: 1.2` for the same reason: the card's 14px/1.45 strut wraps
    8px of caps in a 20px line box, so six dead pixels sit above and below the
    label whatever the margins say — and a label you cannot tighten to its own
-   control is a label that belongs to neither. */
-.modal .mlab {
+   control is a label that belongs to neither.
+
+   .mlab is emitted by FieldLabel, .mfield by any text field wearing the modal
+   recipe. Both are used outside modals too (first-run setup shares this rule
+   by selector rather than restating it), so the bare classes ride along —
+   additively, keeping every existing modal byte-identical. */
+.modal .mlab,
+.mlab {
   display: block;
   line-height: 1.2;
   color: var(--faint);
@@ -64,7 +70,8 @@
 }
 
 .modal select,
-.modal input[type="text"] {
+.modal input[type="text"],
+.mfield {
   width: 100%;
   background: var(--raise);
   border: 1px solid var(--edge-strong);
@@ -97,7 +104,8 @@
 
 .modal select:focus,
 .modal input[type="text"]:focus,
-.modal textarea:focus {
+.modal textarea:focus,
+.mfield:focus {
   border-color: var(--dim);
 }
 

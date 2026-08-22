@@ -46,6 +46,12 @@ import type {
   ThreadSummary,
   ToolOption,
 } from "./components/types";
+import { Onboarding } from "./onboarding/Onboarding";
+import {
+  loadOnboarding,
+  saveOnboarding,
+  type OnboardingProfile,
+} from "./onboarding/state";
 import { useCrew } from "./views/crew";
 import { usePullRequests, type PullRequests } from "./views/pulls";
 import {
@@ -82,16 +88,71 @@ import "./App.css";
 /** Matches the row's exit transition, so the state change lands after it. */
 const LEAVE_MS = 380;
 
-const USER_NAME = "Jabree Flor";
-
 type NewChatState = { open: false } | { open: true; folderId: string | null };
 type EditorState = { open: false } | { open: true; botId: string | null };
 type ScheduleEditorState =
   | { open: false }
   | { open: true; scheduleId: string | null };
 type MenuState = { thread: ThreadSummary; position: MenuPosition } | null;
+type HostSession = ReturnType<typeof useHost>;
 
+/**
+ * The first-run gate. On a launch with no stored profile the takeover renders
+ * instead of the shell — none of the shell's hooks run during setup. The host
+ * handshake is hoisted *above* the gate on purpose: the host may have to spawn
+ * on a real first launch, so the connection opens while the user is reading
+ * pane 1, its status shows under the card, and the same live session is handed
+ * to the shell when setup ends — nobody finishes a setup flow and *then*
+ * watches "Connecting to host…".
+ */
 function App() {
+  const host = useHost();
+  const [profile, setProfile] = useState<OnboardingProfile | null>(
+    loadOnboarding,
+  );
+  // The record a re-run is editing. The gate is `if (!profile)` on state, so
+  // storage is never wiped while the takeover is open: `onFinish` overwrites
+  // it, quitting mid-re-run keeps it, and the seeded draft means Escape or
+  // Skip re-persists the name that was already there rather than "You".
+  const [editing, setEditing] = useState<OnboardingProfile | null>(null);
+
+  if (!profile) {
+    return (
+      <Onboarding
+        harnesses={HARNESSES}
+        profile={editing ?? undefined}
+        hostLine={hostLine(host.hello, host.hostError, host.connecting)}
+        hostOffline={host.hostError !== null}
+        onFinish={(next) => {
+          saveOnboarding(next);
+          setProfile(next);
+          setEditing(null);
+        }}
+      />
+    );
+  }
+  return (
+    <AppShell
+      profile={profile}
+      host={host}
+      onRunSetup={() => {
+        setEditing(profile);
+        setProfile(null);
+      }}
+    />
+  );
+}
+
+function AppShell({
+  profile,
+  host: hostSession,
+  onRunSetup,
+}: {
+  profile: OnboardingProfile;
+  host: HostSession;
+  /** Re-enter setup from Crew — the one in-app way to change the name. */
+  onRunSetup: () => void;
+}) {
   const [state, dispatch] = useReducer(mockHostReducer, null, initialMockState);
   const [selection, setSelection] = useState<Selection>({
     view: "bot",
@@ -108,7 +169,7 @@ function App() {
     open: false,
   });
   const [scheduleError, setScheduleError] = useState<string | null>(null);
-  const { client, hello, hostError, connecting } = useHost();
+  const { client, hello, hostError, connecting } = hostSession;
   const registered = useFolders(client);
   // The Inbox (#22). Reloads the sidebar too: reopening a card's thread puts
   // its row back, and archiving one takes it away.
@@ -435,7 +496,7 @@ function App() {
         // draws. Two devices disagreeing about one host would be two products.
         inboxCount={inbox.unread ?? needsYouCount(state)}
         openPrCount={openPrCount(state)}
-        userName={USER_NAME}
+        userName={profile.userName}
         hostLine={hostLine(hello, hostError, connecting)}
         hostOffline={hostError !== null}
         leavingThreadIds={leaving}
@@ -497,6 +558,7 @@ function App() {
           onEditBot={(botId) => setEditor({ open: true, botId })}
           onAddBot={() => setEditor({ open: true, botId: null })}
           onRemoveBot={(botId) => removeBot(botId, false)}
+          onRunSetup={onRunSetup}
         />
       </main>
 
@@ -514,6 +576,7 @@ function App() {
           harnesses={harnesses}
           folders={registered.folders ?? state.folders}
           defaultFolderId={newChat.folderId}
+          defaultHarnessId={profile.harnessId ?? undefined}
           error={newChatError}
           onStart={startThread}
           onCancel={() => {
@@ -602,6 +665,7 @@ function MainView({
   onEditBot,
   onAddBot,
   onRemoveBot,
+  onRunSetup,
 }: {
   /** Present once the host has answered. A thread the host owns is rendered
       live — hydrated from `thread/transcript` and streamed from there (#14). */
@@ -637,6 +701,8 @@ function MainView({
   onEditBot: (botId: string) => void;
   onAddBot: () => void;
   onRemoveBot: (botId: string) => void;
+  /** Wipe the first-run record and re-enter setup. Surfaced in Crew. */
+  onRunSetup: () => void;
 }) {
   switch (selection.view) {
     case "crew":
@@ -648,6 +714,7 @@ function MainView({
           onEdit={onEditBot}
           onAdd={onAddBot}
           onRemove={onRemoveBot}
+          onRunSetup={onRunSetup}
         />
       );
     case "inbox":
