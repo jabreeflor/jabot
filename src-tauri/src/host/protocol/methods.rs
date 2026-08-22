@@ -43,6 +43,9 @@ pub const FOLDER_REGISTER: &str = "folder/register";
 pub const FOLDER_UPDATE: &str = "folder/update";
 pub const FOLDER_FORGET: &str = "folder/forget";
 pub const GITHUB_STATUS: &str = "github/status";
+/// Hand `gh` a token to hold, so the PR board can ask GitHub as the user (#28).
+/// The token travels once, on this call, and is never read back.
+pub const GITHUB_LOGIN: &str = "github/login";
 pub const CREW_LIST: &str = "crew/list";
 pub const CREW_CREATE: &str = "crew/create";
 pub const CREW_UPDATE: &str = "crew/update";
@@ -57,6 +60,9 @@ pub const SCHEDULE_RUN: &str = "schedule/run";
 /// the network; `pr/refresh` is the poll.
 pub const PR_LIST: &str = "pr/list";
 pub const PR_REFRESH: &str = "pr/refresh";
+/// Every open pull request the signed-in user wrote, linked to a session here
+/// or not. The one PR method that needs a login to answer at all.
+pub const PR_MINE: &str = "pr/mine";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
 pub const CLIENT_METHODS: &[&str] = &[
@@ -84,6 +90,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     FOLDER_UPDATE,
     FOLDER_FORGET,
     GITHUB_STATUS,
+    GITHUB_LOGIN,
     CREW_LIST,
     CREW_CREATE,
     CREW_UPDATE,
@@ -100,6 +107,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     NOTIFY_STATUS,
     PR_LIST,
     PR_REFRESH,
+    PR_MINE,
 ];
 
 /// A new Inbox card exists on a thread that did **not** resurface.
@@ -1545,6 +1553,46 @@ pub struct GithubStatusResult {
     pub gh_path: Option<String>,
 }
 
+/// Sign in: one token, one host, one direction.
+///
+/// The token is the only secret this protocol carries, and it carries it
+/// exactly once — the host hands it to `gh` and forgets it. No method gives it
+/// back, `Debug` is not derived so a traced frame cannot print it, and
+/// [`GithubLoginResult`] is a plain [`GithubStatusResult`] because "who am I
+/// signed in as" is the only question left afterwards.
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubLoginParams {
+    /// Defaults to `github.com`. GHES folders pass their `origin` host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// A GitHub token the user created. Never logged, never stored by JaBot,
+    /// never echoed back.
+    pub token: String,
+}
+
+impl std::fmt::Debug for GithubLoginParams {
+    /// Redacted by construction. A `{:?}` on a request frame is how a secret
+    /// reaches a log file, so this type simply cannot print one.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GithubLoginParams")
+            .field("host", &self.host)
+            .field("token", &"<redacted>")
+            .finish()
+    }
+}
+
+impl GithubLoginParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        if self.token.trim().is_empty() {
+            return Err(super::error::RpcError::InvalidParams(
+                "token is required".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// A `bots` row as the crew grid and the bot editor see it (#17).
 ///
 /// `tools` is the parsed allowlist rather than the stored JSON text, because
@@ -1832,6 +1880,33 @@ mod tests {
     fn resurface_reason_snake_case() {
         let encoded = serde_json::to_value(ResurfaceReason::NeedsYou).unwrap();
         assert_eq!(encoded, json!("needs_you"));
+    }
+
+    /// The token is the only secret this protocol carries, and the cheapest
+    /// way to leak one is `{:?}` on a request frame. It has to be impossible
+    /// rather than merely avoided.
+    #[test]
+    fn a_login_frame_cannot_print_its_own_token() {
+        let params = GithubLoginParams {
+            host: Some("github.com".into()),
+            token: "ghp_averyrealsecret".into(),
+        };
+        let printed = format!("{params:?}");
+        assert!(!printed.contains("ghp_averyrealsecret"), "{printed}");
+        assert!(printed.contains("<redacted>"), "{printed}");
+        // It still serialises in full — the wire is where it is meant to go.
+        let wire = serde_json::to_value(&params).unwrap();
+        assert_eq!(wire["token"], json!("ghp_averyrealsecret"));
+        assert_eq!(wire["host"], json!("github.com"));
+    }
+
+    #[test]
+    fn a_login_without_a_token_is_refused_before_it_is_run() {
+        let params = GithubLoginParams {
+            host: None,
+            token: "   ".into(),
+        };
+        assert!(params.validate().is_err());
     }
 
     #[test]
@@ -2355,4 +2430,79 @@ pub struct PrRefreshResult {
     /// One entry per forge host that could not be reached. Empty on success,
     /// and empty on a host with nothing linked to refresh.
     pub unavailable: Vec<PrUnavailable>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrMineParams {
+    /// Defaults to `github.com`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+}
+
+/// One of the signed-in user's own pull requests.
+///
+/// Deliberately not a [`PullRequestView`]. That type's `thread_id` is a
+/// promise — every row on the linked board was opened by a session on this Mac
+/// and "Reopen thread" always has somewhere to go. These rows come from
+/// GitHub, so most of them have no session here at all, and the honest way to
+/// say that is a field that can be absent rather than an empty string that
+/// every reader has to remember to check. Where the PR *is* also linked, the
+/// thread travels along and the row gets its button back.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubPullRequestView {
+    /// `github:owner/name#12` — stable across polls, and never a store id: a
+    /// PR that is also linked keeps its own row's identity in `linkedId`.
+    pub id: String,
+    /// The `thread_prs.id` of the linked row, when this PR was opened here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linked_id: Option<String>,
+    pub provider: String,
+    pub forge_host: String,
+    /// `owner/name`.
+    pub repo: String,
+    pub number: i64,
+    pub url: String,
+    pub title: String,
+    /// `open` | `draft` | `merged` | `closed`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+    pub additions: i64,
+    pub deletions: i64,
+    pub changed_files: i64,
+    pub checks: Vec<PrCheckView>,
+    pub updated_at: String,
+    /// The session that opened it, when one did. Absent for a PR written
+    /// anywhere else — which is most of them, and the point of this method.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_state: Option<String>,
+}
+
+/// What GitHub says the signed-in user has open.
+///
+/// Same contract as `pr/refresh`: never an error frame for "GitHub was not
+/// reachable". A board that empties itself because a token expired is worse
+/// than one that says so and keeps drawing what it had.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrMineResult {
+    /// Who GitHub answered as. `null` when it could not be asked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    pub pull_requests: Vec<GithubPullRequestView>,
+    /// Why GitHub could not be asked, if it could not. `null` on success.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable: Option<PrUnavailable>,
 }

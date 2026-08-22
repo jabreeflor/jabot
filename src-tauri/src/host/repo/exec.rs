@@ -14,7 +14,7 @@
 //! The group is because both shell out further — `git` to credential helpers,
 //! `gh` to `git` — and killing the pid alone leaves that subtree behind.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -70,6 +70,13 @@ pub struct Spawn<'a> {
     pub cwd: Option<&'a Path>,
     /// Added to the child's environment, on top of the host's.
     pub env: &'a [(&'a str, String)],
+    /// Written to the child's stdin and then closed.
+    ///
+    /// This is how a secret reaches a child: `gh auth login --with-token`
+    /// reads the token here rather than from argv, so it never appears in
+    /// `ps` output and never lands in a shell history. Nothing that goes
+    /// through this field may be logged.
+    pub stdin: Option<&'a str>,
     pub timeout: Duration,
 }
 
@@ -80,6 +87,7 @@ impl<'a> Spawn<'a> {
             args,
             cwd: None,
             env: &[],
+            stdin: None,
             timeout,
         }
     }
@@ -91,6 +99,12 @@ impl<'a> Spawn<'a> {
 
     pub fn with_env(mut self, env: &'a [(&'a str, String)]) -> Self {
         self.env = env;
+        self
+    }
+
+    /// Feed the child something on stdin. For secrets — see [`Spawn::stdin`].
+    pub fn with_stdin(mut self, stdin: &'a str) -> Self {
+        self.stdin = Some(stdin);
         self
     }
 }
@@ -105,6 +119,7 @@ pub fn spawn(spec: Spawn<'_>) -> Result<Output, RunError> {
         args,
         cwd,
         env,
+        stdin,
         timeout,
     } = spec;
     let Some(resolved) = resolve_command(command) else {
@@ -117,7 +132,11 @@ pub fn spawn(spec: Spawn<'_>) -> Result<Output, RunError> {
         // find no terminal: the answer would never arrive and the deadline
         // would be the only thing that ended the call.
         .env("GIT_TERMINAL_PROMPT", "0")
-        .stdin(Stdio::null())
+        .stdin(if stdin.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     if let Some(dir) = cwd {
@@ -129,6 +148,21 @@ pub fn spawn(spec: Spawn<'_>) -> Result<Output, RunError> {
     procgroup::own_group(&mut cmd);
 
     let mut child = cmd.spawn().map_err(|e| RunError::Failed(e.to_string()))?;
+    if let Some(payload) = stdin {
+        // Written and closed before anything is read back: the payloads this
+        // takes are one line long, so the pipe cannot fill, and the child is
+        // waiting on EOF before it will say anything at all.
+        let mut pipe = child.stdin.take().expect("stdin is piped");
+        let written = pipe
+            .write_all(payload.as_bytes())
+            .and_then(|()| pipe.flush());
+        drop(pipe);
+        if let Err(err) = written {
+            procgroup::terminate(&mut child);
+            // The message is the io error's, never the payload's.
+            return Err(RunError::Failed(err.to_string()));
+        }
+    }
     // Drained on threads rather than after the wait: a command that fills the
     // 64 KiB pipe buffer blocks forever waiting for a reader that is itself
     // waiting for the command to exit.
@@ -184,6 +218,27 @@ mod tests {
         let out = run("git", &["--version"], PROBE_TIMEOUT).expect("git is required to build");
         assert!(out.ok(), "{out:?}");
         assert!(out.line().unwrap().starts_with("git version"));
+    }
+
+    /// The secret path: what a child reads on stdin, and the proof that it is
+    /// closed afterwards. `cat` here stands in for `gh auth login
+    /// --with-token`, which blocks until EOF and would hang the deadline out
+    /// if the pipe were left open.
+    #[test]
+    fn stdin_reaches_the_child_and_is_closed_behind_it() {
+        let out = spawn(Spawn::new("cat", &[], PROBE_TIMEOUT).with_stdin("ghp_pretend_token\n"))
+            .expect("cat is required to build");
+        assert!(out.ok(), "{out:?}");
+        assert_eq!(out.line().as_deref(), Some("ghp_pretend_token"));
+    }
+
+    #[test]
+    fn a_child_with_no_stdin_gets_nothing_rather_than_the_terminal() {
+        // No `with_stdin`, so the child reads EOF immediately — a probe must
+        // never end up waiting on a terminal that is not there.
+        let out = run("cat", &[], PROBE_TIMEOUT).expect("cat is required to build");
+        assert!(out.ok(), "{out:?}");
+        assert_eq!(out.stdout, "");
     }
 
     #[test]

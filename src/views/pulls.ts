@@ -15,10 +15,19 @@
 //! `pullRequests` stays `null` until the host answers. Unlike the crew, an
 //! empty answer is entirely legitimate — most people have no open PRs — so
 //! `null` and `[]` are genuinely different and the view draws different things.
+//!
+//! **Two boards, one list.** `pr/list` and `pr/refresh` answer *linkage*: what
+//! a session on this Mac opened, which needs no login. `pr/mine` answers the
+//! person: every open pull request they wrote, wherever it lives, which needs
+//! one. A signed-in user wants to see both at once and does not care which
+//! call a row came from, so [`mergeBoards`] folds them on `(provider, repo,
+//! number)` — the same identity the host dedupes linkage on. Signed out,
+//! nothing is lost: the linked board is exactly what it was.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  GithubPullRequestView,
   HostClient,
   PrCheckView,
   PrUnavailable,
@@ -42,8 +51,12 @@ export const POLL_WHILE_PENDING_MS = 15_000;
 export const POLL_IDLE_MS = 60_000;
 
 export interface PullRequests {
-  /** `null` until the host answers; `[]` is a real, and common, answer. */
+  /** `null` until the host answers; `[]` is a real, and common, answer.
+      Signed in, this is the linked board and the user's own GitHub pull
+      requests folded together. */
   pullRequests: PullRequest[] | null;
+  /** Who GitHub answered `pr/mine` as, when it was asked and answered. */
+  account: string | null;
   /** Why the last refresh did not reach GitHub, if it did not. */
   unavailable: PrUnavailable | null;
   error: string | null;
@@ -52,8 +65,19 @@ export interface PullRequests {
   refresh: () => Promise<void>;
 }
 
-export function usePullRequests(client: HostClient | null): PullRequests {
-  const [pullRequests, setPullRequests] = useState<PullRequest[] | null>(null);
+/**
+ * @param signedIn whether GitHub can be asked at all. `pr/mine` is the one PR
+ * call that is useless without a login — asking anyway would spend a
+ * subprocess and a timeout every minute to be told the same thing the sign-in
+ * strip is already saying.
+ */
+export function usePullRequests(
+  client: HostClient | null,
+  signedIn = false,
+): PullRequests {
+  const [linked, setLinked] = useState<PullRequest[] | null>(null);
+  const [mine, setMine] = useState<PullRequest[] | null>(null);
+  const [account, setAccount] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState<PrUnavailable | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
@@ -72,7 +96,7 @@ export function usePullRequests(client: HostClient | null): PullRequests {
         if (cancelled) return;
         const rows = listed.pullRequests.map(prRow);
         pending.current = rows.some((pr) => pr.checkState === "running");
-        setPullRequests(rows);
+        setLinked(rows);
         setError(null);
       })
       .catch((err: unknown) => {
@@ -86,23 +110,73 @@ export function usePullRequests(client: HostClient | null): PullRequests {
 
   const reload = useCallback(() => setGeneration((n) => n + 1), []);
 
+  // The user's own board. Only asked for when there is a login to ask with,
+  // and never able to fail the refresh: a `pr/mine` that could not reach
+  // GitHub leaves the rows it last returned alone, exactly as the linked half
+  // does.
+  useEffect(() => {
+    if (!client || !signedIn) {
+      // Signing out takes the rows with it. Leaving them would show a
+      // stranger — or a stale board nothing can refresh — under someone
+      // else's account.
+      setMine(null);
+      setAccount(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => client.myPullRequests())()
+      .then((answer) => {
+        if (cancelled) return;
+        setAccount(answer.account ?? null);
+        if (answer.unavailable) {
+          setUnavailable(answer.unavailable);
+          return;
+        }
+        setMine(answer.pullRequests.map(mineRow));
+        setUnavailable(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, signedIn, generation]);
+
   const refresh = useCallback(async () => {
     if (!client) return;
     try {
       const refreshed = await client.refreshPullRequests();
       const rows = refreshed.pullRequests.map(prRow);
       pending.current = rows.some((pr) => pr.checkState === "running");
-      setPullRequests(rows);
+      setLinked(rows);
       // One host in MVP1, so the first entry is the answer. It is `null` on a
       // successful refresh, which is what clears a stale "gh is not installed".
       setUnavailable(refreshed.unavailable[0] ?? null);
       setError(null);
+      if (!signedIn) return;
+      // Same tick, one call later: the two halves of the board must not drift
+      // a poll apart, or a PR opened by a session here would show GitHub's
+      // answer from a minute ago beside its own from now.
+      const own = await client.myPullRequests();
+      setAccount(own.account ?? null);
+      if (own.unavailable) {
+        setUnavailable(own.unavailable);
+        return;
+      }
+      setMine(own.pullRequests.map(mineRow));
     } catch (err: unknown) {
       // A refresh that could not reach GitHub is not an error frame — this is
       // a genuine RPC failure, and the board stays as it was.
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [client]);
+  }, [client, signedIn]);
+
+  const pullRequests = useMemo(
+    () => (linked === null && mine === null ? null : mergeBoards(linked, mine)),
+    [linked, mine],
+  );
 
   // The poll. Re-armed whenever the cadence changes, which is whenever the
   // board crosses between "something is running" and "nothing is".
@@ -115,11 +189,42 @@ export function usePullRequests(client: HostClient | null): PullRequests {
     return () => clearInterval(timer);
   }, [client, refresh, cadence]);
 
-  return { pullRequests, unavailable, error, reload, refresh };
+  return { pullRequests, account, unavailable, error, reload, refresh };
+}
+
+/** `(provider, repo, number)`, which is what the host dedupes linkage on. */
+function prKey(pr: PullRequest): string {
+  return `${pr.provider}:${pr.repo}#${pr.number}`;
+}
+
+/**
+ * One board out of two.
+ *
+ * GitHub wins where they overlap, because `pr/mine` is always a fresh answer
+ * and a linked row may never have been polled at all — but it inherits the
+ * linked row's `id`, so signing in re-labels the rows React is already drawing
+ * rather than replacing them. A linked PR that GitHub did not mention is kept:
+ * `pr/mine` asks only for what is *open*, and dropping the merged ones would
+ * empty the Merged tab the moment somebody signed in.
+ */
+export function mergeBoards(
+  linked: readonly PullRequest[] | null,
+  mine: readonly PullRequest[] | null,
+): PullRequest[] {
+  const rows = new Map<string, PullRequest>();
+  for (const pr of linked ?? []) rows.set(prKey(pr), pr);
+  for (const pr of mine ?? []) {
+    const already = rows.get(prKey(pr));
+    rows.set(prKey(pr), already ? { ...pr, id: already.id } : pr);
+  }
+  return [...rows.values()].sort((a, b) =>
+    b.updatedAt.localeCompare(a.updatedAt),
+  );
 }
 
 /** One wire row as the props the prototype's card takes. */
 export function prRow(pr: PullRequestView): PullRequest {
+  const facts = factsOf(pr, pr.polledAt !== undefined);
   return {
     id: pr.id,
     threadId: pr.threadId,
@@ -138,8 +243,76 @@ export function prRow(pr: PullRequestView): PullRequest {
     headRef: pr.headRef,
     baseRef: pr.baseRef,
     filesChanged: pr.changedFiles || undefined,
-    summary: summarize(pr),
-    detail: detail(pr),
+    summary: summarize(facts),
+    detail: detail(facts),
+  };
+}
+
+/**
+ * One of the user's own pull requests as the same card.
+ *
+ * Every row here came back from GitHub this second, so unlike the linked
+ * board there is no "never polled" case to draw around — `polled` is always
+ * true. What it does have that the linked board cannot is a *missing* thread:
+ * most of these were written somewhere else, so `threadId` is absent and the
+ * card offers no "Reopen thread" rather than a button that goes nowhere.
+ */
+export function mineRow(pr: GithubPullRequestView): PullRequest {
+  const facts = factsOf(pr, true);
+  return {
+    id: pr.id,
+    threadId: pr.threadId,
+    provider: pr.provider,
+    repo: pr.repo,
+    number: pr.number,
+    url: pr.url,
+    title: pr.title || `${pr.repo} #${pr.number}`,
+    status: pr.status,
+    checkState: pr.checkState ?? null,
+    updatedAt: pr.updatedAt,
+    additions: pr.additions,
+    deletions: pr.deletions,
+    headRef: pr.headRef,
+    baseRef: pr.baseRef,
+    filesChanged: pr.changedFiles || undefined,
+    summary: summarize(facts),
+    detail: detail(facts),
+  };
+}
+
+/**
+ * What the copy is composed from.
+ *
+ * The two wire shapes differ in exactly the ways the *card* does not care
+ * about — one carries a thread it is certain of, the other a thread it may not
+ * have — so the sentences are written against this and not against either. The
+ * one fact neither type spells the same way is whether GitHub has been asked
+ * at all, which is why it is a parameter.
+ */
+interface PrFacts {
+  status: PullRequestView["status"];
+  reviewState: PullRequestView["reviewState"];
+  checkState: PullRequestView["checkState"];
+  checks: readonly PrCheckView[];
+  threadTitle: string | undefined;
+  threadState: PullRequestView["threadState"] | undefined;
+  polled: boolean;
+}
+
+function factsOf(
+  pr: PullRequestView | GithubPullRequestView,
+  polled: boolean,
+): PrFacts {
+  return {
+    status: pr.status,
+    reviewState: pr.reviewState,
+    checkState: pr.checkState,
+    checks: pr.checks,
+    // An empty title is the linked board's "no session named this yet"; both
+    // shapes mean the same thing by absence.
+    threadTitle: pr.threadTitle || undefined,
+    threadState: pr.threadState,
+    polled,
   };
 }
 
@@ -151,8 +324,8 @@ export function prRow(pr: PullRequestView): PullRequest {
  * build is a job; the session is the fallback, because "from folded session" is
  * the prototype's own copy for a PR whose thread is still asleep.
  */
-function summarize(pr: PullRequestView): string | undefined {
-  if (pr.polledAt === undefined) {
+function summarize(pr: PrFacts): string | undefined {
+  if (!pr.polled) {
     return "not checked with GitHub yet";
   }
   if (pr.status === "merged") return "merged";
@@ -166,13 +339,13 @@ function summarize(pr: PullRequestView): string | undefined {
 }
 
 /** "2 of 3 checks done" — the prototype's copy, from real counts. */
-function progress(checks: PrCheckView[]): string {
+function progress(checks: readonly PrCheckView[]): string {
   const done = checks.filter((check) => check.state !== "running").length;
   if (checks.length === 0) return "checks running";
   return `${done} of ${checks.length} checks done`;
 }
 
-function failing(checks: PrCheckView[]): string {
+function failing(checks: readonly PrCheckView[]): string {
   const red = checks.filter((check) => check.state === "failing");
   if (red.length === 0) return "checks failed";
   if (red.length === 1) return `${red[0].label} failed`;
@@ -184,8 +357,8 @@ function failing(checks: PrCheckView[]): string {
  * host has never polled has no checks, no review and no diffstat, and an empty
  * disclosure that opens onto nothing is worse than no disclosure.
  */
-function detail(pr: PullRequestView): PullRequest["detail"] {
-  if (pr.polledAt === undefined) return undefined;
+function detail(pr: PrFacts): PullRequest["detail"] {
+  if (!pr.polled) return undefined;
   return {
     checks: pr.checks.map(
       (check): PrCheck => ({ label: check.label, state: check.state }),
@@ -195,7 +368,7 @@ function detail(pr: PullRequestView): PullRequest["detail"] {
   };
 }
 
-function bullets(pr: PullRequestView): string[] {
+function bullets(pr: PrFacts): string[] {
   const out: string[] = [];
   if (pr.threadTitle) {
     out.push(`Opened by “${pr.threadTitle}”`);
@@ -222,12 +395,16 @@ function bullets(pr: PullRequestView): string[] {
  * is no Merge button — merging from JaBot is a host action nobody has built,
  * and a button that opens GitHub while claiming to merge would be worse than
  * the link that is honest about it (`pr-linkage.md` defers it).
+ *
+ * A PR with no session behind it — one of the user's own, written elsewhere —
+ * gets only the link. There is no thread to reopen, and a button that admitted
+ * that after being clicked would be worse than its absence.
  */
-function actions(pr: PullRequestView): NoticeAction[] {
+function actions(pr: PrFacts): NoticeAction[] {
   const out: NoticeAction[] = [
     { id: "diff", label: "View on GitHub", primary: pr.status !== "merged" },
   ];
-  if (pr.threadState !== "deleted") {
+  if (pr.threadState !== undefined && pr.threadState !== "deleted") {
     out.push({ id: "reopen", label: "Reopen thread" });
   }
   return out;

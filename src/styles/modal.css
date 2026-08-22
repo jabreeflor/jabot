@@ -71,6 +71,7 @@
 
 .modal select,
 .modal input[type="text"],
+.modal input[type="password"],
 .mfield {
   width: 100%;
   background: var(--raise);
@@ -104,9 +105,36 @@
 
 .modal select:focus,
 .modal input[type="text"]:focus,
+.modal input[type="password"]:focus,
 .modal textarea:focus,
 .mfield:focus {
   border-color: var(--dim);
+}
+
+/* Prose inside a modal: what a step is for, and what it will and will not do
+   with what you type. The GitHub sign-in is the one dialog that needs to
+   explain itself, because it is the one that asks for a secret. */
+.modal-note {
+  margin-top: 10px;
+  color: var(--faint);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-chat);
+}
+
+.modal-note code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--dim);
+  background: var(--raise);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+
+/* A row of actions that belongs to the step above it rather than to the
+   dialog as a whole. */
+.modal .macts.start {
+  justify-content: flex-start;
+  margin-top: var(--sp-3);
 }
 
 /* What the host said went wrong — the only place a registration failure can
@@ -172,13 +200,14 @@
   gap: var(--sp-3);
 }
 
-.harness-card b i {
-  width: var(--sp-3);
-  height: var(--sp-3);
-  border-radius: 50%;
-  font-style: normal;
+/* The engine's own mark, in the engine's own accent. Sized against the card
+   title rather than against the old dot: a glyph has to be read, not just
+   noticed. */
+.harness-card b .hmark {
+  width: 17px;
+  height: 17px;
   flex: none;
-  background: var(--dot, var(--faint));
+  color: var(--dot, var(--faint));
 }
 
 .harness-card p {

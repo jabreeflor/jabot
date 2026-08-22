@@ -14,7 +14,7 @@
  * The production `HostClient` drives it, so the wire shape is asserted too.
  */
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -134,7 +134,149 @@ function body(over: {
   });
 }
 
-async function board(gh: { dir: string; bodyPath: string }) {
+
+/**
+ * A `gh` that can also be *logged into*, for the sign-in half (#28).
+ *
+ * Richer than [`fakeGh`] on purpose: this one holds state. `auth login
+ * --with-token` reads stdin and stores the token, `auth token` and `auth
+ * status` answer from what was stored, and `api graphql` refuses with a 401
+ * until there is one — which is what makes "signed out" a state the test can
+ * actually be in rather than a claim.
+ *
+ * It also logs every argv it is ever called with, so the test can assert the
+ * one property that matters more than any of the behaviour: a token reaches
+ * `gh` on stdin and never, on any call, on a command line that `ps` would
+ * show.
+ */
+function fakeGhWithAuth(): {
+  dir: string;
+  linkedPath: string;
+  viewerPath: string;
+  argvPath: string;
+  tokenPath: string;
+} {
+  const dir = mkdtempSync(path.join(tmpdir(), "jabot-fake-gh-auth-"));
+  const linkedPath = path.join(dir, "graphql.json");
+  const viewerPath = path.join(dir, "viewer.json");
+  const argvPath = path.join(dir, "argv.log");
+  const tokenPath = path.join(dir, "token");
+  const script = `#!/bin/sh
+echo "$@" >> "${argvPath}"
+if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
+  if [ ! -f "${tokenPath}" ]; then
+    echo '{"message":"Bad credentials","documentation_url":"https://docs.github.com/graphql"}' >&2
+    exit 1
+  fi
+  for arg in "$@"; do
+    case "$arg" in
+      *viewer*) cat "${viewerPath}"; exit 0;;
+    esac
+  done
+  cat "${linkedPath}"
+  exit 0
+fi
+if [ "$1" = "auth" ] && [ "$2" = "login" ]; then
+  read -r token
+  case "$token" in
+    ghp_good*) printf '%s' "$token" > "${tokenPath}"; exit 0;;
+    *) echo "error validating token: HTTP 401: Bad credentials" >&2; exit 1;;
+  esac
+fi
+if [ "$1" = "auth" ] && [ "$2" = "token" ]; then
+  if [ -f "${tokenPath}" ]; then cat "${tokenPath}"; echo; exit 0; fi
+  echo "not logged in to any hosts" >&2
+  exit 1
+fi
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  if [ -f "${tokenPath}" ]; then
+    echo "github.com"
+    echo "  ✓ Logged in to github.com account octocat (keyring)"
+    exit 0
+  fi
+  echo "You are not logged into any GitHub hosts." >&2
+  exit 1
+fi
+echo "no pull requests found" >&2
+exit 1
+`;
+  const bin = path.join(dir, "gh");
+  writeFileSync(bin, script);
+  chmodSync(bin, 0o755);
+  return { dir, linkedPath, viewerPath, argvPath, tokenPath };
+}
+
+/** What `viewer.pullRequests` answers with: one PR a session here opened, and
+    one written somewhere else entirely — which is the whole point of asking. */
+function viewerBody() {
+  const node = (over: {
+    number: number;
+    title: string;
+    repo: string;
+    isDraft?: boolean;
+    updatedAt: string;
+  }) => ({
+    number: over.number,
+    title: over.title,
+    url: `https://github.com/${over.repo}/pull/${over.number}`,
+    isDraft: over.isDraft ?? false,
+    state: "OPEN",
+    additions: 12,
+    deletions: 3,
+    changedFiles: 2,
+    headRefName: "work",
+    baseRefName: "main",
+    reviewDecision: "REVIEW_REQUIRED",
+    updatedAt: over.updatedAt,
+    repository: { nameWithOwner: over.repo },
+    commits: {
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: {
+              state: "SUCCESS",
+              contexts: {
+                nodes: [
+                  {
+                    __typename: "CheckRun",
+                    name: "verify",
+                    status: "COMPLETED",
+                    conclusion: "SUCCESS",
+                  },
+                ],
+              },
+            },
+          },
+        },
+      ],
+    },
+  });
+  return JSON.stringify({
+    data: {
+      viewer: {
+        login: "octocat",
+        pullRequests: {
+          nodes: [
+            node({
+              number: 23,
+              title: "Migrate auth to sessions",
+              repo: "jabreeflor/jabot",
+              updatedAt: "2026-08-21T09:14:02Z",
+            }),
+            node({
+              number: 7,
+              title: "Bump the pinned toolchain",
+              repo: "someone-else/infra",
+              updatedAt: "2026-08-20T17:45:00Z",
+            }),
+          ],
+        },
+      },
+    },
+  });
+}
+
+async function board(gh: { dir: string }) {
   const host = new HostdProcess({
     persistent: true,
     env: { PATH: `${gh.dir}${path.delimiter}${process.env.PATH ?? ""}` },
@@ -295,5 +437,86 @@ describe("the pull request board over the host protocol", () => {
     expect(refreshed.unavailable).toHaveLength(1);
     expect(refreshed.unavailable[0].host).toBe("github.com");
     expect(refreshed.unavailable[0].detail).not.toBe("");
+  });
+});
+
+/**
+ * The half that needs a person: signing in, and the board that only exists
+ * once somebody has (#28).
+ *
+ * The linked board is what a session opened here. This is what the *user* has
+ * open, anywhere — which is the thing a PR tab is expected to show, and the
+ * reason it offers a sign-in at all.
+ */
+describe("signing in to GitHub and seeing your own pull requests", () => {
+  it("reports being logged out, takes a token, and then answers as somebody", async () => {
+    const gh = fakeGhWithAuth();
+    writeFileSync(gh.linkedPath, body({}));
+    writeFileSync(gh.viewerPath, viewerBody());
+    const { client } = await board(gh);
+    await settle(client, (rows) => rows.pullRequests.length > 0);
+
+    const before = await client.githubStatus();
+    expect(before.installed).toBe(true);
+    expect(before.authenticated).toBe(false);
+    expect(before.remedy).toContain("gh auth login");
+
+    // Logged out, the user's own board is not an empty one — it says why.
+    const refused = await client.myPullRequests();
+    expect(refused.pullRequests).toEqual([]);
+    expect(refused.unavailable?.reason).toBe("gh_failed");
+    expect(refused.unavailable?.detail).toContain("Bad credentials");
+
+    // A token GitHub rejects is an error frame: somebody is waiting at the
+    // dialog to be told whether their paste worked.
+    await expect(
+      client.githubLogin({ token: "ghp_badtokenvalue" }),
+    ).rejects.toThrow(/Bad credentials/);
+
+    const after = await client.githubLogin({ token: "ghp_goodtokenvalue" });
+    expect(after.authenticated).toBe(true);
+    expect(after.account).toBe("octocat");
+    expect(after.remedy).toBeUndefined();
+
+    // The property that matters most: the token went in on stdin. Nothing on
+    // any command line, on any call, ever carried it.
+    const argv = readFileSync(gh.argvPath, "utf8");
+    expect(argv).toContain("auth login --hostname github.com --with-token");
+    expect(argv).not.toContain("ghp_goodtokenvalue");
+    expect(argv).not.toContain("ghp_badtokenvalue");
+  });
+
+  it("shows every open PR you wrote, with a thread only where there is one", async () => {
+    const gh = fakeGhWithAuth();
+    writeFileSync(gh.linkedPath, body({}));
+    writeFileSync(gh.viewerPath, viewerBody());
+    const { client } = await board(gh);
+    await settle(client, (rows) => rows.pullRequests.length > 0);
+    await client.githubLogin({ token: "ghp_goodtokenvalue" });
+
+    const mine = await client.myPullRequests();
+    expect(mine.unavailable).toBeUndefined();
+    expect(mine.account).toBe("octocat");
+    expect(mine.pullRequests).toHaveLength(2);
+
+    // The one a session here opened comes back carrying that session, so the
+    // row keeps its "Reopen thread".
+    const linked = mine.pullRequests.find((pr) => pr.number === 23);
+    expect(linked?.repo).toBe("jabreeflor/jabot");
+    expect(linked?.threadId).toBe("t-auth");
+    expect(linked?.threadTitle).toBe("Auth migration");
+    expect(linked?.linkedId).toBeTruthy();
+    expect(linked?.checkState).toBe("passing");
+    expect(linked?.id).toBe("github:jabreeflor/jabot#23");
+
+    // And the one written somewhere else is on the board with no thread at
+    // all, which is exactly what it should be: a PR to look at, not a session
+    // to reopen.
+    const elsewhere = mine.pullRequests.find((pr) => pr.number === 7);
+    expect(elsewhere?.repo).toBe("someone-else/infra");
+    expect(elsewhere?.threadId).toBeUndefined();
+    expect(elsewhere?.linkedId).toBeUndefined();
+    expect(elsewhere?.forgeHost).toBe("github.com");
+    expect(elsewhere?.url).toBe("https://github.com/someone-else/infra/pull/7");
   });
 });

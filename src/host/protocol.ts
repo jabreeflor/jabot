@@ -42,6 +42,9 @@ export const FOLDER_REGISTER = "folder/register";
 export const FOLDER_UPDATE = "folder/update";
 export const FOLDER_FORGET = "folder/forget";
 export const GITHUB_STATUS = "github/status";
+/** Hand `gh` a token to hold, so the board can ask GitHub as the user (#28).
+    The only request frame in this protocol that carries a secret. */
+export const GITHUB_LOGIN = "github/login";
 export const CREW_LIST = "crew/list";
 export const CREW_CREATE = "crew/create";
 export const CREW_UPDATE = "crew/update";
@@ -56,6 +59,9 @@ export const SCHEDULE_RUN = "schedule/run";
     the network; `pr/refresh` is the poll. */
 export const PR_LIST = "pr/list";
 export const PR_REFRESH = "pr/refresh";
+/** Every open pull request the signed-in user wrote — linked to a session here
+    or not. The one PR method that needs a login to answer at all. */
+export const PR_MINE = "pr/mine";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 /** A new Inbox card on a thread that did *not* resurface — a schedule firing
     on an active standing thread moves nothing in the sidebar (#25). */
@@ -831,6 +837,19 @@ export interface GithubStatusResult {
   ghPath?: string;
 }
 
+/** Sign in: one token, one host, one direction.
+ *
+ * The token travels exactly once, on this call. The host hands it to `gh` and
+ * forgets it — nothing gives it back, and the result is the same three-fact
+ * status a probe answers with, because "who am I signed in as" is the only
+ * question left afterwards. Never log this object. */
+export interface GithubLoginParams {
+  /** Defaults to `github.com`. GHES folders pass their `origin` host. */
+  host?: string;
+  /** A GitHub token the user created. Never stored by JaBot. */
+  token: string;
+}
+
 /** A `bots` row as the crew grid and the bot editor see it (#17).
  *
  * `tools` is the parsed allowlist, not the stored JSON text. The editor **is**
@@ -1457,4 +1476,59 @@ export interface PrRefreshResult {
   cards: number;
   /** One entry per forge host that could not be reached. */
   unavailable: PrUnavailable[];
+}
+
+export interface PrMineParams {
+  /** Defaults to `github.com`. */
+  host?: string;
+}
+
+/** One of the signed-in user's own pull requests.
+ *
+ * Deliberately not a `PullRequestView`. That type's `threadId` is a promise —
+ * every row on the linked board was opened by a session on this Mac, so
+ * "Reopen thread" always has somewhere to go. These come from GitHub, and most
+ * of them have no session here at all; the honest way to say so is a field
+ * that can be absent. Where the PR *is* also linked, the thread travels with
+ * it and the row gets its button back. */
+export interface GithubPullRequestView {
+  /** `github:owner/name#12`. Stable across polls, and never a store id. */
+  id: string;
+  /** The linked row's id, when a session here opened this PR. */
+  linkedId?: string;
+  provider: string;
+  forgeHost: string;
+  /** `owner/name`. */
+  repo: string;
+  number: number;
+  url: string;
+  title: string;
+  status: PrWireStatus;
+  checkState?: PrCheckStateWire;
+  reviewState?: PrReviewState;
+  headRef?: string;
+  baseRef?: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  checks: PrCheckView[];
+  updatedAt: string;
+  /** The session that opened it, when one did. Absent for a PR written
+      anywhere else — which is most of them, and the point of this method. */
+  threadId?: string;
+  threadTitle?: string;
+  threadState?: ThreadOverlayState;
+}
+
+/** What GitHub says the signed-in user has open.
+ *
+ * Same contract as `pr/refresh`: never an error frame for "GitHub was not
+ * reachable". A board that empties itself because a token expired is worse
+ * than one that says so and keeps drawing what it had. */
+export interface PrMineResult {
+  /** Who GitHub answered as. Absent when it could not be asked. */
+  account?: string;
+  pullRequests: GithubPullRequestView[];
+  /** Why GitHub could not be asked, if it could not. */
+  unavailable?: PrUnavailable;
 }

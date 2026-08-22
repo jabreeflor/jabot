@@ -27,6 +27,7 @@ import {
   HostRpcError,
 } from "./host";
 import { AddFolderModal } from "./components/AddFolderModal";
+import { GithubSignInModal } from "./components/GithubSignInModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
@@ -54,6 +55,7 @@ import {
 } from "./onboarding/state";
 import { useCrew } from "./views/crew";
 import { usePullRequests, type PullRequests } from "./views/pulls";
+import { useGithubAuth, type GithubAuth } from "./views/github";
 import {
   useSchedules,
   type ScheduleDraft,
@@ -165,6 +167,7 @@ function AppShell({
   const [menu, setMenu] = useState<MenuState>(null);
   const [leaving, setLeaving] = useState<readonly string[]>([]);
   const [addFolder, setAddFolder] = useState(false);
+  const [signIn, setSignIn] = useState(false);
   const [scheduleEditor, setScheduleEditor] = useState<ScheduleEditorState>({
     open: false,
   });
@@ -176,9 +179,15 @@ function AppShell({
   const inbox = useInbox(client, registered.reload);
   const crew = useCrew(client);
   const schedules = useSchedules(client);
+  // Whether GitHub can be asked as anybody (#16). The PR board is the only
+  // surface that needs it, and it needs it twice: to decide whether to ask for
+  // the user's own pull requests at all, and to know what to offer if not.
+  const github = useGithubAuth(client);
   // The PR board (#28). Two calls behind one hook: an instant store read on
   // mount, and a poll that keeps it warm without ever being able to empty it.
-  const pulls = usePullRequests(client);
+  // A third once signed in — the user's own open PRs, folded into the same
+  // list.
+  const pulls = usePullRequests(client, github.signedIn);
   // The host wins once it has answered, per source. A crew of `null` is "not
   // asked yet" — a preview build or a unit test — and the fixtures stand in;
   // a real answer always has Chief in it.
@@ -526,6 +535,8 @@ function AppShell({
           inbox={inbox}
           schedules={schedules}
           pulls={pulls}
+          github={github}
+          onSignIn={() => setSignIn(true)}
           onEditSchedule={(scheduleId) =>
             setScheduleEditor({ open: true, scheduleId })
           }
@@ -561,6 +572,24 @@ function AppShell({
           onRunSetup={onRunSetup}
         />
       </main>
+
+      {signIn && (
+        <GithubSignInModal
+          host={github.status?.host ?? "github.com"}
+          // Absent status means the host has not answered yet; assume `gh` is
+          // there rather than showing an install line we have no evidence for.
+          installed={github.status?.installed !== false}
+          installHint={github.status?.remedy}
+          onSignIn={async (token) => {
+            await github.signIn(token);
+            // The board's own poll is up to a minute away, and somebody who
+            // just signed in is looking at it now.
+            pulls.reload();
+          }}
+          onCancel={() => setSignIn(false)}
+          onOpenUrl={(url) => window.open(url, "_blank", "noopener,noreferrer")}
+        />
+      )}
 
       {addFolder && (
         <AddFolderModal
@@ -648,6 +677,8 @@ function MainView({
   inbox,
   schedules,
   pulls,
+  github,
+  onSignIn,
   onEditSchedule,
   onAddSchedule,
   bots,
@@ -677,6 +708,10 @@ function MainView({
   schedules: Schedules;
   /** The PR board, host-owned from the first answer (#28). */
   pulls: PullRequests;
+  /** Whether GitHub can be asked as anybody, and as whom (#16). */
+  github: GithubAuth;
+  /** Open the GitHub sign-in dialog. */
+  onSignIn: () => void;
   onEditSchedule: (scheduleId: string) => void;
   onAddSchedule: () => void;
   /** The crew, host-owned once `crew/list` has answered (#17). */
@@ -757,6 +792,9 @@ function MainView({
           pullRequests={pulls.pullRequests ?? state.pullRequests}
           unavailable={pulls.unavailable}
           error={pulls.error}
+          githubStatus={github.status}
+          account={pulls.account}
+          onSignIn={onSignIn}
           onRefresh={() => void pulls.refresh()}
           onOpenThread={(threadId) => onSelect({ view: "thread", threadId })}
           onAction={(prId, actionId) => {

@@ -34,8 +34,8 @@ use std::path::{Path, PathBuf};
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
     FoldPolicy, FolderForgetResult, FolderListResult, FolderOriginView, FolderRefParams,
-    FolderRegisterParams, FolderThreadView, FolderUpdateParams, FolderView, GithubStatusParams,
-    GithubStatusResult,
+    FolderRegisterParams, FolderThreadView, FolderUpdateParams, FolderView, GithubLoginParams,
+    GithubStatusParams, GithubStatusResult,
 };
 use super::store::{
     FolderPatch, FolderRepoPatch, FolderRow, NewFolder, Store, StoreError, ThreadRepo,
@@ -197,6 +197,42 @@ impl HostSession {
             remedy: auth.remedy,
             gh_path: auth.path,
         })
+    }
+
+    /// Sign in to GitHub: hand `gh` a token and report who it makes us.
+    ///
+    /// This is the one method that carries a secret, and it carries it in one
+    /// direction. The token reaches `gh` on stdin and is dropped when the call
+    /// returns — nothing writes it to SQLite, to the vault or to a log, and no
+    /// method hands it back. What comes back is the same three-fact status the
+    /// PR surface already gates on, so a fresh sign-in and a probe are the
+    /// same answer to every reader downstream.
+    ///
+    /// A refusal is an *error frame*, unlike the PR poll: a person is standing
+    /// at the dialog waiting to be told whether their paste worked.
+    pub fn github_login(
+        &mut self,
+        params: GithubLoginParams,
+    ) -> Result<GithubStatusResult, RpcError> {
+        let host = params.host.as_deref().unwrap_or(gh::DEFAULT_HOST);
+        match gh::login(host, &params.token) {
+            Ok(auth) => Ok(GithubStatusResult {
+                installed: auth.installed,
+                authenticated: auth.authenticated,
+                host: auth.host,
+                account: auth.account,
+                detail: auth.detail,
+                remedy: auth.remedy,
+                gh_path: auth.path,
+            }),
+            // `gh`'s own sentence, plus what to do about it. Never the token,
+            // and never a message this module invented over one gh already
+            // wrote.
+            Err(err) => Err(RpcError::InvalidParams(match err.remedy(host) {
+                Some(remedy) => format!("{} Try: {remedy}", err.detail()),
+                None => err.detail(),
+            })),
+        }
     }
 
     /// The spawn record for a new thread (setup-porting §19).

@@ -64,35 +64,35 @@ pub use protocol::{
     decode_frame, decode_frames, encode_frame, BotTemplateView, BotView, CrewCreateParams,
     CrewHostToolView, CrewListResult, CrewRefParams, CrewRemoveResult, CrewUpdateParams,
     DeviceInfo, DeviceRole, Envelope, FolderForgetResult, FolderListResult, FolderOriginView,
-    FolderThreadView, FolderView, GithubStatusResult, HandoffView, HarnessCardView,
-    HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams,
-    HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
-    JsonRpcResponse, PendingPermissionView, PermissionPendingParams, PermissionPendingResult,
-    PermissionReplyParams, PermissionReplyResult, PromptMode, QueuedPromptView, RequestId,
-    ResumeOutcome, ResurfaceReason, RpcError, ScheduleCreateParams, ScheduleFireView,
-    ScheduleListResult, ScheduleRefParams, ScheduleRemoveResult, ScheduleRunResult,
-    ScheduleUpdateParams, ScheduleView, StoreStatus, SupervisorStatusResult, ThreadResumeResult,
-    ThreadStateResult, ThreadTranscriptParams, ThreadTranscriptResult, ToolCardView,
-    ToolConnectResult, ToolConnectionStatus, ToolDisconnectResult, ToolListResult, ToolRefParams,
-    ToolTransport, TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE,
-    CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE,
-    GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS,
-    INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_PENDING,
-    PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT,
-    SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
-    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
-    TOOLS_LIST,
+    FolderThreadView, FolderView, GithubLoginParams, GithubStatusResult, HandoffView,
+    HarnessCardView, HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier,
+    HealthResult, HelloParams, HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification,
+    JsonRpcRequest, JsonRpcResponse, PendingPermissionView, PermissionPendingParams,
+    PermissionPendingResult, PermissionReplyParams, PermissionReplyResult, PromptMode,
+    QueuedPromptView, RequestId, ResumeOutcome, ResurfaceReason, RpcError, ScheduleCreateParams,
+    ScheduleFireView, ScheduleListResult, ScheduleRefParams, ScheduleRemoveResult,
+    ScheduleRunResult, ScheduleUpdateParams, ScheduleView, StoreStatus, SupervisorStatusResult,
+    ThreadResumeResult, ThreadStateResult, ThreadTranscriptParams, ThreadTranscriptResult,
+    ToolCardView, ToolConnectResult, ToolConnectionStatus, ToolDisconnectResult, ToolListResult,
+    ToolRefParams, ToolTransport, TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST,
+    CREW_REMOVE, CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
+    FOLDER_UPDATE, GITHUB_LOGIN, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH,
+    HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
+    PERMISSION_PENDING, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL,
+    SESSION_PROMPT, SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
+    THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT,
+    TOOLS_DISCONNECT, TOOLS_LIST,
+};
+#[allow(unused_imports)]
+pub use protocol::{
+    GithubPullRequestView, PrCheckView, PrListParams, PrListResult, PrMineParams, PrMineResult,
+    PrRefreshParams, PrRefreshResult, PrUnavailable, PullRequestView, PR_LIST, PR_MINE, PR_REFRESH,
 };
 /// Native notifications (#27). The result type and the method name live with
 /// the rest of the wire; delivery lives in `crate::notify`, off the host so a
 /// platform framework never becomes a dependency of the JSON-RPC layer.
 #[allow(unused_imports)]
 pub use protocol::{NotifyStatusResult, NOTIFY_STATUS};
-#[allow(unused_imports)]
-pub use protocol::{
-    PrCheckView, PrListParams, PrListResult, PrRefreshParams, PrRefreshResult, PrUnavailable,
-    PullRequestView, PR_LIST, PR_REFRESH,
-};
 #[allow(unused_imports)]
 pub use protocol::{
     INBOX_EVENT, SCHEDULE_CREATE, SCHEDULE_LIST, SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE,

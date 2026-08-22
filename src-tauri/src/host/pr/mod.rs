@@ -19,6 +19,12 @@
 //! row. Transitions, never states: a PR that has been red since lunch is not
 //! news every fifteen seconds.
 //!
+//! **The person's own board** ([`HostSession::pr_mine`]) is the one place the
+//! linkage premise is deliberately dropped: it asks GitHub what the signed-in
+//! user has open anywhere, so the view can show every pull request they are
+//! waiting on rather than only the ones a session here happened to open. A PR
+//! that is both comes back carrying its thread.
+//!
 //! What ties them together is the row. `thread_prs.thread_id` is NOT NULL, so
 //! every PR on this board was opened by a session on this Mac and "Reopen
 //! thread" always has somewhere to go; `(provider, repo, number)` is the dedupe
@@ -40,8 +46,8 @@ use serde_json::{json, Value};
 
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
-    PrCheckView, PrListParams, PrListResult, PrRefreshParams, PrRefreshResult, PrUnavailable,
-    PullRequestView,
+    GithubPullRequestView, PrCheckView, PrListParams, PrListResult, PrMineParams, PrMineResult,
+    PrRefreshParams, PrRefreshResult, PrUnavailable, PullRequestView,
 };
 use super::repo::gh::DEFAULT_HOST;
 use super::store::{
@@ -49,7 +55,7 @@ use super::store::{
 };
 use super::HostSession;
 use detect::PrLink;
-use github::{PrAnswer, PrKey};
+use github::{MinePr, PrAnswer, PrKey};
 
 /// `thread_prs.provider`. One forge for MVP (`folders-and-auth.md`); the column
 /// exists so a second one is a value rather than a schema change.
@@ -161,6 +167,55 @@ impl HostSession {
             updated,
             cards: card_count,
             unavailable,
+        })
+    }
+
+    /// Every open pull request the signed-in user wrote — here or anywhere.
+    ///
+    /// The board's other two methods are about *linkage*: what a session on
+    /// this Mac opened. This one is about the person. It needs a GitHub login
+    /// to answer at all, which is why the view that draws it also offers the
+    /// sign-in, and it holds the same promise `pr/refresh` does — an
+    /// unreachable GitHub is a `unavailable` field and never an error frame,
+    /// because this is polled on a timer beside the rest of the board.
+    ///
+    /// A PR that is *also* linked comes back carrying its thread, so the row
+    /// keeps its "Reopen thread" button and the renderer can fold the two
+    /// lists together on `(provider, repo, number)` without a second lookup.
+    pub fn pr_mine(&mut self, params: PrMineParams) -> Result<PrMineResult, RpcError> {
+        let host = params
+            .host
+            .clone()
+            .unwrap_or_else(|| DEFAULT_HOST.to_string());
+        let answer = github::fetch(&host, &github::mine_query()).and_then(|body| {
+            // A body that parses but names no viewer is a failed *request*,
+            // not an empty board — see `parse_mine`.
+            github::parse_mine(&body)
+        });
+        let answer = match answer {
+            Ok(answer) => answer,
+            Err(err) => {
+                return Ok(PrMineResult {
+                    account: None,
+                    pull_requests: Vec::new(),
+                    unavailable: Some(PrUnavailable {
+                        remedy: err.remedy(&host),
+                        host,
+                        reason: err.reason().to_string(),
+                        detail: err.detail(),
+                    }),
+                })
+            }
+        };
+        let store = self.store_or_err()?;
+        let mut pull_requests = Vec::with_capacity(answer.pull_requests.len());
+        for pr in answer.pull_requests {
+            pull_requests.push(mine_view(store, &host, pr)?);
+        }
+        Ok(PrMineResult {
+            account: answer.login,
+            pull_requests,
+            unavailable: None,
         })
     }
 
@@ -473,6 +528,78 @@ pub(crate) fn view(row: ThreadPrRow, thread: Option<&ThreadRow>) -> PullRequestV
         detected_via: row.detected_via,
         polled_at: row.polled_at,
     }
+}
+
+/// One of the viewer's PRs as the wire shape, with whatever this Mac knows
+/// about it attached.
+///
+/// The store lookup is by `(provider, repo, number)` — the same identity
+/// `link_pr` dedupes on — so a PR the user opened from a JaBot session is one
+/// row on the board rather than two, and keeps the thread it came from.
+fn mine_view(store: &Store, host: &str, pr: MinePr) -> Result<GithubPullRequestView, RpcError> {
+    let linked = store
+        .get_pr(PROVIDER_GITHUB, &pr.repo, pr.number)
+        .map_err(internal)?;
+    let thread = match linked.as_ref() {
+        Some(row) => store.get_thread(&row.thread_id).map_err(internal)?,
+        None => None,
+    };
+    let checks: Vec<github::CheckView> =
+        serde_json::from_str(&pr.snapshot.checks_json).unwrap_or_default();
+    Ok(GithubPullRequestView {
+        id: format!("{PROVIDER_GITHUB}:{}#{}", pr.repo, pr.number),
+        linked_id: linked.as_ref().map(|row| row.id.clone()),
+        provider: PROVIDER_GITHUB.to_string(),
+        forge_host: host.to_string(),
+        number: pr.number,
+        // GitHub's own URL when it gave one; the canonical one otherwise, so a
+        // row is never a dead link.
+        url: pr
+            .snapshot
+            .url
+            .clone()
+            .unwrap_or_else(|| format!("https://{host}/{}/pull/{}", pr.repo, pr.number)),
+        title: pr.snapshot.title,
+        status: pr.snapshot.status,
+        check_state: pr.snapshot.check_state,
+        review_state: pr.snapshot.review_state,
+        head_ref: pr.snapshot.head_ref,
+        base_ref: pr.snapshot.base_ref,
+        additions: pr.snapshot.additions,
+        deletions: pr.snapshot.deletions,
+        changed_files: pr.snapshot.changed_files,
+        checks: checks
+            .into_iter()
+            .map(|check| PrCheckView {
+                label: check.label,
+                state: check.state,
+            })
+            .collect(),
+        // GitHub just told us; there is no older clock to prefer here.
+        updated_at: pr
+            .snapshot
+            .pr_updated_at
+            .unwrap_or_else(|| now_iso(linked.as_ref())),
+        // Only ever set together, and only for a PR this Mac opened.
+        thread_id: linked.as_ref().map(|row| row.thread_id.clone()),
+        thread_title: thread.as_ref().map(|t| t.title.clone()),
+        thread_state: thread.as_ref().map(|t| t.state.clone()),
+        repo: pr.repo,
+    })
+}
+
+/// The fallback timestamp for a PR GitHub answered about without an
+/// `updatedAt`. The linked row's clock if there is one, so the card does not
+/// jump to the epoch; otherwise the row's own creation, which is the only
+/// other honest thing to say.
+fn now_iso(linked: Option<&ThreadPrRow>) -> String {
+    linked
+        .and_then(|row| {
+            row.pr_updated_at
+                .clone()
+                .or_else(|| row.detected_at.clone())
+        })
+        .unwrap_or_default()
 }
 
 fn internal(err: super::store::StoreError) -> RpcError {
