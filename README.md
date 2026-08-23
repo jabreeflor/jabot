@@ -41,4 +41,10 @@ Open `prototypes/jabot-classic.html` in a browser — the main MVP (chat, Inbox,
 
 Build plan and settled architecture decisions (#4 host/quit, #5 fold/run/Inbox, #6 every bot is a harness): [`docs/plan.md`](docs/plan.md), [`docs/decisions/issues-4-6.md`](docs/decisions/issues-4-6.md).
 
+`prototypes/jabot-avatars.html` is the avatar exploration for #44 — five
+directions for a bot's identity (monogram blob, glyph tile, generative
+identicon, refined blob, shape-as-role sigil) shown at every size the shell
+asks for, with greyscale and light-theme toggles. It is a phone-sized page on
+purpose: open it on a phone and scroll.
+
 Other prototypes in `prototypes/` are earlier design directions.
