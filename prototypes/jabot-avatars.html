@@ -78,40 +78,56 @@
       }
 
       /* ---- chrome */
+      /* Opaque, not translucent: this bar sits over the thing being judged all
+         the way down the page, and a blurred ghost of an avatar behind the
+         title is exactly the kind of noise this page is trying to measure. */
       header {
         position: sticky;
         top: 0;
         z-index: 5;
-        background: color-mix(in srgb, var(--chat) 92%, transparent);
-        backdrop-filter: blur(12px);
+        background: var(--chat);
         border-bottom: 1px solid var(--edge);
-        padding: max(10px, env(safe-area-inset-top)) 16px 10px;
+        padding: max(8px, env(safe-area-inset-top)) 16px 8px;
+      }
+
+      /* The title line stands down once you start scrolling — the toggles are
+         what has to stay reachable, and every row it costs is a row of avatars
+         the phone cannot show. */
+      .titles {
+        overflow: hidden;
+        max-height: 46px;
+        transition: max-height 0.2s ease, opacity 0.2s ease;
+      }
+
+      header[data-scrolled="1"] .titles {
+        max-height: 0;
+        opacity: 0;
       }
 
       h1 {
-        font-size: 17px;
+        font-size: 16px;
         letter-spacing: -0.01em;
       }
 
       .sub {
         color: var(--faint);
-        font-size: 12.5px;
-        margin-top: 2px;
+        font-size: 12px;
+        margin-top: 1px;
       }
 
       .toggles {
         display: flex;
         gap: 8px;
-        margin-top: 10px;
+        margin-top: 8px;
       }
 
       .toggles button {
         flex: 1;
-        min-height: 38px;
+        min-height: 40px;
         border-radius: var(--r-pill);
         border: 1px solid var(--edge-strong);
         background: var(--raise2);
-        color: var(--dim);
+        color: var(--ink);
         font: 600 13px/1 var(--font-ui);
         cursor: pointer;
       }
@@ -135,6 +151,8 @@
         border: 1px solid var(--edge);
         border-radius: var(--r-xl);
         padding: 16px;
+        /* Anything scrolled to lands below the bar, not under it. */
+        scroll-margin-top: 76px;
       }
 
       h2 {
@@ -508,6 +526,19 @@
 
       .v5[data-shape="code"] {
         border-radius: calc(var(--s) * 0.29);
+        display: grid;
+        place-items: center;
+      }
+
+      .v5 svg {
+        position: relative;
+        width: 46%;
+        height: 46%;
+        fill: none;
+        stroke: var(--on-color);
+        stroke-width: 2.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
       }
 
       /* Only the fill is clipped, so the badge on the rim survives. */
@@ -646,11 +677,50 @@
         padding-bottom: 2px;
       }
 
+      /* Four pairs do not fit across a phone at the Inbox rung, and the pairs
+         are the evidence — so they wrap rather than scroll out of sight. */
+      .h2h .row.wrap {
+        flex-wrap: wrap;
+        overflow-x: visible;
+        row-gap: 8px;
+      }
+
+      .h2h .row.wrap + .row.wrap {
+        margin-top: 6px;
+        border-top: 1px solid var(--edge);
+        padding-top: 10px;
+      }
+
       .h2h .row b {
         font: 700 10px/1 var(--font-mono);
         color: var(--faint);
-        width: 26px;
+        width: 24px;
         flex: none;
+      }
+
+      /* Two bots that share a colour, kept close enough to be compared and far
+         enough from the next pair to stay a pair. */
+      .h2h .pair {
+        display: flex;
+        gap: 4px;
+        flex: none;
+      }
+
+      .h2h .pair + .pair {
+        margin-left: 12px;
+      }
+
+      .h2h .cap {
+        font-size: 12px;
+        color: var(--faint);
+        white-space: nowrap;
+      }
+
+      .note {
+        font-size: 12px;
+        line-height: 1.4;
+        color: var(--faint);
+        margin-top: 10px;
       }
 
       /* ---- in-context strip: the chat header and an Inbox row */
@@ -689,10 +759,12 @@
     </style>
   </head>
   <body>
-    <header>
-      <h1>Bot avatars — five directions</h1>
-      <div class="sub">
-        Issue #44 · twelve bots, five sizes, four states, both themes
+    <header id="bar">
+      <div class="titles">
+        <h1>Bot avatars — five directions</h1>
+        <div class="sub">
+          Issue #44 · twelve bots, five sizes, four states, both themes
+        </div>
       </div>
       <div class="toggles">
         <button id="t-grey" aria-pressed="false">Greyscale</button>
@@ -712,7 +784,7 @@
       // ---- the cast. Twelve bots against eight colours, so four of them are
       // colour collisions by construction — that is the point of the grid.
       const BOTS = [
-        { id: "chief", name: "Chief of Staff", c: "c-teal", g: "compass" },
+        { id: "chief", name: "Chief of Staff", c: "c-teal", g: "flag" },
         { id: "scout", name: "Scout", c: "c-yellow", g: "search" },
         { id: "mira", name: "Mira", c: "c-purple", g: "spark" },
         { id: "atlas", name: "Atlas", c: "c-violet", g: "cube" },
@@ -743,10 +815,12 @@
 
       // ---- drawn, not imported. Same house as src/components/Icon.tsx.
       const GLYPH = {
-        compass:
-          '<circle cx="12" cy="12" r="8.5"/><path d="M15.5 8.5l-2.6 6-4.4 1.9 2.6-6z" fill="currentColor" stroke-linejoin="round"/>',
+        // A circle with a needle in it collapses to a coffee bean at 16px, so
+        // the Chief gets the mark that still reads at the chat header: a flag.
+        flag: '<path d="M6.5 21V4.5"/><path d="M6.5 5.5h11l-2.6 3.6 2.6 3.6h-11z" fill="currentColor" stroke-linejoin="round"/>',
         search: '<circle cx="11" cy="11" r="6"/><path d="M15.5 15.5L20 20"/>',
-        spark: '<path d="M12 3v6M12 15v6M3 12h6M15 12h6"/>',
+        spark:
+          '<path d="M12 3c.6 5.4 3.6 8.4 9 9-5.4.6-8.4 3.6-9 9-.6-5.4-3.6-8.4-9-9 5.4-.6 8.4-3.6 9-9z" fill="currentColor" stroke-linejoin="round"/>',
         cube: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/>',
         star: '<path d="M12 3.5l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-3-5.3 3 1.1-6L3.4 9.9l6-.8z"/>',
         flame: '<path d="M12 3c3 3.5 5.5 6 5.5 9.5A5.5 5.5 0 0 1 6.5 12.5C6.5 10 8 8.5 9 7c.6 1.6 1.4 2.3 2.2 2.6C11.4 7.6 11.4 5.3 12 3z"/>',
@@ -794,6 +868,26 @@
           return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
         return name.slice(0, 2).toUpperCase();
       };
+
+      // Below the Inbox rung the monogram drops to one letter, and one letter
+      // is where Scout and Sage become the same mark. So the single letter is
+      // the first one in the name nobody has taken yet — computed over the
+      // roster, the way a crew of twelve is small enough to allow.
+      const COMPACT_OF = (() => {
+        const taken = new Set();
+        const out = {};
+        for (const b of BOTS) {
+          const letters = (initials(b.name) + b.name.toUpperCase()).replace(
+            /[^A-Z]/g,
+            "",
+          );
+          const pick =
+            [...letters].find((ch) => !taken.has(ch)) || letters[0];
+          taken.add(pick);
+          out[b.id] = pick;
+        }
+        return out;
+      })();
 
       // v3: five columns mirrored around the middle one, filled from the hash.
       const identicon = (id) => {
@@ -880,7 +974,7 @@
 
         if (kind === "v1")
           return `<span class="av v1 ${bot.c}" ${attrs} ${title}>${
-            compact === "1" ? initials(bot.name)[0] : initials(bot.name)
+            compact === "1" ? COMPACT_OF[bot.id] : initials(bot.name)
           }${chrome}</span>`;
 
         if (kind === "v2")
@@ -897,7 +991,10 @@
           return `<span class="av v4 ${bot.c}" ${attrs} ${title}>${chrome}</span>`;
 
         const fill = FILL_OF[bot.id] || FILLS[hash(bot.id + "f") % FILLS.length];
-        return `<span class="av v5 ${bot.c}" ${attrs} data-fill="${fill}" data-shape="${shape}" ${title}><span class="fill"></span>${chrome}</span>`;
+        // The code session keeps the terminal mark the app draws today — the
+        // squircle says "not a bot", the prompt says what kind of not-a-bot.
+        const mark = shape === "code" ? svg("terminal") : "";
+        return `<span class="av v5 ${bot.c}" ${attrs} data-fill="${fill}" data-shape="${shape}" ${title}><span class="fill"></span>${mark}${chrome}</span>`;
       }
 
       // ---- rows
@@ -953,7 +1050,11 @@
           verdict: [
             ["yes", "Sizes", "One letter at 30/28 is still a shape, not noise."],
             ["yes", "Greyscale", "Letters carry it; hue is decoration."],
-            ["yes", "Beyond eight", "676 two-letter monograms, colour reused freely."],
+            [
+              "mid",
+              "Beyond eight",
+              "676 pairs at 38px and up — but the 28px rung has 26 letters, so the single letter has to be picked against the crew.",
+            ],
             ["yes", "Status", "Ring for running, badge bottom-right, dot stays top-right."],
             ["mid", "Cost", "Loses the face — the crew stops looking like characters."],
           ],
@@ -988,8 +1089,16 @@
           why: "Keep the face, fix the geometry: eyes get a pixel floor instead of a percentage of a shrinking box, and under the editor rung the pair collapses into one visor. Wobble and eye tilt now hash from the id, so two teal bots are not the same blob.",
           verdict: [
             ["yes", "Sizes", "3px floor and the visor keep 28px deliberate."],
-            ["no", "Greyscale", "Wobble is too weak; two greys are two blobs."],
-            ["mid", "Beyond eight", "Six wobbles × five tilts, but the differences are subtle."],
+            [
+              "no",
+              "Greyscale",
+              "Look at the twelve above with colour off: wobble and eye tilt are a whisper, not a channel.",
+            ],
+            [
+              "mid",
+              "Beyond eight",
+              "Six wobbles × five tilts × four eye gaps, but the differences want a side-by-side to see.",
+            ],
             ["yes", "Status", "Ring reads well against a round silhouette."],
             ["yes", "Cost", "Smallest diff of the five; the product still looks like itself."],
           ],
@@ -1019,6 +1128,11 @@
         ${gridRow(c.kind)}
         <div class="lbl">Status &amp; unread</div>
         ${stateRow(c.kind)}
+        <p class="note">
+          Idle draws nothing on purpose — most bots are idle most of the time.
+          The red dot keeps the top-right corner and means unread; status takes
+          the bottom-right, and running takes the rim.
+        </p>
         <div class="lbl">Bot · crew · code session</div>
         ${roleRow(c.kind)}
         <div class="lbl">In place</div>
@@ -1031,25 +1145,59 @@
           .join("")}</div>
       </section>`;
 
+      // The four pairs the palette forces to share a colour, and the pair the
+      // monogram forces to share a letter. This is the whole test.
+      const COLLISIONS = [
+        [0, 8],
+        [1, 9],
+        [2, 10],
+        [4, 11],
+      ];
+
       const headToHead = () => `<section>
         <h2><span class="n">vs</span>Head to head</h2>
         <p class="why">
-          The two rungs that decide it: the chat header, and the Inbox row where
-          six bots stack vertically. Same bot, five treatments.
+          The rungs that decide it: the chat header, and the four pairs of bots
+          the eight-colour palette forces to share a colour. If two bots in a
+          pair read as one bot, that candidate has not solved the problem the
+          issue opens with.
         </p>
         <div class="lbl">Chief of Staff at 28px</div>
         <div class="h2h"><div class="row">${CANDIDATES.map(
           (c) => `<span>${avatar(c.kind, BOTS[0], 28)}</span>`,
         ).join("")}</div></div>
-        <div class="lbl">Two teal bots at 38px — Chief vs Vero</div>
+        <div class="lbl">All four colour collisions at 38px</div>
         <div class="h2h">${CANDIDATES.map(
           (c) =>
-            `<div class="row"><b>${c.kind}</b>${avatar(c.kind, BOTS[0], 38)}${avatar(
-              c.kind,
-              BOTS[8],
-              38,
-            )}<span class="m" style="color:var(--faint);font-size:12px">${c.title}</span></div>`,
+            `<div class="row wrap"><b>${c.kind}</b>${COLLISIONS.map(
+              ([a, z]) =>
+                `<span class="pair">${avatar(c.kind, BOTS[a], 38)}${avatar(
+                  c.kind,
+                  BOTS[z],
+                  38,
+                )}</span>`,
+            ).join("")}</div>`,
         ).join("")}</div>
+        <p class="note">
+          Left to right: Chief/Vero teal · Scout/Kilo yellow · Mira/Juno purple
+          · Nova/Rhea blue. Turn on greyscale and run the row again.
+        </p>
+        <div class="lbl">Two S names at 28px — Scout vs Sage</div>
+        <div class="h2h">${CANDIDATES.map(
+          (c) =>
+            `<div class="row"><b>${c.kind}</b><span class="pair">${avatar(
+              c.kind,
+              BOTS[1],
+              28,
+            )}${avatar(c.kind, BOTS[7], 28)}</span><span class="cap">${
+              c.title
+            }</span></div>`,
+        ).join("")}</div>
+        <p class="note">
+          The monogram's worst case: at 28px it is down to one letter, so Scout
+          and Sage would both be "S" unless the letter is picked against the
+          rest of the crew. Here Sage takes its first free letter instead.
+        </p>
       </section>`;
 
       const stage = document.getElementById("stage");
@@ -1072,6 +1220,15 @@
         theme.setAttribute("aria-pressed", String(!on));
         document.documentElement.dataset.theme = on ? "dark" : "light";
       });
+
+      const bar = document.getElementById("bar");
+      addEventListener(
+        "scroll",
+        () => {
+          bar.dataset.scrolled = scrollY > 24 ? "1" : "0";
+        },
+        { passive: true },
+      );
 
       state.addEventListener("click", () => {
         const on = state.getAttribute("aria-pressed") === "true";
