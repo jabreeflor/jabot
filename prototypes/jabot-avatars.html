@@ -340,7 +340,7 @@
         height: max(9px, calc(var(--s) * 0.24));
         border-radius: 50%;
         background: var(--red);
-        border: max(2px, calc(var(--s) * 0.05)) solid var(--side);
+        border: max(2px, calc(var(--s) * 0.05)) solid var(--rim, var(--side));
         z-index: 2;
       }
 
@@ -354,7 +354,7 @@
         width: max(11px, calc(var(--s) * 0.3));
         height: max(11px, calc(var(--s) * 0.3));
         border-radius: 50%;
-        border: max(2px, calc(var(--s) * 0.05)) solid var(--side);
+        border: max(2px, calc(var(--s) * 0.05)) solid var(--rim, var(--side));
         display: grid;
         place-items: center;
         z-index: 2;
@@ -638,7 +638,7 @@
       /* Three marks this close need a hairline of the surface between them or
          the lower two read as one wide mark with two glyphs in it. */
       .cluster > i > .av {
-        box-shadow: 0 0 0 2px var(--side);
+        box-shadow: 0 0 0 2px var(--rim, var(--side));
       }
 
       .cluster > .s1 {
@@ -744,6 +744,9 @@
       }
 
       .ctx .bar {
+        /* The rings around the dot and the badge are cut from whatever is
+           behind them, and here that is the bar rather than the card. */
+        --rim: var(--raise2);
         display: flex;
         align-items: center;
         gap: 10px;
@@ -1038,7 +1041,7 @@
       const stateRow = (kind) =>
         `<div class="states">${STATES.map(
           ([s, label], i) =>
-            `<figure>${avatar(kind, BOTS[i + 1], 44, {
+            `<figure>${avatar(kind, stateBot(kind, s, i), 44, {
               state: s,
               // Failed carries the dot too: red badge under red dot is
               // the one pairing that has to be looked at, not assumed.
@@ -1050,6 +1053,14 @@
         })}<figcaption>failed · 28</figcaption></figure></div>`;
 
       // Bot / crew / code session in each candidate's own grammar.
+      // The sigil says its running ring competes with a ring fill, so the
+      // running figure has to be a bot that draws one; anything else states a
+      // flaw the row underneath cannot show.
+      const stateBot = (kind, state, i) =>
+        kind === "v5" && state === "running"
+          ? BOTS.find((b) => FILL_OF[b.id] === "ring") || BOTS[i + 1]
+          : BOTS[i + 1];
+
       // Three of the candidate's own marks, not three blobs — the crew is the
       // one avatar that is not a single bot, and it should still be built out
       // of whatever the candidate says a bot looks like.
