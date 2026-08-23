@@ -618,20 +618,26 @@
         display: block;
       }
 
-      .cluster i {
+      .cluster > i {
         position: absolute;
         display: block;
       }
 
-      .cluster .s1 {
+      /* Three marks this close need a hairline of the surface between them or
+         the lower two read as one wide mark with two glyphs in it. */
+      .cluster > i > .av {
+        box-shadow: 0 0 0 2px var(--side);
+      }
+
+      .cluster > .s1 {
         top: 0;
         left: 20%;
       }
-      .cluster .s2 {
+      .cluster > .s2 {
         bottom: 0;
         left: 0;
       }
-      .cluster .s3 {
+      .cluster > .s3 {
         bottom: 0;
         right: 0;
       }
@@ -1020,7 +1026,10 @@
               // the one pairing that has to be looked at, not assumed.
               unread: s === "waiting" || s === "failed",
             })}<figcaption>${label}</figcaption></figure>`,
-        ).join("")}</div>`;
+        ).join("")}<figure>${avatar(kind, BOTS[5], 28, {
+          state: "failed",
+          unread: true,
+        })}<figcaption>failed · 28</figcaption></figure></div>`;
 
       // Bot / crew / code session in each candidate's own grammar.
       // Three of the candidate's own marks, not three blobs — the crew is the
@@ -1120,7 +1129,11 @@
           verdict: [
             ["yes", "Sizes", "Patterns are half-and-quarter divisions; they survive 28px."],
             ["yes", "Greyscale", "Light/dark tone split is a luminance channel."],
-            ["yes", "Beyond eight", "7 fills × 8 colours = 56 before a collision."],
+            [
+              "yes",
+              "Beyond eight",
+              "7 fills × 8 colours = 56, and the fill is unique within a tone bucket, so greyscale separates them too.",
+            ],
             ["mid", "Status", "The running ring reads twice on a ring fill; it wants an offset."],
             ["mid", "Cost", "New grammar to learn, and no face at all."],
           ],
