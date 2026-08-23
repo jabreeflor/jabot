@@ -360,6 +360,18 @@
         z-index: 2;
       }
 
+      /* At the chat-header rung the two marks are a couple of pixels apart on
+         the same rim; a nudge apiece gives the pair some air. */
+      .av[data-compact="1"] .dot {
+        top: -2px;
+        right: 2px;
+      }
+
+      .av[data-compact="1"] .st {
+        right: -3px;
+        bottom: -3px;
+      }
+
       .av .st svg {
         width: 74%;
         height: 74%;
@@ -909,49 +921,55 @@
         return cells;
       };
 
+      // "solid" is the absence of a pattern, so it is dealt last: on a roster
+      // of twelve exactly one bot draws it, and nobody else is pattern-free.
       const FILLS = [
-        "solid",
         "split",
-        "ring",
         "band",
+        "ring",
         "quad",
         "dots",
         "chev",
+        "solid",
       ];
 
-      // Greyscale is the reason this is not a plain hash. Two bots of the same
-      // colour obviously must not share a pattern — but neither may two bots
-      // whose colours land on the same grey, so the constraint is per tone
-      // bucket, not per colour. Pattern is picked from the id and walked
-      // forward until it is free in that bucket; that is a rule the app could
-      // run once, when a bot is created.
-      const TONE = {
-        "c-yellow": "light",
-        "c-teal": "light",
-        "c-green": "light",
-        "c-orange": "light",
-        "c-pink": "light",
-        "c-purple": "dark",
-        "c-violet": "dark",
-        "c-blue": "dark",
+      // Greyscale is the reason this is not a plain hash, and tone buckets
+      // were not enough: the palette's whole greyscale spread is about 58
+      // levels (purple 152 to yellow 210), so "light" and "dark" overlap and a
+      // fill reused across them can land 3 levels apart. What actually
+      // separates two bots sharing a fill is the distance between their greys,
+      // so the roster is sorted by grey and the fills are dealt round-robin
+      // down that order: the bots that share a pattern are seven seats apart,
+      // which is the widest gap the palette can offer.
+      const LITE = {
+        "c-teal": "#6fe0c0",
+        "c-yellow": "#ffd24d",
+        "c-purple": "#9c8cff",
+        "c-violet": "#c08bff",
+        "c-blue": "#6fafff",
+        "c-orange": "#ffa65c",
+        "c-pink": "#ff9bbb",
+        "c-green": "#7adb8f",
+      };
+
+      /** What `filter: grayscale(1)` will make of a colour. */
+      const greyOf = (hex) => {
+        const n = parseInt(hex.slice(1), 16);
+        return (
+          0.2126 * ((n >> 16) & 255) +
+          0.7152 * ((n >> 8) & 255) +
+          0.0722 * (n & 255)
+        );
       };
 
       const FILL_OF = (() => {
-        const taken = {};
         const out = {};
-        // "solid" is the absence of a pattern, so it is spent once across the
-        // whole crew — two pattern-free bots would be leaning on colour again.
-        let plainSpent = false;
-        for (const b of BOTS) {
-          const seat = (taken[TONE[b.c]] ||= new Set());
-          const free = (f) => !seat.has(f) && !(f === "solid" && plainSpent);
-          let i = hash(b.id + "f") % FILLS.length;
-          for (let n = 0; n < FILLS.length && !free(FILLS[i]); n++)
-            i = (i + 1) % FILLS.length;
-          seat.add(FILLS[i]);
-          if (FILLS[i] === "solid") plainSpent = true;
-          out[b.id] = FILLS[i];
-        }
+        const order = [...BOTS].sort(
+          (a, b) => greyOf(LITE[a.c]) - greyOf(LITE[b.c]),
+        );
+        order.forEach((b, i) => {
+          out[b.id] = FILLS[i % FILLS.length];
+        });
         return out;
       })();
 
@@ -1097,7 +1115,7 @@
           verdict: [
             ["mid", "Sizes", "At 28px each cell is 5.6px; the pattern reads as texture, not shape."],
             ["yes", "Greyscale", "Two tones per tile, pattern does the work."],
-            ["yes", "Beyond eight", "Unbounded and collision-free by construction."],
+            ["yes", "Beyond eight", "2^15 patterns off the id — effectively unbounded, no picking, no roster to check."],
             ["yes", "Status", "Unchanged; the tile edge is free."],
             ["no", "Cost", "Impersonal, and the face is not stable across a rename."],
           ],
@@ -1130,9 +1148,9 @@
             ["yes", "Sizes", "Patterns are half-and-quarter divisions; they survive 28px."],
             ["yes", "Greyscale", "Light/dark tone split is a luminance channel."],
             [
-              "yes",
+              "mid",
               "Beyond eight",
-              "7 fills × 8 colours = 56, and the fill is unique within a tone bucket, so greyscale separates them too.",
+              "7 fills × 8 colours = 56 in colour. In greyscale the fills repeat past seven bots — the repeat is placed at the widest grey gap the palette has, which is 39 of 255.",
             ],
             ["mid", "Status", "The running ring reads twice on a ring fill; it wants an offset."],
             ["mid", "Cost", "New grammar to learn, and no face at all."],
