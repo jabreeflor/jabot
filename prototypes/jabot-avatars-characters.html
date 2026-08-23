@@ -350,6 +350,11 @@
         right: -3px;
       }
 
+      .av.m2[data-compact="1"] .dot,
+      .av.m2 .dot {
+        right: -4px;
+      }
+
       /* Running still gets a rim, because "working" is a thing you glance at
          rather than read. Everything else is the face's job. */
       .av .ring {
@@ -732,7 +737,7 @@
           const eyes =
             '<circle class="ink" cx="8.4" cy="11.4" r="2.9"/><circle class="ink" cx="15.6" cy="11.4" r="2.9"/>';
           const brows =
-            '<path class="inkstroke" d="M6.2 7.7q2.4-1.4 4.8-.3"/><path class="inkstroke" d="M17.8 7.7q-2.4-1.4-4.8-.3"/>';
+            '<path class="inkstroke" d="M6.4 8.2q2.3-1.3 4.6-.3"/><path class="inkstroke" d="M17.6 8.2q-2.3-1.3-4.6-.3"/>';
           return browed === false ? eyes : eyes + brows;
         }
         return `<g class="ink">${EYE[pick(EYE_KEYS, bot.id, "e")]}</g>`;
@@ -898,7 +903,7 @@
           "..XXX...",
           ".XXXXX..",
           "XeXXXeX.",
-          "XXXXXXoo",
+          "XXXXXXDD",
           ".XXXXXX.",
           ".DXXXXD.",
           "..X..X..",
@@ -996,7 +1001,7 @@
           "X......X",
           "XXXXXXXX",
           "XeXXXXeX",
-          "XoXXXXoX",
+          "XXXXXXXX",
           "XXXooXXX",
           "XXXXXXXX",
           "DXXXXXXD",
@@ -1005,13 +1010,13 @@
         // whale: spout and a fluke
         rhea: [
           "..D.....",
-          "..D.....",
-          ".XXXXXX.",
-          "XeXXXXXX",
+          "..D....D",
+          ".XXXXXXD",
+          "XeXXXXXD",
           "XXXXXXXX",
-          "XXXXXXXo",
           ".XXXXXX.",
-          "..X..X..",
+          "..XXXX..",
+          "........",
         ],
       };
 
@@ -1046,21 +1051,55 @@
         });
 
         // Eight by eight has no room for X-ed out eyes, so the sprite uses the
-        // conventions that fit: squeezed shut is a wider dark bar, and a brow
-        // is one ink pixel above the eye.
+        // conventions that fit: shut is a lid beside the eye, and wide awake
+        // is a second pixel under it.
         const solid = (x, y) => "XDeo".includes(at(x, y));
+        const isInk = (x, y) => "oe".includes(at(x, y));
+
+        // A lid may only land on body, and only where it touches no ink but
+        // the eye it belongs to. Without that rule it welds the eye to the
+        // nearest mark — on the robot, to its own grille, and the face becomes
+        // one continuous well with no eyes in it.
+        const free = (x, y, ex, ey) =>
+          solid(x, y) &&
+          !isInk(x, y) &&
+          [
+            [x - 1, y],
+            [x + 1, y],
+            [x, y - 1],
+            [x, y + 1],
+          ].every(([nx, ny]) => (nx === ex && ny === ey) || !isInk(nx, ny));
+
+        // Refusing to draw is worse than drawing in second place: a state that
+        // silently declines leaves the face saying "idle" while the bot is
+        // waiting. Each state has an order of preference and takes the first
+        // cell that is free.
+        const grow = (x, y, order) => {
+          for (const [dx, dy] of order)
+            if (free(x + dx, y + dy, x, y)) return put(x + dx, y + dy, PAINT.o);
+          return "";
+        };
 
         let face = "";
         if (state === "failed")
           eyes.forEach(([x, y]) => {
-            // Outward, never inward: two lids growing towards each other meet
-            // in the middle and censor the face.
-            const dx = x < 4 ? -1 : 1;
-            if (solid(x + dx, y)) face += put(x + dx, y, PAINT.o);
+            // Outward first: two lids growing towards each other meet in the
+            // middle and censor the face.
+            const out = x < 4 ? -1 : 1;
+            face += grow(x, y, [
+              [out, 0],
+              [0, 1],
+              [-out, 0],
+            ]);
           });
         if (state === "waiting")
           eyes.forEach(([x, y]) => {
-            if (solid(x, y + 1)) face += put(x, y + 1, PAINT.o);
+            // A taller eye is how a sprite says it is looking at you.
+            face += grow(x, y, [
+              [0, 1],
+              [0, -1],
+              [x < 4 ? -1 : 1, 0],
+            ]);
           });
 
         return `<svg viewBox="-0.5 -0.5 9 9" class="px" aria-hidden="true"><g class="rig">${cells}${face}</g></svg>`;
@@ -1117,7 +1156,16 @@
           `<g class="rig">
              <path class="body" d="${body}"/>
              <g class="eyes">${eyes}</g>
-             ${state === "waiting" ? '<path class="inkstroke" d="M6 6.4q2.6-1.5 5.2-.4"/><path class="inkstroke" d="M18 6.4q-2.6-1.5-5.2-.4"/>' : ""}
+             ${
+               state === "waiting"
+                 ? plan
+                     .map(
+                       ([cx, cy, r]) =>
+                         `<path class="inkstroke" d="M${(cx - r * 0.9).toFixed(1)} ${(cy - r - 0.5).toFixed(1)}q${(r * 0.9).toFixed(1)} -${(r * 0.75).toFixed(1)} ${(r * 1.8).toFixed(1)} 0"/>`,
+                     )
+                     .join("")
+                 : ""
+             }
              ${state === "failed" ? '<path class="inkstroke" d="M9.8 18.4q2.2-2 4.4 0"/>' : ""}
            </g>`,
         );
@@ -1213,7 +1261,7 @@
           why: "Body, crest, eyes and mouth dealt from the id. Nobody picks anything and every bot is a different animal — five bodies × six crests × six eyes × three mouths, so the roster runs out long before the kit does.",
           verdict: [
             ["yes", "Sizes", "Silhouette first: the crest reads before the face does."],
-            ["yes", "Greyscale", "Body shape and crest are both outline channels."],
+            ["mid", "Greyscale", "Crest and body are both outline channels, but a dealt kit can still hand two bots the same pair — Vero and Juno, here."],
             ["yes", "Beyond eight", "540 creatures before colour is asked for anything."],
             ["yes", "Status", "Same face vocabulary as 01, on a body that varies."],
             ["mid", "Cost", "Generated, so no two are wrong in the same way — and none is anyone's favourite either."],
