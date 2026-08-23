@@ -95,7 +95,7 @@
          the phone cannot show. */
       .titles {
         overflow: hidden;
-        max-height: 46px;
+        max-height: 64px;
         transition: max-height 0.2s ease, opacity 0.2s ease;
       }
 
@@ -123,7 +123,7 @@
 
       .toggles button {
         flex: 1;
-        min-height: 40px;
+        min-height: 44px;
         border-radius: var(--r-pill);
         border: 1px solid var(--edge-strong);
         background: var(--raise2);
@@ -382,24 +382,37 @@
       .av .ring {
         position: absolute;
         inset: max(-4px, calc(var(--s) * -0.11));
-        border-radius: 50%;
+        /* The avatar's own shape, one size up: a disc rings as a disc and a
+           tile rings as a tile, instead of a circle cutting the tile's face. */
+        border-radius: inherit;
+        border: max(2px, calc(var(--s) * 0.055)) solid var(--ok);
         /* Three-quarters of a ring with one gap: it reads as "in progress"
            standing still, which is what a reduced-motion reader gets. */
-        background: conic-gradient(
-          from -0.05turn,
-          var(--ok) 0 72%,
-          transparent 73% 100%
+        -webkit-mask: conic-gradient(
+          from var(--spin, -0.05turn),
+          #000 0 72%,
+          transparent 72.5% 100%
         );
-        -webkit-mask:
-          radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 0);
-        mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 0);
+        mask: conic-gradient(
+          from var(--spin, -0.05turn),
+          #000 0 72%,
+          transparent 72.5% 100%
+        );
         animation: spin 1.6s linear infinite;
         z-index: 1;
       }
 
+      /* Animating the gap's angle rather than rotating the box — a spinning
+         rounded square would read as a broken tile. */
+      @property --spin {
+        syntax: "<angle>";
+        inherits: false;
+        initial-value: -18deg;
+      }
+
       @keyframes spin {
         to {
-          transform: rotate(1turn);
+          --spin: 342deg;
         }
       }
 
@@ -407,6 +420,11 @@
         .av .ring {
           animation: none;
         }
+      }
+
+      .v2 .ring,
+      .v3 .ring {
+        border-radius: calc(var(--s) * 0.29 + 4px);
       }
 
       /* ---------------------------------------------------------------- v1
@@ -472,8 +490,8 @@
 
       /* ---------------------------------------------------------------- v4
          Refined blob — the face stays, the geometry stops being a percentage
-         of a size that halves. Eyes have a pixel floor, and under the editor
-         rung the pair collapses into one visor rather than two specks.      */
+         of a size that halves. The eyes have a pixel floor, which is the whole
+         fix: at 28px they are 3.6 × 7.6, a face rather than two specks.      */
       .v4 {
         border-radius: var(--wob, 52% 48% 55% 45% / 48% 54% 46% 52%);
         background: radial-gradient(circle at 32% 28%, var(--lite), var(--deep));
@@ -501,19 +519,6 @@
       .v4::after {
         right: var(--gap, 28%);
         transform: rotate(calc(var(--tilt, -8deg) * -0.75));
-      }
-
-      .v4[data-compact="1"]::before {
-        left: 30%;
-        right: 30%;
-        top: 36%;
-        width: auto;
-        height: max(5px, calc(var(--s) * 0.2));
-        transform: none;
-      }
-
-      .v4[data-compact="1"]::after {
-        display: none;
       }
 
       /* ---------------------------------------------------------------- v5
@@ -556,7 +561,7 @@
 
       .v5[data-fill="split"] .fill {
         background: linear-gradient(
-          118deg,
+          to right,
           var(--lite) 0 50%,
           var(--deeper) 50% 100%
         );
@@ -615,29 +620,20 @@
 
       .cluster i {
         position: absolute;
-        width: 57%;
-        height: 57%;
-        border-radius: 52% 48% 55% 45% / 48% 54% 46% 52%;
+        display: block;
       }
 
-      .cluster[data-shape="disc"] i {
-        border-radius: 50%;
-      }
-
-      .cluster i:nth-child(1) {
+      .cluster .s1 {
         top: 0;
         left: 20%;
-        background: radial-gradient(circle at 32% 28%, #6fe0c0, #2fb894);
       }
-      .cluster i:nth-child(2) {
+      .cluster .s2 {
         bottom: 0;
         left: 0;
-        background: radial-gradient(circle at 32% 28%, #9c8cff, #6c55e8);
       }
-      .cluster i:nth-child(3) {
+      .cluster .s3 {
         bottom: 0;
         right: 0;
-        background: radial-gradient(circle at 32% 28%, #c08bff, #9257e8);
       }
 
       /* The code-session avatar as the app draws it today, for comparison. */
@@ -768,8 +764,8 @@
       </div>
       <div class="toggles">
         <button id="t-grey" aria-pressed="false">Greyscale</button>
-        <button id="t-theme" aria-pressed="false">Light theme</button>
-        <button id="t-state" aria-pressed="true">Status + unread</button>
+        <button id="t-theme" aria-pressed="false">Light</button>
+        <button id="t-state" aria-pressed="true">States</button>
       </div>
     </header>
 
@@ -937,12 +933,17 @@
       const FILL_OF = (() => {
         const taken = {};
         const out = {};
+        // "solid" is the absence of a pattern, so it is spent once across the
+        // whole crew — two pattern-free bots would be leaning on colour again.
+        let plainSpent = false;
         for (const b of BOTS) {
           const seat = (taken[TONE[b.c]] ||= new Set());
+          const free = (f) => !seat.has(f) && !(f === "solid" && plainSpent);
           let i = hash(b.id + "f") % FILLS.length;
-          for (let n = 0; n < FILLS.length && seat.has(FILLS[i]); n++)
+          for (let n = 0; n < FILLS.length && !free(FILLS[i]); n++)
             i = (i + 1) % FILLS.length;
           seat.add(FILLS[i]);
+          if (FILLS[i] === "solid") plainSpent = true;
           out[b.id] = FILLS[i];
         }
         return out;
@@ -1015,17 +1016,26 @@
           ([s, label], i) =>
             `<figure>${avatar(kind, BOTS[i + 1], 44, {
               state: s,
-              unread: s === "waiting",
+              // Failed carries the dot too: red badge under red dot is
+              // the one pairing that has to be looked at, not assumed.
+              unread: s === "waiting" || s === "failed",
             })}<figcaption>${label}</figcaption></figure>`,
         ).join("")}</div>`;
 
       // Bot / crew / code session in each candidate's own grammar.
+      // Three of the candidate's own marks, not three blobs — the crew is the
+      // one avatar that is not a single bot, and it should still be built out
+      // of whatever the candidate says a bot looks like.
+      const crewOf = (kind) => {
+        const trio = [BOTS[0], BOTS[2], BOTS[3]];
+        return `<span class="cluster" style="--s:44px">${trio
+          .map((b, i) => `<i class="s${i + 1}">${avatar(kind, b, 25)}</i>`)
+          .join("")}</span>`;
+      };
+
       const roleRow = (kind) => {
         const bot = avatar(kind, BOTS[0], 44);
-        const crew =
-          kind === "v5" || kind === "v2"
-            ? `<span class="cluster" data-shape="disc" style="--s:44px"><i></i><i></i><i></i></span>`
-            : `<span class="cluster" style="--s:44px"><i></i><i></i><i></i></span>`;
+        const crew = crewOf(kind);
         const code =
           kind === "v5"
             ? avatar(kind, BOTS[3], 44, { shape: "code" })
@@ -1086,9 +1096,9 @@
         {
           kind: "v4",
           title: "Refined blob",
-          why: "Keep the face, fix the geometry: eyes get a pixel floor instead of a percentage of a shrinking box, and under the editor rung the pair collapses into one visor. Wobble and eye tilt now hash from the id, so two teal bots are not the same blob.",
+          why: "Keep the face, fix the geometry: the eyes get a pixel floor instead of a percentage of a shrinking box, so at 28px they are 3.6 × 7.6 rather than two specks. Wobble, eye gap, eye height and tilt now hash from the id, so two teal bots are not the same blob.",
           verdict: [
-            ["yes", "Sizes", "3px floor and the visor keep 28px deliberate."],
+            ["yes", "Sizes", "The pixel floor, not a percentage, is what keeps 28px a face."],
             [
               "no",
               "Greyscale",
@@ -1131,7 +1141,9 @@
         <p class="note">
           Idle draws nothing on purpose — most bots are idle most of the time.
           The red dot keeps the top-right corner and means unread; status takes
-          the bottom-right, and running takes the rim.
+          the bottom-right, and running takes the rim. The last two carry both
+          at once: failed under unread is red on red, which is the pairing to
+          judge rather than assume.
         </p>
         <div class="lbl">Bot · crew · code session</div>
         ${roleRow(c.kind)}
@@ -1179,7 +1191,7 @@
             ).join("")}</div>`,
         ).join("")}</div>
         <p class="note">
-          Left to right: Chief/Vero teal · Scout/Kilo yellow · Mira/Juno purple
+          In reading order: Chief/Vero teal · Scout/Kilo yellow · Mira/Juno purple
           · Nova/Rhea blue. Turn on greyscale and run the row again.
         </p>
         <div class="lbl">Two S names at 28px — Scout vs Sage</div>
