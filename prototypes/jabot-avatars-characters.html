@@ -355,6 +355,12 @@
         right: -4px;
       }
 
+      /* A sprite's antennae reach the corner too, so the dot sits off it. */
+      .av.m4 .dot {
+        top: -3px;
+        right: -3px;
+      }
+
       /* Running still gets a rim, because "working" is a thing you glance at
          rather than read. Everything else is the face's job. */
       .av .ring {
@@ -1306,8 +1312,10 @@
         ${stateRow(c.kind)}
         <p class="note">
           Idle is the bot's own face. The rest are the state's: the red dot
-          still means unread and keeps its corner, and running keeps the rim,
-          but waiting and failed are said with the eyes instead of a badge.
+          still means unread and running still keeps the rim, but waiting and
+          failed are said with the eyes instead of a badge. The dot takes the
+          top-right corner except on the hat crew, where the corner is already
+          spoken for.
         </p>
         <div class="lbl">Bot · crew · code session</div>
         ${roleRow(c.kind)}
