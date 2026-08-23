@@ -344,6 +344,12 @@
         z-index: 3;
       }
 
+      /* The hat owns the top of the mark, so the dot takes the shoulder. */
+      .av.m2 .dot {
+        top: 26%;
+        right: -2px;
+      }
+
       /* Running still gets a rim, because "working" is a thing you glance at
          rather than read. Everything else is the face's job. */
       .av .ring {
@@ -714,18 +720,21 @@
 
       // State overrides the bot's own eyes: a face is worth having because it
       // can say something the rim cannot.
-      const EYES_FOR = (bot, state) => {
+      const EYES_FOR = (bot, state, browed = true) => {
         if (state === "running")
           // squinting at the work
           return '<path class="inkstroke" d="M6.4 12.2q2.2-2.6 4.4 0"/><path class="inkstroke" d="M13.2 12.2q2.2-2.6 4.4 0"/>';
         if (state === "failed")
           return '<path class="inkstroke" d="M6.6 9.8l3.6 3.4M10.2 9.8l-3.6 3.4"/><path class="inkstroke" d="M13.8 9.8l3.6 3.4M17.4 9.8l-3.6 3.4"/>';
-        if (state === "waiting")
-          // eyes up and open, brows raised — the look of someone waiting
-          return (
-            '<circle class="ink" cx="8.4" cy="11.4" r="2.9"/><circle class="ink" cx="15.6" cy="11.4" r="2.9"/>' +
-            '<path class="inkstroke" d="M5.8 6.9q2.6-1.5 5.2-.3"/><path class="inkstroke" d="M18.2 6.9q-2.6-1.5-5.2-.3"/>'
-          );
+        if (state === "waiting") {
+          // Eyes up and open. The brows are the tell, but under a brim they
+          // fuse into one black slab, so a hatted head raises its eyes only.
+          const eyes =
+            '<circle class="ink" cx="8.4" cy="11.4" r="2.9"/><circle class="ink" cx="15.6" cy="11.4" r="2.9"/>';
+          const brows =
+            '<path class="inkstroke" d="M5.8 6.9q2.6-1.5 5.2-.3"/><path class="inkstroke" d="M18.2 6.9q-2.6-1.5-5.2-.3"/>';
+          return browed === false ? eyes : eyes + brows;
+        }
         return `<g class="ink">${EYE[pick(EYE_KEYS, bot.id, "e")]}</g>`;
       };
 
@@ -740,7 +749,7 @@
           [
             '<path class="inkstroke" d="M10.6 16q1.4 1.1 2.8 0"/>',
             '<path class="inkstroke" d="M10.8 16.2h2.4"/>',
-            '<circle class="ink" cx="12" cy="16.2" r="0.9"/>',
+            '<path class="inkstroke" d="M10.6 16.4q1.4-1 2.8 0"/>',
           ],
           bot.id,
           "m",
@@ -767,10 +776,20 @@
         "M12 3c4.4 0 7 3 7 7.4 0 4-3 4.6-3 7.2 0 2.2-1.6 3.6-4 3.6s-4-1.4-4-3.6c0-2.6-3-3.2-3-7.2C5 6 7.6 3 12 3z",
       ];
 
+      const TUFT = [
+        '<path class="body" d="M11.4 3.6c-.2-2 .8-3.2 2.2-3.4-.4 1.6.2 2.4 1 3z"/>',
+        '<path class="body" d="M11.6 3.4c-1.4-1.4-1.2-2.8-.2-3.4.4 1.4 1.4 1.8 2.4 1.8-.6 1-1.4 1.5-2.2 1.6z"/>',
+        '<path class="body" d="M9.6 4.2 10.4 1l2 2.2L14 .8l1 3.4z"/>',
+        '<path class="body" d="M12 3.8c0-2.4 1.6-3.4 3.2-3-.2 1.4-.8 2.2-1.6 2.6.8.4 1.2 1 1.2 1.8z"/>',
+        '<ellipse class="body" cx="7.4" cy="7.4" rx="2.4" ry="1.9"/><ellipse class="body" cx="16.6" cy="7.4" rx="2.4" ry="1.9"/>',
+      ];
+
       const moodblob = (bot, state) => {
         const body = pick(WOBBLE, bot.id, "w");
+        const tuft = pick(TUFT, bot.id, "t");
         return svg(
           `<g class="rig">
+             ${tuft}
              <path class="body" d="${body}"/>
              <path class="belly" d="${body}" opacity="0.55" transform="translate(-0.6 -0.9) scale(0.94)" transform-origin="12 12"/>
              <g class="eyes">${EYES_FOR(bot, state)}</g>
@@ -785,22 +804,21 @@
       // that survives greyscale and 28px without needing to be read.
       // =====================================================================
       const HATS = {
-        ears: '<path class="litefill" d="M5.6 8.4 6.9 1.9l4.7 3.6z"/><path class="litefill" d="M18.4 8.4 17.1 1.9l-4.7 3.6z"/>',
+        ears: '<path class="litefill" d="M4.8 10.4 5.2 2.8l5 5.2z"/><path class="litefill" d="M19.2 10.4 18.8 2.8l-5 5.2z"/>',
         antenna:
-          '<path d="M12 5.4V2.4" stroke="var(--lite)" stroke-width="1.6" stroke-linecap="round"/><circle class="litefill" cx="12" cy="1.6" r="1.9"/>',
-        horn: '<path class="litefill" d="M12 5.6 9.7 4.4 12 .6l2.3 3.8z"/>',
+          '<path d="M12 5.4V2.4" stroke="var(--on-color)" stroke-width="3" stroke-linecap="round"/><path d="M12 5.4V2.4" stroke="var(--lite)" stroke-width="1.6" stroke-linecap="round"/><circle class="litefill" cx="12" cy="1.6" r="1.9"/>',
+        horn: '<path class="litefill" d="M12 6.4 8.9 4.8 12 .2l3.1 4.6z"/>',
         cap: '<path class="litefill" d="M4.6 6.4a7.4 6.2 0 0 1 14.8 0z"/><rect class="litefill" x="2.6" y="5.6" width="18.8" height="2.4" rx="1.2"/>',
-        halo: '<ellipse cx="12" cy="2.6" rx="5.4" ry="2" fill="none" stroke="var(--lite)" stroke-width="1.9"/>',
-        cans: '<path d="M4.4 8.6a7.6 7.6 0 0 1 15.2 0" fill="none" stroke="var(--lite)" stroke-width="1.9"/><rect class="litefill" x="2" y="6.4" width="4.2" height="5.2" rx="1.8"/><rect class="litefill" x="17.8" y="6.4" width="4.2" height="5.2" rx="1.8"/>',
+        halo: '<ellipse cx="12" cy="2.6" rx="5.4" ry="2" fill="none" stroke="var(--on-color)" stroke-width="3.4"/><ellipse cx="12" cy="2.6" rx="5.4" ry="2" fill="none" stroke="var(--lite)" stroke-width="1.9"/>',
+        cans: '<path d="M4.4 8.6a7.6 7.6 0 0 1 15.2 0" fill="none" stroke="var(--on-color)" stroke-width="3.4"/><path d="M4.4 8.6a7.6 7.6 0 0 1 15.2 0" fill="none" stroke="var(--lite)" stroke-width="1.9"/><rect class="litefill" x="2" y="6.4" width="4.2" height="5.2" rx="1.8"/><rect class="litefill" x="17.8" y="6.4" width="4.2" height="5.2" rx="1.8"/>',
         sprout:
-          '<path d="M12 6.4V3" stroke="var(--lite)" stroke-width="1.6" stroke-linecap="round"/><path class="litefill" d="M12 3.6c0-2.6 2.4-3.6 4.2-3.2.2 2.2-1.8 3.8-4.2 3.2z"/>',
-        spikes:
-          '<path class="litefill" d="M5.6 8 8 2.4l1.8 2.8L12 .8l2.2 4.4L16 2.4 18.4 8z"/>',
-        bow: '<path class="litefill" d="M12 5 6.4 1.8v6.4z"/><path class="litefill" d="M12 5l5.6-3.2v6.4z"/><circle class="litefill" cx="12" cy="5" r="1.6"/>',
+          '<path d="M12 6.4V3" stroke="var(--on-color)" stroke-width="3" stroke-linecap="round"/><path d="M12 6.4V3" stroke="var(--lite)" stroke-width="1.6" stroke-linecap="round"/><path class="litefill" d="M12 3.6c0-2.6 2.4-3.6 4.2-3.2.2 2.2-1.8 3.8-4.2 3.2z"/>',
+        tuft: '<path class="litefill" d="M5.8 9.2c0-2.4 1.5-3.6 2.9-3.4C8.9 3.4 10.4 2 12 2s3.1 1.4 3.3 3.8c1.4-.2 2.9 1 2.9 3.4z"/>',
+        bow: '<path class="litefill" d="M11.2 6.2 6.6 2.9l-.8 5.9z"/><path class="litefill" d="M12.8 6.2l4.6-3.3.8 5.9z"/><circle class="litefill" cx="12" cy="6.4" r="1.7"/>',
         crown:
           '<path class="litefill" d="M4.8 8V1.6l3 2.4L12 .4l4.2 3.6 3-2.4V8z"/>',
         rotor:
-          '<path d="M12 6.8V3.4" stroke="var(--lite)" stroke-width="1.6" stroke-linecap="round"/><path class="litefill" d="M12 3c-2.8-2.2-5.8-.9-5.8.6 2.8 1.5 4.8.5 5.8-.6zM12 3c2.8-2.2 5.8-.9 5.8.6-2.8 1.5-4.8.5-5.8-.6z"/>',
+          '<path d="M12 6.8V3.4" stroke="var(--on-color)" stroke-width="3" stroke-linecap="round"/><path d="M12 6.8V3.4" stroke="var(--lite)" stroke-width="1.6" stroke-linecap="round"/><path class="litefill" d="M12 3c-2.8-2.2-5.8-.9-5.8.6 2.8 1.5 4.8.5 5.8-.6zM12 3c2.8-2.2 5.8-.9 5.8.6-2.8 1.5-4.8.5-5.8-.6z"/>',
         bucket:
           '<path class="litefill" d="M6.9 8V4.6a5.1 5.1 0 0 1 10.2 0V8z"/><rect class="litefill" x="3.4" y="6.6" width="17.2" height="2.6" rx="1.3"/>',
       };
@@ -817,7 +835,7 @@
              ${HATS[HAT_OF[bot.id]]}
              <circle class="body" cx="12" cy="14.6" r="7.4"/>
              <circle class="belly" cx="10.4" cy="12.8" r="5.2" opacity="0.5"/>
-             <g class="eyes" transform="translate(0 2.4)">${EYES_FOR(bot, state)}</g>
+             <g class="eyes" transform="translate(0 2.4)">${EYES_FOR(bot, state, false)}</g>
              <g transform="translate(0 2.4)">${MOUTH_FOR(bot, state)}</g>
            </g>`,
         );
@@ -835,7 +853,7 @@
       ];
 
       const CREST = [
-        "",
+        '<path class="body" d="M8.4 8.6c0-2 1.4-3 2.6-2.8C11.2 3.6 11.6 2.4 12 2.4s.8 1.2 1 3.4c1.2-.2 2.6.8 2.6 2.8z"/>',
         '<path class="body" d="M5.8 9 7 3.4l4.4 3.2z"/><path class="body" d="M18.2 9 17 3.4l-4.4 3.2z"/>',
         '<path d="M12 6.6V3.2" stroke="var(--deep)" stroke-width="1.6" stroke-linecap="round"/><circle class="body" cx="12" cy="2.4" r="1.7"/>',
         '<path class="body" d="M12 6.6 9.9 5.4 12 1.8l2.1 3.6z"/>',
@@ -860,35 +878,37 @@
       // is 3.5 real pixels, which is what the format always was.
       // =====================================================================
       // X body, D shade, o ink, . nothing
+      // Legend: X body, D shade, o ink, e an eye. Eyes get their own letter
+      // because the state faces have to find them, and an antenna is ink too.
       const SPRITES = {
         // cat: ears out at the corners
         chief: [
           "XX....XX",
           "XXX..XXX",
           ".XXXXXX.",
-          "XoXXXXoX",
+          "XeXXXXeX",
           "XXXXXXXX",
           "XXXooXXX",
           "DXXXXXXD",
           ".XX..XX.",
         ],
-        // bird: crest and a beak that leaves the body
+        // bird: crest, and a beak that leaves the body
         scout: [
           "...X....",
           "..XXX...",
           ".XXXXX..",
-          "XoXXXXo.",
+          "XeXXXXe.",
           "XXXXXXoo",
           ".XXXXXX.",
           ".DXXXXD.",
           "..X..X..",
         ],
-        // moth: two antennae, wide wings
+        // moth: two antennae in body shade so they stay attached
         mira: [
-          "o......o",
-          ".o....o.",
+          "D......D",
+          ".D....D.",
           "..XXXX..",
-          ".XoXXoX.",
+          ".XeXXeX.",
           "XXXXXXXX",
           "XXXXXXXX",
           "DXX..XXD",
@@ -896,10 +916,10 @@
         ],
         // robot: flat head, one aerial, a grille
         atlas: [
-          "...o....",
+          "...D....",
           "...X....",
           "XXXXXXXX",
-          "XoXXXXoX",
+          "XeXXXXeX",
           "XXXXXXXX",
           "XooooooX",
           "XXXXXXXX",
@@ -910,7 +930,7 @@
           "...X....",
           "..XXX...",
           "XXXXXXXX",
-          ".XoXXoX.",
+          ".XeXXeX.",
           "..XXXX..",
           ".XXXXXX.",
           "XX.XX.XX",
@@ -921,7 +941,7 @@
           "....X...",
           "...XX...",
           "..XXXX..",
-          ".XoXXoX.",
+          ".XeXXeX.",
           "XXXXXXXX",
           "XXXooXXX",
           "DXXXXXXD",
@@ -932,7 +952,7 @@
           "..XXXX..",
           ".XXXXXX.",
           "XXXXXXXX",
-          "XoXXXXoX",
+          "XeXXXXeX",
           "XXXXXXXX",
           "XXXooXXX",
           "XXXXXXXX",
@@ -943,19 +963,19 @@
           "..XXXX..",
           ".XXXXXX.",
           "XXXXXXXX",
-          "XXoXXoXX",
+          "XXeXXeXX",
           ".DXXXXD.",
           "..XXXX..",
           "..XooX..",
           "..XXXX..",
         ],
-        // fish: tail off the right edge
+        // fish: one eye, tail off the right edge
         vero: [
           "..XXX...",
           ".XXXXX.X",
-          "XoXXXXXX",
+          "XeXXXXXX",
           "XXXXXXXX",
-          "XoXXXXXX",
+          "XXXXXXXX",
           ".XXXXX.X",
           "..XXX...",
           "........",
@@ -965,7 +985,7 @@
           "X......X",
           "XX....XX",
           ".XXXXXX.",
-          ".XoXXoX.",
+          ".XeXXeX.",
           "XXXXXXXX",
           "XXXooXXX",
           "XX.XX.XX",
@@ -975,7 +995,7 @@
         juno: [
           "X......X",
           "XXXXXXXX",
-          "XoXXXXoX",
+          "XeXXXXeX",
           "XoXXXXoX",
           "XXXooXXX",
           "XXXXXXXX",
@@ -984,10 +1004,10 @@
         ],
         // whale: spout and a fluke
         rhea: [
-          "..o.....",
-          "..X.....",
+          "..D.....",
+          "..D.....",
           ".XXXXXX.",
-          "XoXXXXXX",
+          "XeXXXXXX",
           "XXXXXXXX",
           "XXXXXXXo",
           ".XXXXXX.",
@@ -995,7 +1015,12 @@
         ],
       };
 
-      const PAINT = { X: "var(--lite)", D: "var(--deep)", o: "var(--on-color)" };
+      const PAINT = {
+        X: "var(--lite)",
+        D: "var(--deep)",
+        o: "var(--on-color)",
+        e: "var(--on-color)",
+      };
 
       const pixelpet = (bot, state) => {
         const rows = SPRITES[bot.id] || SPRITES.chief;
@@ -1008,9 +1033,10 @@
         const eyes = [];
         rows.forEach((row, y) => {
           [...row].forEach((ch, x) => {
-            if (ch === "o" && y <= 3) eyes.push([x, y]);
+            if (ch === "e") eyes.push([x, y]);
           });
         });
+        const at = (x, y) => (rows[y] || "")[x] || ".";
 
         let cells = "";
         rows.forEach((row, y) => {
@@ -1025,11 +1051,13 @@
         let face = "";
         if (state === "failed")
           eyes.forEach(([x, y]) => {
-            face += put(x - 1, y, PAINT.o) + put(x + 1, y, PAINT.o);
+            // one pixel inward: two short dashes, and the face stays a face
+            face += put(x + (x < 4 ? 1 : -1), y, PAINT.o);
           });
         if (state === "waiting")
           eyes.forEach(([x, y]) => {
-            face += put(x, y - 1, PAINT.o);
+            // a brow only where there is head to put it on
+            if (at(x, y - 1) === "X") face += put(x, y - 1, PAINT.o);
           });
 
         return `<svg viewBox="-0.5 -0.5 9 9" class="px" aria-hidden="true"><g class="rig">${cells}${face}</g></svg>`;
@@ -1087,6 +1115,7 @@
              <path class="body" d="${body}"/>
              <g class="eyes">${eyes}</g>
              ${state === "waiting" ? '<path class="inkstroke" d="M5.6 5.6q2.8-1.6 5.6-.4"/><path class="inkstroke" d="M18.4 5.6q-2.8-1.6-5.6-.4"/>' : ""}
+             ${state === "failed" ? '<path class="inkstroke" d="M9.8 18.4q2.2-2 4.4 0"/>' : ""}
            </g>`,
         );
       };
@@ -1154,11 +1183,11 @@
         {
           kind: "m1",
           title: "Moodblob",
-          why: "The blob we already ship, with a face that answers back. Its own eyes and mouth are dealt from the id; the state takes them over — squinting while it works, wide-eyed and browed when it needs you, screwed shut when it failed. Every one of them blinks on its own clock.",
+          why: "The blob we already ship, with a face that answers back and a bit of itself sticking out — a cowlick, a curl, a pair of nubs. Its eyes, mouth and tuft are dealt from the id; the state takes the face over, squinting while it works, wide-eyed and browed when it needs you, screwed shut when it failed. Every one blinks on its own clock.",
           verdict: [
             ["yes", "Sizes", "The face is drawn in a 24-unit box, so 28px is the same face, not a shrunken one."],
-            ["mid", "Greyscale", "Six eye shapes and three mouths is a real channel, but a narrow one."],
-            ["mid", "Beyond eight", "18 faces × 8 colours, and two teal bots differ by a squint."],
+            ["mid", "Greyscale", "The tuft puts something in the outline; the face alone was never going to carry it."],
+            ["mid", "Beyond eight", "5 tufts × 6 eyes × 3 mouths, but the differences are small talk next to a hat."],
             ["yes", "Status", "The face carries it. No badge, no corner to fight the unread dot over."],
             ["yes", "Cost", "Smallest change on either page — it is the blob, awake."],
           ],
