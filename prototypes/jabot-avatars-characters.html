@@ -921,25 +921,25 @@
         ],
         // robot: flat head, one aerial, a grille
         atlas: [
-          "...D....",
-          "...X....",
+          "..D..D..",
           "XXXXXXXX",
-          "XeXXXXeX",
+          "XXeXXeXX",
           "XXXXXXXX",
-          "XooooooX",
+          "XXooooXX",
           "XXXXXXXX",
-          "XX....XX",
+          ".XXXXXX.",
+          ".X....X.",
         ],
         // star
         nova: [
-          "...X....",
-          "..XXX...",
+          "...XX...",
+          "..XXXX..",
           "XXXXXXXX",
           ".XeXXeX.",
-          "..XXXX..",
           ".XXXXXX.",
+          "XXXXXXXX",
           "XX.XX.XX",
-          "X.......",
+          "X......X",
         ],
         // flame
         ember: [
@@ -1023,8 +1023,8 @@
       const PAINT = {
         X: "var(--lite)",
         D: "var(--deep)",
-        o: "var(--on-color)",
-        e: "var(--on-color)",
+        o: "var(--deeper)",
+        e: "var(--deeper)",
       };
 
       const pixelpet = (bot, state) => {
@@ -1056,10 +1056,10 @@
         const solid = (x, y) => "XDeo".includes(at(x, y));
         const isInk = (x, y) => "oe".includes(at(x, y));
 
-        // A lid may only land on body, and only where it touches no ink but
-        // the eye it belongs to. Without that rule it welds the eye to the
-        // nearest mark — on the robot, to its own grille, and the face becomes
-        // one continuous well with no eyes in it.
+        // A lid lands on body, and touches no ink but the eye it belongs to.
+        // Without the second half it welds the eye to the nearest mark — on
+        // the robot, to its own grille, and the face becomes one continuous
+        // well with no eyes in it.
         const free = (x, y, ex, ey) =>
           solid(x, y) &&
           !isInk(x, y) &&
@@ -1251,7 +1251,7 @@
             ["yes", "Sizes", "A hat is a bump on the silhouette; bumps survive the chat header."],
             ["yes", "Greyscale", "Outline is the signal, so hue is spare capacity."],
             ["yes", "Beyond eight", "Twelve hats × 8 colours, and hats are a set anyone can add to."],
-            ["yes", "Status", "Face for state, hat for identity — they never compete."],
+            ["yes", "Status", "Face for state, hat for identity. A hatted head raises its eyes without brows — under a brim the two fuse into one slab."],
             ["mid", "Cost", "Somebody draws a hat per bot, and the crew has a house style to keep."],
           ],
         },
@@ -1273,7 +1273,7 @@
           why: "Eight by eight, hand-drawn, two paints and an ink. A sprite is the one drawing style designed for small — at 28px each pixel is three and a half real ones, which is the size the format always assumed.",
           verdict: [
             ["yes", "Sizes", "Crisp at every rung; the grid is the format, not a compromise."],
-            ["yes", "Greyscale", "Two paints and hard edges — the strongest greyscale on either page."],
+            ["yes", "Greyscale", "Three tones and hard edges — the strongest greyscale on either page."],
             ["mid", "Beyond eight", "A new bot needs a new sprite drawn, which is charm with a cost attached."],
             ["mid", "Status", "Two pixels of eye: taller for waiting, a shut lid for failed. It reads at 44 and is a squint at 28."],
             ["no", "Cost", "Someone has to be the pixel artist, forever."],
@@ -1285,7 +1285,7 @@
           why: "One, two or three eyes, and they follow the page as you scroll. A bot that needs you stops looking around and looks straight at you — a status channel neither a badge nor a colour can do, and the only one on either page you notice without looking for it.",
           verdict: [
             ["yes", "Sizes", "Eyes are the biggest feature on the mark, so 28px loses least."],
-            ["yes", "Greyscale", "One eye, two eyes and three eyes are three silhouettes."],
+            ["mid", "Greyscale", "One, two and three eyes are three silhouettes — but only five arrangements, so Chief, Ember and Juno are the same mark with colour off."],
             ["mid", "Beyond eight", "Five arrangements × 8 colours; past that the eyes repeat."],
             ["yes", "Status", "Gaze. A bot that needs you is looking at you from across the sidebar."],
             ["mid", "Cost", "Motion in the sidebar is a decision, not a detail — and reduced-motion has to still work."],
