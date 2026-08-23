@@ -346,8 +346,8 @@
 
       /* The hat owns the top of the mark, so the dot takes the shoulder. */
       .av.m2 .dot {
-        top: 26%;
-        right: -2px;
+        top: 28%;
+        right: -3px;
       }
 
       /* Running still gets a rim, because "working" is a thing you glance at
@@ -732,7 +732,7 @@
           const eyes =
             '<circle class="ink" cx="8.4" cy="11.4" r="2.9"/><circle class="ink" cx="15.6" cy="11.4" r="2.9"/>';
           const brows =
-            '<path class="inkstroke" d="M5.8 6.9q2.6-1.5 5.2-.3"/><path class="inkstroke" d="M18.2 6.9q-2.6-1.5-5.2-.3"/>';
+            '<path class="inkstroke" d="M6.2 7.7q2.4-1.4 4.8-.3"/><path class="inkstroke" d="M17.8 7.7q-2.4-1.4-4.8-.3"/>';
           return browed === false ? eyes : eyes + brows;
         }
         return `<g class="ink">${EYE[pick(EYE_KEYS, bot.id, "e")]}</g>`;
@@ -807,7 +807,7 @@
         ears: '<path class="litefill" d="M4.8 10.4 5.2 2.8l5 5.2z"/><path class="litefill" d="M19.2 10.4 18.8 2.8l-5 5.2z"/>',
         antenna:
           '<path d="M12 5.4V2.4" stroke="var(--on-color)" stroke-width="3" stroke-linecap="round"/><path d="M12 5.4V2.4" stroke="var(--lite)" stroke-width="1.6" stroke-linecap="round"/><circle class="litefill" cx="12" cy="1.6" r="1.9"/>',
-        horn: '<path class="litefill" d="M12 6.4 8.9 4.8 12 .2l3.1 4.6z"/>',
+        horn: '<path class="litefill" d="M12 9.6 8.9 5.4 12 .2l3.1 5.2z"/>',
         cap: '<path class="litefill" d="M4.6 6.4a7.4 6.2 0 0 1 14.8 0z"/><rect class="litefill" x="2.6" y="5.6" width="18.8" height="2.4" rx="1.2"/>',
         halo: '<ellipse cx="12" cy="2.6" rx="5.4" ry="2" fill="none" stroke="var(--on-color)" stroke-width="3.4"/><ellipse cx="12" cy="2.6" rx="5.4" ry="2" fill="none" stroke="var(--lite)" stroke-width="1.9"/>',
         cans: '<path d="M4.4 8.6a7.6 7.6 0 0 1 15.2 0" fill="none" stroke="var(--on-color)" stroke-width="3.4"/><path d="M4.4 8.6a7.6 7.6 0 0 1 15.2 0" fill="none" stroke="var(--lite)" stroke-width="1.9"/><rect class="litefill" x="2" y="6.4" width="4.2" height="5.2" rx="1.8"/><rect class="litefill" x="17.8" y="6.4" width="4.2" height="5.2" rx="1.8"/>',
@@ -853,11 +853,11 @@
       ];
 
       const CREST = [
-        '<path class="body" d="M8.4 8.6c0-2 1.4-3 2.6-2.8C11.2 3.6 11.6 2.4 12 2.4s.8 1.2 1 3.4c1.2-.2 2.6.8 2.6 2.8z"/>',
-        '<path class="body" d="M5.8 9 7 3.4l4.4 3.2z"/><path class="body" d="M18.2 9 17 3.4l-4.4 3.2z"/>',
-        '<path d="M12 6.6V3.2" stroke="var(--deep)" stroke-width="1.6" stroke-linecap="round"/><circle class="body" cx="12" cy="2.4" r="1.7"/>',
-        '<path class="body" d="M12 6.6 9.9 5.4 12 1.8l2.1 3.6z"/>',
-        '<path class="body" d="M7.6 8.2 9.4 3.6l1.4 2.2L12 2.6l1.2 3.2 1.4-2.2 1.8 4.6z"/>',
+        '<path class="body" d="M8.4 10.8c0-3.4 1.4-4.6 2.6-4.4C11.2 3.6 11.6 2.4 12 2.4s.8 1.2 1 4c1.2-.2 2.6 1 2.6 4.4z"/>',
+        '<path class="body" d="M5.4 11.2 7 3.4l4.8 4.6z"/><path class="body" d="M18.6 11.2 17 3.4l-4.8 4.6z"/>',
+        '<path d="M12 10V3.2" stroke="var(--deep)" stroke-width="1.6" stroke-linecap="round"/><circle class="body" cx="12" cy="2.4" r="1.7"/>',
+        '<path class="body" d="M12 10.4 9.9 5.6 12 1.8l2.1 3.8z"/>',
+        '<path class="body" d="M7.6 10.6 9.4 3.6l1.4 2.2L12 2.6l1.2 3.2 1.4-2.2 1.8 7z"/>',
         '<ellipse class="body" cx="4.4" cy="12.4" rx="2.4" ry="3.4"/><ellipse class="body" cx="19.6" cy="12.4" rx="2.4" ry="3.4"/>',
       ];
 
@@ -897,7 +897,7 @@
           "...X....",
           "..XXX...",
           ".XXXXX..",
-          "XeXXXXe.",
+          "XeXXXeX.",
           "XXXXXXoo",
           ".XXXXXX.",
           ".DXXXXD.",
@@ -1048,16 +1048,19 @@
         // Eight by eight has no room for X-ed out eyes, so the sprite uses the
         // conventions that fit: squeezed shut is a wider dark bar, and a brow
         // is one ink pixel above the eye.
+        const solid = (x, y) => "XDeo".includes(at(x, y));
+
         let face = "";
         if (state === "failed")
           eyes.forEach(([x, y]) => {
-            // one pixel inward: two short dashes, and the face stays a face
-            face += put(x + (x < 4 ? 1 : -1), y, PAINT.o);
+            // Outward, never inward: two lids growing towards each other meet
+            // in the middle and censor the face.
+            const dx = x < 4 ? -1 : 1;
+            if (solid(x + dx, y)) face += put(x + dx, y, PAINT.o);
           });
         if (state === "waiting")
           eyes.forEach(([x, y]) => {
-            // a brow only where there is head to put it on
-            if (at(x, y - 1) === "X") face += put(x, y - 1, PAINT.o);
+            if (solid(x, y + 1)) face += put(x, y + 1, PAINT.o);
           });
 
         return `<svg viewBox="-0.5 -0.5 9 9" class="px" aria-hidden="true"><g class="rig">${cells}${face}</g></svg>`;
@@ -1114,7 +1117,7 @@
           `<g class="rig">
              <path class="body" d="${body}"/>
              <g class="eyes">${eyes}</g>
-             ${state === "waiting" ? '<path class="inkstroke" d="M5.6 5.6q2.8-1.6 5.6-.4"/><path class="inkstroke" d="M18.4 5.6q-2.8-1.6-5.6-.4"/>' : ""}
+             ${state === "waiting" ? '<path class="inkstroke" d="M6 6.4q2.6-1.5 5.2-.4"/><path class="inkstroke" d="M18 6.4q-2.6-1.5-5.2-.4"/>' : ""}
              ${state === "failed" ? '<path class="inkstroke" d="M9.8 18.4q2.2-2 4.4 0"/>' : ""}
            </g>`,
         );
@@ -1224,7 +1227,7 @@
             ["yes", "Sizes", "Crisp at every rung; the grid is the format, not a compromise."],
             ["yes", "Greyscale", "Two paints and hard edges — the strongest greyscale on either page."],
             ["mid", "Beyond eight", "A new bot needs a new sprite drawn, which is charm with a cost attached."],
-            ["mid", "Status", "The face is four pixels, so failed reads and the rest lean on the rim."],
+            ["mid", "Status", "Two pixels of eye: taller for waiting, a shut lid for failed. It reads at 44 and is a squint at 28."],
             ["no", "Cost", "Someone has to be the pixel artist, forever."],
           ],
         },
