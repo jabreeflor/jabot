@@ -138,7 +138,7 @@ export interface Bot {
   harnessId: string;
   isChief: boolean;
   templateId?: string | null;
-  /** Unread work on this bot's standing thread — the red dot on its blob. */
+  /** Unread work on this bot's standing thread — the red dot on its avatar. */
   unread?: boolean;
 }
 
