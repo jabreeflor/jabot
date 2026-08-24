@@ -2,6 +2,20 @@
  * Moodblob — candidate 01. The blob we already ship, with a face that answers
  * back and a bit of itself sticking out.
  *
- * Style-only rules go here; the box, palette, chrome and blink are base.css.
- * The style's class on the wrapper is `.av.moodblob`.
+ * It has no rules, and that is the finding rather than an omission. Every
+ * paint it uses is one of the shared ones — `body`, `belly`, `ink`,
+ * `inkstroke` — and every motion it has is the chassis's: the blink on
+ * `.eyes`, the bob and the lean on `.rig`. The prototype's stylesheet was the
+ * same, with per-style blocks only for the hat crew, the pixel pets and the
+ * watchers; this is the candidate that changes the least, which is most of
+ * its case.
+ *
+ * The unread dot in particular stays where base.css puts it. The hats and the
+ * sprites had to move theirs because a brim or an antenna owns the top-right
+ * corner, and a tuft does not: it sits inboard of the corner, so the dot
+ * clears it at every size rung the page was judged at.
+ *
+ * If something does end up needing a rule here, scope it to `.av.moodblob` —
+ * the wrapper carries the style name — and leave the shared vocabulary alone,
+ * since the other four styles read from it too.
  */
