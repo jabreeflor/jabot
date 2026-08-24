@@ -221,9 +221,16 @@ export interface NoticeAction {
   primary?: boolean;
 }
 
-/** Who a card is from: a crew bot with a face, or a code session. */
+/** Who a card is from: a crew bot with a face, or a code session.
+ *
+ * The bot carries its `id` and not only its name because the face is dealt
+ * from the id (#44) — a card that named the bot without identifying it would
+ * draw a different creature in the Inbox than the sidebar draws for the same
+ * bot. `inbox/list` has no bot on it at all today and every host card is a
+ * `code` one, so the id costs the host nothing; it is the fixtures and #24's
+ * handoff cards that have to supply it. */
 export type CardSource =
-  | { type: "bot"; name: string; color: BotColor }
+  | { type: "bot"; id: string; name: string; color: BotColor }
   | { type: "code" };
 
 /** An `inbox_events` row plus what the row needs to draw itself (#22). */

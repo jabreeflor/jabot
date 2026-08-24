@@ -7,9 +7,10 @@
 //! whatever the bot is doing — which is exactly the complaint #44 opens with,
 //! and the thing the other five are trying to beat.
 //!
-//! The port is from `src/styles/blob.css` and it is a port rather than a
-//! rewrite. The wobble lives there as a `border-radius` with eight
-//! percentages, so `wobble()` below does what the browser does with one:
+//! The port is from `src/styles/blob.css`, which this replaced and which the
+//! wire phase deleted, and it is a port rather than a rewrite. The wobble
+//! lived there as a `border-radius` with eight percentages, so `wobble()`
+//! below does what the browser does with one:
 //! four elliptical arcs, and the same overflow correction CSS applies when a
 //! pair of adjacent radii adds up to more than the edge they share. Doing it
 //! any other way would have produced a blob that is *nearly* the shipping
@@ -55,7 +56,8 @@ function wobble(h: Radii, v: Radii): string {
 }
 
 /**
- * The five hand-tuned roundings from blob.css, and which colours wear them.
+ * The five hand-tuned roundings the retired blob.css carried, and which
+ * colours wear them.
  * Three colours share the default, which is why the shipping blob reads as
  * six identical dots more often than the stylesheet's comment claims.
  */

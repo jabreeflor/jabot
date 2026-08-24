@@ -239,7 +239,8 @@
   border-radius: 50%;
 }
 
-.swatch[aria-pressed="true"] .blob {
+.swatch[aria-pressed="true"] .av {
+  border-radius: 50%;
   box-shadow:
     0 0 0 2px var(--side),
     0 0 0 4px var(--ink);

@@ -1,6 +1,6 @@
 /*
  * First-run setup (the takeover). Imported last in App.css so it can lean on
- * .btn, .mlab, .mfield, .harness-grid, .blob and .chief-badge without fighting
+ * .btn, .mlab, .mfield, .harness-grid, .av and .chief-badge without fighting
  * them — the field recipe is shared with modal.css by selector, not copied,
  * so this sheet holds zero field declarations.
  *

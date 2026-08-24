@@ -4,7 +4,13 @@
 //! Each card shows the bot's harness next to its tools, because after #6 the
 //! engine is part of who a bot is — not a preference buried in a settings pane.
 
-import { Blob } from "../components/Blob";
+import { useId } from "react";
+
+import {
+  Avatar,
+  CREW_STYLES,
+  useCrewStyleChoice,
+} from "../components/avatar";
 import { HarnessChip } from "../components/HarnessChip";
 import { PlusIcon } from "../components/Icon";
 import type { Bot, HarnessCard, ToolOption } from "../components/types";
@@ -43,13 +49,19 @@ export function CrewView({
                 Run setup again
               </button>
             )}
+            <CrewStyleSwitch bots={bots} />
           </div>
 
           <div className="crew-grid">
             {bots.map((bot) => (
               <div className="crew-card" key={bot.id}>
                 <div className="r1">
-                  <Blob color={bot.color} unread={bot.unread} />
+                  <Avatar
+                    id={bot.id}
+                    name={bot.name}
+                    color={bot.color}
+                    unread={bot.unread}
+                  />
                   <div>
                     <div className="nm">{bot.name}</div>
                   </div>
@@ -98,6 +110,64 @@ export function CrewView({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Six drawings of one bot, and clicking one changes every avatar in the app.
+ *
+ * Temporary, and the copy says so out loud rather than only in a comment: #44
+ * produced five answers that all looked reasonable on a prototype page, and
+ * the only way to tell them apart is to live with one in the sidebar for a
+ * few days. The follow-up that names a winner deletes this component, its
+ * rules in crew.css, `Avatar`'s `crewStyle` prop and the four losing
+ * renderers.
+ *
+ * The preview is a real bot rather than a stock face because that is the
+ * whole comparison: the drawings deal a mark from the id, so a made-up id
+ * would be showing six creatures nobody is going to see.
+ */
+function CrewStyleSwitch({ bots }: { bots: readonly Bot[] }) {
+  const { style, setStyle } = useCrewStyleChoice();
+  const headingId = useId();
+  const model = bots.find((bot) => bot.isChief) ?? bots[0];
+  if (!model) return null;
+
+  return (
+    <section className="style-switch" aria-labelledby={headingId}>
+      <div className="page-section" id={headingId}>
+        CREW STYLE — TEMPORARY
+      </div>
+      <p className="style-switch-note">
+        Five answers to #44 plus what ships today, drawn as {model.name}. Pick
+        one and live with it; this row goes away once the crew is chosen.
+      </p>
+      <div className="style-row" role="group" aria-label="Crew style">
+        {CREW_STYLES.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className="style-opt"
+            aria-pressed={style === option.id}
+            title={option.blurb}
+            onClick={() => setStyle(option.id)}
+          >
+            {/* Hidden from the name computation, not from the eye: the
+                avatar carries a `title` of its own, and a button named
+                "Chief Moodblob" is worse than one named "Moodblob". */}
+            <span aria-hidden="true">
+              <Avatar
+                id={model.id}
+                name={model.name}
+                color={model.color}
+                crewStyle={option.id}
+              />
+            </span>
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

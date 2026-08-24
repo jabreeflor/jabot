@@ -10,7 +10,7 @@
 
 import { useState } from "react";
 
-import { Blob } from "../components/Blob";
+import { Avatar } from "../components/avatar";
 import { CodeSessionIcon } from "../components/Icon";
 import { formatWhen } from "../components/format";
 import { NEEDS_YOU_KINDS, inboxTag } from "../components/status";
@@ -218,5 +218,5 @@ function CardAvatar({ source }: { source: CardSource }) {
       </div>
     );
   }
-  return <Blob color={source.color} />;
+  return <Avatar id={source.id} name={source.name} color={source.color} />;
 }

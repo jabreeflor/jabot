@@ -21,9 +21,10 @@
   flex: none;
   position: relative;
   display: block;
-  /* blob.css still ships `.b-teal { background: <gradient> }` and will until
-     the wire phase retires it. Without this reset those rules paint the box
-     behind every drawing. */
+  /* The box is a frame for an SVG and paints nothing itself. Stated rather
+     than assumed: `.b-*` used to be a gradient a caller could set on any
+     element, and a call site that reaches for one again should find the
+     drawing on top of it rather than behind it. */
   background: none;
   border-radius: 0;
 }
@@ -38,13 +39,15 @@
 }
 
 /*
- * The palette, as three tones per colour rather than the two blob.css keeps:
- * a sprite needs somewhere darker than the body to put an eye, and a lit belly
- * needs somewhere lighter than the body to be. --lite and --deep are the same
- * pair the gradient already uses, so nothing changes hue.
+ * The palette, as three tones per colour rather than the two the old blob
+ * gradient carried: a sprite needs somewhere darker than the body to put an
+ * eye, and a lit belly needs somewhere lighter than the body to be. --lite and
+ * --deep are the same pair that gradient used, so nothing changed hue when the
+ * drawings replaced it.
  *
- * Doubled up with .av so these win over blob.css's single-class rules for as
- * long as both stylesheets are loaded.
+ * Doubled up with .av so a `b-teal` on some other element cannot pick these up
+ * by accident: the colour classes come off host rows and are only ever a
+ * palette *here*.
  */
 .av.b-teal {
   --lite: #6fe0c0;
@@ -235,10 +238,11 @@
 }
 
 /* ---- the crew cluster ---------------------------------------------------
-   Three of the current style's own marks. It keeps the `cluster` class so the
-   sizing and the selected-tile ring already written against it keep working,
-   and adds `av-cluster` so these rules can out-specify blob.css's version of
-   the same element for as long as both are loaded. */
+   Three of the current style's own marks. It keeps the `cluster` class so
+   sidebar.css's selected-tile ring and onboarding.css's `.setup-cluster`
+   sizing keep working untouched, and adds `av-cluster` so a rule here says
+   plainly that it is about the drawn cluster and not about the class those two
+   sheets happen to target. */
 
 .av-cluster {
   --s: var(--blob-size, 44px);
@@ -250,11 +254,11 @@
 }
 
 /*
- * Direct children only. blob.css ships an unscoped `.cluster i` that paints
- * each slot with a gradient of its own, and a descendant selector here would
- * additionally reach past the slot into whatever the drawing is made of.
- * Sizing the slot rather than the avatar keeps --blob-size and --s out of a
- * definition cycle.
+ * Direct children only. A slot holds a whole avatar, and every style is free
+ * to draw with `<i>`-free markup of any shape, so a descendant selector here
+ * would reach past the slot and rearrange the drawing's own parts. Sizing the
+ * slot rather than the avatar keeps --blob-size and --s out of a definition
+ * cycle.
  */
 .cluster.av-cluster > i {
   position: absolute;

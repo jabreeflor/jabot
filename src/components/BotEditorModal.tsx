@@ -9,7 +9,7 @@
 
 import { useId, useState } from "react";
 
-import { Blob } from "./Blob";
+import { Avatar } from "./avatar";
 import { FieldLabel, Modal } from "./Modal";
 import { HarnessPicker } from "./HarnessPicker";
 import {
@@ -142,7 +142,15 @@ export function BotEditorModal({
             aria-pressed={color === swatch}
             onClick={() => setColor(swatch)}
           >
-            <Blob color={swatch} />
+            {/* A swatch previews a *colour*, not a bot, and the drawings
+                deal from the id — so the id is the colour. Anything constant
+                here would paint the whole row as one creature and hide the
+                only thing the row is for. */}
+            <Avatar
+              id={`swatch.${swatch}`}
+              name={swatch.replace("b-", "")}
+              color={swatch}
+            />
           </button>
         ))}
       </div>

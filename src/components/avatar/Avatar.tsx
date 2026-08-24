@@ -46,6 +46,7 @@ export function Avatar({
   state = "idle",
   unread = false,
   labelled = false,
+  crewStyle,
   className,
 }: {
   id: string;
@@ -66,9 +67,20 @@ export function Avatar({
    * is actually complaining about.
    */
   labelled?: boolean;
+  /**
+   * Draw in a named style instead of the one that is switched on.
+   *
+   * Exists for one caller: the temporary picker in Crew, where six previews
+   * have to disagree with the setting and with each other or there is nothing
+   * to compare. Nothing else should pass it — an avatar that ignores the
+   * setting is the bug this module was built to make impossible — and it goes
+   * out with the picker when #44 picks a winner.
+   */
+  crewStyle?: CrewStyle;
   className?: string;
 }) {
-  const style = useCrewStyle();
+  const current = useCrewStyle();
+  const style = crewStyle ?? current;
   const Draw = RENDERERS[style];
 
   // Each bot blinks on its own clock, and switching styles reshuffles them:
@@ -117,10 +129,10 @@ export function CrewAvatar({ className }: { className?: string }) {
       aria-hidden="true"
     >
       {CREW_FACES.map((face, i) => (
-        // The slot class, not `:nth-child`. blob.css already ships an
-        // unscoped `.cluster i`, and the prototype hit the same trap from the
-        // other side: a selector that is not pinned to the direct children
-        // also reaches into the drawing and rearranges its parts.
+        // The slot class, not `:nth-child`. The prototype positioned these
+        // by index and hit the trap it sets: `:nth-child` on a cluster whose
+        // children each contain a whole drawing eventually matches something
+        // inside one of them and rearranges its parts.
         <i className={`s${i + 1}`} key={face.id}>
           <Avatar id={face.id} name={face.name} color={face.color} />
         </i>

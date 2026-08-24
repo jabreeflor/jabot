@@ -16,7 +16,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import { Blob, BlobCluster } from "../components/Blob";
+import { Avatar, CrewAvatar } from "../components/avatar";
 import { FieldLabel } from "../components/Modal";
 import { HarnessPicker } from "../components/HarnessPicker";
 import { initials } from "../components/format";
@@ -105,7 +105,7 @@ export function Onboarding({
             }}
           >
             <div className="setup-eyebrow">STEP 1 OF 3</div>
-            <BlobCluster className="setup-cluster" />
+            <CrewAvatar className="setup-cluster" />
             <h1 tabIndex={-1} ref={headingRef}>
               What should the crew call you?
             </h1>
@@ -188,7 +188,10 @@ export function Onboarding({
           <div key="chief" className="setup-card">
             <div className="setup-eyebrow">STEP 3 OF 3</div>
             <div className="setup-meet">
-              <Blob color="b-teal" />
+              {/* Chief before there is a crew to read one from. The id is
+                  the one the host seeds him with, so the face a person meets
+                  in setup is the face waiting in the sidebar afterwards. */}
+              <Avatar id="chief" name="Chief" color="b-teal" />
               <div>
                 <h1 tabIndex={-1} ref={headingRef}>
                   Chief

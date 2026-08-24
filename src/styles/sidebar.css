@@ -125,8 +125,14 @@
   background: var(--raise2);
 }
 
-.bot-tile[aria-current="true"] .blob,
+/* The ring is round even though an avatar's box is square: the drawing inside
+   it is a creature on a circular body, and a square halo would read as a tile
+   around the bot rather than a highlight on it. A hat or a crest overflows the
+   box and so paints across the ring, which is the right way round — the mark
+   belongs to the bot, not to the selection. */
+.bot-tile[aria-current="true"] .av,
 .bot-tile[aria-current="true"] .cluster {
+  border-radius: 50%;
   box-shadow:
     0 0 0 2px var(--side),
     0 0 0 4px var(--ink);

@@ -552,7 +552,7 @@ export function initialMockState(): MockState {
         title: "Inbox Manager needs a call",
         summary: "Two invoices from UGREEN — archive, or flag for finance?",
         createdAt: minutesAgo(63),
-        source: { type: "bot", name: "Inbox Mgr", color: "b-purple" },
+        source: { type: "bot", id: "inboxm", name: "Inbox Mgr", color: "b-purple" },
       },
       {
         id: "inbox-digest",
@@ -561,7 +561,7 @@ export function initialMockState(): MockState {
         title: "Weekly digest draft ready",
         summary: "1,240 words in your voice. Awaiting review before it sends.",
         createdAt: minutesAgo(140),
-        source: { type: "bot", name: "Writer", color: "b-orange" },
+        source: { type: "bot", id: "writer", name: "Writer", color: "b-orange" },
       },
       {
         id: "inbox-nas",

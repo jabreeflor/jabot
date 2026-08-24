@@ -1,0 +1,27 @@
+/*
+ * The code-session avatar. A thread has no face — it has a prompt — so where a
+ * bot gets a drawing (src/styles/avatar/), a code session gets a rounded square
+ * with a monogram icon in it. That contrast is the whole point: an Inbox with
+ * both in it should say at a glance which rows are somebody and which are work.
+ *
+ * Lives on its own rather than with the crew drawings because it is not one of
+ * them and never switches with them (#44). Its size is a constant and not
+ * --blob-size for the same reason: nothing about it scales down to 28px.
+ */
+
+.codeav {
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 11px;
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+}
+
+.codeav svg {
+  width: 18px;
+  height: 18px;
+}

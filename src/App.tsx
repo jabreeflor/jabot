@@ -32,6 +32,7 @@ import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
 import { Sidebar } from "./components/Sidebar";
+import { CrewStyleProvider } from "./components/avatar";
 import {
   ThreadContextMenu,
   type MenuPosition,
@@ -112,36 +113,43 @@ function App() {
   const [profile, setProfile] = useState<OnboardingProfile | null>(
     loadOnboarding,
   );
-  // The record a re-run is editing. The gate is `if (!profile)` on state, so
-  // storage is never wiped while the takeover is open: `onFinish` overwrites
-  // it, quitting mid-re-run keeps it, and the seeded draft means Escape or
-  // Skip re-persists the name that was already there rather than "You".
+  // The record a re-run is editing. The gate reads this state and never the
+  // store, so storage is not wiped while the takeover is open: `onFinish`
+  // overwrites it, quitting mid-re-run keeps it, and the seeded draft means
+  // Escape or Skip re-persists the name that was already there rather than
+  // "You".
   const [editing, setEditing] = useState<OnboardingProfile | null>(null);
 
-  if (!profile) {
-    return (
-      <Onboarding
-        harnesses={HARNESSES}
-        profile={editing ?? undefined}
-        hostLine={hostLine(host.hello, host.hostError, host.connecting)}
-        hostOffline={host.hostError !== null}
-        onFinish={(next) => {
-          saveOnboarding(next);
-          setProfile(next);
-          setEditing(null);
-        }}
-      />
-    );
-  }
+  // The crew style wraps both sides of the gate, not just the shell: setup
+  // meets Chief and draws the crew cluster on its first pane, and a face that
+  // changed the moment setup ended would be a different bot arriving (#44).
+  // Temporary in the same way the picker is — when a style wins, this becomes
+  // whatever the winner needs, which is probably nothing.
   return (
-    <AppShell
-      profile={profile}
-      host={host}
-      onRunSetup={() => {
-        setEditing(profile);
-        setProfile(null);
-      }}
-    />
+    <CrewStyleProvider>
+      {profile ? (
+        <AppShell
+          profile={profile}
+          host={host}
+          onRunSetup={() => {
+            setEditing(profile);
+            setProfile(null);
+          }}
+        />
+      ) : (
+        <Onboarding
+          harnesses={HARNESSES}
+          profile={editing ?? undefined}
+          hostLine={hostLine(host.hello, host.hostError, host.connecting)}
+          hostOffline={host.hostError !== null}
+          onFinish={(next) => {
+            saveOnboarding(next);
+            setProfile(next);
+            setEditing(null);
+          }}
+        />
+      )}
+    </CrewStyleProvider>
   );
 }
 
