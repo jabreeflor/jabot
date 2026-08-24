@@ -1,8 +1,8 @@
 /*
  * First-run setup (the takeover). Imported last in App.css so it can lean on
- * .btn, .mlab, .mfield, .harness-grid, .blob and .chief-badge without fighting
- * them — the field recipe is shared with modal.css by selector, not copied,
- * so this sheet holds zero field declarations.
+ * .btn, .mlab, .mfield, .harness-grid, .me-face and .chief-badge without
+ * fighting them — the field recipe is shared with modal.css by selector,
+ * not copied, so this sheet holds zero field declarations.
  *
  * The card grounds on --chat, not --win: --win and --side are the same value,
  * and .modal only gets away with a --side card because it floats on .overlay's
@@ -73,25 +73,14 @@
   margin-top: 3px;
 }
 
-/* A preview *of* the me-row avatar, so it repeats .me-row .av's geometry. */
+/* A preview *of* the me-row badge, and now literally it: `.me-face` in
+   sidebar.css draws the chip and this only lays the row out. A second copy of
+   the geometry is how a preview stops being one. */
 .setup-preview {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   margin-top: var(--sp-4);
-}
-
-.setup-preview .av {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--raise);
-  color: var(--dim);
-  display: grid;
-  place-items: center;
-  font-size: var(--fs-caps);
-  font-weight: 600;
-  flex: none;
 }
 
 .setup-preview .cap {

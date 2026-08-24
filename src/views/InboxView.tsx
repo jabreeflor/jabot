@@ -10,7 +10,7 @@
 
 import { useState } from "react";
 
-import { Blob } from "../components/Blob";
+import { Avatar } from "../components/avatar";
 import { CodeSessionIcon } from "../components/Icon";
 import { formatWhen } from "../components/format";
 import { NEEDS_YOU_KINDS, inboxTag } from "../components/status";
@@ -55,7 +55,8 @@ export function InboxView({
     return true;
   });
   const resurfaced = matching.filter((card) => card.kind !== "folded");
-  const sleeping = tab === "all" ? matching.filter((c) => c.kind === "folded") : [];
+  const sleeping =
+    tab === "all" ? matching.filter((c) => c.kind === "folded") : [];
 
   return (
     <div className="view">
@@ -153,11 +154,7 @@ function InboxRow({
 
   return (
     <div
-      className={[
-        "card-row",
-        open ? "open" : "",
-        sleeping ? "dim" : "",
-      ]
+      className={["card-row", open ? "open" : "", sleeping ? "dim" : ""]
         .filter(Boolean)
         .join(" ")}
     >
@@ -218,5 +215,12 @@ function CardAvatar({ source }: { source: CardSource }) {
       </div>
     );
   }
-  return <Blob color={source.color} />;
+  // Named, unusually for an avatar: every other call site prints the bot's
+  // name in text beside the drawing, and an Inbox row does not — it carries a
+  // title, a summary, a time and a pill, none of which say who this is. The
+  // avatar is the only thing on the row that does, which is the complaint #44
+  // opens with, so here it is the name rather than a tooltip.
+  return (
+    <Avatar id={source.id} name={source.name} color={source.color} labelled />
+  );
 }

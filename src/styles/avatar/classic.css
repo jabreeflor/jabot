@@ -1,0 +1,19 @@
+/*
+ * Classic — the blob that ships today, drawn as SVG so it can stand in the
+ * same switch as the five candidates.
+ *
+ * Almost nothing here on purpose. The gradient, the wobble and the two eyes
+ * are inside Classic.tsx as literal paint rather than as --lite/--deep, so
+ * this style is unaffected by the palette the others share and stays a true
+ * control. The blink, bob and lean rules in base.css never match it either:
+ * it has no .rig and no .eyes, because the shipping blob has no expression,
+ * which is the complaint #44 opens with.
+ */
+
+/* The classic blob fills its box corner to corner — nothing sticks out of the
+   top-right for the dot to make room for — so it keeps the position it has
+   today rather than the inset base.css gives the characters. */
+.av.classic .dot {
+  top: 0;
+  right: 0;
+}

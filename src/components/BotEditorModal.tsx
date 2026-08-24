@@ -9,7 +9,7 @@
 
 import { useId, useState } from "react";
 
-import { Blob } from "./Blob";
+import { Avatar, reserveDeal } from "./avatar";
 import { FieldLabel, Modal } from "./Modal";
 import { HarnessPicker } from "./HarnessPicker";
 import {
@@ -21,6 +21,15 @@ import {
   type HarnessCard,
   type ToolOption,
 } from "./types";
+
+/**
+ * A swatch draws a colour, not a bot, so it is pinned to a place in the deal
+ * rather than taking one. Eight swatches off the top of the deck was enough on
+ * its own to make a seven-bot crew wear a hat twice, and a row that only looks
+ * right if you have never opened the editor is not a row that looks right.
+ * Pinned by position, so the eight stay eight different creatures.
+ */
+BOT_COLORS.forEach((swatch, i) => reserveDeal(`swatch.${swatch}`, i));
 
 /**
  * What the chip's tooltip says. The host's own sentence when it has one —
@@ -73,7 +82,9 @@ export function BotEditorModal({
   const [name, setName] = useState(bot?.name ?? "");
   const [color, setColor] = useState<BotColor>(bot?.color ?? "b-green");
   const [instructions, setInstructions] = useState(bot?.instructions ?? "");
-  const [selectedTools, setSelectedTools] = useState<string[]>(bot?.tools ?? []);
+  const [selectedTools, setSelectedTools] = useState<string[]>(
+    bot?.tools ?? [],
+  );
   const [harnessId, setHarnessId] = useState(
     bot?.harnessId ?? harnesses[0]?.id ?? "",
   );
@@ -91,9 +102,7 @@ export function BotEditorModal({
 
   function toggleTool(id: string) {
     setSelectedTools((current) =>
-      current.includes(id)
-        ? current.filter((t) => t !== id)
-        : [...current, id],
+      current.includes(id) ? current.filter((t) => t !== id) : [...current, id],
     );
   }
 
@@ -142,7 +151,15 @@ export function BotEditorModal({
             aria-pressed={color === swatch}
             onClick={() => setColor(swatch)}
           >
-            <Blob color={swatch} />
+            {/* A swatch previews a *colour*, not a bot, and the drawings
+                deal from the id — so the id is the colour. Anything constant
+                here would paint the whole row as one creature and hide the
+                only thing the row is for. */}
+            <Avatar
+              id={`swatch.${swatch}`}
+              name={swatch.replace("b-", "")}
+              color={swatch}
+            />
           </button>
         ))}
       </div>

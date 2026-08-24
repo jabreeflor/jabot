@@ -16,7 +16,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
-import { Blob, BlobCluster } from "../components/Blob";
+import { Avatar, CrewAvatar } from "../components/avatar";
 import { FieldLabel } from "../components/Modal";
 import { HarnessPicker } from "../components/HarnessPicker";
 import { initials } from "../components/format";
@@ -61,7 +61,12 @@ export function Onboarding({
 
   function finish(skipped: boolean) {
     onFinish(
-      makeProfile({ userName: name, harnessId, skipped, version: profile?.version }),
+      makeProfile({
+        userName: name,
+        harnessId,
+        skipped,
+        version: profile?.version,
+      }),
     );
   }
 
@@ -105,7 +110,7 @@ export function Onboarding({
             }}
           >
             <div className="setup-eyebrow">STEP 1 OF 3</div>
-            <BlobCluster className="setup-cluster" />
+            <CrewAvatar className="setup-cluster" />
             <h1 tabIndex={-1} ref={headingRef}>
               What should the crew call you?
             </h1>
@@ -125,7 +130,7 @@ export function Onboarding({
               onChange={(event) => setName(event.target.value)}
             />
             <div className="setup-preview">
-              <span className="av" aria-hidden="true">
+              <span className="me-face" aria-hidden="true">
                 {initials(name.trim() === "" ? DEFAULT_USER_NAME : name)}
               </span>
               <span className="cap">This is your badge in the sidebar.</span>
@@ -188,7 +193,10 @@ export function Onboarding({
           <div key="chief" className="setup-card">
             <div className="setup-eyebrow">STEP 3 OF 3</div>
             <div className="setup-meet">
-              <Blob color="b-teal" />
+              {/* Chief before there is a crew to read one from. The id is
+                  the one the host seeds him with, so the face a person meets
+                  in setup is the face waiting in the sidebar afterwards. */}
+              <Avatar id="chief" name="Chief" color="b-teal" />
               <div>
                 <h1 tabIndex={-1} ref={headingRef}>
                   Chief
@@ -202,9 +210,8 @@ export function Onboarding({
               what matters.
             </blockquote>
             <p className="setup-note">
-              Long jobs fold out of the sidebar and keep running. They come
-              back through the Inbox when they are done — or when they need
-              you.
+              Long jobs fold out of the sidebar and keep running. They come back
+              through the Inbox when they are done — or when they need you.
             </p>
             <p className="setup-note">
               Chief is already offering to fold one away in the chat you are

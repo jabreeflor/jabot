@@ -40,7 +40,7 @@ const CARDS: InboxCard[] = [
     title: "Inbox Manager needs a call",
     summary: "Two invoices from UGREEN — archive, or flag for finance?",
     createdAt: at(63),
-    source: { type: "bot", name: "Inbox Mgr", color: "b-purple" },
+    source: { type: "bot", id: "inboxm", name: "Inbox Mgr", color: "b-purple" },
   },
   {
     id: "sleep-1",
@@ -113,7 +113,9 @@ describe("InboxView", () => {
   it("reopens the thread a card came from", async () => {
     const props = renderInbox();
 
-    await userEvent.click(screen.getByRole("button", { name: "Reopen thread" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Reopen thread" }),
+    );
 
     expect(props.onOpenThread).toHaveBeenCalledWith("sidebar");
   });
@@ -135,6 +137,16 @@ describe("InboxView", () => {
     expect(props.onOpenThread).toHaveBeenCalledWith("nas");
   });
 
+  it("says which bot a card came from, and not only in a tooltip", () => {
+    // The row is a title, a summary, a time and a pill, and none of them names
+    // the bot — the drawing is the only thing that does. That is the case #44
+    // opens with, and the one place in the app where an avatar has to carry a
+    // name of its own rather than sit beside one.
+    renderInbox();
+
+    expect(screen.getByRole("img", { name: "Inbox Mgr" })).toBeInTheDocument();
+  });
+
   it("says when there is nothing waiting", () => {
     renderInbox({ cards: [] });
 
@@ -144,7 +156,9 @@ describe("InboxView", () => {
   it("stamps each card with when it arrived", () => {
     renderInbox();
 
-    const row = screen.getByText("Inbox Manager needs a call").closest("button");
+    const row = screen
+      .getByText("Inbox Manager needs a call")
+      .closest("button");
     expect(within(row!).getByText(/^\d/)).toBeInTheDocument();
   });
 });

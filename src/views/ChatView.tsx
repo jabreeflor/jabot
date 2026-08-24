@@ -7,7 +7,7 @@
 //! thread yet (#24 does), and when something does, this view already carries
 //! the queue strip, the Stop button and the error line that a live turn needs.
 
-import { Blob } from "../components/Blob";
+import { Avatar, avatarStateFor } from "../components/avatar";
 import { Conversation } from "../components/Conversation";
 import { HostPicker } from "../components/HostPicker";
 import type { Bot, HostTarget, TranscriptItem } from "../components/types";
@@ -40,7 +40,19 @@ export function ChatView({
     <Conversation
       header={
         <div className="chat-head">
-          <Blob color={bot.color} />
+          {/* The only run state this view is ever handed: #24's `busy` is a
+              turn in flight on this bot's standing thread, and a queued
+              message is one about to be. Everything else a bot can be doing
+              happens in a thread this header knows nothing about, so the face
+              stays the bot's own rather than guessing. */}
+          <Avatar
+            id={bot.id}
+            name={bot.name}
+            color={bot.color}
+            state={avatarStateFor(
+              busy || (queued?.length ?? 0) > 0 ? "running" : null,
+            )}
+          />
           <h2>{bot.name}</h2>
           <HostPicker host={host} onPick={onPickHost} />
         </div>

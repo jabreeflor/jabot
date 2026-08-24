@@ -58,7 +58,7 @@
   cursor: pointer;
 }
 
-.card-row .blob {
+.card-row .av {
   --blob-size: 38px;
   margin-top: 2px;
 }

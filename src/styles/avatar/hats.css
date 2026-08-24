@@ -1,0 +1,31 @@
+/*
+ * Hat crew — candidate 02. One body, and the thing on its head is who it is.
+ *
+ * Style-only rules go here; the box, palette, chrome and blink are base.css.
+ * The style's class on the wrapper is `.av.hats`.
+ *
+ * There is exactly one rule, and that is the point of the candidate: the hats
+ * are twelve paths and no CSS, because a silhouette that needs a stylesheet to
+ * read is not a silhouette. The drawing already leaves the 24-unit box — the
+ * crown and the halo sit above y = 0 — and base.css's `overflow: visible` on
+ * the svg is what lets them.
+ */
+
+/*
+ * The hat owns the top-right corner, so the unread dot takes the shoulder.
+ *
+ * Left where base.css puts it, the dot lands on the brim of the cap, inside
+ * the halo, and on the far blade of the rotor: three bots where the one red
+ * pip in the app stops reading as a pip and starts reading as part of the
+ * character. Down on the shoulder it is clear of every hat in the set, still
+ * on the rim of the mark, and still the only red thing on screen.
+ *
+ * `right` goes slightly negative rather than staying inside the box because
+ * the head is a circle of r = 7.4 in a 24-unit square: at 28% down there is a
+ * couple of units of empty box between the body's edge and the corner, and a
+ * dot tucked into it reads as floating rather than as pinned to the shoulder.
+ */
+.av.hats .dot {
+  top: 28%;
+  right: -4px;
+}

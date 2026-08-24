@@ -201,7 +201,7 @@ export function Sidebar({
       </div>
 
       <div className="me-row">
-        <div className="av" aria-hidden="true">
+        <div className="me-face" aria-hidden="true">
           {initials(userName)}
         </div>
         <div className="who">

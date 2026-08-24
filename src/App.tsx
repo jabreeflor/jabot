@@ -32,6 +32,7 @@ import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
 import { Sidebar } from "./components/Sidebar";
+import { CrewStyleProvider, seedDealOrder } from "./components/avatar";
 import {
   ThreadContextMenu,
   type MenuPosition,
@@ -112,36 +113,43 @@ function App() {
   const [profile, setProfile] = useState<OnboardingProfile | null>(
     loadOnboarding,
   );
-  // The record a re-run is editing. The gate is `if (!profile)` on state, so
-  // storage is never wiped while the takeover is open: `onFinish` overwrites
-  // it, quitting mid-re-run keeps it, and the seeded draft means Escape or
-  // Skip re-persists the name that was already there rather than "You".
+  // The record a re-run is editing. The gate reads this state and never the
+  // store, so storage is not wiped while the takeover is open: `onFinish`
+  // overwrites it, quitting mid-re-run keeps it, and the seeded draft means
+  // Escape or Skip re-persists the name that was already there rather than
+  // "You".
   const [editing, setEditing] = useState<OnboardingProfile | null>(null);
 
-  if (!profile) {
-    return (
-      <Onboarding
-        harnesses={HARNESSES}
-        profile={editing ?? undefined}
-        hostLine={hostLine(host.hello, host.hostError, host.connecting)}
-        hostOffline={host.hostError !== null}
-        onFinish={(next) => {
-          saveOnboarding(next);
-          setProfile(next);
-          setEditing(null);
-        }}
-      />
-    );
-  }
+  // The crew style wraps both sides of the gate, not just the shell: setup
+  // meets Chief and draws the crew cluster on its first pane, and a face that
+  // changed the moment setup ended would be a different bot arriving (#44).
+  // Temporary in the same way the picker is — when a style wins, this becomes
+  // whatever the winner needs, which is probably nothing.
   return (
-    <AppShell
-      profile={profile}
-      host={host}
-      onRunSetup={() => {
-        setEditing(profile);
-        setProfile(null);
-      }}
-    />
+    <CrewStyleProvider>
+      {profile ? (
+        <AppShell
+          profile={profile}
+          host={host}
+          onRunSetup={() => {
+            setEditing(profile);
+            setProfile(null);
+          }}
+        />
+      ) : (
+        <Onboarding
+          harnesses={HARNESSES}
+          profile={editing ?? undefined}
+          hostLine={hostLine(host.hello, host.hostError, host.connecting)}
+          hostOffline={host.hostError !== null}
+          onFinish={(next) => {
+            saveOnboarding(next);
+            setProfile(next);
+            setEditing(null);
+          }}
+        />
+      )}
+    </CrewStyleProvider>
   );
 }
 
@@ -192,6 +200,20 @@ function AppShell({
   // asked yet" — a preview build or a unit test — and the fixtures stand in;
   // a real answer always has Chief in it.
   const bots = crew.bots ?? state.bots;
+  // The crews that deal a mark rather than hashing one need the roster in
+  // roster order, and they are handed one bot at a time (#44). Seeded here,
+  // above everything that draws a bot, so the deal is the roster's order and
+  // not the order the panes happened to paint in — which was different on a
+  // launch that went through setup, and therefore handed the same crew
+  // different hats on different days. Chief leads because Chief leads
+  // everywhere else: the sidebar draws its row above the strip, and setup
+  // draws Chief before there is a roster to be first in. Idempotent, and it
+  // only ever adds, so the second render of a StrictMode pair changes nothing.
+  seedDealOrder(
+    [...bots]
+      .sort((a, b) => Number(b.isChief) - Number(a.isChief))
+      .map((bot) => bot.id),
+  );
   const templates = crew.templates ?? BOT_TEMPLATES;
   const toolChips = crew.tools ?? TOOL_CATALOG;
   const hostToolChips = crew.hostTools ?? HOST_TOOLS;
@@ -269,7 +291,8 @@ function AppShell({
    * thread already had (`state-machine.md`), and both paths honour it.
    */
   function foldThread(threadId: string, policy?: FoldPolicy) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost =
+      client !== null && hostThreads.some((t) => t.id === threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "foldThread", threadId, policy });
@@ -298,7 +321,8 @@ function AppShell({
    * and leave every one of those still running.
    */
   function archiveThread(threadId: string) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost =
+      client !== null && hostThreads.some((t) => t.id === threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "archiveThread", threadId });
@@ -317,7 +341,8 @@ function AppShell({
 
   /** Delete a thread. Same split as archive, and the same reason. */
   function deleteThread(threadId: string) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost =
+      client !== null && hostThreads.some((t) => t.id === threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "deleteThread", threadId });
@@ -510,7 +535,9 @@ function AppShell({
         hostOffline={hostError !== null}
         leavingThreadIds={leaving}
         onSelectBot={(botId) => setSelection({ view: "bot", botId })}
-        onSelectThread={(threadId) => setSelection({ view: "thread", threadId })}
+        onSelectThread={(threadId) =>
+          setSelection({ view: "thread", threadId })
+        }
         onOpenCrew={() => setSelection({ view: "crew" })}
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
@@ -540,7 +567,9 @@ function AppShell({
           onEditSchedule={(scheduleId) =>
             setScheduleEditor({ open: true, scheduleId })
           }
-          onAddSchedule={() => setScheduleEditor({ open: true, scheduleId: null })}
+          onAddSchedule={() =>
+            setScheduleEditor({ open: true, scheduleId: null })
+          }
           bots={bots}
           tools={[...toolChips, ...hostToolChips]}
           harnesses={harnesses}
@@ -846,9 +875,7 @@ function MainView({
           host={host}
           items={state.transcripts[thread.id] ?? []}
           onSend={(text) => onSend(thread.id, text)}
-          onAction={(itemId, actionId) =>
-            onNotice(thread.id, itemId, actionId)
-          }
+          onAction={(itemId, actionId) => onNotice(thread.id, itemId, actionId)}
           onFold={(policy) => onFoldThread(thread.id, policy)}
         />
       );

@@ -41,4 +41,19 @@ Open `prototypes/jabot-classic.html` in a browser — the main MVP (chat, Inbox,
 
 Build plan and settled architecture decisions (#4 host/quit, #5 fold/run/Inbox, #6 every bot is a harness): [`docs/plan.md`](docs/plan.md), [`docs/decisions/issues-4-6.md`](docs/decisions/issues-4-6.md).
 
+`prototypes/jabot-avatars.html` is the avatar exploration for #44 — five
+directions for a bot's identity (monogram blob, glyph tile, generative
+identicon, refined blob, shape-as-role sigil) shown at every size the shell
+asks for, with greyscale and light-theme toggles. It is a phone-sized page on
+purpose: open it on a phone and scroll.
+
+`prototypes/jabot-avatars-characters.html` is round two of the same issue, and
+the more interesting half. The systems above all pass the tests and none of
+them is anybody, so this one starts from the animator's rule instead: black out
+a character, and if you cannot tell who it is, it was never a character — which
+is the same test as greyscale at 28px. Five crews: a blob with a face that
+answers back, a body whose hat is its name, a generated critter kit, hand-drawn
+pixel pets, and watchers whose eyes follow the page and look straight at you
+when they need something.
+
 Other prototypes in `prototypes/` are earlier design directions.

@@ -6,7 +6,8 @@
 
 @import "./styles/tokens.css";
 @import "./styles/shell.css";
-@import "./styles/blob.css";
+@import "./styles/codeav.css";
+@import "./styles/avatar.css";
 @import "./styles/sidebar.css";
 @import "./styles/chat.css";
 @import "./styles/cards.css";

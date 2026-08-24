@@ -187,7 +187,8 @@ export function initialMockState(): MockState {
         id: "code",
         name: "Code",
         color: "b-yellow",
-        instructions: "Run coding sessions in my repos. Open PRs, never push to main.",
+        instructions:
+          "Run coding sessions in my repos. Open PRs, never push to main.",
         tools: ["github", "terminal"],
         harnessId: "claude",
         isChief: false,
@@ -197,7 +198,8 @@ export function initialMockState(): MockState {
         id: "inboxm",
         name: "Inbox Mgr",
         color: "b-purple",
-        instructions: "Keep Gmail at zero. Park drafts for anything that needs my voice.",
+        instructions:
+          "Keep Gmail at zero. Park drafts for anything that needs my voice.",
         tools: ["gmail"],
         harnessId: "claude",
         isChief: false,
@@ -206,7 +208,8 @@ export function initialMockState(): MockState {
         id: "sched",
         name: "Scheduler",
         color: "b-violet",
-        instructions: "Guard the calendar. Fix conflicts, protect deep-work mornings.",
+        instructions:
+          "Guard the calendar. Fix conflicts, protect deep-work mornings.",
         tools: ["calendar"],
         harnessId: "claude",
         isChief: false,
@@ -552,7 +555,12 @@ export function initialMockState(): MockState {
         title: "Inbox Manager needs a call",
         summary: "Two invoices from UGREEN — archive, or flag for finance?",
         createdAt: minutesAgo(63),
-        source: { type: "bot", name: "Inbox Mgr", color: "b-purple" },
+        source: {
+          type: "bot",
+          id: "inboxm",
+          name: "Inbox Mgr",
+          color: "b-purple",
+        },
       },
       {
         id: "inbox-digest",
@@ -561,7 +569,12 @@ export function initialMockState(): MockState {
         title: "Weekly digest draft ready",
         summary: "1,240 words in your voice. Awaiting review before it sends.",
         createdAt: minutesAgo(140),
-        source: { type: "bot", name: "Writer", color: "b-orange" },
+        source: {
+          type: "bot",
+          id: "writer",
+          name: "Writer",
+          color: "b-orange",
+        },
       },
       {
         id: "inbox-nas",
@@ -690,7 +703,10 @@ export type MockAction =
   | { type: "saveBot"; botId: string | null; draft: BotDraft }
   | { type: "removeBot"; botId: string };
 
-export function mockHostReducer(state: MockState, action: MockAction): MockState {
+export function mockHostReducer(
+  state: MockState,
+  action: MockAction,
+): MockState {
   switch (action.type) {
     case "startThread":
       return startThread(state, action.draft);
@@ -708,7 +724,9 @@ export function mockHostReducer(state: MockState, action: MockAction): MockState
     case "deleteThread":
       return {
         ...state,
-        threads: state.threads.filter((thread) => thread.id !== action.threadId),
+        threads: state.threads.filter(
+          (thread) => thread.id !== action.threadId,
+        ),
         inbox: state.inbox.filter((card) => card.threadId !== action.threadId),
       };
     case "sendMessage":
