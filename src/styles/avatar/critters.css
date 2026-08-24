@@ -3,4 +3,20 @@
  *
  * Style-only rules go here; the box, palette, chrome and blink are base.css.
  * The style's class on the wrapper is `.av.critters`.
+ *
+ * There are none, and that is a finding rather than an omission. The kit is
+ * eleven paths and a deal: every paint it uses is one of the shared ones
+ * (`body`, `belly`, `ink`, `inkstroke`) and every motion it has is the
+ * chassis's — the blink on `.eyes`, the bob and the lean on `.rig`. The
+ * prototype's stylesheet said the same thing by having no `.av.m3` block at
+ * all, next to blocks for the hats, the sprites and the watchers.
+ *
+ * The unread dot in particular stays where base.css puts it, and it was
+ * checked rather than assumed. The hats moved theirs to the shoulder because a
+ * brim or a halo owns the top-right corner; the crests do not reach it — the
+ * tallest of them tops out at y = 1.8 dead centre, and the two that go wide
+ * sit at the sides, below the corner the dot lands in.
+ *
+ * If something does end up needing a rule, scope it to `.av.critters` and
+ * leave the shared vocabulary alone: four other styles read from it.
  */
