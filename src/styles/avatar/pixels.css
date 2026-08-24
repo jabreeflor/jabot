@@ -1,0 +1,11 @@
+/*
+ * Pixel pets — candidate 04. Eight by eight, two paints and an ink.
+ *
+ * Style-only rules go here; the box, palette, chrome and blink are base.css.
+ * The style's class on the wrapper is `.av.pixels`.
+ *
+ * Two rules this style is known to need: `shape-rendering: crispEdges` on the
+ * cells, or the browser antialiases the grid back into a blur and the whole
+ * argument for a sprite goes with it; and the dot moved clear of the corner,
+ * since a sprite's antennae and ears reach it (`top: -3px; right: -3px`).
+ */

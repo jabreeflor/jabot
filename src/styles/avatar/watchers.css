@@ -1,0 +1,13 @@
+/*
+ * Watchers — candidate 05. One, two or three eyes that follow the page.
+ *
+ * Style-only rules go here; the box, palette, chrome and blink are base.css.
+ * The style's class on the wrapper is `.av.watchers`.
+ *
+ * The gaze is two custom properties on the document root and a transform on
+ * the pupils, rather than per-eye maths on every avatar on screen: everybody
+ * looks the same way at once, which is what a room of characters does. A bot
+ * that needs you stops looking around and looks at you, so
+ * `.av[data-state="waiting"] .pupil` drops the transform — and reduced motion
+ * has to leave the eyes still without leaving them blank.
+ */

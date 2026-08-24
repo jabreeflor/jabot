@@ -7,6 +7,11 @@
 @import "./styles/tokens.css";
 @import "./styles/shell.css";
 @import "./styles/blob.css";
+/* After blob.css, not before: both stylesheets style `.cluster` and the
+   `.b-*` colour classes while #44 is in flight, and the avatar module has to
+   be the one that wins. The wire phase retires blob.css and the ordering
+   stops mattering. */
+@import "./styles/avatar.css";
 @import "./styles/sidebar.css";
 @import "./styles/chat.css";
 @import "./styles/cards.css";

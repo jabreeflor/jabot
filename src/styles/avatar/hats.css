@@ -1,0 +1,10 @@
+/*
+ * Hat crew — candidate 02. One body, and the thing on its head is who it is.
+ *
+ * Style-only rules go here; the box, palette, chrome and blink are base.css.
+ * The style's class on the wrapper is `.av.hats`.
+ *
+ * One rule this style is known to need: the hat owns the top of the mark, so
+ * the unread dot cannot have the top-right corner and takes the shoulder
+ * instead. In the prototype that was `.av.m2 .dot { top: 28%; right: -4px }`.
+ */

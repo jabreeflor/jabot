@@ -54,3 +54,30 @@ export function dealt<T>(
   });
   return out;
 }
+
+/** Every id this process has drawn, in the order it first drew them. */
+const dealOrder = new Map<string, number>();
+
+/**
+ * A bot's place in the deal, when there is no roster to hand.
+ *
+ * The prototype could deal against a `BOTS` constant. A renderer here cannot:
+ * it is given one bot and the crew is whatever the host happens to have, so
+ * the roster does not exist at the point the mark has to be chosen. This is
+ * the same deal done incrementally — first bot drawn takes the first mark,
+ * and an id already seen keeps the number it was given.
+ *
+ * Two consequences worth knowing before using it. The order is the order the
+ * app first painted each bot, which in practice is the sidebar's roster
+ * order, so it is stable across a session and across restarts of an unchanged
+ * crew. And deleting a bot shifts everyone drawn after it — the cost the
+ * `dealt` comment names, paid here too. Use it for the feature that *is* the
+ * identity, and keep hashing the details.
+ */
+export function dealIndex(id: string): number {
+  const seen = dealOrder.get(id);
+  if (seen !== undefined) return seen;
+  const next = dealOrder.size;
+  dealOrder.set(id, next);
+  return next;
+}

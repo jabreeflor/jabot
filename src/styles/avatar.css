@@ -1,0 +1,16 @@
+/*
+ * The avatar module's stylesheet. One file per style on purpose: the five
+ * candidates are written in parallel, and a single shared sheet would make
+ * every one of them a conflict against the other four.
+ *
+ * base.css first — it owns the box, the palette and the chrome, and the style
+ * sheets only ever add to or override what it establishes.
+ */
+
+@import "./avatar/base.css";
+@import "./avatar/classic.css";
+@import "./avatar/moodblob.css";
+@import "./avatar/hats.css";
+@import "./avatar/critters.css";
+@import "./avatar/pixels.css";
+@import "./avatar/watchers.css";
