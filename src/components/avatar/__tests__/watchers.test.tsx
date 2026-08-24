@@ -34,7 +34,9 @@ describe("watchers", () => {
     );
     expect(container.querySelector(".sclera")).toBeNull();
     // Shut arcs alone read as asleep; the mouth is what makes it a wince.
-    expect(container.querySelector('path[d="M9.8 18.4q2.2-2 4.4 0"]')).not.toBeNull();
+    expect(
+      container.querySelector('path[d="M9.8 18.4q2.2-2 4.4 0"]'),
+    ).not.toBeNull();
   });
 
   it("raises one brow per eye when it needs you", () => {
