@@ -86,13 +86,20 @@ export function Moodblob(props: CrewRenderProps): JSX.Element {
         {/* The belly is the body again, shrunk about the centre and shifted
             up and left towards the light — the same offset the shipping
             gradient puts its highlight at, so a moodblob is lit from where a
-            classic blob is lit. */}
+            classic blob is lit.
+
+            The prototype centred the shrink with `transform-origin="12 12"`,
+            which React will not take: hyphenated it renders but logs an
+            invalid-property warning on every avatar, and camelCased it is not
+            in the SVG prop types at all. Centring the scale by hand is the
+            same matrix — a translate commutes with the translate in front of
+            it — and it survives without a CSS rule holding half the
+            geometry. */}
         <path
           className="belly"
           d={body}
           opacity="0.55"
-          transform="translate(-0.6 -0.9) scale(0.94)"
-          transformOrigin="12 12"
+          transform="translate(-0.6 -0.9) translate(12 12) scale(0.94) translate(-12 -12)"
         />
         <g className="eyes">{eyesFor(props)}</g>
         {mouthFor(props)}
