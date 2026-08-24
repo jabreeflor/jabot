@@ -2,6 +2,17 @@
 
 Bot-crew messenger UI prototypes. Wraps coding TUIs (Claude Code, Codex, Pi, or bring-your-own harness) in a chat-first interface with a Chief of Staff bot, folding "disappearing" threads, and an Inbox where long-running tasks resurface.
 
+## What it looks like
+
+![The shell: Chief's thread, the crew on the rail, a fold offer on the card](docs/img/app/chat.png)
+
+![The Inbox: a folded thread come back, with what it did while it was away](docs/img/app/inbox.png)
+
+Six more surfaces — a live coding session, Pull Requests, Schedules, the
+crew, the harness picker, first-run setup — are in
+[`docs/img/app/`](docs/img/app/), with what is fixture and what is host data
+spelled out. `node scripts/screenshots.mjs` regenerates them.
+
 ## Desktop app (Tauri 2)
 
 The scaffold (#7) lives at the repo root:
