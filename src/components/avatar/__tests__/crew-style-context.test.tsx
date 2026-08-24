@@ -123,8 +123,8 @@ describe("changing the setting", () => {
     );
 
     const styles = () =>
-      [...document.querySelectorAll(".av")].map(
-        (el) => [...el.classList].find((c) => c !== "av" && !c.startsWith("b-")),
+      [...document.querySelectorAll(".av")].map((el) =>
+        [...el.classList].find((c) => c !== "av" && !c.startsWith("b-")),
       );
     expect(styles()).toEqual([DEFAULT_CREW_STYLE, DEFAULT_CREW_STYLE]);
 
@@ -201,9 +201,7 @@ describe("the hook itself", () => {
     function Readout() {
       const style = useCrewStyle();
       const setStyle = useSetCrewStyle();
-      return (
-        <button onClick={() => setStyle("pixels")}>{style}</button>
-      );
+      return <button onClick={() => setStyle("pixels")}>{style}</button>;
     }
     render(
       <CrewStyleProvider>

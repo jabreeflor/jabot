@@ -37,10 +37,10 @@ const CREW: readonly { id: string; name: string; color: BotColor }[] =
 
 /** Every pair of crew members who were handed the same colour. */
 const COLOUR_PAIRS: readonly (readonly [number, number])[] = CREW.flatMap(
-  (a, i) =>
-    CREW.slice(i + 1)
-      .map((b, j) => [i, i + 1 + j] as const)
-      .filter(([, k]) => CREW[k].color === a.color),
+  (bot, i) =>
+    CREW.map((_, j) => [i, j] as const)
+      .slice(i + 1)
+      .filter(([, j]) => CREW[j].color === bot.color),
 );
 
 /**
@@ -65,6 +65,45 @@ function draw(
   const markup = svg.outerHTML;
   cleanup();
   return markup;
+}
+
+/**
+ * The drawing pulled apart into the three things a state may and may not
+ * touch: the eyes, the rest of the face, and the creature underneath.
+ *
+ * Comparing whole SVGs turned out to be too coarse for the state cases, and
+ * finding that out cost a mutation. With `eyesFor` rigged to fall through to
+ * the idle eyes, a waiting bot still came out unlike an idle one — the mouth
+ * had changed, and that alone was enough to pass. A face that half-answers is
+ * exactly the bug these cases exist for, so the parts are compared apart.
+ *
+ * The split works by class, which is what the styles paint in: every face mark
+ * in the shared vocabulary is `ink` or `inkstroke`, and a body is `body`,
+ * `belly` or `litefill`. Classic and Pixel pets paint with literal fills
+ * instead and are left out of the cases that use this.
+ */
+function parts(
+  style: CrewStyle,
+  bot: (typeof CREW)[number],
+  state: AvatarState,
+): { eyes: string; face: string; creature: string } {
+  const { container } = render(
+    <Avatar {...bot} state={state} crewStyle={style} />,
+  );
+  const svg = container.querySelector("svg");
+  if (!svg) throw new Error(`${style} drew no svg`);
+
+  const eyeGroup = svg.querySelector(".eyes");
+  const eyes = eyeGroup?.innerHTML ?? "";
+  eyeGroup?.remove();
+
+  const ink = [...svg.querySelectorAll(".ink, .inkstroke")];
+  const face = ink.map((el) => el.outerHTML).join("");
+  ink.forEach((el) => el.remove());
+
+  const creature = svg.innerHTML;
+  cleanup();
+  return { eyes, face, creature };
 }
 
 /** The wrapper, for the chrome tests. */
@@ -207,6 +246,41 @@ describe("the state reaches the drawing", () => {
     }
   });
 
+  it("changes both the eyes and the mouth, and never only one of them", () => {
+    // The shared vocabulary says every state with both, so a style whose eyes
+    // stopped answering would still look unlike idle on the strength of its
+    // mouth alone. Compared apart, that is a failure rather than a pass.
+    for (const style of FACED) {
+      for (const bot of SAMPLE) {
+        const drawn = STATES.map((state) => parts(style, bot, state));
+        expect(
+          new Set(drawn.map((d) => d.eyes)).size,
+          `${style} ${bot.id} eyes`,
+        ).toBe(STATES.length);
+        expect(
+          new Set(drawn.map((d) => d.face)).size,
+          `${style} ${bot.id} mouth`,
+        ).toBe(STATES.length);
+      }
+    }
+  });
+
+  it("leaves the creature alone when the face changes", () => {
+    // A state must not be able to redraw the bot. The hat, the crest and the
+    // silhouette are who it is, and one that turned into a different animal
+    // when a run failed would be unreadable at exactly the moment it matters.
+    for (const style of [...FACED, "watchers" as const]) {
+      for (const bot of SAMPLE) {
+        for (const state of STATES) {
+          expect(
+            parts(style, bot, state).creature,
+            `${style} ${bot.id} ${state}`,
+          ).toBe(parts(style, bot, "idle").creature);
+        }
+      }
+    }
+  });
+
   it("never lets waiting or failed fall back to the idle face", () => {
     // Both bugs this has caught live here: a state that silently renders as
     // idle, and two states that render as each other. Pixel pets is the one
@@ -302,18 +376,26 @@ describe("the chrome the six share", () => {
   });
 
   it("gives each bot its own blink, and reshuffles them per style", () => {
-    const offset = (bot: (typeof CREW)[number], style: CrewStyle) => {
-      const el = avatar({ ...bot, crewStyle: style });
-      const value = el.style.getPropertyValue("--blink");
-      cleanup();
-      return value;
-    };
+    const offsets = (style: CrewStyle) =>
+      CREW.map((bot) => {
+        const el = avatar({ ...bot, crewStyle: style });
+        const value = el.style.getPropertyValue("--blink");
+        cleanup();
+        return value;
+      });
 
     // A crew blinking in unison reads as one animation rather than as a room
     // of separate creatures, so the offsets have to spread.
-    const spread = new Set(CREW.map((bot) => offset(bot, "hats")));
-    expect(spread.size).toBeGreaterThan(6);
-    for (const value of spread) expect(value).toMatch(/^-\d(\.\d)?s$/);
+    const hats = offsets("hats");
+    expect(new Set(hats).size).toBeGreaterThan(6);
+
+    // Negative, so a bot is born into a cycle already running rather than
+    // pausing before its first blink.
+    for (const value of hats) expect(value).toMatch(/^-\d(\.\d)?s$/);
+
+    // And salted with the style, so switching crews does not hand every bot
+    // back the rhythm it already had.
+    expect(offsets("critters")).not.toEqual(hats);
   });
 
   it("keeps any class the call site asks for", () => {
