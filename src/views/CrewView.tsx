@@ -152,9 +152,12 @@ function CrewStyleSwitch({ bots }: { bots: readonly Bot[] }) {
             title={option.blurb}
             onClick={() => setStyle(option.id)}
           >
-            {/* Hidden from the name computation, not from the eye: the
-                avatar carries a `title` of its own, and a button named
-                "Chief Moodblob" is worse than one named "Moodblob". */}
+            {/* Decorative here, unusually for an avatar: the button is
+                named for the style, and the drawing is the sample rather
+                than the subject. It also keeps the avatar's own `title` out
+                of engines whose name-from-content picks up a descendant
+                tooltip — jsdom's does not, so the test below cannot pin
+                this and the attribute has to be deliberate. */}
             <span aria-hidden="true">
               <Avatar
                 id={model.id}

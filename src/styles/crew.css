@@ -103,3 +103,71 @@
   width: 26px;
   height: 26px;
 }
+
+/* ---- the crew-style switch (#44) ----------------------------------------
+ * Temporary, and built to be deleted: one section, one class prefix, no
+ * changes to anything above it. Six drawings of the same bot side by side is
+ * the only honest way to compare them — five names and five sentences is what
+ * the prototype page already tried, and it is how five candidates survived to
+ * this point.
+ *
+ * It sits in the page-top under "Run setup again" because both are settings
+ * about the crew rather than about a bot, and the crew grid below is what the
+ * choice is being made against: click a style and the twelve cards under it
+ * redraw.
+ */
+
+.style-switch {
+  margin-top: var(--sp-4);
+}
+
+.style-switch .page-section {
+  margin: 0 0 3px;
+}
+
+.style-switch-note {
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  max-width: 52ch;
+}
+
+.style-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+/* --blob-size is how every other call site asks for a size, so the picker asks
+   the same way rather than reaching for a prop that does not exist. --rim is
+   the surface the unread dot cuts itself out of; a preview never has one, but
+   a style is free to use it and the tile is not --side. */
+.style-opt {
+  --blob-size: 40px;
+  --rim: var(--raise2);
+  width: 88px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-lg);
+  background: var(--raise2);
+  color: var(--dim);
+  font: inherit;
+  font-size: var(--fs-caps);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.style-opt:hover {
+  color: var(--ink);
+  border-color: var(--edge-menu);
+}
+
+.style-opt[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: var(--dim);
+  background: var(--raise);
+}
