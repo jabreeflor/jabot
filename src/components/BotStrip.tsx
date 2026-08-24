@@ -72,7 +72,12 @@ function BotTile({
       aria-current={selected}
       onClick={() => onSelect(bot.id)}
     >
-      <Avatar id={bot.id} name={bot.name} color={bot.color} unread={bot.unread} />
+      <Avatar
+        id={bot.id}
+        name={bot.name}
+        color={bot.color}
+        unread={bot.unread}
+      />
       <small>{bot.name}</small>
     </button>
   );

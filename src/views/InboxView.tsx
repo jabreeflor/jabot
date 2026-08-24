@@ -55,7 +55,8 @@ export function InboxView({
     return true;
   });
   const resurfaced = matching.filter((card) => card.kind !== "folded");
-  const sleeping = tab === "all" ? matching.filter((c) => c.kind === "folded") : [];
+  const sleeping =
+    tab === "all" ? matching.filter((c) => c.kind === "folded") : [];
 
   return (
     <div className="view">
@@ -153,11 +154,7 @@ function InboxRow({
 
   return (
     <div
-      className={[
-        "card-row",
-        open ? "open" : "",
-        sleeping ? "dim" : "",
-      ]
+      className={["card-row", open ? "open" : "", sleeping ? "dim" : ""]
         .filter(Boolean)
         .join(" ")}
     >

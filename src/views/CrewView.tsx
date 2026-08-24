@@ -6,11 +6,7 @@
 
 import { useId } from "react";
 
-import {
-  Avatar,
-  CREW_STYLES,
-  useCrewStyleChoice,
-} from "../components/avatar";
+import { Avatar, CREW_STYLES, useCrewStyleChoice } from "../components/avatar";
 import { HarnessChip } from "../components/HarnessChip";
 import { PlusIcon } from "../components/Icon";
 import type { Bot, HarnessCard, ToolOption } from "../components/types";

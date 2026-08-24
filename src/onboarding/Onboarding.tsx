@@ -61,7 +61,12 @@ export function Onboarding({
 
   function finish(skipped: boolean) {
     onFinish(
-      makeProfile({ userName: name, harnessId, skipped, version: profile?.version }),
+      makeProfile({
+        userName: name,
+        harnessId,
+        skipped,
+        version: profile?.version,
+      }),
     );
   }
 
@@ -205,9 +210,8 @@ export function Onboarding({
               what matters.
             </blockquote>
             <p className="setup-note">
-              Long jobs fold out of the sidebar and keep running. They come
-              back through the Inbox when they are done — or when they need
-              you.
+              Long jobs fold out of the sidebar and keep running. They come back
+              through the Inbox when they are done — or when they need you.
             </p>
             <p className="setup-note">
               Chief is already offering to fold one away in the chat you are

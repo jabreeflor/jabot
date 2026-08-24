@@ -73,7 +73,9 @@ export function BotEditorModal({
   const [name, setName] = useState(bot?.name ?? "");
   const [color, setColor] = useState<BotColor>(bot?.color ?? "b-green");
   const [instructions, setInstructions] = useState(bot?.instructions ?? "");
-  const [selectedTools, setSelectedTools] = useState<string[]>(bot?.tools ?? []);
+  const [selectedTools, setSelectedTools] = useState<string[]>(
+    bot?.tools ?? [],
+  );
   const [harnessId, setHarnessId] = useState(
     bot?.harnessId ?? harnesses[0]?.id ?? "",
   );
@@ -91,9 +93,7 @@ export function BotEditorModal({
 
   function toggleTool(id: string) {
     setSelectedTools((current) =>
-      current.includes(id)
-        ? current.filter((t) => t !== id)
-        : [...current, id],
+      current.includes(id) ? current.filter((t) => t !== id) : [...current, id],
     );
   }
 

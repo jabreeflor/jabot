@@ -277,7 +277,8 @@ function AppShell({
    * thread already had (`state-machine.md`), and both paths honour it.
    */
   function foldThread(threadId: string, policy?: FoldPolicy) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost =
+      client !== null && hostThreads.some((t) => t.id === threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "foldThread", threadId, policy });
@@ -306,7 +307,8 @@ function AppShell({
    * and leave every one of those still running.
    */
   function archiveThread(threadId: string) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost =
+      client !== null && hostThreads.some((t) => t.id === threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "archiveThread", threadId });
@@ -325,7 +327,8 @@ function AppShell({
 
   /** Delete a thread. Same split as archive, and the same reason. */
   function deleteThread(threadId: string) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost =
+      client !== null && hostThreads.some((t) => t.id === threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "deleteThread", threadId });
@@ -518,7 +521,9 @@ function AppShell({
         hostOffline={hostError !== null}
         leavingThreadIds={leaving}
         onSelectBot={(botId) => setSelection({ view: "bot", botId })}
-        onSelectThread={(threadId) => setSelection({ view: "thread", threadId })}
+        onSelectThread={(threadId) =>
+          setSelection({ view: "thread", threadId })
+        }
         onOpenCrew={() => setSelection({ view: "crew" })}
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
@@ -548,7 +553,9 @@ function AppShell({
           onEditSchedule={(scheduleId) =>
             setScheduleEditor({ open: true, scheduleId })
           }
-          onAddSchedule={() => setScheduleEditor({ open: true, scheduleId: null })}
+          onAddSchedule={() =>
+            setScheduleEditor({ open: true, scheduleId: null })
+          }
           bots={bots}
           tools={[...toolChips, ...hostToolChips]}
           harnesses={harnesses}
@@ -854,9 +861,7 @@ function MainView({
           host={host}
           items={state.transcripts[thread.id] ?? []}
           onSend={(text) => onSend(thread.id, text)}
-          onAction={(itemId, actionId) =>
-            onNotice(thread.id, itemId, actionId)
-          }
+          onAction={(itemId, actionId) => onNotice(thread.id, itemId, actionId)}
           onFold={(policy) => onFoldThread(thread.id, policy)}
         />
       );

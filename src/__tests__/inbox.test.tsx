@@ -113,7 +113,9 @@ describe("InboxView", () => {
   it("reopens the thread a card came from", async () => {
     const props = renderInbox();
 
-    await userEvent.click(screen.getByRole("button", { name: "Reopen thread" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Reopen thread" }),
+    );
 
     expect(props.onOpenThread).toHaveBeenCalledWith("sidebar");
   });
@@ -144,7 +146,9 @@ describe("InboxView", () => {
   it("stamps each card with when it arrived", () => {
     renderInbox();
 
-    const row = screen.getByText("Inbox Manager needs a call").closest("button");
+    const row = screen
+      .getByText("Inbox Manager needs a call")
+      .closest("button");
     expect(within(row!).getByText(/^\d/)).toBeInTheDocument();
   });
 });

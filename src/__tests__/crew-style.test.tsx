@@ -61,7 +61,14 @@ describe("the crew-style switch", () => {
 
     expect(previews).toHaveLength(6);
     expect(new Set(previews.map(styleOf))).toEqual(
-      new Set(["classic", "moodblob", "hats", "critters", "pixels", "watchers"]),
+      new Set([
+        "classic",
+        "moodblob",
+        "hats",
+        "critters",
+        "pixels",
+        "watchers",
+      ]),
     );
   });
 
