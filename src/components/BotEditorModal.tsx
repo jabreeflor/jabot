@@ -9,7 +9,7 @@
 
 import { useId, useState } from "react";
 
-import { Avatar } from "./avatar";
+import { Avatar, reserveDeal } from "./avatar";
 import { FieldLabel, Modal } from "./Modal";
 import { HarnessPicker } from "./HarnessPicker";
 import {
@@ -21,6 +21,15 @@ import {
   type HarnessCard,
   type ToolOption,
 } from "./types";
+
+/**
+ * A swatch draws a colour, not a bot, so it is pinned to a place in the deal
+ * rather than taking one. Eight swatches off the top of the deck was enough on
+ * its own to make a seven-bot crew wear a hat twice, and a row that only looks
+ * right if you have never opened the editor is not a row that looks right.
+ * Pinned by position, so the eight stay eight different creatures.
+ */
+BOT_COLORS.forEach((swatch, i) => reserveDeal(`swatch.${swatch}`, i));
 
 /**
  * What the chip's tooltip says. The host's own sentence when it has one —

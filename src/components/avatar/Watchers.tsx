@@ -181,20 +181,39 @@ function attach(): () => void {
  */
 export function useGaze(): void {
   useEffect(() => {
-    if (
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      return;
-    }
-    mounted += 1;
-    if (mounted === 1) detach = attach();
-    return () => {
+    const quiet =
+      typeof window.matchMedia === "function"
+        ? window.matchMedia("(prefers-reduced-motion: reduce)")
+        : null;
+
+    let held = false;
+    const hold = () => {
+      if (held) return;
+      held = true;
+      mounted += 1;
+      if (mounted === 1) detach = attach();
+    };
+    const release = () => {
+      if (!held) return;
+      held = false;
       mounted -= 1;
       if (mounted === 0 && detach) {
         detach();
         detach = null;
       }
+    };
+
+    // Read once and then listened to. A person turning reduced motion on is
+    // asking for the motion to stop now, not at the next time something
+    // happens to remount — and the setting is one of the few a user changes
+    // *because* of what is currently on screen.
+    if (!quiet?.matches) hold();
+    const onChange = () => (quiet?.matches ? release() : hold());
+    quiet?.addEventListener?.("change", onChange);
+
+    return () => {
+      quiet?.removeEventListener?.("change", onChange);
+      release();
     };
   }, []);
 }

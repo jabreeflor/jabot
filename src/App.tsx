@@ -32,7 +32,7 @@ import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
 import { Sidebar } from "./components/Sidebar";
-import { CrewStyleProvider } from "./components/avatar";
+import { CrewStyleProvider, seedDealOrder } from "./components/avatar";
 import {
   ThreadContextMenu,
   type MenuPosition,
@@ -200,6 +200,20 @@ function AppShell({
   // asked yet" — a preview build or a unit test — and the fixtures stand in;
   // a real answer always has Chief in it.
   const bots = crew.bots ?? state.bots;
+  // The crews that deal a mark rather than hashing one need the roster in
+  // roster order, and they are handed one bot at a time (#44). Seeded here,
+  // above everything that draws a bot, so the deal is the roster's order and
+  // not the order the panes happened to paint in — which was different on a
+  // launch that went through setup, and therefore handed the same crew
+  // different hats on different days. Chief leads because Chief leads
+  // everywhere else: the sidebar draws its row above the strip, and setup
+  // draws Chief before there is a roster to be first in. Idempotent, and it
+  // only ever adds, so the second render of a StrictMode pair changes nothing.
+  seedDealOrder(
+    [...bots]
+      .sort((a, b) => Number(b.isChief) - Number(a.isChief))
+      .map((bot) => bot.id),
+  );
   const templates = crew.templates ?? BOT_TEMPLATES;
   const toolChips = crew.tools ?? TOOL_CATALOG;
   const hostToolChips = crew.hostTools ?? HOST_TOOLS;

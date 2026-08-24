@@ -137,6 +137,16 @@ describe("InboxView", () => {
     expect(props.onOpenThread).toHaveBeenCalledWith("nas");
   });
 
+  it("says which bot a card came from, and not only in a tooltip", () => {
+    // The row is a title, a summary, a time and a pill, and none of them names
+    // the bot — the drawing is the only thing that does. That is the case #44
+    // opens with, and the one place in the app where an avatar has to carry a
+    // name of its own rather than sit beside one.
+    renderInbox();
+
+    expect(screen.getByRole("img", { name: "Inbox Mgr" })).toBeInTheDocument();
+  });
+
   it("says when there is nothing waiting", () => {
     renderInbox({ cards: [] });
 

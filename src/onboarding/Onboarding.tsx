@@ -130,7 +130,7 @@ export function Onboarding({
               onChange={(event) => setName(event.target.value)}
             />
             <div className="setup-preview">
-              <span className="av" aria-hidden="true">
+              <span className="me-face" aria-hidden="true">
                 {initials(name.trim() === "" ? DEFAULT_USER_NAME : name)}
               </span>
               <span className="cap">This is your badge in the sidebar.</span>

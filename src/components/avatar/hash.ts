@@ -55,8 +55,15 @@ export function dealt<T>(
   return out;
 }
 
-/** Every id this process has drawn, in the order it first drew them. */
+/**
+ * Where each id sits in the deal, and how many places have been handed out.
+ *
+ * The count is separate from the map because not every entry consumes a place:
+ * a reserved id is written straight into the map and the counter never hears
+ * about it. See `reserveDeal`.
+ */
 const dealOrder = new Map<string, number>();
+let handedOut = 0;
 
 /**
  * A bot's place in the deal, when there is no roster to hand.
@@ -67,17 +74,49 @@ const dealOrder = new Map<string, number>();
  * the same deal done incrementally — first bot drawn takes the first mark,
  * and an id already seen keeps the number it was given.
  *
- * Two consequences worth knowing before using it. The order is the order the
- * app first painted each bot, which in practice is the sidebar's roster
- * order, so it is stable across a session and across restarts of an unchanged
- * crew. And deleting a bot shifts everyone drawn after it — the cost the
- * `dealt` comment names, paid here too. Use it for the feature that *is* the
- * identity, and keep hashing the details.
+ * On its own that made the mark a property of *paint order*, which is not a
+ * property of the bot: a fresh install painted setup's Chief before the
+ * sidebar's, and a decorative avatar burned a place that a real bot then never
+ * got, so the same crew could come back from a restart wearing different hats.
+ * `seedDealOrder` and `reserveDeal` are the two halves of the fix — seed the
+ * roster the app already holds before anything paints, and give the avatars
+ * that are not bots a fixed place instead of a place off the top of the deck.
+ * Deleting a bot still shifts everyone dealt after it: that is the cost the
+ * `dealt` comment names, paid here too.
  */
 export function dealIndex(id: string): number {
   const seen = dealOrder.get(id);
   if (seen !== undefined) return seen;
-  const next = dealOrder.size;
+  const next = handedOut++;
   dealOrder.set(id, next);
   return next;
+}
+
+/**
+ * Deal the roster in roster order, which is what the prototype did.
+ *
+ * Idempotent, and only ever *adds*: an id that has already been drawn keeps
+ * the place it was given, because a mark that changed under a person mid
+ * session would be a different bot arriving. Call it as early as the roster is
+ * known — the shell does, above the tree that draws any of it — and paint
+ * order stops deciding anything.
+ */
+export function seedDealOrder(ids: readonly string[]): void {
+  ids.forEach((id) => dealIndex(id));
+}
+
+/**
+ * Pin an id to a place without taking one off the deck.
+ *
+ * For the avatars that are not bots: the crew cluster's three marks and the
+ * bot editor's colour swatches. They have to draw *something*, and whatever
+ * they draw has to be distinct from its neighbours, but they are not members
+ * of the crew and a place spent on one is a place a real bot does not get —
+ * eight swatches were enough on their own to push a seven-bot crew into
+ * wearing a hat twice. Reserving is not sharing a bot's mark by accident: the
+ * cluster deliberately wears the first, third and fourth, exactly as the
+ * prototype's did.
+ */
+export function reserveDeal(id: string, index: number): void {
+  dealOrder.set(id, index);
 }

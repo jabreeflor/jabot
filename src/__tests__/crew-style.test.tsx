@@ -123,6 +123,18 @@ describe("the crew-style switch", () => {
     ).toEqual(["Critter kit"]);
   });
 
+  it("leaves the hover to the button, so the blurb is what a pointer finds", () => {
+    // Nested tooltips resolve innermost first, and the drawing is half the
+    // button and the half a person points at. With the bot's name on it, the
+    // only sentence explaining a candidate could be reached only by pointing
+    // at the label underneath.
+    const picker = renderCrew();
+    const option = within(picker).getByRole("button", { name: "Watchers" });
+
+    expect(option).toHaveAttribute("title", expect.stringContaining("eyes"));
+    expect(option.querySelector(".av")).not.toHaveAttribute("title");
+  });
+
   it("names each option by its style and never by the bot it draws", () => {
     const picker = renderCrew();
 

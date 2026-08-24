@@ -17,7 +17,7 @@ import type { CSSProperties, JSX } from "react";
 import type { BotColor } from "../types";
 import { useCrewStyle } from "./CrewStyleContext";
 import type { AvatarState, CrewRenderProps, CrewStyle } from "./crew";
-import { hash } from "./hash";
+import { hash, reserveDeal } from "./hash";
 import { Classic } from "./Classic";
 import { Moodblob } from "./Moodblob";
 import { HatCrew } from "./HatCrew";
@@ -46,6 +46,7 @@ export function Avatar({
   state = "idle",
   unread = false,
   labelled = false,
+  titled = true,
   crewStyle,
   className,
 }: {
@@ -67,6 +68,17 @@ export function Avatar({
    * is actually complaining about.
    */
   labelled?: boolean;
+  /**
+   * Draw without the name tooltip.
+   *
+   * The picker again, and for the same reason it needs `crewStyle`: its
+   * buttons carry a `title` saying what the style is, nested tooltips resolve
+   * innermost first, and the drawing is half the button and the half a person
+   * points at. With a name on it the only explanation of a candidate was
+   * unreachable by hover. The sample is a style rather than a bot, so it has
+   * no name to give up.
+   */
+  titled?: boolean;
   /**
    * Draw in a named style instead of the one that is switched on.
    *
@@ -93,7 +105,7 @@ export function Avatar({
     <span
       className={["av", style, color, className].filter(Boolean).join(" ")}
       data-state={state}
-      title={name}
+      title={titled ? name : undefined}
       style={{ "--blink": `-${blink}s` } as CSSProperties}
       {...(labelled ? { role: "img", "aria-label": name } : {})}
     >
@@ -113,14 +125,28 @@ export function Avatar({
  * would. The three colours are the ones today's cluster already uses, so the
  * tile does not change hue when the style does.
  *
+ * The places are reserved rather than dealt, and they are the prototype's
+ * own: its cluster was `BOTS[0]`, `BOTS[2]` and `BOTS[3]`, so the same first,
+ * third and fourth marks appear here. Reserving is the load-bearing half —
+ * these three are not members of the crew, and when they took places off the
+ * top of the deck every real bot's mark moved by three on any launch that went
+ * through setup.
+ *
  * `aria-hidden` on the wrapper: all three marks carry a `title`, and the
  * controls this sits in ("Crew") are already named by their own text.
  */
-const CREW_FACES: readonly { id: string; name: string; color: BotColor }[] = [
-  { id: "crew.a", name: "Crew", color: "b-teal" },
-  { id: "crew.b", name: "Crew", color: "b-purple" },
-  { id: "crew.c", name: "Crew", color: "b-violet" },
+const CREW_FACES: readonly {
+  id: string;
+  name: string;
+  color: BotColor;
+  place: number;
+}[] = [
+  { id: "crew.a", name: "Crew", color: "b-teal", place: 0 },
+  { id: "crew.b", name: "Crew", color: "b-purple", place: 2 },
+  { id: "crew.c", name: "Crew", color: "b-violet", place: 3 },
 ];
+
+CREW_FACES.forEach((face) => reserveDeal(face.id, face.place));
 
 export function CrewAvatar({ className }: { className?: string }) {
   return (

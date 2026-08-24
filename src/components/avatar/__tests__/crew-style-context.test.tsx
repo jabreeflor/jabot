@@ -27,6 +27,10 @@ import { CREW_STYLE_KEY, DEFAULT_CREW_STYLE, type CrewStyle } from "../crew";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // The store outlives a case. Two cases below write a key on purpose, and
+  // without this the later ones pass on the strength of expecting whatever
+  // those two happened to leave behind.
+  window.localStorage.clear();
 });
 
 const BOT = { id: "bot.mira", name: "Mira", color: "b-teal" } as const;

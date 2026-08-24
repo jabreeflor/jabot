@@ -412,7 +412,11 @@
   border-top: 1px solid var(--line);
 }
 
-.me-row .av {
+/* Your initials, not an avatar. It wore `.av` until the crews landed (#44)
+   and `.av` became a module with a chassis of its own — this chip restated
+   enough of it to survive, which is not the same as being unaffected, and the
+   next bare `.av` rule over there would have landed on it. */
+.me-face {
   width: 30px;
   height: 30px;
   border-radius: 50%;

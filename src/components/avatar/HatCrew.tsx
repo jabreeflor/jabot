@@ -201,13 +201,20 @@ export function HatCrew(props: CrewRenderProps): JSX.Element {
         <circle className="belly" cx="10.4" cy="12.8" r="5.2" opacity="0.5" />
         {/* The head sits low to leave the hat room, so the whole face moves
             down rather than every face path being renumbered for this one
-            style. `false` is the browless waiting face: raised brows under a
-            brim fuse with it into a single black slab and the head loses its
-            top half, so a hatted bot asks with its eyes alone. */}
-        <g className="eyes" transform="translate(0 2.4)">
-          {eyesFor(props, false)}
+            style. One group around both halves, and `.eyes` inside it rather
+            than carrying the translate itself: the blink animates `transform`,
+            and an animated `transform` replaces a `transform` *attribute* on
+            the same element for the whole cycle — which left the eyes up by
+            the crown while the mouth stayed put, and put them back only for
+            people who had asked for less motion.
+
+            `false` is the browless waiting face: raised brows under a brim
+            fuse with it into a single black slab and the head loses its top
+            half, so a hatted bot asks with its eyes alone. */}
+        <g transform="translate(0 2.4)">
+          <g className="eyes">{eyesFor(props, false)}</g>
+          {mouthFor(props)}
         </g>
-        <g transform="translate(0 2.4)">{mouthFor(props)}</g>
       </g>
     </svg>
   );

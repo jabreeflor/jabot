@@ -215,5 +215,12 @@ function CardAvatar({ source }: { source: CardSource }) {
       </div>
     );
   }
-  return <Avatar id={source.id} name={source.name} color={source.color} />;
+  // Named, unusually for an avatar: every other call site prints the bot's
+  // name in text beside the drawing, and an Inbox row does not — it carries a
+  // title, a summary, a time and a pill, none of which say who this is. The
+  // avatar is the only thing on the row that does, which is the complaint #44
+  // opens with, so here it is the name rather than a tooltip.
+  return (
+    <Avatar id={source.id} name={source.name} color={source.color} labelled />
+  );
 }

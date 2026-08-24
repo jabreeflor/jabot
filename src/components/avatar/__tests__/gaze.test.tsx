@@ -46,6 +46,34 @@ function reduceMotion(reduced: boolean) {
   );
 }
 
+/**
+ * Reduced motion as a live setting: the handlers the hook registers are kept,
+ * and `flip` is the OS switch being thrown while the page is open.
+ */
+function reduceMotionLater() {
+  const listeners: (() => void)[] = [];
+  let reduced = false;
+  vi.spyOn(window, "matchMedia").mockImplementation(
+    (query: string) =>
+      ({
+        get matches() {
+          return reduced && query.includes("prefers-reduced-motion");
+        },
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: (_: string, fn: () => void) => listeners.push(fn),
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }) as unknown as MediaQueryList,
+  );
+  return (next: boolean) => {
+    reduced = next;
+    listeners.forEach((fn) => fn());
+  };
+}
+
 function pointerAt(x: number, y: number) {
   window.dispatchEvent(
     new MouseEvent("pointermove", { clientX: x, clientY: y }),
@@ -133,6 +161,27 @@ describe("useGaze", () => {
     expect(counts(add)("scroll")).toBe(0);
     pointerAt(1024, 768);
     expect(gaze()).toEqual(["", ""]);
+  });
+
+  it("stops the gaze when the setting is turned on with the page open", () => {
+    // Reduced motion is one of the few settings a person changes *because* of
+    // what is on screen, so it is listened to rather than read once at mount.
+    // Read once, the eyes kept following until something happened to remount.
+    const flip = reduceMotionLater();
+    const remove = vi.spyOn(window, "removeEventListener");
+    render(<Watchers id="bot.one" name="One" color="b-teal" state="idle" />);
+
+    pointerAt(1024, 768);
+    expect(gaze()).not.toEqual(["", ""]);
+
+    flip(true);
+    expect(counts(remove)("pointermove")).toBe(1);
+    expect(gaze()).toEqual(["", ""]);
+
+    // And back: turning it off again gives the eyes back without a remount.
+    const add = vi.spyOn(window, "addEventListener");
+    flip(false);
+    expect(counts(add)("pointermove")).toBe(1);
   });
 
   it("still draws its eyes with the gaze switched off", () => {

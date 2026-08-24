@@ -150,16 +150,21 @@ function CrewStyleSwitch({ bots }: { bots: readonly Bot[] }) {
           >
             {/* Decorative here, unusually for an avatar: the button is
                 named for the style, and the drawing is the sample rather
-                than the subject. It also keeps the avatar's own `title` out
-                of engines whose name-from-content picks up a descendant
-                tooltip — jsdom's does not, so the test below cannot pin
-                this and the attribute has to be deliberate. */}
+                than the subject. `titled={false}` for the tooltip half of
+                the same thing — a `title` on the drawing wins over the
+                button's own, so with the bot's name on it, hovering the
+                sample said "Chief" and the blurb explaining the candidate
+                could only be reached by pointing at the label. It also keeps
+                the name out of engines whose name-from-content picks up a
+                descendant tooltip — jsdom's does not, so the test below
+                cannot pin this and the attributes have to be deliberate. */}
             <span aria-hidden="true">
               <Avatar
                 id={model.id}
                 name={model.name}
                 color={model.color}
                 crewStyle={option.id}
+                titled={false}
               />
             </span>
             {option.label}

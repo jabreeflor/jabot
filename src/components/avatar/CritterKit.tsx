@@ -116,11 +116,15 @@ export function CritterKit(props: CrewRenderProps): JSX.Element {
         />
         {/* The face vocabulary is drawn on the y = 11.4 line, and a critter's
             head sits lower than a blob's, so the whole face moves down rather
-            than every path in face.tsx being renumbered for one style. */}
-        <g className="eyes" transform="translate(0 1.6)">
-          {eyesFor(props)}
+            than every path in face.tsx being renumbered for one style. The
+            translate is on a group *around* `.eyes` and not on `.eyes` itself:
+            the blink animates `transform`, and an animated `transform` beats a
+            `transform` attribute on the same element for the whole cycle, so
+            the eyes drew unmoved while the mouth sat 1.6 lower. */}
+        <g transform="translate(0 1.6)">
+          <g className="eyes">{eyesFor(props)}</g>
+          {mouthFor(props)}
         </g>
-        <g transform="translate(0 1.6)">{mouthFor(props)}</g>
       </g>
     </svg>
   );

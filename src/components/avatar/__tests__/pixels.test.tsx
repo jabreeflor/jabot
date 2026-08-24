@@ -1,12 +1,17 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { PixelPets } from "../PixelPets";
+import { dealIndex } from "../hash";
 
 const bot = { name: "Mira", color: "b-teal" } as const;
 
 /** The twelve ids are drawn in this order, so `dealIndex` hands out 0..11 and
-    the sprite at each position is the one the table lists there. */
+    the sprite at each position is the one the table lists there. Dealt here
+    rather than left to whichever case renders first, so a case run on its own
+    gets the same sprites as a case run after the others. */
 const CREW = Array.from({ length: 12 }, (_, i) => `bot.${i}`);
+
+CREW.forEach((id) => dealIndex(id));
 
 const draw = (id: string, state: "idle" | "waiting" | "failed") =>
   render(<PixelPets id={id} {...bot} state={state} />).container;

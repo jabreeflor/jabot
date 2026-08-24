@@ -340,6 +340,37 @@ describe("the state reaches the drawing", () => {
   });
 });
 
+describe("the face the blink is drawn over", () => {
+  it("never puts a transform on the group the blink animates", () => {
+    // base.css animates `transform` on `.eyes`, and an animated `transform`
+    // replaces a `transform` *attribute* on the same element for the whole
+    // cycle. The hat crew and the critters both move their whole face down —
+    // on `.eyes` itself that translate was thrown away, so the eyes drew up by
+    // the crown with the mouth left where the design put it, and came back
+    // into place only for people who had asked for less motion. The translate
+    // belongs on a group around the eyes, where nothing animates it.
+    for (const style of STYLES) {
+      const { container } = render(<Avatar {...CREW[0]} crewStyle={style} />);
+      for (const eyes of container.querySelectorAll(".eyes")) {
+        expect(eyes, style).not.toHaveAttribute("transform");
+      }
+      cleanup();
+    }
+  });
+
+  it("still moves the eyes and the mouth together where the head sits low", () => {
+    // The two halves of a face have to travel together or it comes apart, so
+    // one group carries both rather than each carrying its own copy.
+    for (const style of ["hats", "critters"] as const) {
+      const { container } = render(<Avatar {...CREW[0]} crewStyle={style} />);
+      const face = container.querySelector(".eyes")!.parentElement!;
+      expect(face.getAttribute("transform"), style).toMatch(/^translate\(/);
+      expect(face.querySelector(".inkstroke, .ink"), style).not.toBeNull();
+      cleanup();
+    }
+  });
+});
+
 describe("the chrome the six share", () => {
   it("draws the unread dot only when there is something unread", () => {
     for (const style of STYLES) {
