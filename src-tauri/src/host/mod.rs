@@ -115,6 +115,7 @@ pub use tools::catalog::CATALOG as TOOL_CATALOG;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde_json::Value;
 
@@ -166,6 +167,18 @@ pub struct HostSession {
     /// the same spirit as `connections`: a queued prompt has not been said to
     /// the agent, so nothing durable should claim it has.
     prompt_queue: HashMap<String, VecDeque<transcript::queue::QueuedPrompt>>,
+    /// When `session/cancel` was last sent for a thread whose turn has not
+    /// ended since (#14). RAM, and per-process: it is the start of a stopwatch
+    /// on an adapter that may never answer, and a restart has no adapter left
+    /// to be waiting on.
+    ///
+    /// `session/cancel` is a notification — ACP gives it no reply, and the
+    /// only acknowledgement is the prompt response that follows. An adapter
+    /// that ignores it keeps its run open, which makes the thread invisible to
+    /// every path in `supervisor/keepalive.rs`, and the prompts the user typed
+    /// meanwhile sit in `prompt_queue` behind a turn that will never end. This
+    /// is what lets the supervisor notice.
+    cancel_requested: HashMap<String, Instant>,
     /// Per-turn PR linkage state: which tool calls this thread's adapter called
     /// `execute`, and whether anything in the turn suggested a pull request
     /// (#28). RAM, and rightly so — it describes one turn, and the post-turn
@@ -284,6 +297,7 @@ impl HostSession {
             connect_flows: HashMap::new(),
             mcp_profiles: HashMap::new(),
             prompt_queue: HashMap::new(),
+            cancel_requested: HashMap::new(),
             pr_watch: HashMap::new(),
             lifecycle: LifecycleState::from_env(),
             supervisor: SupervisorState::from_env(),
