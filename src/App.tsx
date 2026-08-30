@@ -16,7 +16,7 @@
 //! Navigation, overlay state, and the leave animation live here because they are
 //! the only state that spans the sidebar and the main pane.
 
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import {
   connectHost,
@@ -61,7 +61,7 @@ import {
   type ScheduleDraft,
   type Schedules,
 } from "./views/schedules";
-import { allThreads, useFolders } from "./views/folders";
+import { allThreads, useFolders, useHostThread } from "./views/folders";
 import { useThreadActions } from "./views/fold";
 import { useInbox, type HostInbox } from "./views/inbox";
 import { CrossIcon } from "./components/Icon";
@@ -215,6 +215,23 @@ function AppShell({
   // one that the mock reducer has never heard of.
   const folders = registered.folders ?? sidebarFolders(state);
   const hostThreads = registered.folders ? allThreads(registered.folders) : [];
+  // A thread the host owns that no folder lists — a bot's standing thread,
+  // whose `folder_id` is null. `folder/list` walks folder rows, so those are
+  // invisible to `hostThreads`, and the shell used to treat them as fixtures:
+  // the main pane said "That thread is gone", and fold or archive went to the
+  // mock reducer while the real permissions, runs and process sat untouched.
+  const selectedThreadId = selection.view === "thread" ? selection.threadId : null;
+  const resolved = useHostThread(
+    client,
+    selectedThreadId,
+    selectedThreadId !== null && hostThreads.some((t) => t.id === selectedThreadId),
+  );
+  /** Is this the host's thread, whether or not a folder claims it? */
+  const isHostThread = useCallback(
+    (threadId: string) =>
+      hostThreads.some((t) => t.id === threadId) || resolved?.id === threadId,
+    [hostThreads, resolved],
+  );
 
   // Fold, Archive and Delete are host calls for a host row (#26).
   // `registered.reload` runs whether the host took them or not: the leave
@@ -283,8 +300,7 @@ function AppShell({
    * thread already had (`state-machine.md`), and both paths honour it.
    */
   function foldThread(threadId: string, policy?: FoldPolicy) {
-    const onHost =
-      client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost = client !== null && isHostThread(threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "foldThread", threadId, policy });
@@ -313,8 +329,7 @@ function AppShell({
    * and leave every one of those still running.
    */
   function archiveThread(threadId: string) {
-    const onHost =
-      client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost = client !== null && isHostThread(threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "archiveThread", threadId });
@@ -333,8 +348,7 @@ function AppShell({
 
   /** Delete a thread. Same split as archive, and the same reason. */
   function deleteThread(threadId: string) {
-    const onHost =
-      client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost = client !== null && isHostThread(threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "deleteThread", threadId });
@@ -385,7 +399,7 @@ function AppShell({
       actionId === "fold" &&
       threadId &&
       client &&
-      hostThreads.some((t) => t.id === threadId)
+      isHostThread(threadId)
     ) {
       void fold({ threadId });
     }
@@ -562,6 +576,7 @@ function AppShell({
           tools={[...toolChips, ...hostToolChips]}
           harnesses={harnesses}
           hostThreads={hostThreads}
+          resolvedThread={resolved}
           selection={selection}
           host={host}
           onSelect={setSelection}
@@ -697,6 +712,7 @@ function MainView({
   tools,
   harnesses,
   hostThreads,
+  resolvedThread,
   selection,
   host,
   onSelect,
@@ -734,6 +750,9 @@ function MainView({
   /** Rows the host owns. Looked up before the fixtures, because a folder the
       host registered lists threads the mock reducer has never heard of. */
   hostThreads: readonly ThreadSummary[];
+  /** The selected thread when the host owns it but no folder lists it — a
+      bot's standing thread. Resolved one id at a time; see `useHostThread`. */
+  resolvedThread: ThreadSummary | null;
   selection: Selection;
   host: HostTarget;
   onSelect: (selection: Selection) => void;
@@ -823,7 +842,9 @@ function MainView({
         />
       );
     case "thread": {
-      const hostThread = hostThreads.find((t) => t.id === selection.threadId);
+      const hostThread =
+        hostThreads.find((t) => t.id === selection.threadId) ??
+        (resolvedThread?.id === selection.threadId ? resolvedThread : undefined);
       // A real row gets the real transcript. The fixtures keep the mock
       // reducer, so the shell still renders before a host has answered.
       if (client && hostThread) {
