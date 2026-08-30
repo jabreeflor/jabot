@@ -60,9 +60,13 @@
   /* every tier-3 harness a user brings (#13) — they share one accent */
   --h-custom: #e8a33d;
 
-  /* type */
+  /* type — Styrene B is the face Claude's desktop UI is set in and the one
+     this app is being matched to; it is licensed, so it is named for the
+     machines that have it and Figtree (vendored in fonts.css) carries the
+     look everywhere else. SF Pro stays on the end as the last resort. */
   --font-ui:
-    -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    "Styrene B", "Styrene A", Figtree, -apple-system, "SF Pro Text",
+    "Helvetica Neue", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
   --fs-caps: 11px;
   --fs-meta: 12.5px;
