@@ -10,7 +10,9 @@
  * - adding from a template is a **snapshot**, and it survives a restart;
  * - Chief cannot be removed, and removing anyone else keeps their work;
  * - the bot editor **is** the record: what a save writes is what the next
- *   session is actually spawned with, asserted from the agent's side.
+ *   session is actually spawned with, asserted from the agent's side;
+ * - an uploaded icon survives a restart, and one that is not an icon never
+ *   reaches the store.
  */
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -284,5 +286,77 @@ describe("the editor is the record", () => {
 
     const after = named((await client.listCrew()).bots, "Writer");
     expect(after.tools).toEqual(writer.tools);
+  });
+});
+
+describe("a bot's icon", () => {
+  /** A real 1x1 PNG, base64 and padded — the smallest honest icon there is. */
+  const PIXEL =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+  it("survives a restart, and clearing it puts the colour mark back", async () => {
+    const first = await connected();
+    const writer = named((await first.client.listCrew()).bots, "Writer");
+
+    // The shipped crew wears colours and initials, so nothing arrives with a
+    // picture — the field is absent rather than null.
+    expect(writer.image).toBeUndefined();
+
+    const saved = await first.client.updateBot({
+      botId: writer.botId,
+      image: PIXEL,
+    });
+    expect(saved.image).toBe(PIXEL);
+
+    // A later save that does not mention the icon must not take it away —
+    // renaming a bot is not a way to lose its picture.
+    const renamed = await first.client.updateBot({
+      botId: writer.botId,
+      name: "Wordsmith",
+    });
+    expect(renamed.image).toBe(PIXEL);
+
+    const dataDir = first.host.dataDir!;
+    await first.host.stop();
+
+    // Decision #4: quit persists. A picture is part of the bot, so it comes
+    // back with it rather than living in the window that drew it.
+    const second = await connected({ dataDir });
+    const reloaded = named((await second.client.listCrew()).bots, "Wordsmith");
+    expect(reloaded.image).toBe(PIXEL);
+
+    // The empty string is how the editor says "remove it", and what comes
+    // back has no icon at all rather than an icon of nothing.
+    const cleared = await second.client.updateBot({
+      botId: writer.botId,
+      image: "",
+    });
+    expect(cleared.image).toBeUndefined();
+    expect(
+      named((await second.client.listCrew()).bots, "Wordsmith").image,
+    ).toBeUndefined();
+  });
+
+  it("refuses anything that would fetch or execute, and writes nothing", async () => {
+    const { host, client } = await connected();
+    const writer = named((await client.listCrew()).bots, "Writer");
+
+    // The renderer checks these before it sends. This is the check that holds
+    // when the caller on the socket is not the renderer.
+    for (const bad of [
+      "javascript:alert(1)",
+      "http://example.com/avatar.png",
+      "data:image/svg+xml;base64,PHN2Zy8+",
+      "data:text/html;base64,PGI+",
+      "data:image/png;base64,not base64!",
+    ]) {
+      const refused = await host.call(CREW_UPDATE, {
+        botId: writer.botId,
+        image: bad,
+      });
+      expect(refused.error?.code, bad).toBe(RPC_ERROR.INVALID_PARAMS);
+    }
+
+    expect(named((await client.listCrew()).bots, "Writer").image).toBeUndefined();
   });
 });

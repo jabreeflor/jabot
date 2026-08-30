@@ -161,10 +161,17 @@ describe("botRow / templateRow", () => {
       harnessId: "claude",
       isChief: false,
       templateId: "expense",
+      image: null,
     });
     // Absent template = a bot nobody copied, not an unset field the editor
-    // would then send back as the string "undefined".
+    // would then send back as the string "undefined". An absent icon is the
+    // same shape for the same reason: `null` is "wears its colour and
+    // initials", and the editor sends that back as a deliberate clear.
     expect(botRow(bot()).templateId).toBeNull();
+    expect(botRow(bot()).image).toBeNull();
+    expect(botRow(bot({ image: "data:image/png;base64,AAAA" })).image).toBe(
+      "data:image/png;base64,AAAA",
+    );
     expect(templateRow(TEMPLATES[0])).toEqual(TEMPLATES[0]);
   });
 

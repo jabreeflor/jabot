@@ -23,7 +23,12 @@
 //! a tool id has to be one of the catalogs, because a bot's chips are an
 //! allowlist the session layer enforces (#18) — a tool id nothing recognises
 //! is a capability that silently never arrives. The check is here, at the
-//! write, so a bad value cannot reach the store at all.
+//! write, so a bad value cannot reach the store at all. An uploaded icon is
+//! the same rule applied to a bigger value: it goes into an `<img src>` on the
+//! way back out, so the host takes only the three raster `data:` URLs its own
+//! renderer produces and refuses anything that would fetch or execute —
+//! however carefully the renderer already checked, a host does not trust its
+//! caller.
 //!
 //! **Isolation is per bot, not per store.** One SQLite, one keychain, but each
 //! bot gets its own memory directory ([`memory`]) and each bot's session is
@@ -52,6 +57,26 @@ use super::HostSession;
 pub const BOT_COLORS: &[&str] = &[
     "b-teal", "b-yellow", "b-purple", "b-violet", "b-blue", "b-orange", "b-pink", "b-green",
 ];
+
+/// The media types an uploaded icon may claim to be — exactly the three the
+/// renderer's canvas can encode.
+///
+/// `image/svg+xml` is deliberately not among them. An SVG is a document, it can
+/// carry script and remote references, and this value is written to a row that
+/// is later handed to an `<img src>`; the three below are pixels and nothing
+/// else. A GIF the user picks is fine as *input* — it reaches the renderer's
+/// canvas as pixels and leaves it as one of these.
+const IMAGE_PREFIXES: &[&str] = &[
+    "data:image/png;base64,",
+    "data:image/jpeg;base64,",
+    "data:image/webp;base64,",
+];
+
+/// The most an icon may weigh once decoded, matching the cap the renderer
+/// applies before sending. 256 KiB is generous for a 256px square and small
+/// enough that a crew of twelve is a couple of megabytes of SQLite in the
+/// worst case.
+const MAX_IMAGE_BYTES: usize = 256 * 1024;
 
 /// Chief's host tools (decision #6). These are the host's own actions, not MCP
 /// servers — routing a handoff is something JaBot does, not something a
@@ -174,6 +199,12 @@ impl HostSession {
         let color = self.checked_color(&color)?;
         let tools_json = checked_tools_json(&tools)?;
         let harness_id = self.checked_harness(&harness_id)?;
+        // No three-way spelling on create: a bot that does not exist yet has no
+        // picture to keep, so "none" and "leave it alone" are one instruction.
+        let image = match params.image.as_deref() {
+            Some(image) => checked_image(image)?,
+            None => None,
+        };
 
         let store = self.crew_store()?;
         let new = NewBot {
@@ -184,6 +215,7 @@ impl HostSession {
             harness_id,
             template_id: params.template_id,
             sort_order: store.next_bot_sort_order().map_err(internal)?,
+            image,
         };
         let row = store.insert_bot(&new).map_err(store_error)?;
         self.ensure_memory(&row);
@@ -208,6 +240,12 @@ impl HostSession {
             Some(id) => Some(self.checked_harness(id)?),
             None => None,
         };
+        // The three-way field: absent leaves the picture alone, `""` clears it,
+        // anything else has to be an icon.
+        let image = match params.image.as_deref() {
+            Some(image) => Some(checked_image(image)?),
+            None => None,
+        };
         let patch = BotPatch {
             name: params.name.as_deref().map(str::trim).map(str::to_string),
             color,
@@ -218,6 +256,7 @@ impl HostSession {
                 .map(str::to_string),
             tools_json,
             harness_id,
+            image,
         };
         let row = self
             .crew_store()?
@@ -297,6 +336,7 @@ impl HostSession {
             color: row.color,
             instructions: row.instructions,
             tools,
+            image: row.image,
             harness_id: row.harness_id,
             is_chief: row.is_chief,
             template_id: row.template_id,
@@ -366,6 +406,65 @@ fn checked_tools_json(tools: &[String]) -> Result<String, RpcError> {
         }
     }
     serde_json::to_string(&kept).map_err(|err| RpcError::Internal(err.to_string()))
+}
+
+/// Check an uploaded icon, and read `""` as "take the picture away".
+///
+/// Three things have to hold and each has cost something somewhere before: the
+/// media type has to be one that is only ever pixels, the payload has to be
+/// base64 and nothing else (a `data:` URL whose body is a URL is how a fetch
+/// gets smuggled into an `<img>`), and the whole thing has to be small enough
+/// that a crew is a database rather than a photo album.
+///
+/// The renderer checks all three before it sends, and this checks them again,
+/// because "the UI would never send that" is not a property of a JSON-RPC host
+/// — anything on the socket is a caller.
+fn checked_image(image: &str) -> Result<Option<String>, RpcError> {
+    if image.is_empty() {
+        return Ok(None);
+    }
+    let Some(payload) = IMAGE_PREFIXES
+        .iter()
+        .find_map(|prefix| image.strip_prefix(prefix))
+    else {
+        return Err(RpcError::InvalidParams(format!(
+            "an icon must be a base64 data URL of type {}",
+            IMAGE_PREFIXES.join(", ")
+        )));
+    };
+    if !is_base64(payload) {
+        return Err(RpcError::InvalidParams(
+            "an icon's data URL must be base64".into(),
+        ));
+    }
+    let bytes = decoded_len(payload);
+    if bytes > MAX_IMAGE_BYTES {
+        return Err(RpcError::InvalidParams(format!(
+            "an icon may be at most {} KiB, and this one is {} KiB",
+            MAX_IMAGE_BYTES / 1024,
+            bytes / 1024
+        )));
+    }
+    Ok(Some(image.to_string()))
+}
+
+/// Standard base64, padded, and nothing else — no whitespace, no URL-safe
+/// alphabet, no `=` anywhere but the end.
+fn is_base64(payload: &str) -> bool {
+    let body = payload.trim_end_matches('=');
+    let padding = payload.len() - body.len();
+    !body.is_empty()
+        && padding <= 2
+        && payload.len() % 4 == 0
+        && body
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+}
+
+/// What the base64 decodes to, without decoding it: four characters carry
+/// three bytes, less one per `=` of padding.
+fn decoded_len(payload: &str) -> usize {
+    payload.len() / 4 * 3 - payload.bytes().filter(|&b| b == b'=').count()
 }
 
 fn host_tool_views() -> Vec<CrewHostToolView> {
@@ -739,6 +838,117 @@ mod tests {
         let missing = err(&mut session, CREW_REMOVE, json!({ "botId": "nobody" }));
         assert_eq!(missing.code, INVALID_PARAMS);
         assert!(missing.message.contains("nobody"));
+    }
+
+    /// A real 1x1 PNG, base64 and padded — the smallest thing that is
+    /// genuinely an icon rather than a string that looks like one.
+    const PIXEL: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
+    #[test]
+    fn a_bot_can_be_given_a_picture_replace_it_and_take_it_away() {
+        let (mut session, _dir) = host();
+
+        // Created with one: the field comes back on the record the editor is.
+        let made = ok(
+            &mut session,
+            CREW_CREATE,
+            json!({ "name": "Mira", "harnessId": "claude", "image": PIXEL }),
+        );
+        assert_eq!(made["image"], PIXEL);
+        let bot_id = made["botId"].as_str().unwrap().to_string();
+
+        // A patch that does not mention the icon leaves it alone. This is the
+        // case the nested `Option` in `BotPatch` exists for: renaming a bot
+        // used to be the only way to lose its picture.
+        let renamed = ok(
+            &mut session,
+            CREW_UPDATE,
+            json!({ "botId": bot_id, "name": "Mira Ops" }),
+        );
+        assert_eq!(renamed["name"], "Mira Ops");
+        assert_eq!(renamed["image"], PIXEL);
+
+        // The empty string is how the editor says "take it away", and what
+        // comes back has no icon at all rather than an icon of nothing.
+        let cleared = ok(
+            &mut session,
+            CREW_UPDATE,
+            json!({ "botId": bot_id, "image": "" }),
+        );
+        assert!(cleared.get("image").is_none(), "{cleared}");
+
+        // And it is gone from the store, not just from the answer.
+        let listed = bots(&mut session);
+        assert!(find(&listed, "Mira Ops").get("image").is_none());
+    }
+
+    #[test]
+    fn a_bot_without_a_picture_simply_has_no_icon_field() {
+        let (mut session, _dir) = host();
+        // The shipped crew wears colours and initials, so nothing seeded
+        // carries an icon — `image: null` on every row would be six lies the
+        // renderer has to unpick.
+        for bot in bots(&mut session) {
+            assert!(bot.get("image").is_none(), "{bot}");
+        }
+    }
+
+    #[test]
+    fn an_icon_that_could_fetch_or_execute_is_refused() {
+        let (mut session, _dir) = host();
+
+        // Each of these is a way to get something that is not pixels into an
+        // `<img src>` the renderer builds from a host row. The renderer checks
+        // them too; this is the check that holds when the caller is not the
+        // renderer.
+        for bad in [
+            "javascript:alert(1)",
+            "http://example.com/avatar.png",
+            "data:image/svg+xml;base64,PHN2Zy8+",
+            "data:text/html;base64,PGI+",
+            "data:image/png;base64,not base64!",
+            "data:image/png;base64,abcde",
+        ] {
+            let refused = err(
+                &mut session,
+                CREW_CREATE,
+                json!({ "name": "Bad", "harnessId": "claude", "image": bad }),
+            );
+            assert_eq!(refused.code, INVALID_PARAMS, "{bad} was accepted");
+        }
+
+        // Nothing was written on the way past any of them.
+        assert!(bots(&mut session).iter().all(|bot| bot["name"] != "Bad"));
+    }
+
+    #[test]
+    fn an_icon_bigger_than_the_cap_is_refused_with_its_size() {
+        let (mut session, _dir) = host();
+        // Valid base64 of one byte over the cap, so the only thing wrong with
+        // it is that it is too big.
+        let oversize = format!(
+            "data:image/png;base64,{}",
+            "A".repeat((MAX_IMAGE_BYTES + 1).div_ceil(3) * 4)
+        );
+
+        let refused = err(
+            &mut session,
+            CREW_CREATE,
+            json!({ "name": "Huge", "harnessId": "claude", "image": oversize }),
+        );
+        assert_eq!(refused.code, INVALID_PARAMS);
+        assert!(refused.message.contains("256 KiB"), "{}", refused.message);
+    }
+
+    #[test]
+    fn the_cap_is_measured_in_decoded_bytes_not_characters() {
+        // Base64 is a third bigger than what it carries, so measuring the
+        // string would refuse icons a third smaller than the cap says.
+        let at_cap = "A".repeat(MAX_IMAGE_BYTES.div_ceil(3) * 4);
+        assert_eq!(decoded_len(&at_cap), MAX_IMAGE_BYTES.div_ceil(3) * 3);
+        assert_eq!(decoded_len("AAAA"), 3);
+        assert_eq!(decoded_len("AAA="), 2);
+        assert_eq!(decoded_len("AA=="), 1);
     }
 
     #[test]

@@ -43,12 +43,12 @@ export function ChatView({
           {/* The only run state this view is ever handed: #24's `busy` is a
               turn in flight on this bot's standing thread, and a queued
               message is one about to be. Everything else a bot can be doing
-              happens in a thread this header knows nothing about, so the face
-              stays the bot's own rather than guessing. */}
+              happens in a thread this header knows nothing about, so the icon
+              stays unringed rather than guessing. */}
           <Avatar
-            id={bot.id}
             name={bot.name}
             color={bot.color}
+            image={bot.image}
             state={avatarStateFor(
               busy || (queued?.length ?? 0) > 0 ? "running" : null,
             )}

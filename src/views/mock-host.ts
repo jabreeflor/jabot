@@ -557,7 +557,6 @@ export function initialMockState(): MockState {
         createdAt: minutesAgo(63),
         source: {
           type: "bot",
-          id: "inboxm",
           name: "Inbox Mgr",
           color: "b-purple",
         },
@@ -571,7 +570,6 @@ export function initialMockState(): MockState {
         createdAt: minutesAgo(140),
         source: {
           type: "bot",
-          id: "writer",
           name: "Writer",
           color: "b-orange",
         },

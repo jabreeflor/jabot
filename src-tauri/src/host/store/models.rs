@@ -107,6 +107,8 @@ pub struct BotRow {
     pub sort_order: i64,
     pub created_at: String,
     pub updated_at: String,
+    /// The uploaded icon as a `data:` URL, or `None` for the colour mark.
+    pub image: Option<String>,
 }
 
 /// What `crew/create` writes. `is_chief` is absent on purpose: the seat is
@@ -125,6 +127,8 @@ pub struct NewBot {
     /// not be affected by the pack it came from.
     pub template_id: Option<String>,
     pub sort_order: i64,
+    /// The icon, already checked. `None` is a bot that wears its colour.
+    pub image: Option<String>,
 }
 
 /// A field-by-field patch: `None` leaves the column alone. There is no
@@ -137,6 +141,11 @@ pub struct BotPatch {
     pub instructions: Option<String>,
     pub tools_json: Option<String>,
     pub harness_id: Option<String>,
+    /// Nested on purpose, because this column has three answers and the others
+    /// have two: `None` leaves the picture alone, `Some(None)` takes it away,
+    /// and `Some(Some(url))` replaces it. Flattening it would make "clear the
+    /// icon" unsayable.
+    pub image: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

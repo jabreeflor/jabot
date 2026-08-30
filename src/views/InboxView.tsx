@@ -221,6 +221,11 @@ function CardAvatar({ source }: { source: CardSource }) {
   // avatar is the only thing on the row that does, which is the complaint #44
   // opens with, so here it is the name rather than a tooltip.
   return (
-    <Avatar id={source.id} name={source.name} color={source.color} labelled />
+    <Avatar
+      name={source.name}
+      color={source.color}
+      image={source.image}
+      labelled
+    />
   );
 }

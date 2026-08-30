@@ -49,6 +49,7 @@ export function botRow(bot: BotView): Bot {
     harnessId: bot.harnessId,
     isChief: bot.isChief,
     templateId: bot.templateId ?? null,
+    image: bot.image ?? null,
   };
 }
 
@@ -85,6 +86,20 @@ export function harnessCard(card: HarnessCardView): HarnessCard {
     accent: card.accent,
     installHint: card.installHint,
   };
+}
+
+/**
+ * The editor's icon field, in the shape `crew/update` reads it.
+ *
+ * Three states have to survive the trip and JSON only carries two of them
+ * usefully: a key that is absent means "leave the picture alone", and
+ * `undefined` is how a JSON body spells absent. So "take the picture away" has
+ * to be a value, and the empty string is the one the host already uses for
+ * clearing a text column.
+ */
+function patchImage(image: string | null | undefined): string | undefined {
+  if (image === undefined) return undefined;
+  return image ?? "";
 }
 
 /** The host keeps `bots.color` inside a closed list, so an unknown value means
@@ -156,10 +171,17 @@ export function useCrew(client: HostClient | null): Crew {
     async (botId: string | null, draft: BotDraft) => {
       if (!client) throw new Error("No host connection.");
       const saved = botId
-        ? await client.updateBot({ botId, ...draft })
+        ? await client.updateBot({
+            botId,
+            ...draft,
+            image: patchImage(draft.image),
+          })
         : await client.createBot({
             ...draft,
             templateId: draft.templateId ?? undefined,
+            // No three-way spelling on create: a new bot has no icon to keep,
+            // so "none" and "leave it alone" are the same instruction.
+            image: draft.image ?? undefined,
           });
       reload();
       return botRow(saved);

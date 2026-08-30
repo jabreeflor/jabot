@@ -138,6 +138,12 @@ export interface Bot {
   harnessId: string;
   isChief: boolean;
   templateId?: string | null;
+  /**
+   * The picture this bot was given, as a `data:` URL, or null for the colour
+   * mark. Held on the bot and not looked up per surface, because every place
+   * that draws a bot already has the bot.
+   */
+  image?: string | null;
   /** Unread work on this bot's standing thread — the red dot on its avatar. */
   unread?: boolean;
 }
@@ -160,6 +166,12 @@ export interface BotDraft {
   tools: string[];
   harnessId: string;
   templateId?: string | null;
+  /**
+   * The icon as the editor left it: a `data:` URL to set one, `null` to go
+   * back to the colour mark. Distinct from absent — a draft that omits it is
+   * one from a surface that does not edit icons, and the saved picture stays.
+   */
+  image?: string | null;
 }
 
 /**
@@ -221,16 +233,16 @@ export interface NoticeAction {
   primary?: boolean;
 }
 
-/** Who a card is from: a crew bot with a face, or a code session.
+/** Who a card is from: a crew bot with an icon, or a code session.
  *
- * The bot carries its `id` and not only its name because the face is dealt
- * from the id (#44) — a card that named the bot without identifying it would
- * draw a different creature in the Inbox than the sidebar draws for the same
- * bot. `inbox/list` has no bot on it at all today and every host card is a
- * `code` one, so the id costs the host nothing; it is the fixtures and #24's
- * handoff cards that have to supply it. */
+ * The bot variant carries everything its icon is drawn from rather than an id
+ * to look one up by: a card is built where the crew is already in hand, and a
+ * card holding only a reference would have to draw something else for the time
+ * between the crew loading and the card doing so. `inbox/list` has no bot on it
+ * at all today and every host card is a `code` one, so this costs the host
+ * nothing; it is the fixtures and #24's handoff cards that supply it. */
 export type CardSource =
-  | { type: "bot"; id: string; name: string; color: BotColor }
+  | { type: "bot"; name: string; color: BotColor; image?: string | null }
   | { type: "code" };
 
 /** An `inbox_events` row plus what the row needs to draw itself (#22). */

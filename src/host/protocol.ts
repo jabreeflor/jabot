@@ -860,6 +860,10 @@ export interface BotView {
   /** A colour token the renderer can render — `BotColor` in `components/types`.
       The host keeps the vocabulary closed, so this cast is safe. */
   color: string;
+  /** The bot's uploaded icon as a `data:` URL, absent when it has none. The
+      host re-checks the shape and the size on the way in, so what comes back
+      out is something an `<img src>` can be handed. */
+  image?: string;
   /** Persona / system prompt, also mirrored to `instructions.md` in the bot's
       memory directory where the session can read it. */
   instructions: string;
@@ -913,6 +917,9 @@ export interface CrewCreateParams {
   instructions?: string;
   tools?: string[];
   harnessId?: string;
+  /** A `data:` URL for the bot's icon. Refused if it is not one, or if it is
+      bigger than the host's cap. */
+  image?: string;
 }
 
 /** A patch: an omitted field is left alone, so changing a harness cannot
@@ -924,6 +931,10 @@ export interface CrewUpdateParams {
   instructions?: string;
   tools?: string[];
   harnessId?: string;
+  /** The icon, in the patch's own three-way spelling: omitted leaves the
+      picture alone, a `data:` URL replaces it, and `""` takes it away and puts
+      the colour mark back. */
+  image?: string;
 }
 
 export interface CrewRefParams {

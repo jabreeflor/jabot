@@ -193,10 +193,10 @@ export function Onboarding({
           <div key="chief" className="setup-card">
             <div className="setup-eyebrow">STEP 3 OF 3</div>
             <div className="setup-meet">
-              {/* Chief before there is a crew to read one from. The id is
-                  the one the host seeds him with, so the face a person meets
-                  in setup is the face waiting in the sidebar afterwards. */}
-              <Avatar id="chief" name="Chief" color="b-teal" />
+              {/* Chief before there is a crew to read one from: the seeded
+                  name and colour, so the icon a person meets in setup is the
+                  icon waiting in the sidebar afterwards. */}
+              <Avatar name="Chief" color="b-teal" />
               <div>
                 <h1 tabIndex={-1} ref={headingRef}>
                   Chief

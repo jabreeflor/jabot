@@ -1,15 +1,21 @@
-//! The bot editor: name, colour, instructions, tools — and a harness.
+//! The bot editor: icon, name, instructions, tools — and a harness.
 //!
 //! The harness picker is the one thing the prototype's editor did not have.
 //! Decision #6 made every bot an ACP harness session, so "which engine runs
 //! this bot" is part of the bot, not a hidden default.
 //!
+//! The icon is the other. A bot's mark is a colour and its initials until
+//! someone gives it a picture, and this is the only screen that can: the
+//! upload is normalised here (centre-cropped, scaled, re-encoded) and saved as
+//! part of the bot, so the picture survives a restart the same way the name
+//! does.
+//!
 //! Templates are the same fields without an id, so picking one just fills the
 //! form; nothing is created until Save.
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
-import { Avatar, reserveDeal } from "./avatar";
+import { Avatar, ImageError, readBotImage } from "./avatar";
 import { FieldLabel, Modal } from "./Modal";
 import { HarnessPicker } from "./HarnessPicker";
 import {
@@ -21,15 +27,6 @@ import {
   type HarnessCard,
   type ToolOption,
 } from "./types";
-
-/**
- * A swatch draws a colour, not a bot, so it is pinned to a place in the deal
- * rather than taking one. Eight swatches off the top of the deck was enough on
- * its own to make a seven-bot crew wear a hat twice, and a row that only looks
- * right if you have never opened the editor is not a row that looks right.
- * Pinned by position, so the eight stay eight different creatures.
- */
-BOT_COLORS.forEach((swatch, i) => reserveDeal(`swatch.${swatch}`, i));
 
 /**
  * What the chip's tooltip says. The host's own sentence when it has one —
@@ -78,9 +75,18 @@ export function BotEditorModal({
   const nameId = useId();
   const instructionsId = useId();
 
+  const fileId = useId();
+  const fileRef = useRef<HTMLInputElement>(null);
+
   const [templateId, setTemplateId] = useState("");
   const [name, setName] = useState(bot?.name ?? "");
   const [color, setColor] = useState<BotColor>(bot?.color ?? "b-green");
+  const [image, setImage] = useState<string | null>(bot?.image ?? null);
+  /** Why the last file could not become an icon. Its own line rather than the
+      modal's `error`, which belongs to the save that was refused: picking a
+      12MB TIFF is not a failed save, and clearing one should not clear the
+      other. */
+  const [imageError, setImageError] = useState<string | null>(null);
   const [instructions, setInstructions] = useState(bot?.instructions ?? "");
   const [selectedTools, setSelectedTools] = useState<string[]>(
     bot?.tools ?? [],
@@ -89,6 +95,9 @@ export function BotEditorModal({
     bot?.harnessId ?? harnesses[0]?.id ?? "",
   );
 
+  // The icon is untouched on purpose: a pack ships fields, not a picture, so
+  // there is nothing to copy — and a user who uploaded one and then browsed
+  // the templates should not lose it to a dropdown.
   function applyTemplate(id: string) {
     setTemplateId(id);
     const template = templates.find((t) => t.templateId === id);
@@ -98,6 +107,20 @@ export function BotEditorModal({
     setInstructions(template.instructions);
     setSelectedTools([...template.tools]);
     setHarnessId(template.harnessId);
+  }
+
+  async function pickImage(file: File | undefined) {
+    // Cleared whatever happens next, so the reason on screen is always the
+    // reason for the file that is on screen.
+    setImageError(null);
+    if (!file) return;
+    try {
+      setImage(await readBotImage(file));
+    } catch (err) {
+      setImageError(
+        err instanceof ImageError ? err.message : "Could not read that image",
+      );
+    }
   }
 
   function toggleTool(id: string) {
@@ -140,6 +163,70 @@ export function BotEditorModal({
         onChange={(event) => setName(event.target.value)}
       />
 
+      <FieldLabel>ICON</FieldLabel>
+      <div className="iconpick">
+        {/* The real thing at the size the sidebar draws it, so what the user
+            approves here is what they get there. Untitled: the modal already
+            says whose bot this is, and a tooltip repeating a half-typed name
+            under the cursor is noise. */}
+        <Avatar
+          name={name || "New bot"}
+          color={color}
+          image={image}
+          titled={false}
+        />
+        <div className="iconacts">
+          <button
+            type="button"
+            className="btn"
+            // The input is what actually opens the picker, but a bare file
+            // input cannot be styled into this row and its own button says
+            // "Choose File". This is the visible control; the input below is
+            // hidden and driven from here.
+            onClick={() => fileRef.current?.click()}
+          >
+            {image ? "Replace image" : "Upload image"}
+          </button>
+          {image && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setImage(null);
+                setImageError(null);
+              }}
+            >
+              Remove image
+            </button>
+          )}
+          <input
+            id={fileId}
+            ref={fileRef}
+            type="file"
+            className="iconfile"
+            accept="image/*"
+            aria-label="Upload an image"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              // Cleared so that picking the *same* file again — after a crop
+              // that was not what the user wanted, say — still fires a change.
+              event.target.value = "";
+              void pickImage(file);
+            }}
+          />
+          <p className="iconhint">
+            Square, and scaled down to icon size. Without one, the bot wears its
+            colour and initials.
+          </p>
+        </div>
+      </div>
+
+      {imageError && (
+        <p className="modal-error" role="alert">
+          {imageError}
+        </p>
+      )}
+
       <FieldLabel>COLOR</FieldLabel>
       <div className="swatches" role="group" aria-label="Color">
         {BOT_COLORS.map((swatch) => (
@@ -151,15 +238,12 @@ export function BotEditorModal({
             aria-pressed={color === swatch}
             onClick={() => setColor(swatch)}
           >
-            {/* A swatch previews a *colour*, not a bot, and the drawings
-                deal from the id — so the id is the colour. Anything constant
-                here would paint the whole row as one creature and hide the
-                only thing the row is for. */}
-            <Avatar
-              id={`swatch.${swatch}`}
-              name={swatch.replace("b-", "")}
-              color={swatch}
-            />
+            {/* The bot's own initials in each colour, rather than eight
+                anonymous discs: the row is a preview of the mark, and the
+                mark is what the colour is for. Drawn even while an image is
+                set — the colour is what the bot falls back to if the picture
+                is ever removed. */}
+            <Avatar name={name || "New bot"} color={swatch} titled={false} />
           </button>
         ))}
       </div>
@@ -226,6 +310,7 @@ export function BotEditorModal({
             onSave({
               name: name.trim() || "Unnamed bot",
               color,
+              image,
               instructions: instructions.trim(),
               tools: selectedTools,
               harnessId,

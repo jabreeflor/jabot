@@ -40,7 +40,7 @@ const CARDS: InboxCard[] = [
     title: "Inbox Manager needs a call",
     summary: "Two invoices from UGREEN — archive, or flag for finance?",
     createdAt: at(63),
-    source: { type: "bot", id: "inboxm", name: "Inbox Mgr", color: "b-purple" },
+    source: { type: "bot", name: "Inbox Mgr", color: "b-purple" },
   },
   {
     id: "sleep-1",
