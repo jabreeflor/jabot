@@ -1,7 +1,7 @@
 /**
  * The mascot every surface draws, the picture a user can substitute, and the
  * state chrome shared by both. The colour classes supply the variations; the
- * mascot asset supplies one recognizable product identity.
+ * mascot atlas supplies one recognizable product identity and real poses.
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -44,6 +44,17 @@ describe("the mascot variations", () => {
     for (const name of ["", "   "]) {
       const el = avatar({ name, color: "b-blue" });
       expect(el.querySelector(".mascot")).not.toBeNull();
+      cleanup();
+    }
+  });
+
+  it("uses the frame atlas for every runtime state", () => {
+    for (const state of STATES) {
+      const el = avatar({ name: "Probe", color: "b-blue", state });
+      expect(el.querySelector(".mascot-sheet")).toHaveAttribute(
+        "src",
+        expect.stringContaining("mascot-spritesheet"),
+      );
       cleanup();
     }
   });

@@ -12,7 +12,7 @@
 //! every one of those stylesheets had to be replaced with a threaded number,
 //! and the mascot stage scales to whatever box it lands in.
 
-import mascotAvatar from "../../assets/mascot-avatar.png";
+import mascotSpritesheet from "../../assets/mascot-spritesheet.webp";
 import type { BotColor } from "../types";
 import type { AvatarState } from "./state";
 import { isBotImage } from "./image";
@@ -84,14 +84,19 @@ export function Avatar({
 }
 
 /**
- * The product mascot inside the bot's colour well. The transparent source is
- * deliberately shared: identity comes from the robot, while CSS supplies the
- * bot-specific variation and movement without multiplying image assets.
+ * The product mascot inside the bot's colour well. This is a real frame atlas,
+ * not a still image translated around the icon: CSS selects the row that
+ * matches the bot's state and advances through its rendered poses.
  */
 function MascotMark() {
   return (
     <span className="mascot-stage" aria-hidden="true">
-      <img className="mascot" src={mascotAvatar} alt="" draggable={false} />
+      <img
+        className="mascot mascot-sheet"
+        src={mascotSpritesheet}
+        alt=""
+        draggable={false}
+      />
     </span>
   );
 }
