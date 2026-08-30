@@ -92,9 +92,11 @@ const LEAVE_MS = 380;
 
 type NewChatState = { open: false } | { open: true; folderId: string | null };
 type EditorState = { open: false } | { open: true; botId: string | null };
+/** Editing only: a *new* schedule is written as a prompt inside the Schedules
+    screen (#25), so the modal never opens without a record behind it. */
 type ScheduleEditorState =
   | { open: false }
-  | { open: true; scheduleId: string | null };
+  | { open: true; scheduleId: string };
 type MenuState = { thread: ThreadSummary; position: MenuPosition } | null;
 type HostSession = ReturnType<typeof useHost>;
 
@@ -483,12 +485,11 @@ function AppShell({
     editor.open && editor.botId
       ? (bots.find((bot) => bot.id === editor.botId) ?? null)
       : null;
-  const editingSchedule =
-    scheduleEditor.open && scheduleEditor.scheduleId
-      ? ((schedules.schedules ?? []).find(
-          (row) => row.scheduleId === scheduleEditor.scheduleId,
-        ) ?? null)
-      : null;
+  const editingSchedule = scheduleEditor.open
+    ? ((schedules.schedules ?? []).find(
+        (row) => row.scheduleId === scheduleEditor.scheduleId,
+      ) ?? null)
+    : null;
 
   return (
     <div className="app-shell">
@@ -542,9 +543,6 @@ function AppShell({
           onSignIn={() => setSignIn(true)}
           onEditSchedule={(scheduleId) =>
             setScheduleEditor({ open: true, scheduleId })
-          }
-          onAddSchedule={() =>
-            setScheduleEditor({ open: true, scheduleId: null })
           }
           bots={bots}
           tools={[...toolChips, ...hostToolChips]}
@@ -633,20 +631,16 @@ function AppShell({
         />
       )}
 
-      {scheduleEditor.open && (
+      {scheduleEditor.open && editingSchedule && (
         <ScheduleEditorModal
-          schedule={
-            editingSchedule
-              ? {
-                  scheduleId: editingSchedule.scheduleId,
-                  botId: editingSchedule.botId,
-                  name: editingSchedule.name,
-                  cron: editingSchedule.cron,
-                  prompt: editingSchedule.prompt,
-                  catchUp: editingSchedule.catchUp,
-                }
-              : null
-          }
+          schedule={{
+            scheduleId: editingSchedule.scheduleId,
+            botId: editingSchedule.botId,
+            name: editingSchedule.name,
+            cron: editingSchedule.cron,
+            prompt: editingSchedule.prompt,
+            catchUp: editingSchedule.catchUp,
+          }}
           bots={bots}
           error={scheduleError}
           onSave={saveSchedule}
@@ -685,7 +679,6 @@ function MainView({
   github,
   onSignIn,
   onEditSchedule,
-  onAddSchedule,
   bots,
   tools,
   harnesses,
@@ -718,7 +711,6 @@ function MainView({
   /** Open the GitHub sign-in dialog. */
   onSignIn: () => void;
   onEditSchedule: (scheduleId: string) => void;
-  onAddSchedule: () => void;
   /** The crew, host-owned once `crew/list` has answered (#17). */
   bots: readonly Bot[];
   /** Every chip a crew card may have to name: the MCP catalog plus Chief's
@@ -777,7 +769,9 @@ function MainView({
           bots={bots}
           error={schedules.error}
           onReload={schedules.reload}
-          onAdd={onAddSchedule}
+          // The prompt keeps the draft and says why, so the promise is handed
+          // straight to it rather than resolved into a shell-level error.
+          onCreate={(draft) => schedules.save(null, draft)}
           onEdit={onEditSchedule}
           onToggle={(scheduleId, enabled) => {
             void schedules.setEnabled(scheduleId, enabled);
