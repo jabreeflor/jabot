@@ -15,6 +15,7 @@ import { CodeSessionIcon } from "../components/Icon";
 import { formatWhen } from "../components/format";
 import { NEEDS_YOU_KINDS, inboxTag } from "../components/status";
 import { Tabs, tabButtonId, type TabSpec } from "../components/Tabs";
+import type { NotifyStatusResult } from "../host";
 import type { CardSource, InboxCard } from "../components/types";
 
 type InboxTab = "all" | "needs" | "done";
@@ -25,6 +26,29 @@ const TABS: readonly TabSpec<InboxTab>[] = [
   { id: "done", label: "Done" },
 ];
 
+/**
+ * Is there something to say about banners?
+ *
+ * Only `denied` earns a line, and only on a platform that has a Notification
+ * Center to refuse. The distinction matters:
+ *
+ * - `unsupported` is a Linux build or a dev build outside `JaBot.app` — there
+ *   was never anything to permit, so a line about System Settings would send
+ *   the user somewhere that cannot help.
+ * - `notDetermined` means nobody has been asked yet. The first banner asks;
+ *   pre-emptively saying "notifications are off" would be wrong the moment it
+ *   is read.
+ * - `granted` has nothing to report.
+ *
+ * The copy leads with the consequence and closes with the reassurance,
+ * because the card is written first and always (decision #5): a refused
+ * permission costs the interruption and nothing else, and a user who reads
+ * this as "I have been losing work" would have read it wrong.
+ */
+function bannersRefused(notify?: NotifyStatusResult | null): boolean {
+  return notify?.supported === true && notify.authorization === "denied";
+}
+
 export function InboxView({
   cards,
   now,
@@ -32,6 +56,7 @@ export function InboxView({
   loading,
   onOpenThread,
   onAction,
+  notify,
 }: {
   cards: readonly InboxCard[];
   /** Injected so "10:12" is not a moving target in tests. */
@@ -43,6 +68,9 @@ export function InboxView({
   loading?: boolean;
   onOpenThread: (threadId: string) => void;
   onAction?: (cardId: string, actionId: string) => void;
+  /** What the OS says about banners (#27). Absent on a host that will not
+      answer, which is the same as not knowing and draws nothing. */
+  notify?: NotifyStatusResult | null;
 }) {
   const [tab, setTab] = useState<InboxTab>("all");
   const [openId, setOpenId] = useState<string | null>(
@@ -65,6 +93,13 @@ export function InboxView({
           <div className="page-top">
             <h1>Inbox</h1>
             <p>Where folded threads come back to you</p>
+            {bannersRefused(notify) && (
+              <p className="page-note" role="status">
+                Notifications are turned off for JaBot in System Settings, so
+                nothing here will interrupt you. Every card still arrives —
+                this list is complete either way.
+              </p>
+            )}
           </div>
 
           <Tabs

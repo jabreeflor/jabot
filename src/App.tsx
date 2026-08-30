@@ -770,6 +770,7 @@ function MainView({
           loading={inbox.loading && inbox.cards === null}
           onOpenThread={onOpenInboxThread}
           onAction={onInboxAction}
+          notify={inbox.notify}
         />
       );
     case "schedules":

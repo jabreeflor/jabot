@@ -70,6 +70,20 @@
   margin-top: 3px;
 }
 
+/* A standing fact about the page, not its subtitle: today the one case is a
+   notification permission the OS refused (#27). Amber-keyed and indented off
+   a rule so it reads as an aside rather than a second description — nothing
+   here is broken, and the list below it is complete. */
+.page-top .page-note {
+  margin-top: var(--sp-2);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--amber);
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  max-width: 62ch;
+  line-height: 1.5;
+}
+
 .page-section {
   color: var(--faint);
   font-size: var(--fs-caps);

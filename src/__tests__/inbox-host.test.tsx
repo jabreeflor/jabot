@@ -317,3 +317,46 @@ describe("the Inbox on real data", () => {
     );
   });
 });
+
+/**
+ * Notification permission reaches the pane, and a host that cannot answer
+ * costs nothing.
+ *
+ * The stub client above has no `notifyStatus` at all, which is the older-host
+ * case: the Inbox must be entirely unaffected. The other case is a host that
+ * answers "denied", where the pane says so.
+ */
+describe("the Inbox and notification permission", () => {
+  it("is unaffected by a host that cannot answer notify/status", async () => {
+    // The default stub has no `notifyStatus` method whatsoever.
+    await openInbox();
+
+    // The cards are all there, and nothing claims banners are off.
+    expect(await screen.findByText("Nightly NAS backup")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Notifications are turned off/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("tells the pane when the OS has refused banners", async () => {
+    vi.mocked(connectHost).mockResolvedValue({
+      client: {
+        ...client(),
+        notifyStatus: vi.fn(async () => ({
+          supported: true,
+          authorization: "denied" as const,
+          kinds: ["needs_you"],
+        })),
+      } as unknown as HostClient,
+      hello: HELLO,
+    });
+
+    await openInbox();
+
+    expect(
+      await screen.findByText(/Notifications are turned off/),
+    ).toBeInTheDocument();
+    // The cards are still drawn: this is an aside, not a replacement.
+    expect(screen.getByText("Nightly NAS backup")).toBeInTheDocument();
+  });
+});
