@@ -17,6 +17,7 @@ import { useId, useState } from "react";
 
 import { FieldLabel, Modal } from "./Modal";
 import { HarnessPicker } from "./HarnessPicker";
+import { Select } from "./Select";
 import type { Folder, HarnessCard, NewChatDraft } from "./types";
 
 export function NewChatModal({
@@ -65,18 +66,15 @@ export function NewChatModal({
       />
 
       <FieldLabel htmlFor={folderId}>FOLDER</FieldLabel>
-      <select
+      <Select
         id={folderId}
         value={folder}
-        onChange={(event) => setFolder(event.target.value)}
-      >
-        {folders.map((f) => (
-          <option key={f.id} value={f.id}>
-            {f.name}
-          </option>
-        ))}
-        <option value="">No folder</option>
-      </select>
+        onChange={setFolder}
+        options={[
+          ...folders.map((f) => ({ value: f.id, label: f.name })),
+          { value: "", label: "No folder" },
+        ]}
+      />
 
       <FieldLabel htmlFor={taskId}>WHAT SHOULD IT DO?</FieldLabel>
       <input
