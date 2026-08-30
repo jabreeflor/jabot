@@ -131,11 +131,19 @@ impl HostSession {
     /// files, not their crew.
     pub fn crew_list(&mut self) -> Result<CrewListResult, RpcError> {
         let rows = self.crew_store()?.list_bots().map_err(internal)?;
+        // One query for the whole grid rather than one per bot. A crew of
+        // twelve is twelve round trips to answer a question SQLite can group
+        // in one, and the grid draws all of them at once or none.
+        let unread = self
+            .crew_store()?
+            .count_unread_inbox_by_bot()
+            .map_err(internal)?;
         let bots = rows
             .into_iter()
             .map(|row| {
                 self.ensure_memory(&row);
-                self.bot_view(row)
+                let waiting = unread.get(&row.id).copied().unwrap_or(0);
+                self.bot_view(row, waiting)
             })
             .collect();
         Ok(CrewListResult {
@@ -219,7 +227,8 @@ impl HostSession {
         };
         let row = store.insert_bot(&new).map_err(store_error)?;
         self.ensure_memory(&row);
-        Ok(self.bot_view(row))
+        // Nothing can be waiting on a bot that was just written.
+        Ok(self.bot_view(row, 0))
     }
 
     /// Save the editor. Every field is optional and an omitted one is left
@@ -268,7 +277,8 @@ impl HostSession {
         // The persona is what a session reads out of the memory directory, so
         // saving the record and refreshing the file are one action.
         self.ensure_memory(&row);
-        Ok(self.bot_view(row))
+        // Nothing can be waiting on a bot that was just written.
+        Ok(self.bot_view(row, 0))
     }
 
     /// Remove a bot from the crew.
@@ -324,7 +334,9 @@ impl HostSession {
         }
     }
 
-    fn bot_view(&self, row: BotRow) -> BotView {
+    /// `unread` is passed in rather than looked up: this borrows `&self` for
+    /// `memory_dir`, and a query per row would make the grid N+1.
+    fn bot_view(&self, row: BotRow, unread: i64) -> BotView {
         // A row whose `tools_json` will not parse is a row nothing wrote —
         // every write here validates it — so an empty allowlist is the safe
         // reading: the bot gets no tools rather than all of them.
@@ -341,6 +353,7 @@ impl HostSession {
             is_chief: row.is_chief,
             template_id: row.template_id,
             sort_order: row.sort_order,
+            unread,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
@@ -503,7 +516,8 @@ mod tests {
     use crate::host::protocol::error::{CHIEF_REQUIRED, INVALID_PARAMS};
     use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
     use crate::host::protocol::{
-        CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_UPDATE, HOST_HELLO, THREAD_OPEN, THREAD_STATE,
+        CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_THREAD, CREW_UPDATE, HOST_HELLO, THREAD_OPEN,
+        THREAD_STATE,
     };
     use serde_json::{json, Value};
 
@@ -545,6 +559,55 @@ mod tests {
         bots.iter()
             .find(|bot| bot["name"] == name)
             .unwrap_or_else(|| panic!("no bot named {name}"))
+    }
+
+    /// The red dot on a crew blob (#22, #24).
+    ///
+    /// `Bot.unread` has been a prop since the prototype and `Avatar` has drawn
+    /// the dot for it just as long, but `BotView` had no such field — so in
+    /// the shipped app the dot could not appear however much was waiting, and
+    /// the only `true` anywhere was a fixture.
+    #[test]
+    fn a_bot_with_cards_waiting_comes_back_with_a_count() {
+        let (mut session, _dir) = host();
+        let writer = find(&bots(&mut session), "Writer")["botId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let thread = ok(&mut session, CREW_THREAD, json!({ "botId": writer }))["threadId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        // Everyone starts at zero, including the bot whose thread now exists:
+        // a thread is not a card.
+        for bot in bots(&mut session) {
+            assert_eq!(bot["unread"], json!(0), "{}", bot["name"]);
+        }
+
+        let store = session.store.as_ref().expect("store");
+        store.set_thread_state(&thread, "folded").unwrap();
+        store
+            .resurface_thread(
+                &thread,
+                "folded",
+                "done",
+                "done",
+                "Overnight mail summarised",
+                "18 read, 3 need a reply",
+                None,
+                None,
+            )
+            .unwrap();
+
+        let crew = bots(&mut session);
+        assert_eq!(find(&crew, "Writer")["unread"], json!(1));
+        // And nobody else's blob lights up for it.
+        for bot in &crew {
+            if bot["name"] != json!("Writer") {
+                assert_eq!(bot["unread"], json!(0), "{}", bot["name"]);
+            }
+        }
     }
 
     #[test]

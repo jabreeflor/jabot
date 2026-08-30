@@ -51,6 +51,11 @@ export function botRow(bot: BotView): Bot {
     isChief: bot.isChief,
     templateId: bot.templateId ?? null,
     image: bot.image ?? null,
+    // A dot, not a number: the blob has room for "something is waiting" and
+    // the count itself is read in the Inbox. An older host that does not send
+    // the field answers `undefined`, which draws no dot — the honest reading,
+    // and the one the app has been living with.
+    unread: bot.unread > 0,
   };
 }
 
