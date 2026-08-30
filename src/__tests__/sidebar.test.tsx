@@ -4,7 +4,7 @@
  * and reports the gestures — a right-click, a folder's ＋ — rather than acting
  * on them itself.
  */
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -91,6 +91,34 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
 }
 
 describe("Sidebar", () => {
+  /** The Devices row is host-only, for the same reason Settings is: what it
+      lists is what the *host* is paired to, and a preview build is paired to
+      nothing. Drawing it there would offer a screen with nothing on it. */
+  it("shows Devices only when there is a host to ask", async () => {
+    renderSidebar();
+    expect(screen.queryByRole("button", { name: "Devices" })).toBeNull();
+
+    const onOpenDevices = vi.fn();
+    cleanup();
+    renderSidebar({ onOpenDevices });
+    const row = screen.getByRole("button", { name: "Devices" });
+    expect(row).toHaveAttribute("aria-current", "false");
+    await userEvent.click(row);
+    expect(onOpenDevices).toHaveBeenCalled();
+  });
+
+  it("marks the Devices row as current when it is the open view", () => {
+    renderSidebar({
+      onOpenDevices: vi.fn(),
+      selection: { view: "devices" } as Selection,
+    });
+
+    expect(screen.getByRole("button", { name: "Devices" })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+  });
+
   it("lists every thread it is given, with what that thread is doing", () => {
     renderSidebar();
 

@@ -133,6 +133,23 @@ export function InboxIcon({ className }: IconProps) {
 }
 
 /** Schedules. A clock, because the thing a schedule is about is a time. */
+/**
+ * A paired device: a phone, because that is what every device other than this
+ * Mac actually is (#19, #29).
+ *
+ * A laptop glyph would have been the neutral choice and the wrong one — the
+ * nav row it labels is about the things that are *not* this machine, and a
+ * second laptop beside "Settings" reads as another copy of the app.
+ */
+export function DeviceIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <rect x="7" y="3" width="10" height="18" rx="2.5" />
+      <path d="M10.8 18.2h2.4" />
+    </Stroke>
+  );
+}
+
 export function ClockIcon({ className }: IconProps) {
   return (
     <Stroke className={className} width={1.8}>

@@ -1,0 +1,160 @@
+/*
+ * Devices (#19, #29).
+ *
+ * A list, like Schedules, and for the same reason: the question a person opens
+ * this screen with is "what can reach my Mac", which is answered by a column
+ * you run your eye down. Cards would put five borders between five answers.
+ *
+ * The one thing this screen does that the others do not is keep its dead rows.
+ * A revoked device that vanished would leave "I revoked it" and "it was never
+ * paired" looking identical, and only one of those is reassuring.
+ */
+
+.dev-page {
+  padding-bottom: var(--sp-3);
+}
+
+.dev-list {
+  list-style: none;
+  margin: var(--sp-5) 0 0;
+  padding: 0;
+}
+
+.dev-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-3);
+  border-radius: var(--r-lg);
+  /* On the row rather than between rows, so the last one has no dangling
+     hairline and nothing shifts when a row grows a confirm button. */
+  box-shadow: inset 0 -1px 0 var(--edge);
+}
+
+.dev-row:last-child {
+  box-shadow: none;
+}
+
+.dev-row:hover {
+  background: var(--raise2);
+}
+
+/* A tombstone. Dimmed rather than struck through: the row is still a record
+   worth reading, it just no longer describes anything that can connect. */
+.dev-row.is-revoked {
+  opacity: 0.55;
+}
+
+.dev-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--r-md);
+  background: var(--raise2);
+  color: var(--ink-2);
+}
+
+.dev-mark svg {
+  width: 18px;
+  height: 18px;
+}
+
+.dev-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.dev-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dev-tag {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--raise2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+}
+
+.dev-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ok, #3fb950);
+}
+
+.dev-live .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.dev-meta {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dev-meta .sep {
+  opacity: 0.5;
+}
+
+.dev-dead {
+  font-weight: 600;
+}
+
+.dev-keys {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: 11px;
+  color: var(--ink-3, var(--ink-2));
+}
+
+/* The number the two humans read to each other. Tabular so the two halves
+   line up between rows, which is what makes it scannable rather than a blob. */
+.dev-sas {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.dev-fp {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  opacity: 0.75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex: none;
+  padding-top: 2px;
+}
+
+.dev-note {
+  font-size: 11px;
+  color: var(--ink-2);
+  opacity: 0.7;
+}
