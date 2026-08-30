@@ -15,6 +15,7 @@ import {
   RingIcon,
   SparkIcon,
 } from "./Icon";
+import { renderMarkdown } from "./markdown";
 import type { ToolCall, ToolKind, TranscriptItem } from "./types";
 
 export function Transcript({
@@ -73,6 +74,26 @@ const ToolBlock = memo(ToolBlockRow, (before, after) =>
   sameCalls(before.calls, after.calls),
 );
 
+/**
+ * An agent's reply, as markdown (#14).
+ *
+ * Its own component so the parse can be memoized on the text. Appending a
+ * chunk mid-stream replaces this one item and leaves every sibling the same
+ * object, which is what `memo(TranscriptRow)` above keys on — so a streamed
+ * token reparses one bubble and re-renders nothing else. Parsing inline in the
+ * switch would reparse the whole conversation on every chunk.
+ */
+function AgentBubble({ item }: { item: Extract<TranscriptItem, { kind: "agent" }> }) {
+  const nodes = useMemo(() => renderMarkdown(item.text), [item.text]);
+  return (
+    <div className="msg bot">
+      <div className="bubble" data-streaming={item.streaming || undefined}>
+        {nodes}
+      </div>
+    </div>
+  );
+}
+
 /** Identity, not deep equality: the reducer replaces exactly the call it
     changed, so a per-element `===` is both correct and O(n) on pointers. */
 function sameCalls(a: readonly ToolCall[], b: readonly ToolCall[]): boolean {
@@ -104,13 +125,7 @@ function TranscriptRow({
         </div>
       );
     case "agent":
-      return (
-        <div className="msg bot">
-          <div className="bubble" data-streaming={item.streaming || undefined}>
-            {item.text}
-          </div>
-        </div>
-      );
+      return <AgentBubble item={item} />;
     case "notice":
       return <Notice item={item} onAction={onAction} />;
     // Unreachable through the reducer, which only ever builds the kinds above.
