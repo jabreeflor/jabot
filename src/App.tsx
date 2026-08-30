@@ -65,7 +65,7 @@ import { allThreads, useFolders, useHostThread } from "./views/folders";
 import { useThreadActions } from "./views/fold";
 import { useInbox, type HostInbox } from "./views/inbox";
 import { CrossIcon } from "./components/Icon";
-import { ChatView } from "./views/ChatView";
+import { ChatView, LiveChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
 import { PullRequestsView } from "./views/PullRequestsView";
@@ -889,6 +889,17 @@ function MainView({
     case "bot": {
       const bot = bots.find((b) => b.id === selection.botId);
       if (!bot) return <div className="view" />;
+      // A bot the host serves gets its real standing thread (#24). The
+      // fixtures stay as the fallback for the same reason the thread case
+      // keeps them — the shell renders before a host has answered — and the
+      // method lookup is part of the test: a transport that predates
+      // `crew/thread` has no thread to open, and a preview build drawing its
+      // own fixtures is a better answer than an error where a chat should be.
+      if (client && typeof client.botThread === "function") {
+        return (
+          <LiveChatView key={bot.id} client={client} bot={bot} host={host} />
+        );
+      }
       return (
         <ChatView
           key={bot.id}
