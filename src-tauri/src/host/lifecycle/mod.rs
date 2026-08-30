@@ -418,7 +418,7 @@ impl HostSession {
         let Some((run_id, state)) = self.open_run(thread_id) else {
             return Ok(());
         };
-        if !self.connections.contains_key(thread_id) {
+        if !self.has_adapter(thread_id) {
             return Ok(());
         }
         Err(RpcError::RunInFlight {

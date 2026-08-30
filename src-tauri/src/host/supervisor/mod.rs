@@ -31,7 +31,6 @@ mod resume;
 
 use std::time::{Duration, Instant};
 
-use super::harness::catalog;
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
     BootNoteView, LiveAdapterView, SupervisorStatusResult, ThreadRefParams, ThreadResumeResult,
@@ -157,31 +156,37 @@ impl HostSession {
 
     /// What the supervisor is holding and what it found at boot.
     pub fn supervisor_status(&mut self) -> Result<SupervisorStatusResult, RpcError> {
-        let descriptors = catalog::compiled_in();
-        let mut thread_ids: Vec<String> = self.connections.keys().cloned().collect();
-        thread_ids.sort();
-        let mut live_adapters = Vec::with_capacity(thread_ids.len());
-        for thread_id in thread_ids {
+        // One row per *tenant*, not per process. A profile-scoped harness
+        // carries several threads on one adapter, and each of them is a live
+        // session a client can act on — they show the same `pid` and the same
+        // `profile_key`, which is what that field was for.
+        let mut tenancies: Vec<(String, String)> = self
+            .connections
+            .iter()
+            .flat_map(|(key, conn)| {
+                conn.tenants()
+                    .into_iter()
+                    .map(move |thread_id| (thread_id, key.clone()))
+            })
+            .collect();
+        tenancies.sort();
+        let mut live_adapters = Vec::with_capacity(tenancies.len());
+        for (thread_id, profile_key) in tenancies {
             let harness_id = self
                 .store
                 .as_ref()
                 .and_then(|store| store.get_thread(&thread_id).ok().flatten())
                 .map(|thread| thread.harness_id)
                 .unwrap_or_else(|| "custom".to_string());
-            let profile_key = descriptors
-                .iter()
-                .find(|descriptor| descriptor.id == harness_id)
-                .map(|descriptor| descriptor.profile_key(&thread_id))
-                .unwrap_or_else(|| format!("{harness_id}:{thread_id}"));
             let pending_permissions = self.pending_permission_count(&thread_id);
             let idle_ms = self.thread_idle_for(&thread_id).as_millis() as u64;
             let acp_state = self.acp_state(&thread_id).as_str().to_string();
-            let Some(conn) = self.connections.get(&thread_id) else {
+            let Some(conn) = self.connections.get(&profile_key) else {
                 continue;
             };
             live_adapters.push(LiveAdapterView {
                 pid: conn.pid(),
-                acp_session_id: conn.session_id.clone(),
+                acp_session_id: conn.session_for(&thread_id),
                 thread_id,
                 harness_id,
                 acp_state,

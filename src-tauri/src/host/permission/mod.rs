@@ -437,7 +437,7 @@ impl HostSession {
     /// Hand an outcome to the adapter. `false` when there is no adapter left —
     /// which is a fact about the world, not a failure of the call.
     fn answer_agent(&self, thread_id: &str, acp_id: RequestId, outcome: Value) -> bool {
-        let Some(conn) = self.connections.get(thread_id) else {
+        let Some(conn) = self.conn(thread_id) else {
             return false;
         };
         match conn.respond(acp_id, outcome) {

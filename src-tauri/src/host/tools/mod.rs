@@ -325,7 +325,7 @@ impl HostSession {
             })?
             .join(PROFILE_DIR);
         if let Some(holder) = self.mcp_profiles.get(entry.id) {
-            if holder != thread_id && self.connections.contains_key(holder) {
+            if holder != thread_id && self.has_adapter(holder) {
                 return Err(format!(
                     "{} is in use by another thread: its profile takes one process at a time",
                     entry.label
@@ -1062,16 +1062,14 @@ mod tests {
         );
 
         // With a live adapter behind the lease, nobody else may have it.
-        session
-            .connections
-            .insert("t-research".into(), idle_adapter(&session));
+        session.attach_adapter_for_test("t-research", idle_adapter(&session), "sess-idle");
         let refused = session
             .claim_profile("t-talent", browser)
             .expect_err("the profile is taken");
         assert!(refused.contains("in use by another thread"), "{refused}");
 
         // When that thread's adapter is gone, so is its claim on the profile.
-        session.connections.remove("t-research");
+        session.drop_adapter("t-research");
         assert_eq!(session.claim_profile("t-talent", browser).unwrap(), first);
     }
 
