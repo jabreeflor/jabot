@@ -51,6 +51,8 @@ ENV RUSTUP_HOME=/home/ubuntu/.rustup \
     CARGO_HOME=/home/ubuntu/.cargo \
     PATH=/home/ubuntu/.cargo/bin:$PATH
 RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
-        | sh -s -- -y --default-toolchain stable --profile minimal --component clippy rustfmt \
+        | sh -s -- -y --default-toolchain stable --profile minimal --component clippy --component rustfmt \
     && rustc --version \
-    && cargo --version
+    && cargo --version \
+    && cargo clippy --version \
+    && cargo fmt --version
