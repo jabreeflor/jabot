@@ -184,10 +184,14 @@ function AppShell({
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const { client, hello, hostError, connecting } = hostSession;
   const registered = useFolders(client);
-  // The Inbox (#22). Reloads the sidebar too: reopening a card's thread puts
-  // its row back, and archiving one takes it away.
-  const inbox = useInbox(client, registered.reload);
   const crew = useCrew(client);
+  // The Inbox (#22). Reloads the sidebar too: reopening a card's thread puts
+  // its row back, and archiving one takes it away. Handed the crew so a card
+  // on a bot's thread wears that bot's face rather than the code mark — the
+  // roster is the only place a bot id becomes a name and a colour. Declared
+  // after `useCrew` for that reason, and passed `crew.bots` rather than the
+  // fixture fallback below: a host card's bot id would never match a fixture's.
+  const inbox = useInbox(client, registered.reload, crew.bots);
   const schedules = useSchedules(client);
   // Whether GitHub can be asked as anybody (#16). The PR board is the only
   // surface that needs it, and it needs it twice: to decide whether to ask for

@@ -329,6 +329,7 @@ impl HostSession {
             sleeping.push(SleepingThreadView {
                 thread_id: row.id.clone(),
                 title: row.title.clone(),
+                bot_id: row.bot_id.clone(),
                 fold_policy: FoldPolicy::parse(&row.fold_policy),
                 folded_at: row.folded_at.clone(),
                 run_state,
@@ -1219,6 +1220,7 @@ fn inbox_event_view(row: InboxEventRow, thread: Option<&ThreadRow>) -> InboxEven
         thread_state: thread
             .map(|t| effective_state(t).as_str().to_string())
             .unwrap_or_else(|| ThreadState::Deleted.as_str().to_string()),
+        bot_id: thread.and_then(|t| t.bot_id.clone()),
         kind: row.kind,
         title: row.title,
         summary: row.summary,

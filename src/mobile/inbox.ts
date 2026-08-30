@@ -55,6 +55,10 @@ export interface MobileCard {
   section: MobileSection;
   /** ISO-8601, newest first within a section. */
   at: string;
+  /** Whose thread this is, when it is a bot's. The desktop Inbox resolves it
+      against the crew roster to draw that bot's face; absent means a code
+      thread, which wears the code mark. */
+  botId?: string;
   /** Present exactly when this card can be answered from here. */
   ask?: MobileAsk;
 }
@@ -126,6 +130,7 @@ function eventCard(event: InboxEventView): MobileCard {
     tag: inboxTag(kind),
     section: NEEDS_YOU_KINDS.includes(kind) ? "needs" : "done",
     at: event.createdAt,
+    botId: event.botId,
   };
 }
 
@@ -144,6 +149,7 @@ function sleepingCard(thread: SleepingThreadView): MobileCard {
     tag: inboxTag("folded"),
     section: "sleeping",
     at: thread.foldedAt ?? "",
+    botId: thread.botId,
   };
 }
 
