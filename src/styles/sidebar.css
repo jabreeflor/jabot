@@ -220,12 +220,7 @@
 /* ---- folders ---- */
 
 .folder {
-  background: var(--raise2);
-  border: 1px solid var(--edge);
-  border-radius: var(--r-lg);
   margin: var(--sp-3) var(--sp-1) 0;
-  padding: var(--sp-1);
-  overflow: hidden;
 }
 
 .folder-head {
@@ -407,7 +402,7 @@
   cursor: pointer;
   font-size: var(--fs-body);
   color: var(--ink);
-  background: var(--side);
+  background: none;
   text-align: left;
   transition:
     opacity var(--t-exit),
