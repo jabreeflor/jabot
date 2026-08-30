@@ -14,7 +14,7 @@
 //! is what lets the shell keep rendering fixtures before a host has answered,
 //! and what keeps the chat testable without one.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { Conversation } from "../components/Conversation";
 import { canFold, FoldButton } from "../components/FoldButton";
@@ -29,7 +29,13 @@ import type {
   ThreadSummary,
   TranscriptItem,
 } from "../components/types";
-import type { HandoffView, HostClient, ProcessView } from "../host";
+import type {
+  HandoffView,
+  HostClient,
+  ProcessView,
+  ThreadResumeResult,
+  ThreadStateResult,
+} from "../host";
 import { streamStatus, useThreadTranscript } from "./transcript";
 
 export function ThreadView({
@@ -50,6 +56,10 @@ export function ThreadView({
   drift,
   worktreePath,
   branch,
+  detached,
+  onResume,
+  resuming,
+  resumeNotice,
 }: {
   thread: ThreadSummary;
   harnesses: readonly HarnessCard[];
@@ -81,6 +91,14 @@ export function ThreadView({
       checkout" opt-out — and absent again once the tree has been collected. */
   worktreePath?: string;
   branch?: string;
+  /** The adapter is gone and the host says the conversation can be put back
+      (#21). Absent — or false — draws no button, which is every thread with a
+      process still attached and every thread there is nothing to resume. */
+  detached?: boolean;
+  onResume?: () => void;
+  resuming?: boolean;
+  /** What the last resume actually did, in the host's own words. */
+  resumeNotice?: { tone: "ok" | "warn" | "bad"; text: string } | null;
 }) {
   const line = status ?? threadStatus(thread);
 
@@ -100,6 +118,17 @@ export function ThreadView({
             {line.label}
           </span>
           <HostPicker host={host} onPick={onPickHost} />
+          {onResume && detached && (
+            <button
+              type="button"
+              className="resume-btn"
+              onClick={onResume}
+              disabled={resuming}
+              title="Put this conversation back where it left off"
+            >
+              {resuming ? "Resuming…" : "Resume"}
+            </button>
+          )}
           {onFold && canFold(thread.state) && <FoldButton onFold={onFold} />}
           {handoff && <HandoffLine handoff={handoff} />}
         </div>
@@ -112,8 +141,39 @@ export function ThreadView({
       queued={queued}
       onCancel={onCancel}
       error={error}
-      notice={drift && drift.length > 0 ? <DriftNotice drift={drift} /> : null}
+      /* One slot, and the resume's own word wins it: a `drifted` resume and
+         the standing drift notice are the same fact said twice, and the one
+         the user just asked for is the one they are waiting to read. */
+      notice={
+        resumeNotice ? (
+          <ResumeNotice notice={resumeNotice} />
+        ) : drift && drift.length > 0 ? (
+          <DriftNotice drift={drift} />
+        ) : null
+      }
     />
+  );
+}
+
+/**
+ * What `thread/resume` actually did.
+ *
+ * The outcome is six answers, not a success and a failure, and each one sends
+ * the user somewhere different: `drifted` means the stored session is a
+ * different job now, `cwd_missing` means the folder is gone, `unsupported`
+ * means this adapter cannot be resumed at all. "Could not resume" with no
+ * reason sends every one of them to the wrong fix, so the host's own sentence
+ * is what is shown.
+ */
+function ResumeNotice({
+  notice,
+}: {
+  notice: { tone: "ok" | "warn" | "bad"; text: string };
+}) {
+  return (
+    <div className="chat-resume" role="status" data-tone={notice.tone}>
+      {notice.text}
+    </div>
   );
 }
 
@@ -282,7 +342,37 @@ export function LiveThreadView({
   // you are reading it, and re-asking on every `session/update` would be a
   // round trip per streamed chunk. The component is keyed on the thread by its
   // caller, so switching threads remounts and asks again.
-  const facts = useThreadFacts(client, thread.id);
+  const { facts, applyState } = useThreadFacts(client, thread.id);
+  const [resumeNotice, setResumeNotice] = useState<ResumeNoticeLine | null>(
+    null,
+  );
+  const [resuming, setResuming] = useState(false);
+
+  // `thread/reopen` — what the Inbox's Open thread runs — is a store write. It
+  // puts the row back and spawns nothing, so after a quit or an idle evict the
+  // conversation only came back when the user happened to send another prompt,
+  // and until then the pane looked live and was not. `thread/resume` is the
+  // explicit verb for reattaching without prompting, and it has been served
+  // and typed since #21 with no caller.
+  const onResume = useCallback(() => {
+    if (typeof client.resumeThread !== "function") return;
+    setResuming(true);
+    client
+      .resumeThread({ threadId: thread.id })
+      .then((result) => {
+        setResumeNotice(resumeLine(result));
+        // The answer carries the thread as it stands afterwards, so the button
+        // goes away — or does not — without a second round trip.
+        applyState(result.state);
+      })
+      .catch((err: unknown) => {
+        setResumeNotice({
+          tone: "bad",
+          text: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => setResuming(false));
+  }, [applyState, client, thread.id]);
 
   return (
     <ThreadView
@@ -305,6 +395,17 @@ export function LiveThreadView({
       drift={facts?.process?.drift}
       worktreePath={facts?.worktreePath}
       branch={facts?.branch}
+      // Both halves, and both from the host: a thread with no adapter that
+      // cannot be resumed gets no button, because offering one that can only
+      // fail is worse than offering none.
+      detached={
+        facts?.process
+          ? !facts.process.connected && facts.process.resumable
+          : false
+      }
+      onResume={onResume}
+      resuming={resuming}
+      resumeNotice={resumeNotice}
     />
   );
 }
@@ -324,11 +425,29 @@ interface ThreadFacts {
   branch?: string;
 }
 
+function factsOf(state: ThreadStateResult): ThreadFacts {
+  return {
+    handoff: state.handoff,
+    process: state.process,
+    worktreePath: state.worktreePath,
+    branch: state.branch,
+  };
+}
+
 function useThreadFacts(
   client: HostClient,
   threadId: string,
-): ThreadFacts | undefined {
+): {
+  facts: ThreadFacts | undefined;
+  /** Fold in a `thread/state` somebody else already has — a resume answers
+      with one, and asking again for what is in hand is a wasted round trip. */
+  applyState: (state: ThreadStateResult) => void;
+} {
   const [facts, setFacts] = useState<ThreadFacts | undefined>(undefined);
+  const applyState = useCallback(
+    (state: ThreadStateResult) => setFacts(factsOf(state)),
+    [],
+  );
   useEffect(() => {
     let cancelled = false;
     // Method lookup guarded too, the way `useCrew` guards the Doctor: a
@@ -338,14 +457,7 @@ function useThreadFacts(
     client
       .threadState({ threadId })
       .then((state) => {
-        if (!cancelled) {
-          setFacts({
-            handoff: state.handoff,
-            process: state.process,
-            worktreePath: state.worktreePath,
-            branch: state.branch,
-          });
-        }
+        if (!cancelled) setFacts(factsOf(state));
       })
       .catch(() => {
         // Deliberately silent: see above.
@@ -354,5 +466,66 @@ function useThreadFacts(
       cancelled = true;
     };
   }, [client, threadId]);
-  return facts;
+  return { facts, applyState };
+}
+
+type ResumeNoticeLine = { tone: "ok" | "warn" | "bad"; text: string };
+
+/**
+ * One `ResumeOutcome`, in a sentence.
+ *
+ * Six answers rather than a success and a failure, and each one sends the user
+ * somewhere different — `drifted` to starting a fresh conversation,
+ * `cwd_missing` to the folder, `unsupported` to a different engine. A bare
+ * "could not resume" sends all three to the wrong fix, so the host's own
+ * `detail` is preferred wherever it sent one.
+ */
+function resumeLine(result: ThreadResumeResult): ResumeNoticeLine {
+  switch (result.outcome) {
+    case "live":
+      return { tone: "ok", text: "Still connected — nothing needed restoring." };
+    case "resumed":
+      return { tone: "ok", text: "Conversation restored where it left off." };
+    // `session/load` means the agent replayed its history to get here, which
+    // is a slower and more visible thing than `session/resume` and worth
+    // naming: the transcript may have moved under the reader.
+    case "loaded":
+      return {
+        tone: "ok",
+        text: "Conversation restored — the agent replayed its history.",
+      };
+    case "drifted":
+      return {
+        tone: "warn",
+        text: `${sentence(
+          result.detail ?? "This thread's setup has changed.",
+        )}${driftTail(result.drift)}`,
+      };
+    default:
+      return {
+        tone: "bad",
+        text: result.detail ?? `Could not resume: ${result.outcome}.`,
+      };
+  }
+}
+
+/** The moved fields appended to a `drifted` detail, in the words the drift
+    notice uses. Nothing at all when the host named none.
+
+    Its own sentence, capitalised: the host's `detail` is a sentence and this
+    follows it, so "…matches this thread. the engine and the folder have
+    moved." reads as a typo rather than as two facts. */
+function driftTail(drift?: readonly string[]): string {
+  if (!drift || drift.length === 0) return "";
+  const names = andList(drift.map(driftLabel));
+  return ` ${names.charAt(0).toUpperCase()}${names.slice(1)} ${
+    drift.length === 1 ? "has" : "have"
+  } moved.`;
+}
+
+/** The host's own sentence, ended if it was not. Anything appended after an
+    unpunctuated one would run the two together. */
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
