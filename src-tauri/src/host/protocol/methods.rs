@@ -206,6 +206,15 @@ pub struct HelloResult {
     /// `methods`.
     #[serde(default)]
     pub scoped_methods: Vec<String>,
+    /// This host proving itself back, on the one arm where that is meaningful:
+    /// a paired device that has just presented a valid [`DeviceAuth`]. See
+    /// [`HostAuth`] for the derivation and for why an absent value is not
+    /// consent.
+    ///
+    /// `Option` + `default` so a host older than this field is not lying and a
+    /// client older than it is unaffected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_auth: Option<HostAuth>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2141,6 +2150,31 @@ impl DeviceRole {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceAuth {
+    pub counter: u64,
+    pub mac: String,
+}
+
+/// Proof that the answering host holds the same token — the mirror of
+/// [`DeviceAuth`], returned on `host/hello` to a device that has just proved
+/// itself.
+///
+/// `mac = HMAC-SHA256(deviceToken, H["jabot/hello/host/v1", hostId, deviceId,
+/// protocolVersion, counter])`, hex, over the same length-framed transcript
+/// hash and with the **same counter the device sent**, so the proof answers
+/// that one hello and cannot be lifted onto another.
+///
+/// The separator differs from [`DeviceAuth`]'s on purpose. The token is
+/// shared, so a host answering under `jabot/hello/v1` would return a value the
+/// device could have computed itself — no proof at all, and replayable as a
+/// *device* proof by anyone who saw the reply.
+///
+/// Absent for the two colocated arms of `host/hello`: the local console is
+/// implicitly paired because it spawned the host, and has no token to check
+/// one against. A device that expects a proof must therefore treat an absent
+/// `hostAuth` as a failure rather than as consent.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HostAuth {
     pub counter: u64,
     pub mac: String,
 }

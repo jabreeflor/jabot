@@ -11,7 +11,7 @@
  * It is also the reference a real phone client is written against — everything
  * here is `node:crypto` plus the framing rule, no JaBot code.
  */
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import type { PairingQr } from "../../src/host/protocol";
 
@@ -22,6 +22,7 @@ const CONFIRM_DOMAIN = "jabot/pairing/confirm/v1";
 const SAS_DOMAIN = "jabot/pairing/sas/v1";
 const TOKEN_DOMAIN = "jabot/pairing/device-token/v1";
 const HELLO_DOMAIN = "jabot/hello/v1";
+const HOST_HELLO_DOMAIN = "jabot/hello/host/v1";
 const DEVICE_FINGERPRINT_DOMAIN = "jabot/device-fingerprint/v1";
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -163,5 +164,38 @@ export class TestDevice {
         )
         .digest("hex"),
     };
+  }
+
+  /** Check the host's proof of *itself*, which is the half a phone needs to
+      know it is talking to the same Mac as last time.
+
+      Returns a boolean rather than throwing, so a test can assert both
+      outcomes with the same call. An absent `hostAuth` is `false`, not
+      "nothing to check": a host that simply stopped answering is exactly what
+      a stripped field would look like on a wire, and treating that as consent
+      would make the whole exchange optional. */
+  verifyHostAuth(
+    hostId: string,
+    token: string,
+    hostAuth: { counter: number; mac: string } | undefined,
+    counter: number,
+    protocolVersion = 1,
+  ): boolean {
+    if (!hostAuth) return false;
+    if (hostAuth.counter !== counter) return false;
+    const expected = createHmac("sha256", token)
+      .update(
+        frameHash([
+          HOST_HELLO_DOMAIN,
+          hostId,
+          this.deviceId,
+          String(protocolVersion),
+          String(counter),
+        ]),
+      )
+      .digest("hex");
+    const got = Buffer.from(hostAuth.mac, "utf8");
+    const want = Buffer.from(expected, "utf8");
+    return got.length === want.length && timingSafeEqual(got, want);
   }
 }

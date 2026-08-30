@@ -172,6 +172,12 @@ export interface HelloResult {
       that exists and always fails. Empty from a host too old to answer;
       fall back to `methods` in that case. */
   scopedMethods?: string[];
+  /** This host proving itself back, on the one arm where that is meaningful:
+      a paired device that has just presented a valid `DeviceAuth`. Absent from
+      the two colocated arms and from any host too old to answer — which is why
+      a client that wants the guarantee has to check for the field's *presence*
+      as well as its value. See `HostAuth`. */
+  hostAuth?: HostAuth;
   store?: StoreStatus;
   storeError?: string;
 }
@@ -1249,6 +1255,29 @@ export const DEVICE_REVOKE = "device/revoke";
     reason a captured frame is not a credential. Absent for the local console,
     which is implicitly paired because it spawned the host. */
 export interface DeviceAuth {
+  counter: number;
+  mac: string;
+}
+
+/** Proof that the answering host holds the same token — the mirror of
+    `DeviceAuth`, returned on `host/hello` to a device that has just proved
+    itself.
+
+    `mac = HMAC-SHA256(deviceToken, H["jabot/hello/host/v1", hostId, deviceId,
+    protocolVersion, counter])`, hex, over the same framing and with the *same
+    counter the device sent*, so the proof answers that one hello and cannot be
+    lifted onto another.
+
+    The separator differs from `DeviceAuth`'s deliberately. The token is
+    shared, so a host answering under `jabot/hello/v1` would return a value the
+    device could have computed itself — no proof at all, and replayable as a
+    *device* proof by anyone who saw the reply.
+
+    Absent for the local console, which is implicitly paired because it spawned
+    the host and has no token to check one against. A device that expects a
+    proof must therefore treat an absent `hostAuth` as a failure and not as
+    consent. */
+export interface HostAuth {
   counter: number;
   mac: string;
 }

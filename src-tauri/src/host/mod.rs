@@ -452,9 +452,17 @@ impl HostSession {
             // client that borrows it fails the lookup like any other name it
             // has no credential for.
             Some(id) => {
-                let device = self.authenticate_paired_device(id, params.auth.as_ref())?;
+                let (device, host_auth) =
+                    self.authenticate_paired_device(id, params.auth.as_ref())?;
                 self.connected_device_id = Some(device.device_id.clone());
                 self.connected_device = Some(device);
+                // The only arm that answers with a proof. The two above are
+                // the colocated console, which has no token — so `hello_result`
+                // leaves the field `None` and this is the one place it is set.
+                return Ok(HelloResult {
+                    host_auth: Some(host_auth),
+                    ..self.hello_result()
+                });
             }
         }
 
@@ -672,6 +680,9 @@ impl HostSession {
                 .collect(),
             store: self.store_status(),
             store_error: self.store_error.clone(),
+            // Nothing to prove with. Only the paired-device arm of `hello()`
+            // holds a token, and it is the one that fills this in.
+            host_auth: None,
         }
     }
 

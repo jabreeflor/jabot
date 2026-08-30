@@ -81,7 +81,7 @@ use uuid::Uuid;
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
     DeviceAuth, DeviceInfo, DeviceListResult, DeviceRefParams, DeviceRevokeResult, DeviceRole,
-    PairedDeviceView, PairingCancelResult, PairingClaimParams, PairingClaimResult,
+    HostAuth, PairedDeviceView, PairingCancelResult, PairingClaimParams, PairingClaimResult,
     PairingConfirmParams, PairingConfirmResult, PairingDevice, PairingOfferView, PairingQr,
     PairingRefParams, PairingSide, PairingStartParams, PairingStartResult, PairingStatusResult,
     PROTOCOL_VERSION,
@@ -102,6 +102,13 @@ const CONFIRM_DOMAIN: &str = "jabot/pairing/confirm/v1";
 const SAS_DOMAIN: &str = "jabot/pairing/sas/v1";
 const TOKEN_DOMAIN: &str = "jabot/pairing/device-token/v1";
 const HELLO_DOMAIN: &str = "jabot/hello/v1";
+/// The mirror of [`HELLO_DOMAIN`]: the host proving itself to the device.
+///
+/// Its own separator, and that is the whole point. The token is shared, so a
+/// host that answered under the device's separator would be handing back a
+/// value the device could have computed itself — worthless as a proof, and
+/// worse, replayable *as* a device proof by anyone who saw the reply.
+const HOST_HELLO_DOMAIN: &str = "jabot/hello/host/v1";
 
 const QR_VERSION: u32 = 1;
 const CODE_LEN: usize = 8;
@@ -703,17 +710,27 @@ impl HostSession {
 
     // ---- what the rest of the host asks ---------------------------------
 
-    /// Verify a paired device's `host/hello`, or refuse it.
+    /// Verify a paired device's `host/hello`, or refuse it — and prove this
+    /// host back to the device.
     ///
     /// Every refusal is the same [`RpcError::UnpairedDevice`] the host has
     /// always returned for a device it does not know: whether an id is unknown,
     /// revoked, missing its token or replaying an old proof is not something a
     /// caller gets to learn by asking.
+    ///
+    /// The returned [`HostAuth`] is the half #19 left out. The token is shared,
+    /// so the material for a mutual challenge was always there; a phone that
+    /// wants to know it is talking to the same Mac as last time had a
+    /// fingerprint to compare and nothing that made the host prove anything.
+    /// It is bound to *this* hello by reusing the counter the device sent, so
+    /// it cannot be lifted onto another one, and it is computed only after both
+    /// the constant-time compare and the replay bump have succeeded — a hello
+    /// that failed must leak no MAC.
     pub(crate) fn authenticate_paired_device(
         &mut self,
         device_id: &str,
         auth: Option<&DeviceAuth>,
-    ) -> Result<DeviceInfo, RpcError> {
+    ) -> Result<(DeviceInfo, HostAuth), RpcError> {
         let store = self.store.as_ref().ok_or(RpcError::UnpairedDevice)?;
         let row = store
             .get_paired_device(device_id)
@@ -754,12 +771,29 @@ impl HostSession {
             return Err(RpcError::UnpairedDevice);
         }
 
-        Ok(DeviceInfo {
-            device_id: row.device_id,
-            name: row.name,
-            role,
-            created_at: Some(row.created_at),
-        })
+        let host_auth = HostAuth {
+            counter: auth.counter,
+            mac: hex(&hmac_sha256(
+                token.as_bytes(),
+                &transcript_hash(&[
+                    HOST_HELLO_DOMAIN,
+                    &self.identity.host_id,
+                    device_id,
+                    &PROTOCOL_VERSION.to_string(),
+                    &auth.counter.to_string(),
+                ]),
+            )),
+        };
+
+        Ok((
+            DeviceInfo {
+                device_id: row.device_id,
+                name: row.name,
+                role,
+                created_at: Some(row.created_at),
+            },
+            host_auth,
+        ))
     }
 
     /// What the connected device may do, straight from the store.
@@ -916,6 +950,23 @@ mod tests {
                 sas: sas_digits(&bind(key, SAS_DOMAIN, &transcript_hex)),
                 token: base64url(&bind(key, TOKEN_DOMAIN, &transcript_hex)),
             }
+        }
+
+        /// What this phone expects the *host* to answer with, derived the
+        /// same independent way. If the host's arithmetic and this disagree,
+        /// one of them is wrong — which is the only thing a mutual proof can
+        /// be tested for.
+        fn expected_host_mac(&self, host_id: &str, token: &str, counter: u64) -> String {
+            hex(&hmac_sha256(
+                token.as_bytes(),
+                &transcript_hash(&[
+                    HOST_HELLO_DOMAIN,
+                    host_id,
+                    &self.device_id,
+                    &PROTOCOL_VERSION.to_string(),
+                    &counter.to_string(),
+                ]),
+            ))
         }
 
         /// The `host/hello` proof, from the token pairing derived.
@@ -1698,6 +1749,156 @@ mod tests {
             escalated.error.expect("pairing/start from a phone").code,
             DEVICE_SCOPE
         );
+    }
+
+    // ---- the host proving itself back -----------------------------------
+
+    /// The half #19 left out. The token is shared, so the material for a
+    /// mutual challenge always existed; a phone that wanted to know it was
+    /// talking to the same Mac as last time had a fingerprint to compare and
+    /// nothing that made the host prove anything.
+    #[test]
+    fn a_proven_device_gets_a_proof_of_the_host_back() {
+        let (_dir, mut session) = host();
+        let phone = Phone::new("Jabree's iPhone");
+        let derived = pair_an_approver(&mut session, &phone);
+        let host_id = session.identity.host_id.clone();
+
+        let hello = session
+            .hello(HelloParams {
+                protocol_version: Some(PROTOCOL_VERSION),
+                device: Some(HelloDevice {
+                    device_id: Some(phone.device_id.clone()),
+                    name: None,
+                    role: None,
+                }),
+                auth: Some(phone.hello_auth(&host_id, &derived.token, 1)),
+            })
+            .expect("a paired device is admitted");
+
+        let proof = hello.host_auth.expect("the host proves itself back");
+        // Derived independently by the phone, which is the only way this
+        // asserts anything: the host checking its own arithmetic would pass
+        // even if both ends were wrong in the same way.
+        assert_eq!(
+            proof.mac,
+            phone.expected_host_mac(&host_id, &derived.token, 1)
+        );
+        // Bound to *this* hello. A proof that named a different counter could
+        // be lifted onto another connection.
+        assert_eq!(proof.counter, 1);
+    }
+
+    /// Domain separation is the point, so it gets its own assertion. The token
+    /// is shared: a host answering under the device's separator would hand
+    /// back a value the device could have computed itself — no proof at all,
+    /// and replayable *as* a device proof by anyone who saw the reply.
+    #[test]
+    fn the_hosts_proof_is_not_the_devices_proof() {
+        let (_dir, mut session) = host();
+        let phone = Phone::new("Jabree's iPhone");
+        let derived = pair_an_approver(&mut session, &phone);
+        let host_id = session.identity.host_id.clone();
+
+        let device_proof = phone.hello_auth(&host_id, &derived.token, 1);
+        let hello = session
+            .hello(HelloParams {
+                protocol_version: Some(PROTOCOL_VERSION),
+                device: Some(HelloDevice {
+                    device_id: Some(phone.device_id.clone()),
+                    name: None,
+                    role: None,
+                }),
+                auth: Some(device_proof.clone()),
+            })
+            .expect("admitted");
+
+        let proof = hello.host_auth.expect("host proof");
+        assert_ne!(
+            proof.mac, device_proof.mac,
+            "the two separators have to produce different values"
+        );
+        assert_ne!(
+            proof.mac,
+            phone.expected_host_mac(&host_id, &derived.token, 2),
+            "and the counter has to be in the transcript"
+        );
+    }
+
+    /// The console has no token, so there is nothing it could prove with and
+    /// nothing it needs. Answering it anyway would mean inventing keying
+    /// material for a caller that is trusted because it spawned us.
+    #[test]
+    fn the_colocated_console_gets_no_host_proof() {
+        let (_dir, mut session) = host();
+
+        // Arm one: a hello naming nothing at all.
+        let bare = console_request(&mut session, HOST_HELLO, serde_json::json!({}));
+        let bare = bare.result.expect("the console is admitted");
+        assert!(bare.get("hostAuth").is_none(), "{bare}");
+
+        // Arm two: the console naming its own id.
+        let console_id = session.identity.local_device.device_id.clone();
+        let named = console_request(
+            &mut session,
+            HOST_HELLO,
+            serde_json::json!({
+                "protocolVersion": PROTOCOL_VERSION,
+                "device": { "deviceId": console_id }
+            }),
+        );
+        let named = named.result.expect("the console is admitted by name too");
+        assert!(named.get("hostAuth").is_none(), "{named}");
+    }
+
+    /// A hello that failed leaks no MAC. The proof is computed after both the
+    /// constant-time compare and the replay bump, so there is no arm where a
+    /// caller who cannot prove itself learns anything.
+    #[test]
+    fn a_refused_hello_proves_nothing() {
+        let (_dir, mut session) = host();
+        let phone = Phone::new("Jabree's iPhone");
+        let derived = pair_an_approver(&mut session, &phone);
+        let host_id = session.identity.host_id.clone();
+
+        // A wrong MAC.
+        let mut forged = phone.hello_auth(&host_id, &derived.token, 1);
+        forged.mac = "0".repeat(forged.mac.len());
+        let refused = session.hello(HelloParams {
+            protocol_version: Some(PROTOCOL_VERSION),
+            device: Some(HelloDevice {
+                device_id: Some(phone.device_id.clone()),
+                name: None,
+                role: None,
+            }),
+            auth: Some(forged),
+        });
+        assert!(refused.is_err(), "a forged proof is refused");
+
+        // And a replay of a counter this host has already spent: the device
+        // proof is genuine, so this is the arm where the *bump* is the only
+        // thing standing between a captured frame and a host proof.
+        session
+            .hello(HelloParams {
+                protocol_version: Some(PROTOCOL_VERSION),
+                device: Some(HelloDevice {
+                    device_id: Some(phone.device_id.clone()),
+                    name: None,
+                    role: None,
+                }),
+                auth: Some(phone.hello_auth(&host_id, &derived.token, 4)),
+            })
+            .expect("counter 4 is fresh");
+        let replayed = session.hello(HelloParams {
+            protocol_version: Some(PROTOCOL_VERSION),
+            device: Some(HelloDevice {
+                device_id: Some(phone.device_id.clone()),
+                name: None,
+                role: None,
+            }),
+            auth: Some(phone.hello_auth(&host_id, &derived.token, 4)),
+        });
+        assert!(replayed.is_err(), "a spent counter buys no host proof");
     }
 
     /// The whole handshake, ending in a phone this host has granted `approver`.
