@@ -10,7 +10,7 @@
 
 import type { ResurfaceReason, ToolConnectionStatus } from "../host";
 
-/** `bots.color` — a class name, because the gradient *is* the identity. */
+/** `bots.color` — the mascot's light-well colour and motion signature. */
 export type BotColor =
   | "b-teal"
   | "b-yellow"

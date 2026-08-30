@@ -4,7 +4,7 @@
 //! Decision #6 made every bot an ACP harness session, so "which engine runs
 //! this bot" is part of the bot, not a hidden default.
 //!
-//! The icon is the other. A bot's mark is a colour and its initials until
+//! The icon is the other. A bot wears the JaBot mascot in its colour until
 //! someone gives it a picture, and this is the only screen that can: the
 //! upload is normalised here (centre-cropped, scaled, re-encoded) and saved as
 //! part of the bot, so the picture survives a restart the same way the name
@@ -309,8 +309,8 @@ export function BotEditorModal({
             }}
           />
           <p className="iconhint">
-            Square, and scaled down to icon size. Without one, the bot wears its
-            colour and initials.
+            Square, and scaled down to icon size. Without one, the bot wears the
+            animated JaBot mascot in its colour.
           </p>
         </div>
       </div>
@@ -332,11 +332,9 @@ export function BotEditorModal({
             aria-pressed={color === swatch}
             onClick={() => setColor(swatch)}
           >
-            {/* The bot's own initials in each colour, rather than eight
-                anonymous discs: the row is a preview of the mark, and the
-                mark is what the colour is for. Drawn even while an image is
-                set — the colour is what the bot falls back to if the picture
-                is ever removed. */}
+            {/* The mascot in each colour is the real fallback preview. Drawn
+                even while an image is set, because this is what returns when
+                that uploaded picture is removed. */}
             <Avatar name={name || "New bot"} color={swatch} titled={false} />
           </button>
         ))}

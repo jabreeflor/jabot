@@ -1,6 +1,6 @@
 /*
- * The avatar: a colour disc with initials in it, or the picture a bot was
- * given, plus the chrome that is true of both.
+ * The avatar: the JaBot mascot in a bot-specific light well, or the picture a
+ * bot was given, plus the chrome that is true of both.
  *
  * The box is a CSS variable and not a prop for the reason Avatar.tsx gives:
  * sidebar.css, chat.css, cards.css, crew.css, modal.css and onboarding.css
@@ -16,93 +16,131 @@
   flex: none;
   position: relative;
   display: block;
-  /* The box is a frame and paints nothing itself. Stated rather than assumed:
-     `.b-*` used to be a gradient a caller could set on any element, and a call
-     site that reaches for one again should find the mark on top of it rather
-     than behind it. */
+  --mascot-speed: 5.6s;
+  --mascot-delay: -1.2s;
+  /* The box is a frame and paints nothing itself; its children hold the
+     mascot or an explicit uploaded image. */
   background: none;
   border-radius: 0;
 }
 
-.av > svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
 /*
- * The palette: a lit body and a deeper rim of the same hue.
- *
- * The disc is the *light* tone and the initials are near-black, which is the
- * one pairing that clears 6:1 on all eight colours — white on a mid-tone teal
- * does not come close, and an avatar whose initials cannot be read is a
- * coloured dot with a smudge on it. Doubled up with .av so a `b-teal` on some
- * other element cannot pick these up by accident: the colour classes come off
- * host rows and are only ever a palette *here*.
+ * The palette: a light well and a deeper rim, plus a small motion signature.
+ * Doubled up with .av so a `b-teal` on another element cannot pick these up.
  */
 .av.b-teal {
   --lite: #6fe0c0;
   --deep: #2fb894;
+  --mascot-speed: 5.4s;
+  --mascot-delay: -2.2s;
 }
 
 .av.b-yellow {
   --lite: #ffd24d;
   --deep: #efa92f;
+  --mascot-speed: 5.9s;
+  --mascot-delay: -0.8s;
 }
 
 .av.b-purple {
   --lite: #9c8cff;
   --deep: #6c55e8;
+  --mascot-speed: 5.1s;
+  --mascot-delay: -3.3s;
 }
 
 .av.b-violet {
   --lite: #c08bff;
   --deep: #9257e8;
+  --mascot-speed: 6.1s;
+  --mascot-delay: -4.1s;
 }
 
 .av.b-blue {
   --lite: #6fafff;
   --deep: #3c7fe8;
+  --mascot-speed: 5.7s;
+  --mascot-delay: -1.6s;
 }
 
 .av.b-orange {
   --lite: #ffa65c;
   --deep: #ef7e2f;
+  --mascot-speed: 5.2s;
+  --mascot-delay: -2.8s;
 }
 
 .av.b-pink {
   --lite: #ff9bbb;
   --deep: #e85d8a;
+  --mascot-speed: 6.3s;
+  --mascot-delay: -3.8s;
 }
 
 .av.b-green {
   --lite: #7adb8f;
   --deep: #3ea65c;
+  --mascot-speed: 5.5s;
+  --mascot-delay: -1.1s;
 }
 
-.av .disc {
-  fill: var(--lite);
-  stroke: var(--deep);
-  stroke-width: 1.6;
+.av .mascot-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: max(1px, calc(var(--s) * 0.025)) solid
+    color-mix(in srgb, var(--deep) 72%, white 28%);
+  border-radius: 36% 36% 42% 42% / 32% 32% 44% 44%;
+  background:
+    radial-gradient(circle at 33% 20%, rgba(255, 255, 255, 0.42), transparent 34%),
+    radial-gradient(circle at 50% 78%, var(--deep), var(--lite));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 calc(var(--s) * -0.16) calc(var(--s) * 0.27)
+      color-mix(in srgb, var(--deep) 70%, transparent),
+    0 calc(var(--s) * 0.07) calc(var(--s) * 0.2)
+      color-mix(in srgb, var(--deep) 28%, transparent);
 }
 
-/* Set in the app's own face, so a bot's initials look like the rest of the
-   chrome rather than like a diagram label. The weight carries the letter at
-   28px, where a regular one starts to thin out. */
-.av .initials {
-  fill: #14141a;
-  font-family: var(--font-ui);
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  text-anchor: middle;
-  dominant-baseline: central;
-  /* The glyph is part of the drawing, not text on the page: a drag-select
-     across the sidebar should not pick up eight sets of initials. */
+.av .mascot-sheet {
+  position: absolute;
+  /* The atlas is eight 192×208 cells wide and nine rows tall. Each rendered
+     cell keeps that aspect ratio inside the square well instead of stretching
+     the robot; the small left inset centers the 192px-wide cell. */
+  width: 738.4615%;
+  max-width: none;
+  height: 900%;
+  left: 3.8462%;
+  top: 0;
   user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 calc(var(--s) * 0.04) calc(var(--s) * 0.04) rgba(16, 16, 18, 0.42));
+  transform-origin: 0 0;
+  will-change: transform;
+  animation: av-atlas-6 var(--mascot-speed) steps(6, end)
+    var(--mascot-delay) infinite;
 }
 
-/* An uploaded picture fills the same round hole the disc does. `cover` and not
+/* The app's four runtime states map directly onto generated atlas rows. The
+   frame itself never moves; advancing the sheet reveals a new rendered pose. */
+.av[data-state="failed"] .mascot-sheet {
+  top: -500%;
+  animation-name: av-atlas-8;
+  animation-duration: 3.2s;
+  animation-timing-function: steps(8, end);
+}
+
+.av[data-state="waiting"] .mascot-sheet {
+  top: -600%;
+  animation-duration: 3.6s;
+}
+
+.av[data-state="running"] .mascot-sheet {
+  top: -700%;
+  animation-duration: 1.8s;
+}
+
+/* An uploaded picture fills the same framed hole the mascot does. `cover` and not
    `contain`: the file was already centre-cropped square on the way in, so this
    only has to absorb the rounding, and a letterboxed avatar reads as broken. */
 .av .pic {
@@ -111,10 +149,22 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 50%;
-  /* The same rim the disc has, so a photo and a monogram sit at the same
-     weight in a row of both. */
+  border-radius: 36% 36% 42% 42% / 32% 32% 44% 44%;
+  /* The same rim the mascot has, so a photo and mascot sit at the same weight
+     in a mixed row. */
   box-shadow: inset 0 0 0 1.5px var(--deep);
+}
+
+@keyframes av-atlas-6 {
+  to {
+    transform: translate3d(-75%, 0, 0);
+  }
+}
+
+@keyframes av-atlas-8 {
+  to {
+    transform: translate3d(-100%, 0, 0);
+  }
 }
 
 /* ---- chrome -------------------------------------------------------------
@@ -135,7 +185,7 @@
 }
 
 /*
- * The ring is the whole state vocabulary now that the mark is a flat disc,
+ * The ring remains the whole state vocabulary around the mascot,
  * and it says three different things:
  *
  *   running — green, and turning, because it is the one state that is going
@@ -194,7 +244,7 @@
 }
 
 /* ---- the crew cluster ---------------------------------------------------
-   Three discs. It keeps the `cluster` class so sidebar.css's selected-tile
+   Three mascot portraits. It keeps the `cluster` class so sidebar.css's selected-tile
    ring and onboarding.css's `.setup-cluster` sizing keep working untouched,
    and adds `av-cluster` so a rule here says plainly that it is about the drawn
    cluster and not about the class those two sheets happen to target. */
@@ -224,7 +274,7 @@
   --blob-size: calc(var(--s) * 0.57);
 }
 
-/* Two marks overlapping is a mess unless the one in front has an edge, so
+/* Two portraits overlapping is a mess unless the one in front has an edge, so
    each slot cuts itself out of the surface it sits on. Doubled because one
    pass of a 1.5px shadow is not enough against a lit disc. */
 .cluster.av-cluster > i > .av {
@@ -250,6 +300,7 @@
 /* The ring still says everything it needs to when it is not turning: colour
    and presence carry all three states, and only the spin is motion. */
 @media (prefers-reduced-motion: reduce) {
+  .av .mascot-sheet,
   .av .ring {
     animation: none;
     -webkit-mask: none;

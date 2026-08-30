@@ -1,5 +1,5 @@
 /**
- * A bot's icon: the colour mark's fallbacks, and the upload that replaces it.
+ * A bot's icon: the mascot fallback, and the upload that replaces it.
  *
  * The interesting half of an upload is everything that happens before the row
  * is written — a photo has to become a small square, a file that is not an
@@ -163,16 +163,14 @@ describe("uploading an icon", () => {
   it("shows the picture in place of the mark and saves it with the bot", async () => {
     const props = renderEditor({ bot: WRITER });
 
-    // Before: the colour mark, drawn from the bot's initials.
-    expect(document.querySelector(".iconpick .initials")).toHaveTextContent(
-      "W",
-    );
+    // Before: the mascot, staged in the bot's colour.
+    expect(document.querySelector(".iconpick .mascot")).not.toBeNull();
 
     await upload(png());
 
-    const preview = document.querySelector(".iconpick img");
+    const preview = document.querySelector(".iconpick .pic");
     expect(preview).toHaveAttribute("src", WEBP);
-    expect(document.querySelector(".iconpick .initials")).toBeNull();
+    expect(document.querySelector(".iconpick .mascot")).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(props.onSave).toHaveBeenCalledWith(
@@ -218,7 +216,7 @@ describe("uploading an icon", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "notes.txt is not an image",
     );
-    expect(document.querySelector(".iconpick img")).toHaveAttribute(
+    expect(document.querySelector(".iconpick .pic")).toHaveAttribute(
       "src",
       PIXEL,
     );
@@ -229,7 +227,7 @@ describe("the icon a bot already has", () => {
   it("opens showing it, and Save alone does not disturb it", async () => {
     const props = renderEditor({ bot: { ...WRITER, image: PIXEL } });
 
-    expect(document.querySelector(".iconpick img")).toHaveAttribute(
+    expect(document.querySelector(".iconpick .pic")).toHaveAttribute(
       "src",
       PIXEL,
     );
@@ -240,13 +238,11 @@ describe("the icon a bot already has", () => {
     );
   });
 
-  it("goes back to the colour mark when it is removed", async () => {
+  it("goes back to the mascot when it is removed", async () => {
     const props = renderEditor({ bot: { ...WRITER, image: PIXEL } });
 
     await userEvent.click(screen.getByRole("button", { name: "Remove image" }));
-    expect(document.querySelector(".iconpick .initials")).toHaveTextContent(
-      "W",
-    );
+    expect(document.querySelector(".iconpick .mascot")).not.toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     // `null` and not `undefined`: the host reads the two differently, and only

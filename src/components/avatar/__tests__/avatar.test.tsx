@@ -1,12 +1,7 @@
 /**
- * The icon every surface draws, and the two things it can be (#44).
- *
- * The old suite next to this one checked six creature styles against each
- * other. There is one mark now, so the claims worth pinning changed shape: the
- * monogram is the channel that has to survive a palette of eight running out,
- * the picture is the channel the user controls, and the ring is the only place
- * state has left to live. Each of those is something a change to this file
- * could quietly take away without any other suite noticing.
+ * The mascot every surface draws, the picture a user can substitute, and the
+ * state chrome shared by both. The colour classes supply the variations; the
+ * mascot atlas supplies one recognizable product identity and real poses.
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -17,12 +12,6 @@ import type { AvatarState } from "../state";
 
 const STATES: readonly AvatarState[] = ["idle", "running", "waiting", "failed"];
 
-/**
- * Twelve bots, coloured round-robin, so bots 0 and 8, 1 and 9, 2 and 10, 3 and
- * 11 are the four pairs a palette of eight forces onto one colour. Those pairs
- * are the ones a person actually has to tell apart, and they are what the
- * monogram exists for.
- */
 const CREW: readonly { name: string; color: BotColor }[] = Array.from(
   { length: 12 },
   (_, i) => ({
@@ -40,53 +29,32 @@ function avatar(props: Parameters<typeof Avatar>[0]): HTMLElement {
   return container.firstElementChild as HTMLElement;
 }
 
-/** What the mark says, with the whitespace an SVG `<text>` never has. */
-function initials(el: HTMLElement): string {
-  return el.querySelector(".initials")?.textContent ?? "";
-}
-
-describe("the colour mark", () => {
-  it("draws in all eight colours", () => {
+describe("the mascot variations", () => {
+  it("draws the shared mascot in all eight colours", () => {
     for (const color of BOT_COLORS) {
       const el = avatar({ name: "Probe", color });
-      // The colour is a class and not paint: the disc resolves --lite/--deep
-      // off this one hook, so a mark that forgot it would come out unpainted
-      // rather than wrongly painted.
       expect(el).toHaveClass("av", color);
-      expect(el.querySelector(".disc")).not.toBeNull();
+      expect(el.querySelector(".mascot-stage")).not.toBeNull();
+      expect(el.querySelector(".mascot")).toHaveAttribute("src");
       cleanup();
     }
   });
 
-  it("tells the four forced colour pairs apart by their initials", () => {
-    // The property the change rests on. Colour ran out at the ninth bot, which
-    // was #44's first complaint; the monogram is what does not.
-    const marks = CREW.map((bot) => {
-      const el = avatar(bot);
-      const mark = `${bot.color}/${initials(el)}`;
-      cleanup();
-      return mark;
-    });
-    expect(new Set(marks).size).toBe(CREW.length);
-  });
-
-  it("follows the name, because the name is what the user chose", () => {
-    // The opposite of the dealt marks this replaced: those keyed off the id so
-    // a rename left them alone, which also meant a bot named for what it does
-    // could never look like it. Renaming is now the way to change the mark.
-    const before = initials(
-      avatar({ name: "Expense Manager", color: "b-teal" }),
-    );
-    cleanup();
-    const after = initials(avatar({ name: "Payroll", color: "b-teal" }));
-    expect(before).toBe("EM");
-    expect(after).toBe("P");
-  });
-
-  it("draws something for a bot with no usable name at all", () => {
+  it("draws the mascot even when a bot has no usable name", () => {
     for (const name of ["", "   "]) {
       const el = avatar({ name, color: "b-blue" });
-      expect(initials(el)).toBe("?");
+      expect(el.querySelector(".mascot")).not.toBeNull();
+      cleanup();
+    }
+  });
+
+  it("uses the frame atlas for every runtime state", () => {
+    for (const state of STATES) {
+      const el = avatar({ name: "Probe", color: "b-blue", state });
+      expect(el.querySelector(".mascot-sheet")).toHaveAttribute(
+        "src",
+        expect.stringContaining("mascot-spritesheet"),
+      );
       cleanup();
     }
   });
@@ -95,10 +63,9 @@ describe("the colour mark", () => {
 describe("the uploaded picture", () => {
   it("replaces the mark rather than sitting beside it", () => {
     const el = avatar({ name: "Mira", color: "b-pink", image: PIXEL });
-    const picture = el.querySelector("img");
+    const picture = el.querySelector(".pic");
     expect(picture).toHaveAttribute("src", PIXEL);
-    expect(el.querySelector(".initials")).toBeNull();
-    expect(el.querySelector(".disc")).toBeNull();
+    expect(el.querySelector(".mascot")).toBeNull();
   });
 
   it("keeps the chrome, so a bot with a picture can still be unread and busy", () => {
@@ -111,13 +78,13 @@ describe("the uploaded picture", () => {
     });
     expect(screen.getByTestId("unread-dot")).toBeInTheDocument();
     expect(screen.getByTestId("state-ring")).toBeInTheDocument();
-    expect(el.querySelector("img")).not.toBeNull();
+    expect(el.querySelector(".pic")).not.toBeNull();
   });
 
   it("falls back to the mark when the row holds something that is not an icon", () => {
     // The value has been through the host and back, and it goes straight into
     // a `src`. A `javascript:` or an `http:` in that field is either an attack
-    // or a bug, and either way the answer is the bot's initials.
+    // or a bug, and either way the answer is the built-in mascot.
     for (const bad of [
       "javascript:alert(1)",
       "http://example.com/avatar.png",
@@ -126,8 +93,8 @@ describe("the uploaded picture", () => {
       "",
     ]) {
       const el = avatar({ name: "Mira", color: "b-pink", image: bad });
-      expect(el.querySelector("img"), bad).toBeNull();
-      expect(initials(el), bad).toBe("M");
+      expect(el.querySelector(".pic"), bad).toBeNull();
+      expect(el.querySelector(".mascot"), bad).not.toBeNull();
       cleanup();
     }
   });
@@ -183,7 +150,10 @@ describe("the chrome", () => {
     const el = avatar({ ...CREW[0] });
     expect(el).toHaveAttribute("title", "Bot 0");
     expect(el).not.toHaveAttribute("aria-label");
-    expect(el.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(el.querySelector(".mascot-stage")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
   });
 
   it("takes a name when the avatar is the only thing in its control", () => {
@@ -203,7 +173,7 @@ describe("the chrome", () => {
 });
 
 describe("the crew's own avatar", () => {
-  it("draws three marks in three slots", () => {
+  it("draws three mascot portraits in three slots", () => {
     const { container } = render(<CrewAvatar />);
     const cluster = container.firstElementChild as HTMLElement;
     expect(cluster).toHaveClass("cluster", "av-cluster");
@@ -228,8 +198,8 @@ describe("the crew's own avatar", () => {
     expect(new Set(colours).size).toBe(3);
   });
 
-  it("carries no initials, since three of the same letter say nothing", () => {
+  it("draws the mascot in all three slots", () => {
     const { container } = render(<CrewAvatar />);
-    expect(container.querySelector(".initials")).toBeNull();
+    expect(container.querySelectorAll(".mascot")).toHaveLength(3);
   });
 });
