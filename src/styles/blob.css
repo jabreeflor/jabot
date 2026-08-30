@@ -1,121 +1,247 @@
 /*
- * Blob avatars. Each bot is a slightly-wrong circle with two eyes — the
- * asymmetric border-radius per colour is deliberate, it is what stops six bots
- * from reading as six identical dots. Sizes are set by the callers that need
- * them (--blob-size) so one element serves the 54px chief tile, the 44px strip,
- * and the 28px chat header.
+ * Mascot avatars. Every bot uses the same robot silhouette, then gets an
+ * individual light well, resting angle, glance direction, and animation pace
+ * from its persisted colour. Sizes remain caller-owned through --blob-size.
  */
 
 .blob {
+  --mascot-accent: #2fb894;
+  --mascot-glow: #8df4d7;
+  --mascot-tilt: -1deg;
+  --mascot-glance: 1px;
+  --mascot-speed: 5.6s;
+  --mascot-delay: -1.2s;
   width: var(--blob-size, 46px);
   height: var(--blob-size, 46px);
   flex: none;
   position: relative;
   display: block;
-  border-radius: 52% 48% 55% 45% / 48% 54% 46% 52%;
+  border-radius: 36% 36% 42% 42% / 32% 32% 44% 44%;
 }
 
-.blob::before,
-.blob::after {
+.blob-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--mascot-accent) 72%, white 28%);
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 33% 20%, rgba(255, 255, 255, 0.42), transparent 34%),
+    radial-gradient(circle at 50% 78%, var(--mascot-accent), var(--mascot-glow));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -7px 12px color-mix(in srgb, var(--mascot-accent) 70%, transparent),
+    0 3px 9px color-mix(in srgb, var(--mascot-accent) 28%, transparent);
+  transform-origin: 50% 82%;
+  animation: mascot-hover var(--mascot-speed) ease-in-out var(--mascot-delay) infinite;
+}
+
+.blob-stage::after {
   content: "";
   position: absolute;
-  top: 34%;
-  width: calc(var(--blob-size, 46px) * 0.09);
-  height: calc(var(--blob-size, 46px) * 0.24);
-  border-radius: 3px;
-  background: rgba(20, 20, 22, 0.85);
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(118deg, transparent 27%, rgba(255, 255, 255, 0.22) 46%, transparent 63%);
+  transform: translateX(-120%);
+  animation: mascot-shine 9.6s ease-in-out var(--mascot-delay) infinite;
+  pointer-events: none;
 }
 
-.blob::before {
-  left: 34%;
-  transform: rotate(-8deg);
-}
-
-.blob::after {
-  left: 52%;
-  transform: rotate(6deg);
+.blob-stage img {
+  position: absolute;
+  width: 126%;
+  max-width: none;
+  height: auto;
+  left: -13%;
+  bottom: -7%;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px rgba(16, 16, 18, 0.42));
+  transform-origin: 50% 70%;
+  animation: mascot-look 7.4s ease-in-out var(--mascot-delay) infinite;
 }
 
 .b-teal {
-  background: radial-gradient(circle at 32% 28%, #6fe0c0, #2fb894);
+  --mascot-accent: #2fb894;
+  --mascot-glow: #7ce8ca;
+  --mascot-tilt: -2deg;
+  --mascot-glance: 1.1px;
+  --mascot-speed: 5.4s;
+  --mascot-delay: -2.2s;
 }
 
 .b-yellow {
-  background: radial-gradient(circle at 32% 28%, #ffd24d, #efa92f);
-  border-radius: 48% 52% 45% 55% / 54% 46% 56% 44%;
+  --mascot-accent: #efa92f;
+  --mascot-glow: #ffe176;
+  --mascot-tilt: 2deg;
+  --mascot-glance: -1.2px;
+  --mascot-speed: 5.9s;
+  --mascot-delay: -0.8s;
 }
 
 .b-purple {
-  background: radial-gradient(circle at 32% 28%, #9c8cff, #6c55e8);
-  border-radius: 55% 45% 50% 50% / 45% 55% 48% 52%;
+  --mascot-accent: #6c55e8;
+  --mascot-glow: #a89cff;
+  --mascot-tilt: -3deg;
+  --mascot-glance: 1.4px;
+  --mascot-speed: 5.1s;
+  --mascot-delay: -3.3s;
 }
 
 .b-violet {
-  background: radial-gradient(circle at 32% 28%, #c08bff, #9257e8);
+  --mascot-accent: #9257e8;
+  --mascot-glow: #ca9cff;
+  --mascot-tilt: 3deg;
+  --mascot-glance: -1.4px;
+  --mascot-speed: 6.1s;
+  --mascot-delay: -4.1s;
 }
 
 .b-blue {
-  background: radial-gradient(circle at 32% 28%, #6fafff, #3c7fe8);
-  border-radius: 46% 54% 52% 48% / 55% 45% 52% 48%;
+  --mascot-accent: #3c7fe8;
+  --mascot-glow: #84bcff;
+  --mascot-tilt: -1deg;
+  --mascot-glance: -1px;
+  --mascot-speed: 5.7s;
+  --mascot-delay: -1.6s;
 }
 
 .b-orange {
-  background: radial-gradient(circle at 32% 28%, #ffa65c, #ef7e2f);
+  --mascot-accent: #ef7e2f;
+  --mascot-glow: #ffb376;
+  --mascot-tilt: 3deg;
+  --mascot-glance: 1.3px;
+  --mascot-speed: 5.2s;
+  --mascot-delay: -2.8s;
 }
 
 .b-pink {
-  background: radial-gradient(circle at 32% 28%, #ff9bbb, #e85d8a);
-  border-radius: 47% 53% 50% 50% / 53% 47% 55% 45%;
+  --mascot-accent: #e85d8a;
+  --mascot-glow: #ffa5c2;
+  --mascot-tilt: -3deg;
+  --mascot-glance: -1.3px;
+  --mascot-speed: 6.3s;
+  --mascot-delay: -3.8s;
 }
 
 .b-green {
-  background: radial-gradient(circle at 32% 28%, #7adb8f, #3ea65c);
-  border-radius: 53% 47% 46% 54% / 47% 53% 50% 50%;
+  --mascot-accent: #3ea65c;
+  --mascot-glow: #8de59f;
+  --mascot-tilt: 1deg;
+  --mascot-glance: 1px;
+  --mascot-speed: 5.5s;
+  --mascot-delay: -1.1s;
 }
 
 .blob .dot {
   position: absolute;
-  top: 0;
-  right: 0;
+  z-index: 3;
+  top: -1px;
+  right: -1px;
   width: 11px;
   height: 11px;
   border-radius: 50%;
   background: var(--red);
   border: 2.5px solid var(--side);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
 }
 
-/* Three mini blobs = "the crew", the one avatar that is not a single bot. */
+/* Three mini mascot portraits = "the crew". */
 .cluster {
   width: var(--blob-size, 46px);
   height: var(--blob-size, 46px);
   flex: none;
   position: relative;
   display: block;
+  border-radius: 35%;
 }
 
 .cluster i {
   position: absolute;
-  width: 57%;
-  height: 57%;
-  border-radius: 52% 48% 55% 45% / 48% 54% 46% 52%;
+  width: 59%;
+  height: 59%;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--mascot-accent) 68%, white 32%);
+  border-radius: 38% 38% 44% 44% / 34% 34% 46% 46%;
+  background: radial-gradient(circle at 50% 72%, var(--mascot-accent), var(--mascot-glow));
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.34);
+  animation: crew-hover var(--mascot-speed) ease-in-out var(--mascot-delay) infinite;
 }
 
 .cluster i:nth-child(1) {
+  z-index: 3;
   top: 0;
-  left: 20%;
-  background: radial-gradient(circle at 32% 28%, #6fe0c0, #2fb894);
+  left: 20.5%;
 }
 
 .cluster i:nth-child(2) {
+  z-index: 2;
   bottom: 0;
   left: 0;
-  background: radial-gradient(circle at 32% 28%, #9c8cff, #6c55e8);
 }
 
 .cluster i:nth-child(3) {
-  bottom: 0;
+  z-index: 1;
   right: 0;
-  background: radial-gradient(circle at 32% 28%, #c08bff, #9257e8);
+  bottom: 0;
+}
+
+.cluster img {
+  position: absolute;
+  width: 148%;
+  max-width: none;
+  left: -24%;
+  bottom: -11%;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgba(16, 16, 18, 0.36));
+}
+
+@keyframes mascot-hover {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--mascot-tilt));
+  }
+  38% {
+    transform: translateY(-2px) rotate(calc(var(--mascot-tilt) + 1deg));
+  }
+  72% {
+    transform: translateY(0.5px) rotate(calc(var(--mascot-tilt) - 0.6deg));
+  }
+}
+
+@keyframes mascot-look {
+  0%,
+  34%,
+  64%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+  43%,
+  54% {
+    transform: translateX(var(--mascot-glance)) scale(1.025);
+  }
+}
+
+@keyframes mascot-shine {
+  0%,
+  46% {
+    transform: translateX(-120%);
+  }
+  62%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes crew-hover {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--mascot-tilt));
+  }
+  50% {
+    transform: translateY(-1.5px) rotate(0deg);
+  }
 }
 
 /* The square code-session avatar — a thread has no face, it has a prompt. */

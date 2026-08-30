@@ -1,7 +1,8 @@
-//! Bot avatars. A blob is a bot's identity everywhere it appears — sidebar tile,
-//! chat header, crew card, Inbox row — so size is a CSS variable set by the
-//! container rather than a prop threaded through four call sites.
+//! Bot avatars. The shared mascot is staged with each bot's accent colour and
+//! motion signature everywhere it appears — sidebar tile, chat header, crew
+//! card, Inbox row — while the caller still owns its size through one CSS var.
 
+import mascotAvatar from "../assets/mascot-avatar.png";
 import type { BotColor } from "./types";
 
 export function Blob({
@@ -16,18 +17,27 @@ export function Blob({
 }) {
   return (
     <span className={["blob", color, className].filter(Boolean).join(" ")}>
+      <span className="blob-stage" aria-hidden="true">
+        <img src={mascotAvatar} alt="" draggable={false} />
+      </span>
       {unread && <span className="dot" data-testid="unread-dot" />}
     </span>
   );
 }
 
-/** The crew as a whole — three faces, no single identity. */
+/** The crew as a whole — three mascot variations, no single identity. */
 export function BlobCluster({ className }: { className?: string }) {
   return (
     <span className={["cluster", className].filter(Boolean).join(" ")}>
-      <i />
-      <i />
-      <i />
+      <i className="b-teal">
+        <img src={mascotAvatar} alt="" draggable={false} />
+      </i>
+      <i className="b-purple">
+        <img src={mascotAvatar} alt="" draggable={false} />
+      </i>
+      <i className="b-violet">
+        <img src={mascotAvatar} alt="" draggable={false} />
+      </i>
     </span>
   );
 }
