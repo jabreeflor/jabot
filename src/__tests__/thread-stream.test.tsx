@@ -20,6 +20,7 @@ import { Transcript } from "../components/Transcript";
 import type {
   HandoffView,
   HostClient,
+  ProcessView,
   JsonRpcNotification,
   PendingPermissionView,
   PermissionReplyParams,
@@ -470,6 +471,7 @@ function stubHost(
   replay: Partial<ThreadTranscriptResult> = {},
   pending: PendingPermissionView[] = [],
   handoff?: HandoffView,
+  process?: Partial<ProcessView>,
 ) {
   const handlers = new Set<(n: JsonRpcNotification) => void>();
   const prompts: PromptParams[] = [];
@@ -506,7 +508,7 @@ function stubHost(
       ...replay,
     })),
     deviceId: "dev-1",
-    threadState: vi.fn(async () => ({ threadId: THREAD.id, handoff })),
+    threadState: vi.fn(async () => ({ threadId: THREAD.id, handoff, process })),
     pendingPermissions: vi.fn(async () => ({
       requests: pending.filter((request) => !resolved.has(request.requestId)),
     })),
@@ -1010,5 +1012,90 @@ describe("LiveThreadView provenance", () => {
     );
     expect(await screen.findByText("start the migration")).toBeInTheDocument();
     expect(document.querySelector(".chat-handoff")).toBeNull();
+  });
+});
+
+/**
+ * Receipt drift: the stored session no longer matches the job that would be
+ * spawned, so the next prompt starts a fresh conversation.
+ *
+ * The host has computed this on every `thread/state` since #21 — it is what
+ * `resume_readiness` is for — and it is the one thing on this screen a user
+ * cannot possibly infer. Everything looks normal: the transcript is there, the
+ * composer works, and the next message silently opens a new conversation the
+ * agent has no memory of.
+ */
+describe("LiveThreadView drift", () => {
+  function draw(drift?: string[]) {
+    const host = stubHost({}, [], undefined, {
+      connected: false,
+      acpState: "idle",
+      pendingPermissions: 0,
+      resumable: false,
+      drift,
+    });
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    return host;
+  }
+
+  it("names the fields that moved, in the words the rest of the UI uses", async () => {
+    draw(["harnessId", "cwd"]);
+
+    // Queried by container, not by the phrase: the phrase lives in a <b>
+    // inside the notice, and the field names sit beside it.
+    await screen.findByText(/setup has changed/);
+    const notice = document.querySelector(".chat-drift");
+    // Reads as a sentence, not a comma-joined fragment.
+    expect(notice).toHaveTextContent("the engine and the folder are not");
+    // The wire names themselves are not what a user reads.
+    expect(notice).not.toHaveTextContent("harnessId");
+  });
+
+  it("joins three moved fields into a sentence", async () => {
+    draw(["harnessId", "model", "cwd"]);
+
+    await screen.findByText(/setup has changed/);
+    expect(document.querySelector(".chat-drift")).toHaveTextContent(
+      "the engine, the model and the folder are not",
+    );
+  });
+
+  it("says what the next message will actually do", async () => {
+    draw(["model"]);
+
+    expect(
+      await screen.findByText(/next message begins a new one/),
+    ).toBeInTheDocument();
+  });
+
+  /** A field the host learns to report before this list does is still worth
+      naming — printing it raw beats dropping it silently. */
+  it("prints an unknown field rather than swallowing it", async () => {
+    draw(["someNewField"]);
+
+    expect(await screen.findByText(/someNewField/)).toBeInTheDocument();
+  });
+
+  /** The overwhelmingly common case. A banner on every thread would train the
+      user to ignore the one that matters. */
+  it("draws nothing when nothing has drifted", async () => {
+    draw([]);
+    await screen.findByText("start the migration");
+
+    expect(document.querySelector(".chat-drift")).toBeNull();
+  });
+
+  it("draws nothing when the host reports no drift field at all", async () => {
+    draw(undefined);
+    await screen.findByText("start the migration");
+
+    expect(document.querySelector(".chat-drift")).toBeNull();
   });
 });
