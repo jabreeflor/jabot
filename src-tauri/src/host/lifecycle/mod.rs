@@ -51,6 +51,15 @@ use state::{ThreadAction, ThreadState};
 /// `resurface.md` is explicit that "stdout went quiet" must not be primary.
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
+/// The hard cap on one run, after which the host stops waiting and says so.
+///
+/// Four hours, which is far longer than any turn anybody watches and short
+/// enough that a wedged run does not hold a thread until the next quit. It is
+/// deliberately not the stuck threshold's neighbour: stuck is "no output for a
+/// while" and keeps the process so the user can wait, reopen or cancel
+/// (`resurface.md`); this is the other thing, the one that actually ends a run.
+const DEFAULT_RUN_CAP: Duration = Duration::from_secs(4 * 60 * 60);
+
 /// How many runs a `thread/state` reply carries. The Inbox card wants the
 /// latest; the header wants recent history; nobody wants the whole ledger.
 const RUN_PAGE: usize = 50;
@@ -64,6 +73,7 @@ const RUN_PAGE: usize = 50;
 pub struct LifecycleState {
     threads: HashMap<String, ProcessStatus>,
     idle_timeout: Duration,
+    run_cap: Duration,
 }
 
 impl Default for LifecycleState {
@@ -71,23 +81,30 @@ impl Default for LifecycleState {
         Self {
             threads: HashMap::new(),
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            run_cap: DEFAULT_RUN_CAP,
         }
     }
 }
 
 impl LifecycleState {
-    /// `JABOT_IDLE_TIMEOUT_MS` shortens the stuck backstop. It exists so tests
-    /// can watch a real timeout fire in a second instead of ten minutes; the
-    /// setting this stands in for is a user preference (#26).
+    /// Two knobs, both stand-ins for settings #26 owns. They exist so tests
+    /// can watch a real timeout fire in a second instead of ten minutes, and a
+    /// real cap in fifty milliseconds instead of four hours.
+    ///
+    /// - `JABOT_IDLE_TIMEOUT_MS` — the stuck backstop's silence threshold.
+    /// - `JABOT_RUN_CAP_MS` — the hard cap on one run.
     pub fn from_env() -> Self {
-        let idle_timeout = std::env::var("JABOT_IDLE_TIMEOUT_MS")
-            .ok()
-            .and_then(|raw| raw.parse::<u64>().ok())
-            .filter(|ms| *ms > 0)
-            .map(Duration::from_millis)
-            .unwrap_or(DEFAULT_IDLE_TIMEOUT);
+        let read = |key: &str, fallback: Duration| {
+            std::env::var(key)
+                .ok()
+                .and_then(|raw| raw.parse::<u64>().ok())
+                .filter(|ms| *ms > 0)
+                .map(Duration::from_millis)
+                .unwrap_or(fallback)
+        };
         Self {
-            idle_timeout,
+            idle_timeout: read("JABOT_IDLE_TIMEOUT_MS", DEFAULT_IDLE_TIMEOUT),
+            run_cap: read("JABOT_RUN_CAP_MS", DEFAULT_RUN_CAP),
             ..Self::default()
         }
     }
@@ -387,6 +404,7 @@ impl HostSession {
             let entry = self.lifecycle.entry(thread_id);
             entry.connected = true;
             entry.acp = AcpState::Running;
+            entry.run_started = Some(std::time::Instant::now());
             entry.touch();
         }
         let Some(store) = self.store.as_ref() else {
@@ -503,7 +521,9 @@ impl HostSession {
         if let Some(store) = self.store.as_ref() {
             let _ = store.set_thread_stop(thread_id, stop_reason, error.as_deref());
         }
-        self.lifecycle.entry(thread_id).run_id = None;
+        let entry = self.lifecycle.entry(thread_id);
+        entry.run_id = None;
+        entry.run_started = None;
         let Some(reason) = outcome.resurface_reason() else {
             // A cancel the user asked for gets a quiet row, not a card.
             return;
@@ -674,7 +694,9 @@ impl HostSession {
             }
             let _ = store.set_thread_stop(thread_id, Some("adapter_exit"), Some(detail));
         }
-        self.lifecycle.entry(thread_id).run_id = None;
+        let entry = self.lifecycle.entry(thread_id);
+        entry.run_id = None;
+        entry.run_started = None;
         // A thread already resurfaced as Needs you keeps that card: the ask is
         // still the thing the human has to deal with.
         if was != AcpState::RequiresAction {
@@ -685,6 +707,7 @@ impl HostSession {
     /// Idle-timeout backstop. Run every pump cycle; costs a clock read per
     /// live thread.
     pub(crate) fn lifecycle_tick(&mut self) {
+        self.cap_overlong_runs();
         let timeout = self.lifecycle.idle_timeout;
         let stalled: Vec<String> = self
             .lifecycle
@@ -737,11 +760,76 @@ impl HostSession {
         }
     }
 
+    /// The hard cap: stop waiting on a run that is never going to end.
+    ///
+    /// The distinction from the stuck backstop above is the whole of it.
+    /// `resurface.md` is explicit that stuck must **keep the process**, so the
+    /// user can wait, reopen or cancel — and the run stays `running`, which is
+    /// right for "no output for a while". `timed_out` has been a legal edge in
+    /// the ledger and a state the renderer draws since #15, produced by
+    /// nothing: there was no path that actually ended a run.
+    ///
+    /// Measured from when the run opened and never reset by output. A run that
+    /// streams a token a minute for a day is exactly what this is for, and it
+    /// would reset the stuck clock forever.
+    ///
+    /// A run wedged on an unanswered permission is capped too, with its asks
+    /// withdrawn as cancelled the way the close-out path does. Skipping those
+    /// would exempt the one shape most likely to sit for hours — and after the
+    /// cap the ask is not answerable anyway, because the adapter it would be
+    /// delivered to is gone.
+    fn cap_overlong_runs(&mut self) {
+        let cap = self.lifecycle.run_cap;
+        let overlong: Vec<String> = self
+            .lifecycle
+            .threads
+            .iter()
+            .filter(|(_, status)| {
+                status
+                    .run_started
+                    .is_some_and(|started| started.elapsed() >= cap)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for thread_id in overlong {
+            let summary = format!("run exceeded {}s", cap.as_secs());
+            self.withdraw_pending_permissions(
+                &thread_id,
+                &summary,
+                PermissionWithdrawal::Cancelled,
+            );
+            let run_id = self.close_run(&thread_id, RunState::TimedOut, Some(&summary));
+            if let Some(store) = self.store.as_ref() {
+                let _ = store.set_thread_stop(&thread_id, Some("run_cap"), Some(&summary));
+            }
+            // The adapter goes with the run. Leaving it would leave a process
+            // holding a session the ledger says is over, and the next prompt
+            // would be refused as overlapping a run that no longer exists.
+            self.drop_adapter(&thread_id);
+            let entry = self.lifecycle.entry(&thread_id);
+            entry.run_id = None;
+            entry.run_started = None;
+            entry.acp = AcpState::Unknown;
+            entry.connected = false;
+            self.try_resurface(
+                &thread_id,
+                ResurfaceReason::Failed,
+                &summary,
+                run_id.as_deref(),
+            );
+        }
+    }
+
     /// The stuck backstop's threshold. `resurface.md` starts it at ten minutes
     /// and says to make it a setting; this is that setting's entry point, and
     /// what a test uses to watch a real timeout fire in milliseconds.
     pub fn set_idle_timeout(&mut self, timeout: Duration) {
         self.lifecycle.idle_timeout = timeout;
+    }
+
+    /// The hard cap on one run (#25, #21). A test's only way to watch it fire.
+    pub fn set_run_cap(&mut self, cap: Duration) {
+        self.lifecycle.run_cap = cap;
     }
 
     pub(crate) fn acp_state(&self, thread_id: &str) -> AcpState {
@@ -774,6 +862,7 @@ impl HostSession {
         entry.connected = false;
         entry.acp = AcpState::Unknown;
         entry.run_id = None;
+        entry.run_started = None;
     }
 
     /// How long since this thread's adapter last said anything.
