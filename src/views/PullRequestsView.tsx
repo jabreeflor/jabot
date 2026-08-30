@@ -73,6 +73,11 @@ export function PullRequestsView({
   const open = pullRequests.filter((pr) => pr.status === "open");
   const drafts = pullRequests.filter((pr) => pr.status === "draft");
   const merged = pullRequests.filter((pr) => pr.status === "merged");
+  // Closed-without-merging. The host has parsed, stored and served this status
+  // all along and `prTag` has always had a pill for it, but no section ever
+  // held one — so a PR someone closed simply vanished off the board, which
+  // reads as "JaBot lost it" rather than "somebody closed it".
+  const closed = pullRequests.filter((pr) => pr.status === "closed");
 
   const tabs: readonly TabSpec<PrTab>[] = [
     { id: "open", label: "Open", count: open.length },
@@ -92,9 +97,17 @@ export function PullRequestsView({
             rows: open.filter((pr) => pr.checkState === "running"),
           },
           { title: "RECENTLY MERGED", rows: merged },
+          // On the Open tab as well as the Merged one, and for the same
+          // reason RECENTLY MERGED is here: the question a vanished row
+          // raises is asked while looking at Open. Empty sections are
+          // dropped below, so this costs nothing on a board with none.
+          { title: "CLOSED WITHOUT MERGING", rows: closed },
         ]
       : tab === "merged"
-        ? [{ title: "MERGED", rows: merged }]
+        ? [
+            { title: "MERGED", rows: merged },
+            { title: "CLOSED WITHOUT MERGING", rows: closed },
+          ]
         : [{ title: "DRAFTS", rows: drafts }];
 
   const visible = sections.filter((section) => section.rows.length > 0);

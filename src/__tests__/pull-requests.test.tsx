@@ -73,6 +73,20 @@ const PRS: PullRequest[] = [
     deletions: 288,
   },
   {
+    id: "pr-17",
+    threadId: "cache",
+    provider: "github",
+    repo: "jabot-app",
+    number: 17,
+    url: "https://example.invalid/17",
+    title: "Cache the harness probe",
+    status: "closed",
+    checkState: null,
+    updatedAt: at(1700),
+    additions: 40,
+    deletions: 11,
+  },
+  {
     id: "pr-18",
     threadId: "onboarding",
     provider: "github",
@@ -188,5 +202,59 @@ describe("PullRequestsView", () => {
     expect(
       screen.getByRole("tabpanel", { name: "Open · 2" }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * A PR somebody closed without merging.
+ *
+ * The host has parsed, stored and served `closed` all along, and `prTag` has
+ * always had a pill for it — but no section ever held one, so the row simply
+ * left the board. That reads as "JaBot lost my PR", not "somebody closed it".
+ */
+describe("PullRequestsView, closed pull requests", () => {
+  it("shows a closed PR on the Open tab, where its absence is noticed", () => {
+    renderPrs();
+
+    expect(
+      screen.getByText("CLOSED WITHOUT MERGING", { selector: ".page-section" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Cache the harness probe")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("CLOSED", { selector: ".tagpill" }),
+    ).toHaveLength(1);
+  });
+
+  it("also files it under Merged, which is where finished work is browsed", async () => {
+    renderPrs();
+    await userEvent.click(screen.getByRole("tab", { name: "Merged" }));
+
+    expect(screen.getByText("Cache the harness probe")).toBeInTheDocument();
+    expect(screen.getByText("Onboarding flow polish")).toBeInTheDocument();
+  });
+
+  /** A closed PR is finished, so it must not inflate the count of work that
+      still wants attention. */
+  it("does not count a closed PR as open", () => {
+    renderPrs();
+
+    expect(screen.getByRole("tab", { name: "Open · 2" })).toBeInTheDocument();
+  });
+
+  it("draws no empty section when nothing has been closed", () => {
+    renderPrs({ pullRequests: PRS.filter((pr) => pr.status !== "closed") });
+
+    expect(
+      screen.queryByText("CLOSED WITHOUT MERGING", { selector: ".page-section" }),
+    ).not.toBeInTheDocument();
+  });
+
+  /** Closed is not draft. A draft is unfinished work you might come back to;
+      a closed PR is a decision, and mixing them would misfile both. */
+  it("keeps a closed PR out of Drafts", async () => {
+    renderPrs();
+    await userEvent.click(screen.getByRole("tab", { name: "Drafts" }));
+
+    expect(screen.queryByText("Cache the harness probe")).not.toBeInTheDocument();
   });
 });
