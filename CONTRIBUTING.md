@@ -25,7 +25,7 @@ reason the tooling below exists rather than being a nicety:
 - `clippy -D warnings` failing in CI twice while it passed locally, because
   `rust-toolchain.toml` tracks `stable` and this box had drifted behind the one
   CI installs. Hence the `toolchain` gate, and the 24-hour expiry on the
-  "already verified" note described below. See `DEVIATIONS.md` D-014.
+  "already verified" note described below. See [issue #69](https://github.com/jabreeflor/jabot/issues/69).
 
 ## Setup
 
@@ -169,8 +169,11 @@ Deleting a branch pushes no content and is not gated.
 
 ## Before you call something a gap
 
-`DEVIATIONS.md` records every deliberate departure and deferral, D-001 through
-D-024, with the reasoning. Check it before filing or "fixing" one.
+Every deliberate departure and deferral is recorded as a GitHub issue labelled
+[`decision`](https://github.com/jabreeflor/jabot/issues?q=is%3Aissue+label%3Adecision),
+one per entry (D-001 through D-025), with the reasoning. These used to live in
+`DEVIATIONS.md`; that file was retired in favour of issues. Check them before
+filing or "fixing" a gap.
 
 ## House rules
 

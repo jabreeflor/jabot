@@ -25,7 +25,7 @@
 //!
 //! The decision layer — which events notify, what the payload says, where a
 //! click goes — is portable and unit-tested on every platform. What cannot be
-//! tested off a Mac is delivery itself; see `DEVIATIONS.md` D-019.
+//! tested off a Mac is delivery itself; see https://github.com/jabreeflor/jabot/issues/73.
 
 use std::sync::Mutex;
 

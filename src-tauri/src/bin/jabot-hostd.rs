@@ -8,7 +8,7 @@
 //! use. `tests/e2e/` drives it from TypeScript through the real protocol.
 //!
 //! It is a test/dev entrypoint, not the shipping sidecar — the app still runs
-//! the host in-process. See `DEVIATIONS.md` (D-001).
+//! the host in-process. See https://github.com/jabreeflor/jabot/issues/54.
 //!
 //! Requests and responses are correlated by `id`; host-initiated notifications
 //! are written to the same stream as they are produced. One JSON value per
