@@ -83,6 +83,86 @@
   outline: 0;
 }
 
+/* ---- custom dropdown (Select.tsx) ----
+ *
+ * The native <select> popup is the browser's own chrome and will not take a
+ * border-radius or a padding rule, so FOLDER draws its own listbox instead.
+ * The trigger keeps the same box every other modal field uses; the popup
+ * borrows the rounded-menu recipe (`.fold-menu`, `.ctx-menu`) so it reads as
+ * this app's dropdown rather than the OS's.
+ */
+.mselect {
+  position: relative;
+}
+
+.mselect-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  border-radius: 11px;
+  padding: 10px 13px;
+  font-size: var(--fs-ui);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.mselect-trigger:focus-visible,
+.mselect-trigger[aria-expanded="true"] {
+  outline: 0;
+  border-color: var(--dim);
+}
+
+.mselect-chev {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--faint);
+  transition: transform var(--t-icon) var(--ease-flap);
+}
+
+.mselect-trigger[aria-expanded="true"] .mselect-chev {
+  transform: rotate(180deg);
+}
+
+.mselect-list {
+  position: absolute;
+  z-index: 300;
+  top: calc(100% + var(--sp-2));
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  background: var(--raise2);
+  border: 1px solid var(--edge-menu);
+  border-radius: 13px;
+  padding: 5px;
+  list-style: none;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+.mselect-list li {
+  padding: 10px 13px;
+  border-radius: 9px;
+  color: var(--ink);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+
+.mselect-list li.active {
+  background: var(--raise);
+}
+
+.mselect-list li[aria-selected="true"] {
+  color: var(--bub-me-ink);
+  background: var(--bub-me);
+}
+
 .modal textarea {
   width: 100%;
   min-height: 74px;

@@ -3,7 +3,7 @@
  * default to something, report the exact id the host will resolve, and be
  * honest about a harness the machine does not have.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -111,6 +111,39 @@ describe("NewChatModal", () => {
     expect(
       screen.getByText("Install Pi, then `pi-acp` on PATH."),
     ).toBeInTheDocument();
+  });
+
+  /** FOLDER is a custom listbox (`Select.tsx`), not a native <select> — the
+      browser's own popup will not take the rounded-menu shape the rest of
+      the modal uses. */
+  it("picks a folder from the custom dropdown", async () => {
+    const props = renderModal();
+
+    await userEvent.click(screen.getByLabelText("FOLDER"));
+    const menu = screen.getByRole("listbox");
+    await userEvent.click(
+      within(menu).getByRole("option", { name: "globnet-sync" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+
+    expect(props.onStart).toHaveBeenCalledWith(
+      expect.objectContaining({ folderId: "globnet-sync" }),
+    );
+  });
+
+  it("closes just the dropdown on Escape, not the whole card", async () => {
+    const props = renderModal({ defaultFolderId: "jabot-app" });
+
+    await userEvent.click(screen.getByLabelText("FOLDER"));
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(screen.getByLabelText("FOLDER")).toHaveTextContent("jabot-app");
+    expect(props.onCancel).not.toHaveBeenCalled();
   });
 
   it("closes on Escape without starting anything", async () => {
