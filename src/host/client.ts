@@ -36,6 +36,8 @@ import {
   SCHEDULE_UPDATE,
   SESSION_CANCEL,
   SESSION_PROMPT,
+  SETTINGS_GET,
+  SETTINGS_SET,
   SUPERVISOR_STATUS,
   SYNC_RESUME_FROM,
   DEVICE_LIST,
@@ -58,6 +60,8 @@ import {
   TOOLS_LIST,
   type BotView,
   type ScheduleCreateParams,
+  type SettingsSetParams,
+  type SettingsView,
   type ScheduleListResult,
   type ScheduleRefParams,
   type ScheduleRemoveResult,
@@ -352,6 +356,17 @@ export class HostClient {
       so calling twice cannot make two threads. */
   async botThread(params: CrewRefParams): Promise<ThreadStateResult> {
     return this.request<ThreadStateResult>(CREW_THREAD, params);
+  }
+
+  /** Every app-wide preference, as it is actually in force (#26). */
+  async settings(): Promise<SettingsView> {
+    return this.request<SettingsView>(SETTINGS_GET);
+  }
+
+  /** Write what changed and get the whole view back — the host's answer is the
+      state, so nothing here has to merge a patch into a guess. */
+  async saveSettings(params: SettingsSetParams): Promise<SettingsView> {
+    return this.request<SettingsView>(SETTINGS_SET, params);
   }
 
   /** Every recurring job, with its recent fires beside it (#25). */

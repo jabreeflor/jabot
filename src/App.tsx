@@ -32,6 +32,7 @@ import { GithubSignInModal } from "./components/GithubSignInModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
+import { SettingsView } from "./views/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import {
   ThreadContextMenu,
@@ -65,6 +66,7 @@ import {
 import { allThreads, useFolders, useHostThread } from "./views/folders";
 import { useThreadActions } from "./views/fold";
 import { useInbox, type HostInbox } from "./views/inbox";
+import { useSettings, type Settings } from "./views/settings";
 import { CrossIcon } from "./components/Icon";
 import { ChatView, LiveChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
@@ -195,6 +197,7 @@ function AppShell({
   // fixture fallback below: a host card's bot id would never match a fixture's.
   const inbox = useInbox(client, registered.reload, crew.bots);
   const schedules = useSchedules(client);
+  const settings = useSettings(client);
   // Whether GitHub can be asked as anybody (#16). The PR board is the only
   // surface that needs it, and it needs it twice: to decide whether to ask for
   // the user's own pull requests at all, and to know what to offer if not.
@@ -565,6 +568,7 @@ function AppShell({
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
         onOpenSchedules={() => setSelection({ view: "schedules" })}
+        onOpenSettings={client ? () => setSelection({ view: "settings" }) : undefined}
         onNewChat={(folderId) => setNewChat({ open: true, folderId })}
         onThreadMenu={(thread, position) => setMenu({ thread, position })}
       />
@@ -584,6 +588,7 @@ function AppShell({
           state={state}
           inbox={inbox}
           schedules={schedules}
+          settings={settings}
           pulls={pulls}
           github={github}
           onSignIn={() => setSignIn(true)}
@@ -730,6 +735,7 @@ function MainView({
   state,
   inbox,
   schedules,
+  settings,
   pulls,
   github,
   onSignIn,
@@ -760,6 +766,8 @@ function MainView({
   inbox: HostInbox;
   /** Recurring jobs, host-owned from the first answer (#25). */
   schedules: Schedules;
+  /** App-wide preferences (#26). */
+  settings: Settings;
   /** The PR board, host-owned from the first answer (#28). */
   pulls: PullRequests;
   /** Whether GitHub can be asked as anybody, and as whom (#16). */
@@ -820,6 +828,17 @@ function MainView({
           onOpenThread={onOpenInboxThread}
           onAction={onInboxAction}
           notify={inbox.notify}
+        />
+      );
+    case "settings":
+      return (
+        <SettingsView
+          settings={settings.settings}
+          error={settings.error}
+          // The promise is handed to the pane rather than resolved here: it
+          // keeps what was typed and shows the host's own refusal, which is
+          // the sentence worth reading.
+          onSave={settings.save}
         />
       );
     case "schedules":

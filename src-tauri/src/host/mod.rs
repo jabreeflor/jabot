@@ -20,6 +20,7 @@ mod repo;
 mod router;
 mod schedule;
 mod seq;
+mod settings;
 mod store;
 mod supervisor;
 mod tools;
@@ -319,6 +320,11 @@ impl HostSession {
     fn with_store_at(mut self, sqlite_path: &Path) -> Self {
         match Store::open(sqlite_path) {
             Ok(store) => {
+                // The user's own idle timeout, now that there is somewhere to
+                // set one (#26). Before the store is assigned, because
+                // `apply_stored` takes the store by reference and the field
+                // move below would otherwise need it back.
+                self.lifecycle.apply_stored(&store);
                 self.store = Some(store);
                 self.secrets = Secrets::platform();
                 self.store_error = None;

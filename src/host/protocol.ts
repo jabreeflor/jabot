@@ -40,6 +40,11 @@ export const TOOLS_DISCONNECT = "tools/disconnect";
 export const FOLDER_LIST = "folder/list";
 export const FOLDER_REGISTER = "folder/register";
 export const FOLDER_UPDATE = "folder/update";
+/** App-wide preferences (#26). The idle timeout was an env var on the host
+    process and the fold default a column default; this is where a person sets
+    them. */
+export const SETTINGS_GET = "settings/get";
+export const SETTINGS_SET = "settings/set";
 export const FOLDER_FORGET = "folder/forget";
 export const GITHUB_STATUS = "github/status";
 /** Hand `gh` a token to hold, so the board can ask GitHub as the user (#28).
@@ -807,6 +812,29 @@ export interface FolderUpdateParams {
   filesToCopy?: string[];
   /** Ask git again — a remote added or re-pointed since registration. */
   refresh?: boolean;
+}
+
+/** Every app-wide preference, in one answer (#26).
+ *
+ * Whole rather than partial on the way out, including from `settings/set`, so
+ * the renderer never merges a patch into what it thought it had. */
+export interface SettingsView {
+  /** The stuck backstop's silence threshold. Always the value in force, so a
+      host running under `JABOT_IDLE_TIMEOUT_MS` reports what it is using. */
+  idleTimeoutMs: number;
+  /** What a new thread's fold policy starts as. */
+  defaultFoldPolicy: FoldPolicy;
+  /** The env var is in force, so the control on screen is not the one
+      deciding. Only a test or a developer sets it, and both would rather be
+      told than quietly ignored. */
+  idleTimeoutFromEnv: boolean;
+}
+
+/** A patch: an absent field is "leave it alone", the same reading
+    `folder/update` gives its own. */
+export interface SettingsSetParams {
+  idleTimeoutMs?: number;
+  defaultFoldPolicy?: FoldPolicy;
 }
 
 export interface FolderRefParams {

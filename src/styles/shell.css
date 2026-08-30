@@ -220,3 +220,87 @@
   color: var(--faint);
   font-size: var(--fs-meta);
 }
+
+/* Settings (#26): the two knobs that already decide something.
+ *
+ * A stack of labelled sections rather than a form, because each one needs a
+ * sentence about what it changes — "go quiet after" means nothing without
+ * "the thread keeps working", and a setting a user cannot predict is one they
+ * will not touch.
+ */
+.setting {
+  max-width: 620px;
+  margin-top: var(--sp-6);
+}
+
+.setting h2 {
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  margin: 0 0 var(--sp-2);
+}
+
+.setting-note {
+  margin: 0 0 var(--sp-3);
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+}
+
+.setting-note code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--raise);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.setting-row input[type="number"] {
+  width: 90px;
+  background: var(--sunk);
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--ink);
+  font: var(--fs-ui) / 1 var(--font-ui);
+}
+
+.setting-row input[type="number"]:disabled {
+  color: var(--dim);
+  cursor: not-allowed;
+}
+
+.setting-row .unit {
+  color: var(--dim);
+  font-size: var(--fs-meta);
+}
+
+/* The same two-line radio the New Chat card uses for its own worktree opt-out:
+   a label, and the consequence under it. */
+.setting .checkline {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  color: var(--ink);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+
+.setting .checkline input {
+  margin-top: 3px;
+  flex: none;
+}
+
+.setting .checkline small {
+  display: block;
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+}
