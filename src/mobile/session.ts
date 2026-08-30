@@ -12,9 +12,10 @@
 //! paired device carries an HMAC under the token its pairing derived, with a
 //! counter that must strictly climb. Which secure enclave, keystore or file
 //! that token lives in is a device question, not a protocol question, so this
-//! takes a [`DeviceCredentials`] and never sees the token. The derivation a
-//! real implementation has to match is documented on `PairingClaimParams` and
-//! implemented, independently, in `tests/support/pairing.ts`.
+//! takes a [`DeviceCredentials`] and never sees the token. `./credentials`
+//! ships one built on WebCrypto, with storage and the counter still injected;
+//! `tests/support/pairing.ts` is a second implementation written from the
+//! protocol docs alone, which is what lets the two be compared byte for byte.
 //!
 //! **Notifications are applied synchronously; refreshing is a separate act.**
 //! `permission/ask` carries everything a card needs, so the phone can draw it

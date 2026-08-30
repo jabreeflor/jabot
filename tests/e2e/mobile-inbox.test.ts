@@ -48,6 +48,10 @@ import {
   type PermissionAskParams,
   type PermissionResolvedParams,
 } from "../../src/host/protocol";
+import {
+  createDeviceCredentials,
+  verifyHostProof,
+} from "../../src/mobile/credentials";
 import { APPROVER_METHODS, checkScope } from "../../src/mobile/scope";
 import { MobileSession } from "../../src/mobile/session";
 import { createLineTransport, type LineTransport } from "../../src/mobile/transport";
@@ -120,17 +124,32 @@ async function attachPhone(
   const channel = connectUnixSocket(host.socketPath!);
   await channel.ready;
   const transport = createLineTransport(channel);
+  // The *production* signer, not the test-only one. `tests/support/pairing.ts`
+  // stays the independent cross-check the unit tests compare against; here the
+  // real Rust host verifies a MAC that WebCrypto produced, which is the
+  // strongest thing that can be said about it.
   const session = new MobileSession({
     transport,
-    credentials: {
+    credentials: createDeviceCredentials({
       deviceId: device.deviceId,
       name: device.name,
-      signHello: () => device.helloAuth(hostId, token, counter),
-    },
+      hostId,
+      token: () => token,
+      nextCounter: () => counter,
+    }),
   });
   phones.push({ session, transport });
   const hello = await session.connect();
-  return { session, transport, hello };
+  // And the mirror half: the host proved itself back, checked by the same
+  // production module. A phone that could sign but not verify would leave
+  // `hostAuth` unusable from a real app.
+  const proven = await verifyHostProof(hello.hostAuth, {
+    token,
+    hostId,
+    deviceId: device.deviceId,
+    counter,
+  });
+  return { session, transport, hello, proven };
 }
 
 async function openThread(client: HostClient, threadId: string, mode = "permission") {
@@ -169,6 +188,12 @@ describe("the Mobile Inbox client", () => {
     const { host, desktop, hello } = await twoClientHost();
     const { phone, qr, derived } = await pairPhone(desktop);
     const attached = await attachPhone(host, phone, qr.hostId, derived.token);
+
+    // The proof that got it in was made by `src/mobile/credentials.ts` with
+    // WebCrypto, and the real Rust host accepted it. That is the claim: the
+    // module a phone actually ships speaks this protocol, not just the
+    // Node-only reference implementation the unit tests compare it against.
+    expect(attached.proven).toBe(true);
 
     // Same host, two devices. The desktop is still itself.
     expect(attached.hello.hostId).toBe(hello.hostId);
