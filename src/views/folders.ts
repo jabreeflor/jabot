@@ -19,6 +19,7 @@ import type {
   FolderView,
   HostClient,
   ThreadOverlayState,
+  ThreadStateResult,
 } from "../host";
 import type {
   FolderWithThreads,
@@ -122,4 +123,73 @@ export function useFolders(client: HostClient | null): RegisteredFolders {
     would be a host bug; showing the row as active is the harmless reading. */
 function sidebarState(state: ThreadOverlayState): ThreadState {
   return state === "resurfaced" ? "resurfaced" : "active";
+}
+
+/**
+ * A thread the folder list does not know about, resolved from the host.
+ *
+ * The shell decides "is this the host's thread?" by flattening `folder/list`,
+ * and `folder_list` only walks folder rows — so a thread whose `folder_id` is
+ * null is invisible to it. When that rule was written no such thread existed.
+ * One does now: `open_standing_thread` gives every bot a standing thread with
+ * no folder, and a folded one surfaces in the Inbox like any other.
+ *
+ * Clicking that card used to land on "That thread is gone. Check the Inbox.",
+ * and folding or archiving it dispatched to the mock reducer instead of the
+ * host — so the row moved on screen while the permissions, runs and process
+ * behind it were untouched.
+ *
+ * Resolved one id at a time rather than by listing every bot's thread up
+ * front: the id in hand is the one the user is looking at, and asking about it
+ * costs one call the moment it is needed instead of a call per bot on every
+ * load.
+ *
+ * `null` while it resolves and for anything the host does not know, which
+ * leaves every existing fixture path exactly as it was.
+ */
+export function useHostThread(
+  client: HostClient | null,
+  threadId: string | null,
+  known: boolean,
+): ThreadSummary | null {
+  const [thread, setThread] = useState<ThreadSummary | null>(null);
+
+  useEffect(() => {
+    // Nothing to ask about, or the folder list already has it.
+    if (!client || !threadId || known) {
+      setThread(null);
+      return;
+    }
+    if (typeof client.threadState !== "function") return;
+    let cancelled = false;
+    client
+      .threadState({ threadId })
+      .then((state) => {
+        if (!cancelled) setThread(threadRowFromState(state));
+      })
+      .catch(() => {
+        // A thread the host does not have is a real answer, not a failure:
+        // it is a fixture row, or one that has been deleted. Staying null
+        // keeps the existing behaviour for both.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, threadId, known]);
+
+  return thread;
+}
+
+/** `thread/state` in the shape the sidebar and the thread view already read. */
+function threadRowFromState(state: ThreadStateResult): ThreadSummary {
+  return {
+    id: state.threadId,
+    folderId: state.folderId ?? null,
+    botId: state.botId ?? null,
+    harnessId: state.harnessId,
+    title: state.title,
+    state: sidebarState(state.state),
+    foldPolicy: state.foldPolicy,
+    runState: state.latestRun?.state ?? null,
+  };
 }

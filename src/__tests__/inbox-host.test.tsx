@@ -441,3 +441,104 @@ describe("the Inbox and whose thread a card is on", () => {
     expect(screen.queryByLabelText(/Writer/)).not.toBeInTheDocument();
   });
 });
+
+/**
+ * A thread the host owns that lives in no folder.
+ *
+ * `folder/list` walks folder rows, so a bot's standing thread — whose
+ * `folder_id` is null — never appears in the flattened set the shell uses to
+ * decide "is this the host's?". It does surface in the Inbox, because
+ * `inbox/list` is not folder-scoped. So the card was clickable and led
+ * nowhere: the main pane said "That thread is gone. Check the Inbox.", and a
+ * fold or archive on it went to the mock reducer while the real permissions,
+ * runs and process behind it were untouched.
+ */
+describe("a host thread that no folder lists", () => {
+  const STANDING = "bot-writer";
+
+  function withStandingThread(over: Record<string, unknown> = {}) {
+    vi.mocked(connectHost).mockResolvedValue({
+      client: {
+        ...client(),
+        inbox: vi.fn(async () => ({
+          ...INBOX,
+          events: [
+            {
+              ...INBOX.events[0],
+              id: "ev-standing",
+              threadId: STANDING,
+              threadTitle: "Writer",
+              title: "Overnight mail summarised",
+            },
+          ],
+          sleeping: [],
+        })),
+        // Active, not resurfaced: "Open thread" runs `thread/reopen` first,
+        // so by the time the pane asks `thread/state` the row is back.
+        threadState: vi.fn(async () => ({
+          threadId: STANDING,
+          title: "Writer",
+          state: "active",
+          foldPolicy: "default",
+          cwd: "/data/bots/writer",
+          harnessId: "claude",
+          botId: "writer",
+          process: {
+            connected: false,
+            acpState: "idle",
+            pendingPermissions: 0,
+            resumable: false,
+          },
+          runs: [],
+          unread: 0,
+        })),
+        threadTranscript: vi.fn(async () => ({
+          threadId: STANDING,
+          headSeq: 1,
+          events: [],
+          truncated: false,
+          queued: [],
+        })),
+        ...over,
+      } as unknown as HostClient,
+      hello: HELLO,
+    });
+  }
+
+  it("opens the thread instead of saying it is gone", async () => {
+    withStandingThread();
+    await openInbox();
+    await expand(/^Overnight mail summarised/);
+    await userEvent.click(screen.getByRole("button", { name: "Open thread" }));
+
+    // The chat, not the dead end.
+    await waitFor(() =>
+      expect(screen.queryByText(/That thread is gone/)).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByRole("heading", { level: 2, name: "Writer" })).toBeInTheDocument();
+  });
+
+  /**
+   * The half that silently lost work. Folding a row the shell mistook for a
+   * fixture moved it on screen and left the host's copy running.
+   */
+  it("folds it on the host rather than in the mock reducer", async () => {
+    const fold = vi.fn(async () => ({ threadId: STANDING, state: "folded" }));
+    withStandingThread({ fold });
+    await openInbox();
+    await expand(/^Overnight mail summarised/);
+    await userEvent.click(screen.getByRole("button", { name: "Open thread" }));
+    await screen.findByRole("heading", { level: 2, name: "Writer" });
+
+    await userEvent.click(screen.getByRole("button", { name: /^Fold/ }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: /Disappear until done/ }),
+    );
+
+    // "Disappear until done" sends no policy — the thread keeps the one it
+    // has — so this is the whole of the call.
+    await waitFor(() =>
+      expect(fold).toHaveBeenCalledWith({ threadId: STANDING }),
+    );
+  });
+});
