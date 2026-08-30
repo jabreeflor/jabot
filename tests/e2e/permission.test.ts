@@ -154,19 +154,39 @@ describe("the permission broker", () => {
     });
     expect(answered).toMatchObject({ delivered: true });
 
+    // The question is answered, so the card stops asking it. Stated as "no
+    // *unread* needs_you" rather than as a row count: `resurface_thread`
+    // dismisses this thread's unread cards before inserting a new one, so
+    // whether the row survives depends on ordering. Whether it is read or
+    // gone, the user is not being asked again — which is the whole claim.
     const after: InboxListResult = await client.inbox();
-    const needsYou = after.events.filter((event) => event.kind === "needs_you");
-    expect(needsYou).toHaveLength(1);
-    // The question is answered, so the card stops asking it.
-    expect(needsYou[0].readAt).toBeTruthy();
+    expect(after.events.filter((e) => e.kind === "needs_you" && !e.readAt)).toEqual([]);
 
-    // And the narrowness is the other half of the claim. Answering let the
+    // And the narrowness is the other half of the claim. Answering lets the
     // turn finish, which resurfaces the folded thread as `done` — a genuinely
     // new thing the user has not seen. The blanket `mark_inbox_read` that
     // reopening a thread uses would have swallowed it; this must not.
-    const done = after.events.filter((event) => event.kind === "done");
-    expect(done).toHaveLength(1);
+    //
+    // Polled, because that resurface lands on the ACP pump some time after
+    // `permission/reply` returns. Reading the Inbox once straight afterwards
+    // is a race that passes on a slow machine and fails on a fast one — which
+    // is exactly how the first version of this test went red on CI having
+    // been green locally.
+    const deadline = Date.now() + 5000;
+    let done: InboxListResult["events"] = [];
+    for (;;) {
+      const list: InboxListResult = await client.inbox();
+      done = list.events.filter((event) => event.kind === "done");
+      if (done.length > 0) break;
+      if (Date.now() > deadline) {
+        throw new Error(`the turn never resurfaced as done: ${JSON.stringify(list.events)}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
     expect(done[0].readAt).toBeFalsy();
+    // …and answering still did not leave an unread question behind it.
+    const settled: InboxListResult = await client.inbox();
+    expect(settled.events.filter((e) => e.kind === "needs_you" && !e.readAt)).toEqual([]);
   });
 
   it("still has the question after the host that asked it was quit", async () => {
