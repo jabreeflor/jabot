@@ -41,6 +41,11 @@ pub const TOOLS_DISCONNECT: &str = "tools/disconnect";
 pub const FOLDER_LIST: &str = "folder/list";
 pub const FOLDER_REGISTER: &str = "folder/register";
 pub const FOLDER_UPDATE: &str = "folder/update";
+
+/// App-wide preferences (#26). The idle timeout and the fold default were an
+/// env var and a column default; this is where a person sets them.
+pub const SETTINGS_GET: &str = "settings/get";
+pub const SETTINGS_SET: &str = "settings/set";
 pub const FOLDER_FORGET: &str = "folder/forget";
 pub const GITHUB_STATUS: &str = "github/status";
 /// Hand `gh` a token to hold, so the PR board can ask GitHub as the user (#28).
@@ -1596,6 +1601,65 @@ impl GithubLoginParams {
             return Err(super::error::RpcError::InvalidParams(
                 "token is required".into(),
             ));
+        }
+        Ok(())
+    }
+}
+
+/// Every app-wide preference, in one answer.
+///
+/// Whole rather than partial on the way out, including from `settings/set`, so
+/// the renderer never has to merge a patch into what it thought it had — the
+/// host's answer is the state.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsView {
+    /// The stuck backstop's silence threshold. Always the value in force, so
+    /// a host running under `JABOT_IDLE_TIMEOUT_MS` reports what it is
+    /// actually using rather than what is stored.
+    pub idle_timeout_ms: u64,
+    /// What a new thread's fold policy starts as: `default` or
+    /// `wait_for_inbox`.
+    pub default_fold_policy: String,
+    /// True when the env var is in force, so the pane can say the control it
+    /// is drawing is not the one deciding. Only the e2e suite and a developer
+    /// ever set it, and both would rather be told than quietly ignored.
+    pub idle_timeout_from_env: bool,
+}
+
+/// A patch. An absent field is "leave it alone" — the same reading
+/// `folder/update` gives its own, so a pane that only changed one control does
+/// not have to send the other back.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsSetParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_fold_policy: Option<String>,
+}
+
+impl SettingsSetParams {
+    /// Refused rather than clamped. A user who asked for a two-second backstop
+    /// and got ten minutes would have no way to find out, and a stored value
+    /// the fold path rejects would break thread creation rather than a pane.
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        if let Some(ms) = self.idle_timeout_ms {
+            // A second is already absurdly short for "the agent has gone
+            // quiet"; below it the backstop is firing mid-sentence. A day is
+            // the other end, past which it is off rather than long.
+            if !(1_000..=86_400_000).contains(&ms) {
+                return Err(super::error::RpcError::InvalidParams(format!(
+                    "idleTimeoutMs must be between 1000 and 86400000, not {ms}"
+                )));
+            }
+        }
+        if let Some(policy) = self.default_fold_policy.as_deref() {
+            if !crate::host::store::is_fold_policy(policy) {
+                return Err(super::error::RpcError::InvalidParams(format!(
+                    "invalid fold policy {policy}"
+                )));
+            }
         }
         Ok(())
     }

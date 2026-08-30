@@ -358,4 +358,5 @@ export type Selection =
   | { view: "crew" }
   | { view: "inbox" }
   | { view: "prs" }
-  | { view: "schedules" };
+  | { view: "schedules" }
+  | { view: "settings" };

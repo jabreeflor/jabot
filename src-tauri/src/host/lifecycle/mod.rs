@@ -40,7 +40,7 @@ use super::protocol::methods::{
     ThreadRefParams, ThreadStateResult,
 };
 use super::schedule::RUN_KIND_SCHEDULE;
-use super::store::{InboxEventRow, NewThread, RunRow, SessionReceiptRow, Store, ThreadRow};
+use super::store::{self, InboxEventRow, NewThread, RunRow, SessionReceiptRow, Store, ThreadRow};
 use super::HostSession;
 use ledger::RunState;
 use process::{AcpState, ProcessStatus};
@@ -87,9 +87,14 @@ impl Default for LifecycleState {
 }
 
 impl LifecycleState {
-    /// Two knobs, both stand-ins for settings #26 owns. They exist so tests
-    /// can watch a real timeout fire in a second instead of ten minutes, and a
-    /// real cap in fifty milliseconds instead of four hours.
+    /// Two knobs. `JABOT_IDLE_TIMEOUT_MS` is no longer only a stand-in — the
+    /// idle timeout has a Settings surface now, and [`Self::apply_stored`]
+    /// reads it. The env var stays and **wins**, because it is what the e2e
+    /// suite sets on a spawned host and a stored preference must not be able
+    /// to make a test's own threshold quietly not apply.
+    ///
+    /// The run cap has no surface yet and is still env-only: it is the
+    /// obvious third row on that pane, and putting it there is its own change.
     ///
     /// - `JABOT_IDLE_TIMEOUT_MS` — the stuck backstop's silence threshold.
     /// - `JABOT_RUN_CAP_MS` — the hard cap on one run.
@@ -106,6 +111,25 @@ impl LifecycleState {
             idle_timeout: read("JABOT_IDLE_TIMEOUT_MS", DEFAULT_IDLE_TIMEOUT),
             run_cap: read("JABOT_RUN_CAP_MS", DEFAULT_RUN_CAP),
             ..Self::default()
+        }
+    }
+
+    /// Fold in what the user actually set, once a store is open.
+    ///
+    /// Only when the env var was absent. A host spawned by the e2e suite with
+    /// `JABOT_IDLE_TIMEOUT_MS=200` and a store that happens to hold ten
+    /// minutes has to keep the two hundred milliseconds, or the test is
+    /// waiting on a preference it never wrote.
+    pub(crate) fn apply_stored(&mut self, store: &Store) {
+        if std::env::var("JABOT_IDLE_TIMEOUT_MS").is_ok() {
+            return;
+        }
+        match store.idle_timeout_ms() {
+            // A store that will not answer costs the preference and nothing
+            // else: the shipped default is a working backstop.
+            Err(err) => eprintln!("could not read the idle timeout: {err}"),
+            Ok(None) => {}
+            Ok(Some(ms)) => self.idle_timeout = Duration::from_millis(ms),
         }
     }
 
@@ -144,6 +168,17 @@ impl HostSession {
             // `cwd` *is* the worktree, and the repo stamp is read out of it, so
             // the tree has to exist by the time the INSERT runs.
             let worktree = self.provision_worktree(&thread_id, &params)?;
+            // The user's own default, for a caller that did not name one
+            // (#26). Before this the answer was the column default, which
+            // nobody could change; asked here rather than in the store so a
+            // caller that *did* name a policy still wins.
+            let fold_policy = match params.fold_policy {
+                Some(policy) => policy.as_str().to_string(),
+                None => self
+                    .store_or_err()?
+                    .default_fold_policy()
+                    .unwrap_or_else(|_| store::DEFAULT_FOLD_POLICY.to_string()),
+            };
             let cwd = worktree
                 .as_ref()
                 .map(|tree| tree.path.to_string_lossy().into_owned())
@@ -156,7 +191,7 @@ impl HostSession {
                 cwd: cwd.clone(),
                 runtime_json,
                 title: params.title.clone(),
-                fold_policy: params.fold_policy.unwrap_or_default().as_str().to_string(),
+                fold_policy,
                 worktree_path: worktree
                     .as_ref()
                     .map(|tree| tree.path.to_string_lossy().into_owned()),
@@ -827,6 +862,11 @@ impl HostSession {
         self.lifecycle.idle_timeout = timeout;
     }
 
+    /// The threshold actually in force, for `settings/get` to report.
+    pub(crate) fn idle_timeout(&self) -> Duration {
+        self.lifecycle.idle_timeout
+    }
+
     /// The hard cap on one run (#25, #21). A test's only way to watch it fire.
     pub fn set_run_cap(&mut self, cap: Duration) {
         self.lifecycle.run_cap = cap;
@@ -1375,6 +1415,55 @@ mod tests {
     use super::*;
     use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
     use crate::host::protocol::{HOST_HELLO, THREAD_FOLD, THREAD_OPEN};
+    use crate::host::store::KEY_IDLE_TIMEOUT_MS;
+
+    /// Which of the three sources of the idle timeout wins (#26).
+    ///
+    /// Before Settings this was env-or-default and the env var was the only
+    /// way a user could move it — which a bundled Tauri app gives nobody.
+    /// Now there is a stored preference between them, and the order matters
+    /// in a way a test can be wrong about silently: the e2e suite sets the
+    /// env var on a spawned host, so a stored value that beat it would make
+    /// every timeout test wait on a threshold it never wrote.
+    mod idle_timeout_precedence {
+        use super::*;
+
+        fn store() -> (crate::host::store::Store, tempfile::TempDir) {
+            let dir = tempfile::tempdir().unwrap();
+            let store = crate::host::store::Store::open(dir.path().join("jabot.sqlite")).unwrap();
+            (store, dir)
+        }
+
+        #[test]
+        fn an_empty_store_leaves_the_shipped_default() {
+            let (store, _dir) = store();
+            let mut state = LifecycleState::default();
+            state.apply_stored(&store);
+            assert_eq!(state.idle_timeout, DEFAULT_IDLE_TIMEOUT);
+        }
+
+        #[test]
+        fn a_stored_preference_beats_the_shipped_default() {
+            let (store, _dir) = store();
+            store.set_setting(KEY_IDLE_TIMEOUT_MS, "90000").unwrap();
+            let mut state = LifecycleState::default();
+            state.apply_stored(&store);
+            assert_eq!(state.idle_timeout, Duration::from_millis(90_000));
+        }
+
+        /// A row an older build or a hand edit left behind costs the
+        /// preference, not the launch.
+        #[test]
+        fn a_stored_value_that_makes_no_sense_leaves_the_default() {
+            let (store, _dir) = store();
+            for raw in ["0", "soon", ""] {
+                store.set_setting(KEY_IDLE_TIMEOUT_MS, raw).unwrap();
+                let mut state = LifecycleState::default();
+                state.apply_stored(&store);
+                assert_eq!(state.idle_timeout, DEFAULT_IDLE_TIMEOUT, "{raw}");
+            }
+        }
+    }
 
     /// Wait for Inbox is the only place in this host that answers an agent
     /// *without a human*. Every gate below is the difference between "the host

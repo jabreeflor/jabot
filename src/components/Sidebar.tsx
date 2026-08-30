@@ -16,6 +16,7 @@ import {
   PlusIcon,
   PullRequestIcon,
   SearchIcon,
+  SlidersIcon,
 } from "./Icon";
 import type { MenuPosition } from "./ThreadContextMenu";
 import type {
@@ -44,6 +45,7 @@ export function Sidebar({
   onOpenInbox,
   onOpenPullRequests,
   onOpenSchedules,
+  onOpenSettings,
   onNewChat,
   onThreadMenu,
 }: {
@@ -72,6 +74,9 @@ export function Sidebar({
   onOpenInbox: () => void;
   onOpenPullRequests: () => void;
   onOpenSchedules: () => void;
+  /** App-wide preferences (#26). Absent before a host has answered: a preview
+      build has nothing to set. */
+  onOpenSettings?: () => void;
   /** null = ask which folder; a folder id = start there. */
   onNewChat: (folderId: string | null) => void;
   onThreadMenu: (thread: ThreadSummary, position: MenuPosition) => void;
@@ -185,6 +190,22 @@ export function Sidebar({
           </span>
           Schedules
         </button>
+
+        {/* Last in the nav, and only with a host. What it sets is the host's:
+            a preview build drawing this would offer to change nothing. */}
+        {onOpenSettings && (
+          <button
+            type="button"
+            className="nav-row"
+            aria-current={selection.view === "settings"}
+            onClick={onOpenSettings}
+          >
+            <span className="ic">
+              <SlidersIcon />
+            </span>
+            Settings
+          </button>
+        )}
 
         <FolderList
           folders={visibleFolders}

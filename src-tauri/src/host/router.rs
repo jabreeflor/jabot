@@ -30,6 +30,7 @@ use super::protocol::methods::{
     ScheduleCreateParams, ScheduleRefParams, ScheduleUpdateParams, SCHEDULE_CREATE, SCHEDULE_LIST,
     SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE,
 };
+use super::protocol::methods::{SettingsSetParams, SETTINGS_GET, SETTINGS_SET};
 use super::HostSession;
 
 pub fn dispatch(session: &mut HostSession, request: JsonRpcRequest) -> JsonRpcResponse {
@@ -177,6 +178,15 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: FolderRegisterParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.folder_register(params)?)
+        }
+        SETTINGS_GET => {
+            session.require_hello()?;
+            to_value(session.settings_get()?)
+        }
+        SETTINGS_SET => {
+            session.require_hello()?;
+            let params: SettingsSetParams = parse_params(request.params.as_ref())?;
+            to_value(session.settings_set(params)?)
         }
         FOLDER_UPDATE => {
             session.require_hello()?;

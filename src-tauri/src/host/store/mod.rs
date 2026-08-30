@@ -15,6 +15,7 @@ mod pr;
 mod schedule;
 mod secrets;
 mod seed;
+mod settings;
 
 use std::path::{Path, PathBuf};
 
@@ -46,6 +47,9 @@ pub use schedule::{
     CATCH_UP_ONCE, CATCH_UP_SKIP, FIRE_DELIVERED, FIRE_DISPATCHED, FIRE_FAILED, FIRE_SKIPPED,
 };
 pub use secrets::{Secrets, SecretsBackend};
+pub use settings::{
+    is_fold_policy, DEFAULT_FOLD_POLICY, KEY_DEFAULT_FOLD_POLICY, KEY_IDLE_TIMEOUT_MS,
+};
 
 const MIN_SQLITE: (u32, u32, u32) = (3, 51, 3);
 const UNCLEAN_SUFFIX: &str = ".unclean";
@@ -629,6 +633,27 @@ impl Store {
 
     /// Unread cards per bot — the red dot on a crew blob. Same predicate as
     /// [`Store::count_unread_inbox`], so the dot and the badge cannot disagree.
+    /// App-wide preferences (#26). See [`settings`] for why `app_meta`.
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>, StoreError> {
+        settings::get_setting(&self.conn, key)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<(), StoreError> {
+        settings::set_setting(&self.conn, key, value)
+    }
+
+    /// `None` when unset — not zero, which would be a backstop firing on every
+    /// tick. The caller keeps the shipped default.
+    pub fn idle_timeout_ms(&self) -> Result<Option<u64>, StoreError> {
+        settings::idle_timeout_ms(&self.conn)
+    }
+
+    /// What a new thread's fold policy starts as. Falls back to `default` for
+    /// anything the fold path would refuse.
+    pub fn default_fold_policy(&self) -> Result<String, StoreError> {
+        settings::default_fold_policy(&self.conn)
+    }
+
     pub fn count_unread_inbox_by_bot(
         &self,
     ) -> Result<std::collections::HashMap<String, i64>, StoreError> {
