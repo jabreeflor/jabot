@@ -14,7 +14,13 @@
  * The production `HostClient` drives it, so the wire shape is asserted too.
  */
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -79,6 +85,95 @@ exit 1
   writeFileSync(bin, script);
   chmodSync(bin, 0o755);
   return { dir, bodyPath };
+}
+
+/**
+ * A `gh` that can answer the *fallback* — rungs 2 and 3 of the linkage ladder.
+ *
+ * [`fakeGh`] refuses `pr view` on purpose, so those two rungs have never been
+ * run as subprocesses by anything: `github::pr_for_cwd` and
+ * `github::pr_for_branch` were only ever parsed against JSON fixtures. That
+ * gap is not bookkeeping. Both return `Ok(None)` on a non-zero exit, so a
+ * renamed `--json` field or a dropped flag is indistinguishable from "no PR
+ * for this branch" and would ship silently, leaving every browser-opened and
+ * MCP-opened pull request unlinked forever.
+ *
+ * So this one answers from fixtures *read at call time* — which lets a test
+ * delete the `pr view` fixture to force the drop to rung 3, exactly the way a
+ * `gh` that cannot resolve a detached HEAD behaves — and logs every argv, so
+ * the flag strings GitHub's CLI expects are asserted rather than assumed.
+ */
+function fakeGhLinkage(): {
+  dir: string;
+  viewPath: string;
+  listPath: string;
+  bodyPath: string;
+  argvPath: string;
+} {
+  const dir = mkdtempSync(path.join(tmpdir(), "jabot-fake-gh-linkage-"));
+  const viewPath = path.join(dir, "pr-view.json");
+  const listPath = path.join(dir, "pr-list.json");
+  const bodyPath = path.join(dir, "graphql.json");
+  const argvPath = path.join(dir, "argv.log");
+  // `cat` on a missing fixture exits non-zero with nothing on stdout, which is
+  // what `gh` does for a branch nobody opened a PR from — the ordinary answer,
+  // not a failure.
+  const script = `#!/bin/sh
+echo "$@" >> "${argvPath}"
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  cat "${viewPath}" || exit 1
+  exit 0
+fi
+if [ "$1" = "pr" ] && [ "$2" = "list" ]; then
+  cat "${listPath}" || exit 1
+  exit 0
+fi
+if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
+  cat "${bodyPath}"
+  exit 0
+fi
+echo "unknown command" >&2
+exit 1
+`;
+  const bin = path.join(dir, "gh");
+  writeFileSync(bin, script);
+  chmodSync(bin, 0o755);
+  return { dir, viewPath, listPath, bodyPath, argvPath };
+}
+
+/** The `--json` body `gh pr view` answers with, for the fields the host asks
+    for. */
+function viewedPr(over: { number: number; url: string; headRefName?: string }) {
+  return JSON.stringify({
+    number: over.number,
+    url: over.url,
+    title: "Migrate auth to sessions",
+    state: "OPEN",
+    isDraft: false,
+    headRefName: over.headRefName ?? "jabot/t-auth",
+  });
+}
+
+/** `gh pr list --json` answers with an array, and the host takes the first. */
+function listedPrs(
+  rows: Array<{ number: number; url: string; headRefName?: string }>,
+) {
+  return JSON.stringify(
+    rows.map((row) => ({
+      number: row.number,
+      url: row.url,
+      headRefName: row.headRefName ?? "jabot/t-auth",
+    })),
+  );
+}
+
+/** The argv log as lines, so a test can find the one call it is about. */
+function argvLines(argvPath: string): string[] {
+  if (!existsSync(argvPath)) return [];
+  return readFileSync(argvPath, "utf8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 /** One PR node, in the shape GitHub's GraphQL API answers with. */
@@ -285,7 +380,11 @@ function viewerBody() {
  * second call with nothing changed — and a tick racing those would make them
  * about scheduling instead. The poll has its own case; it opts back in.
  */
-async function board(gh: { dir: string }, env: Record<string, string> = {}) {
+async function board(
+  gh: { dir: string },
+  env: Record<string, string> = {},
+  turn: { prompt?: string; mode?: string } = {},
+) {
   const host = new HostdProcess({
     persistent: true,
     env: {
@@ -307,13 +406,15 @@ async function board(gh: { dir: string }, env: Record<string, string> = {}) {
     cwd: folder.cwd,
     harnessId: "claude",
     folderId: folder.folderId,
-    runtime: fakeAcpRuntime("execute"),
+    runtime: fakeAcpRuntime(turn.mode ?? "execute"),
   });
   // `execute` mode echoes the prompt as the stdout of a shell tool call —
-  // which is precisely what `gh pr create` prints.
+  // which is precisely what `gh pr create` prints. `say` echoes it as a chat
+  // bubble instead, for the turn that only *talks* about a pull request and so
+  // has to be resolved by asking `gh`.
   await client.prompt({
     threadId: "t-auth",
-    content: "https://github.com/jabreeflor/jabot/pull/23",
+    content: turn.prompt ?? "https://github.com/jabreeflor/jabot/pull/23",
   });
   return { host, client };
 }
@@ -550,6 +651,158 @@ describe("the pull request board over the host protocol", () => {
     expect(refreshed.unavailable).toHaveLength(1);
     expect(refreshed.unavailable[0].host).toBe("github.com");
     expect(refreshed.unavailable[0].detail).not.toBe("");
+  });
+});
+
+/**
+ * Rungs 2 and 3 of the linkage ladder, as subprocesses (#28).
+ *
+ * `pr-linkage.md` puts three rungs under linkage: a `/pull/<n>` URL in the
+ * stdout of an execute call, `gh pr view` in the session's own tree at turn
+ * end, and matching the head branch against the repository's open PRs. Only
+ * the first has ever been run. The other two were tested at the *parse* level,
+ * against JSON fixtures, and never once spawned.
+ *
+ * That is worth closing because of how both of them fail. `pr_for_cwd` and
+ * `pr_for_branch` read a non-zero exit as "no PR for this branch" — which is
+ * the right reading, and which also means a dropped flag or a renamed `--json`
+ * field is silent. The board would simply never link a pull request opened in
+ * a browser or by an MCP server, and no test would go red.
+ *
+ * So these cases assert three things a fixture cannot: that a turn which only
+ * *talks* about a pull request gets linked, that the argv is the string
+ * GitHub's CLI actually expects, and that `belongs_to` still refuses a
+ * stranger's repository when the URL arrives from `gh` rather than from stdout.
+ */
+describe("resolving a pull request the session never printed", () => {
+  /** The agent says it, and says nothing else. No URL is ever printed, so
+      nothing here can be linked without asking `gh`. */
+  const PROSE = "Done — I opened a pull request for this branch.";
+
+  async function until(check: () => boolean | Promise<boolean>, what: string) {
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      if (await check()) return;
+      if (Date.now() > deadline) throw new Error(`never happened: ${what}`);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  function talking(gh: { dir: string }) {
+    return board(gh, {}, { mode: "say", prompt: PROSE });
+  }
+
+  it("asks gh pr view, and links what it answers", async () => {
+    const gh = fakeGhLinkage();
+    writeFileSync(
+      gh.viewPath,
+      viewedPr({
+        number: 23,
+        url: "https://github.com/jabreeflor/jabot/pull/23",
+      }),
+    );
+    const { client } = await talking(gh);
+
+    const linked = await settle(client, (rows) => rows.pullRequests.length > 0);
+    const pr = linked.pullRequests[0];
+    expect(pr.number).toBe(23);
+    expect(pr.repo).toBe("jabreeflor/jabot");
+    expect(pr.threadId).toBe("t-auth");
+    // Not "stdout": nothing was printed. This is the constant that had zero
+    // occurrences in any test.
+    expect(pr.detectedVia).toBe("gh-pr-view");
+
+    // The argv, exactly. This is the assertion that catches the silent
+    // failure — a renamed field here reads as "no PR" and nothing else moves.
+    expect(argvLines(gh.argvPath)).toContain(
+      "pr view --json number,url,title,state,isDraft,headRefName",
+    );
+    // And rung 3 was not reached, because rung 2 answered.
+    expect(argvLines(gh.argvPath).some((line) => line.startsWith("pr list"))).toBe(
+      false,
+    );
+  });
+
+  /**
+   * The drop to rung 3. `gh pr view` exits non-zero for a fork whose head it
+   * spells `owner:branch` and for a detached HEAD — both of which #23's
+   * worktrees can produce — and the branch is matched against the
+   * repository's open pull requests instead.
+   */
+  it("falls back to the branch list when gh pr view has no answer", async () => {
+    const gh = fakeGhLinkage();
+    // No `pr view` fixture on disk, so `cat` fails and `gh` exits 1.
+    writeFileSync(
+      gh.listPath,
+      listedPrs([
+        { number: 31, url: "https://github.com/jabreeflor/jabot/pull/31" },
+      ]),
+    );
+    const { client } = await talking(gh);
+
+    const linked = await settle(client, (rows) => rows.pullRequests.length > 0);
+    const pr = linked.pullRequests[0];
+    expect(pr.number).toBe(31);
+    expect(pr.repo).toBe("jabreeflor/jabot");
+    expect(pr.detectedVia).toBe("head-list");
+
+    // `--repo` carries the thread's own slug rather than being inferred from a
+    // directory, which is the whole reason this rung works from a worktree
+    // whose `origin` points somewhere unexpected. The branch is whatever the
+    // host checked out, so the assertion is on the flags and their order.
+    const listed = argvLines(gh.argvPath).find((line) =>
+      line.startsWith("pr list"),
+    );
+    expect(listed).toMatch(
+      /^pr list --repo github\.com\/jabreeflor\/jabot --head \S+ --state open --limit 1 --json number,url,headRefName$/,
+    );
+  });
+
+  /**
+   * The guard, on the path that had never been through a subprocess. An agent
+   * that ran `gh pr view --repo somebody/else` must not attach a stranger's
+   * pull request to this conversation — the link is written once and never
+   * re-derived, so a wrong one is wrong forever. A *fork* is the case that
+   * looks the same and is not: `gh pr create` from `me/jabot` prints the
+   * upstream URL, and the repository name is all the two spellings share.
+   */
+  it("refuses a stranger's repository but accepts a fork's upstream", async () => {
+    const stranger = fakeGhLinkage();
+    writeFileSync(
+      stranger.viewPath,
+      viewedPr({ number: 9, url: "https://github.com/somebody/else/pull/9" }),
+    );
+    const refused = await talking(stranger);
+
+    // An empty board has to be a refusal rather than a race, so wait for the
+    // host to have run out of rungs: either it dropped to `pr list` (which
+    // has no fixture, so it answers nothing) or it wrote a row — and a row is
+    // the failure this case exists to catch.
+    await until(
+      async () =>
+        argvLines(stranger.argvPath).some((line) => line.startsWith("pr list")) ||
+        (await refused.client.listPullRequests()).pullRequests.length > 0,
+      "gh ran out of rungs",
+    );
+    expect((await refused.client.listPullRequests()).pullRequests).toEqual([]);
+
+    const fork = fakeGhLinkage();
+    writeFileSync(
+      fork.viewPath,
+      viewedPr({
+        number: 23,
+        url: "https://github.com/upstream-org/jabot/pull/23",
+      }),
+    );
+    const accepted = await talking(fork);
+
+    const linked = await settle(
+      accepted.client,
+      (rows) => rows.pullRequests.length > 0,
+    );
+    expect(linked.pullRequests[0].repo).toBe("upstream-org/jabot");
+    expect(linked.pullRequests[0].number).toBe(23);
+    expect(linked.pullRequests[0].detectedVia).toBe("gh-pr-view");
   });
 });
 
