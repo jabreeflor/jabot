@@ -443,3 +443,54 @@
   white-space: nowrap;
   font-family: var(--font-mono);
 }
+
+/* Resume: put the conversation back after a quit, a crash, or an idle evict
+ * (#21).
+ *
+ * Only drawn when the host says both halves — no adapter attached *and*
+ * resumable — so it is not a button that sits there greyed for the life of
+ * every thread. `thread/reopen`, which the Inbox's Open thread runs, is a
+ * store write that spawns nothing; this is the verb that reattaches.
+ */
+.chat-head .resume-btn {
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-pill);
+  background: none;
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--ink);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  cursor: pointer;
+}
+
+.chat-head .resume-btn:hover {
+  background: var(--sunk);
+}
+
+.chat-head .resume-btn:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+/* What the resume actually did. Three tones because the six outcomes are three
+   different situations: it worked, the stored session is a different job now,
+   or it cannot be resumed at all. */
+.chat-resume {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.chat-resume[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.chat-resume[data-tone="warn"] {
+  color: var(--amber);
+}
+
+.chat-resume[data-tone="bad"] {
+  color: var(--danger);
+}

@@ -25,6 +25,7 @@ import type {
   PendingPermissionView,
   PermissionReplyParams,
   PromptParams,
+  ThreadResumeResult,
   ThreadTranscriptResult,
 } from "../host";
 import { PERMISSION_ASK, PERMISSION_RESOLVED, SESSION_UPDATE } from "../host";
@@ -1183,5 +1184,203 @@ describe("LiveThreadView, where the work is happening", () => {
 
     expect(await screen.findByText("start the migration")).toBeInTheDocument();
     expect(document.querySelector(".worktree-chip")).toBeNull();
+  });
+});
+
+/**
+ * Resume: put the conversation back without prompting (#21).
+ *
+ * `thread/resume` has been implemented, routed, typed and e2e-covered since
+ * #21, and `resumeThread` had no caller anywhere in `src/`. The renderer's
+ * only reattach path was `thread/reopen`, which is a store write that spawns
+ * nothing — so after a quit or an idle evict the pane looked live and was
+ * not, and the conversation came back only when the user happened to send
+ * another prompt.
+ */
+describe("LiveThreadView resume", () => {
+  const detached = {
+    connected: false,
+    acpState: "idle" as const,
+    pendingPermissions: 0,
+    resumable: true,
+  };
+
+  function draw(
+    process: Partial<ProcessView>,
+    resume?: Partial<ThreadResumeResult>,
+  ) {
+    const host = stubHost({}, [], undefined, process);
+    const after = {
+      ...detached,
+      ...(resume?.state?.process ?? {}),
+    };
+    const resumeThread = vi.fn(async () => ({
+      threadId: THREAD.id,
+      resumed: true,
+      outcome: "resumed" as const,
+      ...resume,
+      state: { threadId: THREAD.id, process: after },
+    }));
+    const client = { ...host.client, resumeThread } as unknown as HostClient;
+    render(
+      <LiveThreadView
+        client={client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    return { resumeThread };
+  }
+
+  const button = () => screen.queryByRole("button", { name: /^Resum/ });
+
+  it("offers nothing while the adapter is still attached", async () => {
+    draw({ ...detached, connected: true });
+
+    await screen.findByText("start the migration");
+    expect(button()).toBeNull();
+  });
+
+  /** A thread with no session to put back gets no button. Offering one that
+      can only fail is worse than offering none. */
+  it("offers nothing when there is nothing to resume", async () => {
+    draw({ ...detached, resumable: false });
+
+    await screen.findByText("start the migration");
+    expect(button()).toBeNull();
+  });
+
+  it("resumes the thread it is showing, once", async () => {
+    const { resumeThread } = draw(detached);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    await waitFor(() =>
+      expect(resumeThread).toHaveBeenCalledWith({ threadId: THREAD.id }),
+    );
+    expect(resumeThread).toHaveBeenCalledTimes(1);
+  });
+
+  /** The answer carries the thread as it stands afterwards, so the button
+      goes away on that one round trip rather than a second `thread/state`. */
+  it("puts the button away once the conversation is back", async () => {
+    draw(detached, {
+      outcome: "resumed",
+      state: {
+        threadId: THREAD.id,
+        process: { ...detached, connected: true },
+      } as ThreadResumeResult["state"],
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(await screen.findByText(/Conversation restored/)).toBeInTheDocument();
+    await waitFor(() => expect(button()).toBeNull());
+  });
+
+  it("says the agent replayed its history when that is what happened", async () => {
+    draw(detached, { outcome: "loaded" });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(
+      await screen.findByText(/replayed its history/),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The outcome that is neither a success nor an error. The thread is fine;
+   * the *stored session* is a different job now, and resuming it would
+   * continue someone else's.
+   */
+  it("names what moved when the stored session is no longer this job", async () => {
+    draw(detached, {
+      resumed: false,
+      outcome: "drifted",
+      detail: "The stored session no longer matches this thread.",
+      drift: ["harnessId", "cwd"],
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    const notice = await screen.findByText(/no longer matches/);
+    // Its own sentence, and capitalised: it follows the host's, and
+    // "…this thread. the engine and the folder have moved." reads as a typo.
+    expect(notice).toHaveTextContent(
+      "The stored session no longer matches this thread. The engine and the folder have moved.",
+    );
+    expect(notice).toHaveAttribute("data-tone", "warn");
+  });
+
+  /**
+   * The whole point of rendering the outcome rather than a boolean: "could
+   * not resume" with no reason sends a missing folder, an adapter that cannot
+   * resume, and a thread that never had a session to three different wrong
+   * fixes.
+   */
+  it("gives the host's reason rather than a bare failure", async () => {
+    draw(detached, {
+      resumed: false,
+      outcome: "cwd_missing",
+      detail: "/Users/j/code/jabot is not there any more.",
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    const notice = await screen.findByText(/not there any more/);
+    expect(notice).toHaveAttribute("data-tone", "bad");
+    expect(screen.queryByText(/^Could not resume/)).toBeNull();
+  });
+
+  /** An outcome the host sent with no sentence still has to say something
+      more useful than "failed". */
+  /** A host that sent no full stop still gets two readable sentences. */
+  it("ends the host's sentence before adding its own", async () => {
+    draw(detached, {
+      resumed: false,
+      outcome: "drifted",
+      detail: "The stored session no longer matches this thread",
+      drift: ["cwd"],
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(await screen.findByText(/no longer matches/)).toHaveTextContent(
+      "this thread. The folder has moved.",
+    );
+  });
+
+  it("falls back to naming the outcome when the host sent no sentence", async () => {
+    draw(detached, { resumed: false, outcome: "unsupported" });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(
+      await screen.findByText("Could not resume: unsupported."),
+    ).toBeInTheDocument();
+  });
+
+  /** A host too old to know the method leaves the pane exactly as it was
+      rather than throwing out of the click. */
+  it("does nothing on a host that cannot resume at all", async () => {
+    const host = stubHost({}, [], undefined, detached);
+    const client = {
+      ...host.client,
+      resumeThread: undefined,
+    } as unknown as HostClient;
+    render(
+      <LiveThreadView
+        client={client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(await screen.findByText("start the migration")).toBeInTheDocument();
+    expect(document.querySelector(".chat-resume")).toBeNull();
   });
 });
