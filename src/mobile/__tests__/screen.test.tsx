@@ -5,8 +5,14 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { InboxScreen } from "../InboxScreen";
+import { MobileApp } from "../MobileApp";
+import { TranscriptScreen } from "../TranscriptScreen";
 import { projectInbox } from "../inbox";
-import type { PendingPermissionView } from "../../host/protocol";
+import type {
+  PendingPermissionView,
+  ThreadTranscriptResult,
+} from "../../host/protocol";
+import type { TranscriptItem } from "../../components/types";
 
 const ASK: PendingPermissionView = {
   requestId: "req-1",
@@ -126,5 +132,186 @@ describe("the approver screen", () => {
     // Inert, not gone: a card that vanishes on tap and comes back on failure
     // is how somebody answers the same question twice.
     expect(screen.getByRole("button", { name: "Allow once" })).toBeDisabled();
+  });
+});
+
+
+/**
+ * The transcript screen (#29).
+ *
+ * `InboxScreen` has had an `onOpen` since #29 and nothing ever called it, so
+ * tapping a card title was a dead callback and the phone could say an agent
+ * was blocked without ever showing what it had been doing.
+ */
+describe("the transcript screen", () => {
+  const ITEMS: TranscriptItem[] = [
+    { kind: "user", id: "u1", text: "Migrate auth to sessions" },
+    { kind: "agent", id: "a1", text: "Reading the current middleware." },
+    {
+      kind: "tool",
+      id: "c1",
+      call: {
+        id: "c1",
+        kind: "edit",
+        target: "src/auth.ts",
+        status: "completed",
+        note: "+18 −7",
+      },
+    },
+  ];
+
+  function draw(over: Partial<Parameters<typeof TranscriptScreen>[0]> = {}) {
+    const props = {
+      title: "Auth migration",
+      items: ITEMS,
+      truncated: false,
+      onBack: vi.fn(),
+      ...over,
+    };
+    render(<TranscriptScreen {...props} />);
+    return props;
+  }
+
+  it("shows what was said and, in one line each, what was run", () => {
+    draw();
+
+    expect(screen.getByText("Migrate auth to sessions")).toBeInTheDocument();
+    expect(screen.getByText("Reading the current middleware.")).toBeInTheDocument();
+    // The target, not the output: a phone is not where somebody reads a diff,
+    // and a screen that tried would bury the sentence the question is about.
+    expect(screen.getByText("src/auth.ts")).toBeInTheDocument();
+    expect(screen.getByText("+18 −7")).toBeInTheDocument();
+  });
+
+  /**
+   * `transcript()` takes the last 40 events and its own doc says "never
+   * more". A screen that silently began mid-sentence would let somebody
+   * answer a permission on a conversation whose start they think they read.
+   */
+  it("says out loud when it is only showing the end", () => {
+    draw({ truncated: true });
+
+    expect(
+      screen.getByText(/Showing the end of this thread/),
+    ).toBeInTheDocument();
+  });
+
+  it("does not claim truncation when there is none", () => {
+    draw();
+
+    expect(screen.queryByText(/Showing the end of this thread/)).toBeNull();
+  });
+
+  it("goes back to the Inbox", async () => {
+    const props = draw();
+
+    await userEvent.click(screen.getByRole("button", { name: /Inbox/ }));
+    expect(props.onBack).toHaveBeenCalled();
+  });
+
+  it("says why when the host will not answer", () => {
+    draw({ items: [], error: "thread/transcript is not something an approver device may call" });
+
+    expect(screen.getByRole("alert")).toHaveTextContent("approver device");
+  });
+
+  it("waits rather than claiming an empty thread", () => {
+    draw({ items: [], loading: true });
+
+    expect(screen.getByText("Reading the thread…")).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing has been said/)).toBeNull();
+  });
+});
+
+describe("opening a card", () => {
+  const RESULT: ThreadTranscriptResult = {
+    threadId: "t9",
+    headSeq: 2,
+    truncated: true,
+    queued: [],
+    events: [
+      {
+        seq: 1,
+        method: "session/update",
+        createdAt: "2026-08-20T10:59:00.000Z",
+        payload: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "Clear the build directory" },
+        },
+      },
+      {
+        seq: 2,
+        method: "session/update",
+        createdAt: "2026-08-20T10:59:30.000Z",
+        payload: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "I need to run rm -rf build." },
+        },
+      },
+    ],
+  };
+
+  /** The prop's first coverage since it was written. */
+  it("asks the host for the thread the card is about", async () => {
+    const transcript = vi.fn(async () => RESULT);
+    render(
+      <MobileApp
+        inbox={inboxWith()}
+        session={{ transcript }}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Run ls" }));
+
+    // The card's thread, and the window `transcript()` defaults to — the
+    // screen does not get to choose how much of somebody's conversation
+    // leaves the Mac.
+    expect(transcript).toHaveBeenCalledWith("t9");
+    // Reduced through the desktop's own `hydrate`, so a phone cannot draw a
+    // different conversation from the same rows.
+    expect(
+      await screen.findByText("I need to run rm -rf build."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Clear the build directory")).toBeInTheDocument();
+    expect(screen.getByText(/Showing the end of this thread/)).toBeInTheDocument();
+  });
+
+  it("comes back to the Inbox with the buttons still there", async () => {
+    render(
+      <MobileApp
+        inbox={inboxWith()}
+        session={{ transcript: vi.fn(async () => RESULT) }}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Run ls" }));
+    await screen.findByText("I need to run rm -rf build.");
+    await userEvent.click(screen.getByRole("button", { name: /Inbox/ }));
+
+    expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
+  });
+
+  /** A host that refuses is a sentence on the screen, not a blank one. */
+  it("says what the host said when the read fails", async () => {
+    render(
+      <MobileApp
+        inbox={inboxWith()}
+        session={{
+          transcript: vi.fn(async () => {
+            throw new Error("thread is gone");
+          }),
+        }}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Run ls" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("thread is gone");
   });
 });
