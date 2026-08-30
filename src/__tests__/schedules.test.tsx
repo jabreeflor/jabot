@@ -322,6 +322,9 @@ describe("writing one as a prompt", () => {
     expect(screen.getByLabelText("What should it do?")).toHaveValue(
       "Do the thing",
     );
+    // The cron is the only thing the host refuses, so it comes out from behind
+    // the chip: there is nothing else on this screen to correct.
+    expect(screen.getByLabelText("CRON")).toHaveValue("0 9 * * 1-5");
   });
 
   /** Escape leaves every other surface in the app that can be left. */

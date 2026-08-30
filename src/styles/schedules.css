@@ -778,6 +778,17 @@
   color: var(--violet);
 }
 
+/* Refused. The chip is the control the host objected to, so it is the control
+   that wears it — the sentence saying why sits directly under the box. */
+.prompt-chip.is-bad {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.prompt-chip.is-bad svg {
+  color: var(--red);
+}
+
 .send-btn {
   margin-left: auto;
   width: 32px;
@@ -913,8 +924,9 @@
   margin-top: var(--sp-4);
 }
 
-.compose-stage .modal-error {
+.compose-error {
   margin-top: var(--sp-4);
+  font-size: var(--fs-meta);
 }
 
 /* ---- the editor modal ---------------------------------------------------- */

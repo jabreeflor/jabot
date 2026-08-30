@@ -182,9 +182,12 @@ export function ScheduleComposer({
               </span>
 
               <span
-                className={
-                  readFromPrompt ? "prompt-chip read-off" : "prompt-chip"
-                }
+                className={[
+                  "prompt-chip",
+                  error ? "is-bad" : readFromPrompt ? "read-off" : "",
+                ]
+                  .join(" ")
+                  .trim()}
               >
                 <ClockIcon />
                 <select
@@ -211,6 +214,15 @@ export function ScheduleComposer({
               </button>
             </div>
           </form>
+
+          {/* The host refuses a schedule over its cron and nothing else, so an
+              error belongs against the chip that holds it — not under a fold
+              300px down, which is an error you have to go hunting for. */}
+          {error && (
+            <p className="modal-error compose-error" role="alert">
+              {error}
+            </p>
+          )}
 
           {!prompt.trim() && (
             <div className="compose-starters">
@@ -241,7 +253,9 @@ export function ScheduleComposer({
             )}
           </p>
 
-          {showCron && (
+          {/* A refusal is always about the cron, and a preset cannot be
+              refused — so whatever is in there is worth showing raw. */}
+          {(showCron || error) && (
             <div className="compose-cron">
               <FieldLabel htmlFor={cronId}>CRON</FieldLabel>
               <input
@@ -249,8 +263,8 @@ export function ScheduleComposer({
                 className="mfield"
                 type="text"
                 value={cron}
-                autoFocus
                 placeholder="0 9 * * 1-5"
+                autoFocus={showCron}
                 aria-invalid={error ? true : undefined}
                 aria-describedby={`${cronId}-hint`}
                 onChange={(event) => setCron(event.target.value)}
@@ -292,11 +306,6 @@ export function ScheduleComposer({
             </div>
           </details>
 
-          {error && (
-            <p className="modal-error" role="alert">
-              {error}
-            </p>
-          )}
         </div>
       </div>
     </div>
