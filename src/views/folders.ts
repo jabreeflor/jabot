@@ -16,6 +16,7 @@ import type {
   FolderListResult,
   FolderRegisterParams,
   FolderThreadView,
+  FolderUpdateParams,
   FolderView,
   HostClient,
   ThreadOverlayState,
@@ -39,6 +40,8 @@ export function folderRow(folder: FolderView): FolderWithThreads {
     cwd: folder.cwd,
     isGit: folder.isGit,
     repo: folder.origin?.repo,
+    setupCommand: folder.setupCommand,
+    filesToCopy: folder.filesToCopy,
     threads: folder.threads.map(threadRow),
   };
 }
@@ -74,6 +77,19 @@ export interface RegisteredFolders {
   /** Resolves with the new folder, or throws the host's error — the modal
       needs the difference between "already registered" and "no such path". */
   register: (params: FolderRegisterParams) => Promise<FolderView>;
+  /**
+   * Edit a registered folder (#16).
+   *
+   * `folder/update` has been routed and handled since #16 — name, setup
+   * command, files-to-copy, and a `refresh` that asks git again — and had no
+   * caller anywhere in `src/`. So a setup command typed once at registration
+   * could never be corrected, and a wrong one silently produces half-built
+   * worktrees every time (#23).
+   *
+   * Throws the host's error like `register`, because the modal has to keep the
+   * draft and say what happened rather than close on a failure.
+   */
+  update: (params: FolderUpdateParams) => Promise<FolderView>;
 }
 
 export function useFolders(client: HostClient | null): RegisteredFolders {
@@ -116,7 +132,17 @@ export function useFolders(client: HostClient | null): RegisteredFolders {
     [client, reload],
   );
 
-  return { folders, error, reload, register };
+  const update = useCallback(
+    async (params: FolderUpdateParams) => {
+      if (!client) throw new Error("No host connection.");
+      const folder = await client.updateFolder(params);
+      reload();
+      return folder;
+    },
+    [client, reload],
+  );
+
+  return { folders, error, reload, register, update };
 }
 
 /** `folder/list` returns only the two states the sidebar draws. Anything else

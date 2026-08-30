@@ -389,3 +389,13 @@
   color: var(--dim);
   cursor: not-allowed;
 }
+
+/* A folder's registered path, shown and not editable (#16). The host has no
+   move method, and a folder pointed somewhere else is a different folder. */
+.modal .modal-static {
+  margin: 0;
+  padding: var(--sp-2) 0;
+  color: var(--dim);
+  font: var(--fs-meta) / 1.4 var(--font-mono);
+  overflow-wrap: anywhere;
+}
