@@ -1,7 +1,7 @@
 # Packaging: signing, notarization, updater
 
 **Issue:** #12
-**Status:** Partially implemented — `src-tauri/entitlements.plist`, `src-tauri/tauri.conf.json`, `src-tauri/icons/`, `docs/packaging.md`
+**Status:** Partially implemented — `src-tauri/entitlements.plist`, `src-tauri/tauri.conf.json`, `src-tauri/icons/`, `docs/packaging.md`, `scripts/install.sh`
 
 ## What it is
 
@@ -34,7 +34,13 @@ last mile between "builds locally" and "someone else can run it."
    so a release can be reproduced by someone other than the original
    author — that document, not this file, is the source of truth for
    exact commands/secrets handling.
-7. CI's macOS bundle job is explicitly **not** the gate for this
+7. Installing the first copy is one command that needs nothing installed
+   first (`curl -fsSL .../install.sh | bash`), and that installer refuses
+   any build that is not signed, notarized, and carrying our bundle
+   identifier — the check happens before anything is written to
+   `/Applications`. It is served from the release itself, so the script a
+   user runs is the one that shipped with the build it installs.
+8. CI's macOS bundle job is explicitly **not** the gate for this
    (see the "Working on it" section of the top-level
    [`README.md`](../../README.md)) — packaging must be verifiable via
    local scripts/tooling, not assumed to run on every PR.
