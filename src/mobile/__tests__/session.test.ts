@@ -75,6 +75,17 @@ class FakeHost implements HostTransport {
           alreadyAnswered: false,
           cancelled: false,
         });
+      // Answered rather than refused since #29's transcript screen: a call a
+      // real screen depends on should be asserted to *succeed*, not to be
+      // swallowed by a `.catch`.
+      case THREAD_TRANSCRIPT:
+        return ok({
+          threadId: (request.params as { threadId: string }).threadId,
+          headSeq: 0,
+          events: [],
+          truncated: false,
+          queued: [],
+        });
       default:
         return {
           jsonrpc: JSONRPC_VERSION,
@@ -204,7 +215,8 @@ describe("the phone client", () => {
     await session.refresh();
     await session.answer("req-1", "allow_once");
     await session.cancelThread("t9").catch(() => {});
-    await session.transcript("t9").catch(() => {});
+    // Not `.catch(() => {})` any more: the phone reads this for real now.
+    expect(await session.transcript("t9")).toMatchObject({ threadId: "t9" });
 
     // An exact set, not a containment: a call this client did not used to make
     // is a change to what the phone does, and has to be looked at.

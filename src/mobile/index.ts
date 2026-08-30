@@ -32,6 +32,13 @@ export type {
 } from "./inbox";
 export { InboxScreen } from "./InboxScreen";
 export type { InboxScreenProps } from "./InboxScreen";
+export { MobileApp } from "./MobileApp";
+export type { MobileAppProps } from "./MobileApp";
+export { TranscriptScreen, useThreadTranscript } from "./TranscriptScreen";
+export type {
+  ThreadTranscript,
+  TranscriptScreenProps,
+} from "./TranscriptScreen";
 export { allowedForApprover, APPROVER_METHODS, checkScope } from "./scope";
 export { MobileSession, OutOfScopeError } from "./session";
 export type {

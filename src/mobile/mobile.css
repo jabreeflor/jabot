@@ -52,6 +52,30 @@
   font-weight: 600;
 }
 
+/* The title is a `<button>` whenever the card can be opened (#29), and until
+   something wired `onOpen` that branch had never been drawn. Left alone it
+   renders as a full-width UA button — a filled bar with centred black text —
+   which reads as the loudest call to action on a card whose actual buttons are
+   the answer below it. So it is reset back to being a title that happens to be
+   tappable. */
+button.jm-card-title {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.jm-card-title:hover,
+button.jm-card-title:focus-visible {
+  text-decoration: underline;
+}
+
 .jm-card-summary {
   font-size: 13px;
   opacity: 0.8;
@@ -81,6 +105,10 @@
   border-radius: 10px;
   border: 1px solid rgba(128, 128, 128, 0.4);
   background: transparent;
+  /* `font: inherit` does not carry colour, and the UA default is black. On a
+     dark page that made every answer on this screen unreadable — which nobody
+     had seen, because nothing ever rendered this module outside jsdom. */
+  color: inherit;
   font: inherit;
   cursor: pointer;
 }
@@ -104,4 +132,130 @@
   opacity: 0.7;
   padding: 24px 0;
   text-align: center;
+}
+
+/* ---- the transcript screen -----------------------------------------------
+   A phone is not where somebody reads a diff. Every line here is one line:
+   what was said, or what was run and on what. The point of the screen is to
+   know what you are answering, and a wall of tool output would bury exactly
+   the sentence that question is about. */
+
+.jm-back {
+  flex: none;
+  min-height: 44px;
+  padding: 0 8px 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Specific enough to beat `.jm-top h1`, which is the Inbox's heading size.
+   The only navigation on this screen is the back button, and a title that
+   outweighs it makes the way out look like decoration. */
+.jm-top .jm-thread-title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Loud enough to be read before the buttons are. Somebody about to answer a
+   permission should know they have not read the start of the conversation. */
+.jm-truncated {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(128, 128, 128, 0.12);
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.jm-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.jm-line {
+  padding: 10px 12px;
+  border-radius: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jm-line.user {
+  align-self: flex-end;
+  max-width: 85%;
+  background: rgba(128, 128, 128, 0.22);
+}
+
+.jm-line.agent {
+  align-self: flex-start;
+  max-width: 95%;
+  background: rgba(128, 128, 128, 0.1);
+}
+
+/* Not a bubble: a tool call is a thing that happened, not a thing that was
+   said, and giving it the same shape as speech reads as the agent talking. */
+.jm-line.tool {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.jm-tool-kind {
+  flex: none;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.jm-tool-target {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.jm-tool-note {
+  flex: none;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.jm-line.tool.failed {
+  opacity: 1;
+}
+
+.jm-line.notice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  font-size: 13px;
+}
+
+.jm-queued,
+.jm-error {
+  margin: 0;
+  font-size: 13px;
+}
+
+.jm-error {
+  color: #d9534f;
 }
