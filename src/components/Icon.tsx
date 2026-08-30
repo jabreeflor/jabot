@@ -90,6 +90,20 @@ export function PullRequestMergedIcon({ className }: IconProps) {
   );
 }
 
+/** A branch splitting off a trunk. Used on the chat header's location chip,
+    where the branch name is the thing being labelled (#23). */
+export function BranchIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <circle cx="6" cy="5" r="2.4" />
+      <circle cx="6" cy="19" r="2.4" />
+      <circle cx="18" cy="9" r="2.4" />
+      <path d="M6 7.4v9.2" />
+      <path d="M18 11.4c0 3.2-2.6 5.2-6 5.6" />
+    </Stroke>
+  );
+}
+
 export function InboxIcon({ className }: IconProps) {
   return (
     <Stroke className={className} width={1.8}>

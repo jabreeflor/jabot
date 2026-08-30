@@ -472,6 +472,9 @@ function stubHost(
   pending: PendingPermissionView[] = [],
   handoff?: HandoffView,
   process?: Partial<ProcessView>,
+  /** Whatever else `thread/state` should answer with — the worktree fields
+      (#23) are read from the same call the handoff and the drift are. */
+  state: Record<string, unknown> = {},
 ) {
   const handlers = new Set<(n: JsonRpcNotification) => void>();
   const prompts: PromptParams[] = [];
@@ -508,7 +511,12 @@ function stubHost(
       ...replay,
     })),
     deviceId: "dev-1",
-    threadState: vi.fn(async () => ({ threadId: THREAD.id, handoff, process })),
+    threadState: vi.fn(async () => ({
+      threadId: THREAD.id,
+      handoff,
+      process,
+      ...state,
+    })),
     pendingPermissions: vi.fn(async () => ({
       requests: pending.filter((request) => !resolved.has(request.requestId)),
     })),
@@ -1097,5 +1105,83 @@ describe("LiveThreadView drift", () => {
     await screen.findByText("start the migration");
 
     expect(document.querySelector(".chat-drift")).toBeNull();
+  });
+});
+
+/**
+ * Where a code thread is actually editing (#23).
+ *
+ * A thread opened in a git folder runs in a host-owned worktree under the app
+ * data directory on a `jabot/<id>` branch, not in the user's checkout. The
+ * host has stamped both onto the thread row since #23 and served them on
+ * `thread/state`; nothing drew them, so someone looking at a running thread
+ * could not tell which directory or which branch the agent was changing.
+ */
+describe("LiveThreadView, where the work is happening", () => {
+  function draw(state: Record<string, unknown>) {
+    const host = stubHost({}, [], undefined, undefined, state);
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    return host;
+  }
+
+  it("names the branch, and keeps the whole path for the tooltip", async () => {
+    draw({
+      worktreePath: "/Users/j/Library/Application Support/jabot/worktrees/t-1",
+      branch: "jabot/t-1",
+    });
+
+    const chip = await screen.findByTitle(
+      "/Users/j/Library/Application Support/jabot/worktrees/t-1",
+    );
+    // The branch is the visible half: it is what identifies the work, and the
+    // path is long, machine-generated and the same prefix on every thread.
+    expect(chip).toHaveTextContent("jabot/t-1");
+  });
+
+  /** A tree the host recorded without a branch is still somewhere else, and
+      saying so with the directory beats saying nothing. */
+  it("falls back to the tree's own directory when there is no branch", async () => {
+    draw({ worktreePath: "/data/jabot/worktrees/t-9" });
+
+    expect(
+      await screen.findByTitle("/data/jabot/worktrees/t-9"),
+    ).toHaveTextContent("t-9");
+  });
+
+  /**
+   * The common case for everything that is not a code thread in a checkout: a
+   * bot's standing thread, a non-git folder, the "use my own checkout"
+   * opt-out. A chip on all of those would say nothing about any of them.
+   */
+  it("draws nothing for a thread that works in place", async () => {
+    draw({ branch: "main" });
+
+    await screen.findByText("start the migration");
+    expect(document.querySelector(".worktree-chip")).toBeNull();
+  });
+
+  /** Same trade as the handoff caption: a host that will not answer costs the
+      chip and nothing else. */
+  it("costs nothing on a host that cannot answer thread/state", async () => {
+    const host = stubHost();
+    const client = { ...host.client, threadState: undefined } as unknown as HostClient;
+    render(
+      <LiveThreadView
+        client={client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+
+    expect(await screen.findByText("start the migration")).toBeInTheDocument();
+    expect(document.querySelector(".worktree-chip")).toBeNull();
   });
 });

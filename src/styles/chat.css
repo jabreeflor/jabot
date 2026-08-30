@@ -410,3 +410,36 @@
 .round-btn.stop {
   color: var(--amber);
 }
+
+/* Where a code thread is actually editing (#23).
+ *
+ * A thread opened in a git folder runs in a host-owned worktree on a
+ * `jabot/<id>` branch, not in the user's checkout — so the header says which,
+ * or the person goes looking for the edits in the wrong tree. The branch is
+ * the visible half; the full path is the tooltip, because it is long,
+ * machine-generated and identical in prefix for every thread.
+ */
+.chat-head .worktree-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 220px;
+  min-width: 0;
+  color: var(--dim);
+  font-size: var(--fs-meta);
+}
+
+.chat-head .worktree-chip svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* One line, truncated: a long branch name must not push the status and the
+   host control off the row. */
+.chat-head .worktree-chip .ref {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
