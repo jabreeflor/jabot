@@ -102,6 +102,11 @@ export interface Folder {
   isGit?: boolean;
   /** `owner/name` from `origin`, when there is one. */
   repo?: string;
+  /** What a fresh worktree runs before the agent gets it (#23). Editable in
+      folder settings; absent means the folder has none. */
+  setupCommand?: string;
+  /** Gitignored files a fresh worktree needs — `.env` and friends (#23). */
+  filesToCopy?: readonly string[];
 }
 
 /** The sidebar needs each folder with its threads — the join #16 will do. */

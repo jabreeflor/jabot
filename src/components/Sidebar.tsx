@@ -37,6 +37,7 @@ export function Sidebar({
   leavingThreadIds,
   foldersEmpty = false,
   onAddFolder,
+  onFolderSettings,
   onSelectBot,
   onSelectThread,
   onOpenCrew,
@@ -62,6 +63,9 @@ export function Sidebar({
   /** Absent until the host can register one, which is what makes the ＋ in the
       CODE header appear at all. */
   onAddFolder?: () => void;
+  /** Open a registered folder's settings (#16). Absent before a host has
+      answered — a fixture folder has nothing the host could update. */
+  onFolderSettings?: (folderId: string) => void;
   onSelectBot: (botId: string) => void;
   onSelectThread: (threadId: string) => void;
   onOpenCrew: () => void;
@@ -188,6 +192,7 @@ export function Sidebar({
           leavingThreadIds={leavingThreadIds}
           onSelectThread={onSelectThread}
           onNewThread={onNewChat}
+          onFolderSettings={onFolderSettings}
           onThreadMenu={onThreadMenu}
         />
         {query && visibleFolders.length === 0 && (

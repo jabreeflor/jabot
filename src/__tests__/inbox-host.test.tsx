@@ -530,7 +530,8 @@ describe("a host thread that no folder lists", () => {
     await userEvent.click(screen.getByRole("button", { name: "Open thread" }));
     await screen.findByRole("heading", { level: 2, name: "Writer" });
 
-    await userEvent.click(screen.getByRole("button", { name: /^Fold/ }));
+    // Exact: the sidebar's folder-settings gear also starts with "Fold".
+    await userEvent.click(screen.getByRole("button", { name: "Fold" }));
     await userEvent.click(
       screen.getByRole("menuitem", { name: /Disappear until done/ }),
     );

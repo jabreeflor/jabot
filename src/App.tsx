@@ -27,6 +27,7 @@ import {
   HostRpcError,
 } from "./host";
 import { AddFolderModal } from "./components/AddFolderModal";
+import { FolderSettingsModal } from "./components/FolderSettingsModal";
 import { GithubSignInModal } from "./components/GithubSignInModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
@@ -177,6 +178,7 @@ function AppShell({
   const [menu, setMenu] = useState<MenuState>(null);
   const [leaving, setLeaving] = useState<readonly string[]>([]);
   const [addFolder, setAddFolder] = useState(false);
+  const [folderSettings, setFolderSettings] = useState<string | null>(null);
   const [signIn, setSignIn] = useState(false);
   const [scheduleEditor, setScheduleEditor] = useState<ScheduleEditorState>({
     open: false,
@@ -214,6 +216,12 @@ function AppShell({
   // threads inside them are real rows, so the main pane has to be able to find
   // one that the mock reducer has never heard of.
   const folders = registered.folders ?? sidebarFolders(state);
+  // The row the settings card is open on, resolved against the live list so a
+  // reload after a save re-seeds the form from what the host now holds.
+  const settingsFolder =
+    folderSettings === null
+      ? null
+      : (folders.find((f) => f.id === folderSettings) ?? null);
   const hostThreads = registered.folders ? allThreads(registered.folders) : [];
   // A thread the host owns that no folder lists — a bot's standing thread,
   // whose `folder_id` is null. `folder/list` walks folder rows, so those are
@@ -533,6 +541,11 @@ function AppShell({
         folders={folders}
         foldersEmpty={registered.folders?.length === 0}
         onAddFolder={client ? () => setAddFolder(true) : undefined}
+        // Only for folders the host actually has. A fixture folder has nothing
+        // `folder/update` could be pointed at.
+        onFolderSettings={
+          client && registered.folders ? setFolderSettings : undefined
+        }
         selection={selection}
         // The host's own count, not a second classification of the rows this
         // renderer happens to be holding: `count_unread_inbox` is the badge
@@ -634,6 +647,14 @@ function AppShell({
             registered.register(params)
           }
           onCancel={() => setAddFolder(false)}
+        />
+      )}
+
+      {settingsFolder && (
+        <FolderSettingsModal
+          folder={settingsFolder}
+          onSave={registered.update}
+          onCancel={() => setFolderSettings(null)}
         />
       )}
 

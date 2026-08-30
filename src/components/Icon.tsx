@@ -104,6 +104,25 @@ export function BranchIcon({ className }: IconProps) {
   );
 }
 
+/**
+ * Settings — sliders, not a gear.
+ *
+ * A gear is the convention and it does not survive 14px: the teeth close up
+ * and it reads as a sun. Three tracks with a knob each stay legible at the
+ * size the folder row actually draws them, which is the only size that
+ * matters here.
+ */
+export function SlidersIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <path d="M4 7h11M18.5 7H20M4 12h3.5M11 12h9M4 17h8.5M16 17h4" />
+      <circle cx="16.75" cy="7" r="1.75" />
+      <circle cx="9.25" cy="12" r="1.75" />
+      <circle cx="14.25" cy="17" r="1.75" />
+    </Stroke>
+  );
+}
+
 export function InboxIcon({ className }: IconProps) {
   return (
     <Stroke className={className} width={1.8}>
