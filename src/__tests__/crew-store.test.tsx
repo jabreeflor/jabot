@@ -27,12 +27,13 @@ import {
   type CrewRefParams,
   type CrewRemoveResult,
   type CrewUpdateParams,
+  type HarnessDoctorResult,
   type HarnessListResult,
   type HelloResult,
   type HostClient,
   type ToolListResult,
 } from "../host";
-import { botRow, templateRow } from "../views/crew";
+import { botRow, templateRow, withReadiness } from "../views/crew";
 
 vi.mock("../host", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../host")>();
@@ -135,6 +136,38 @@ const HARNESSES: HarnessListResult = {
   issues: [],
 };
 
+/** What the Doctor says about the two cards above: one engine on disk, one
+    not. `remedy` is deliberately different from any `installHint` in the
+    catalog, so a test can tell which of the two the card ended up showing. */
+const DOCTOR: HarnessDoctorResult = {
+  reports: [
+    {
+      id: "claude",
+      label: "Claude Code",
+      tier: "shipped",
+      status: "ready",
+      ready: true,
+      detail: "claude-agent-acp 1.2.0",
+      command: "/usr/local/bin/claude-agent-acp",
+      args: [],
+      elapsedMs: 12,
+    },
+    {
+      id: "hermes",
+      label: "Hermes",
+      tier: "preset",
+      status: "cli_missing",
+      ready: false,
+      detail: "hermes is not on PATH",
+      remedy: "Run: npm i -g hermes-acp",
+      args: ["acp"],
+      elapsedMs: 8,
+    },
+  ],
+  issues: [],
+  path: ["/usr/local/bin", "/usr/bin"],
+};
+
 const TEMPLATES: CrewListResult["templates"] = [
   {
     templateId: "expense",
@@ -180,6 +213,44 @@ describe("botRow / templateRow", () => {
     // from a row something else wrote — a card is a better answer than a blank
     // page.
     expect(botRow(bot({ color: "chartreuse" })).color).toBe("b-green");
+  });
+});
+
+describe("withReadiness", () => {
+  const cards = [
+    { id: "claude", label: "Claude Code", blurb: "b1", accent: "a1" },
+    { id: "hermes", label: "Hermes", blurb: "b2", accent: "a2", installHint: "from the catalog" },
+    { id: "pi", label: "Pi", blurb: "b3", accent: "a3" },
+  ];
+
+  it("marks each card with what the Doctor found", () => {
+    const [claude, hermes] = withReadiness(cards, DOCTOR.reports);
+    expect(claude.available).toBe(true);
+    expect(hermes.available).toBe(false);
+  });
+
+  it("leaves a card nobody probed alone, rather than calling it missing", () => {
+    // "not asked" is not "missing". Defaulting an unprobed card to false would
+    // grey out an engine that is very likely installed.
+    const pi = withReadiness(cards, DOCTOR.reports)[2];
+    expect(pi.available).toBeUndefined();
+    expect(pi).toEqual(cards[2]);
+  });
+
+  it("prefers the Doctor's remedy over the catalog's install hint", () => {
+    // `remedy` is written against what was found on this machine; installHint
+    // is a constant. The specific one wins.
+    const hermes = withReadiness(cards, DOCTOR.reports)[1];
+    expect(hermes.installHint).toBe("Run: npm i -g hermes-acp");
+  });
+
+  it("falls back to the catalog hint when the report carries no remedy", () => {
+    const reports = [{ ...DOCTOR.reports[1], remedy: undefined }];
+    expect(withReadiness(cards, reports)[1].installHint).toBe("from the catalog");
+  });
+
+  it("is a no-op when the Doctor reported nothing", () => {
+    expect(withReadiness(cards, [])).toEqual(cards);
   });
 });
 
@@ -236,6 +307,10 @@ describe("App, once the host has answered with a crew", () => {
     },
   );
 
+  /** Reassigned per-test so one case can make the probe fail and another can
+      hold it open. Default: the catalog above, probed. */
+  let harnessDoctor = vi.fn(async () => DOCTOR);
+
   function client(): HostClient {
     return {
       disconnect: vi.fn(),
@@ -245,6 +320,7 @@ describe("App, once the host has answered with a crew", () => {
       removeBot,
       listTools: vi.fn(async () => TOOLS),
       listHarnesses: vi.fn(async () => HARNESSES),
+      harnessDoctor,
       listFolders: vi.fn(async () => ({ folders: [] })),
     } as unknown as HostClient;
   }
@@ -252,6 +328,7 @@ describe("App, once the host has answered with a crew", () => {
   beforeEach(() => {
     crew = [CHIEF, bot()];
     vi.clearAllMocks();
+    harnessDoctor = vi.fn(async () => DOCTOR);
     vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
   });
 
@@ -305,6 +382,85 @@ describe("App, once the host has answered with a crew", () => {
       "title",
       "Gmail — Connected as jabree@example.com",
     );
+  });
+
+  it("greys out an engine the Doctor could not find, and says how to install it", async () => {
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    // Hermes is not on this machine, so the card stops advertising itself and
+    // says what to do about it instead. The text is the Doctor's `remedy` —
+    // the one written knowing what was actually found — not the catalog's
+    // constant `installHint`.
+    // Re-queried inside the wait: the probe resolves after the picker has
+    // already painted, so React replaces this node and a reference taken
+    // before then goes stale.
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("button", { name: /Hermes/ })).getByText(
+          "Run: npm i -g hermes-acp",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      within(screen.getByRole("button", { name: /Hermes/ })).queryByText(
+        "A preset the mock has never heard of",
+      ),
+    ).not.toBeInTheDocument();
+
+    // Claude is installed, so nothing about its card changes.
+    const claude = screen.getByRole("button", { name: /Claude Code/ });
+    expect(
+      within(claude).getByText("Anthropic's coding agent, wrapped in JaBot's UI"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the picker usable when the Doctor probe fails", async () => {
+    // A probe shells out to vendor CLIs, so it is the call here most likely to
+    // hang or blow up. When it does, the catalog is still worth drawing: not
+    // knowing whether an engine is installed is a smaller loss than replacing
+    // the crew view with an error.
+    harnessDoctor = vi.fn(async () => {
+      throw new Error("probe timed out");
+    });
+    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    // Every card still there, still showing its blurb — nothing greyed on the
+    // strength of an answer nobody got.
+    const hermes = screen.getByRole("button", { name: /Hermes/ });
+    expect(
+      within(hermes).getByText("A preset the mock has never heard of"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Claude Code/ })).toBeInTheDocument();
+    expect(screen.queryByText("probe timed out")).not.toBeInTheDocument();
+  });
+
+  it("paints the catalog before the Doctor has answered", async () => {
+    // The whole reason `harness/list` and `harness/doctor` are two calls: the
+    // cheap one must not wait on the expensive one. This holds the probe open
+    // forever and asserts the picker opened anyway.
+    harnessDoctor = vi.fn(() => new Promise<HarnessDoctorResult>(() => {}));
+    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    const hermes = screen.getByRole("button", { name: /Hermes/ });
+    expect(
+      within(hermes).getByText("A preset the mock has never heard of"),
+    ).toBeInTheDocument();
   });
 
   it("saves the editor through the host and redraws from what it stored", async () => {

@@ -18,7 +18,7 @@
 //! into the crew payload. Chief's host tools are the exception: they are not
 //! MCP and are in no `tools/list` catalog, so `crew/list` carries them.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   BotTemplateView,
@@ -26,6 +26,7 @@ import type {
   CrewHostToolView,
   CrewListResult,
   HarnessCardView,
+  HarnessReport,
   HostClient,
   ToolCardView,
 } from "../host";
@@ -77,7 +78,8 @@ export function hostToolOption(tool: CrewHostToolView): ToolOption {
 }
 
 /** A catalog card for the harness picker. `available` stays undefined — that
-    answer comes from the Doctor probe (#13), and "not asked" is not "missing". */
+    answer comes from the Doctor probe (#13), and "not asked" is not "missing".
+    `withReadiness` is what fills it in once the probe answers. */
 export function harnessCard(card: HarnessCardView): HarnessCard {
   return {
     id: card.id,
@@ -86,6 +88,39 @@ export function harnessCard(card: HarnessCardView): HarnessCard {
     accent: card.accent,
     installHint: card.installHint,
   };
+}
+
+/**
+ * Fold the Doctor's answer into the catalog cards.
+ *
+ * `harness/list` is the cheap call — it reads the catalog and probes nothing,
+ * which is what lets the picker open without waiting on a vendor CLI.
+ * `harness/doctor` is the expensive one, and it is the only thing that knows
+ * whether the engine on a card can actually be run. So the list paints first
+ * and this narrows it afterwards.
+ *
+ * A card the report set does not mention keeps `available: undefined`. That is
+ * deliberate and is not the same as `false`: the picker greys out a card it
+ * has been told is missing, and a card nobody asked about has not earned that.
+ *
+ * `remedy` wins over `installHint` because it is the more specific of the two —
+ * the Doctor writes it knowing what it actually found on this machine, where
+ * `installHint` is a constant in the catalog.
+ */
+export function withReadiness(
+  cards: readonly HarnessCard[],
+  reports: readonly HarnessReport[],
+): HarnessCard[] {
+  const byId = new Map(reports.map((report) => [report.id, report]));
+  return cards.map((card) => {
+    const report = byId.get(card.id);
+    if (!report) return card;
+    return {
+      ...card,
+      available: report.ready,
+      installHint: report.remedy ?? report.installHint ?? card.installHint,
+    };
+  });
 }
 
 /**
@@ -136,6 +171,13 @@ export function useCrew(client: HostClient | null): Crew {
   const [crew, setCrew] = useState<CrewListResult | null>(null);
   const [tools, setTools] = useState<ToolOption[] | null>(null);
   const [harnesses, setHarnesses] = useState<HarnessCard[] | null>(null);
+  // Held apart from `harnesses` rather than folded into it on arrival, because
+  // the two calls race and either can land first: the catalog is three fields
+  // out of SQLite, the probe is vendor CLIs on disk, and neither ordering is
+  // guaranteed. Merging on arrival meant whichever came second won and the
+  // other was silently dropped. Kept separate, the merge below is the same
+  // answer whatever the order.
+  const [reports, setReports] = useState<readonly HarnessReport[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Bumped to re-run the load: a save or a remove changes the crew, and both
   // happen outside this effect.
@@ -160,6 +202,27 @@ export function useCrew(client: HostClient | null): Crew {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
       });
+    // The Doctor runs on its own, deliberately, and its failure is swallowed.
+    //
+    // Two reasons it is not in the Promise.all above. It probes vendor CLIs on
+    // disk, so it is the slow one, and joining it would make the picker wait on
+    // it for no reason — the blurbs are worth painting immediately. And it is
+    // the one call here that is allowed to fail: a probe that times out, or a
+    // transport too old to know the method, must leave the cards saying what
+    // they can rather than replacing the crew view with an error. Not knowing
+    // whether an engine is installed is a smaller loss than not showing it.
+    if (typeof client.harnessDoctor === "function") {
+      client
+        .harnessDoctor({})
+        .then((doctor) => {
+          if (cancelled) return;
+          setReports(doctor.reports);
+        })
+        .catch(() => {
+          // Deliberately silent: see above. The cards keep `available`
+          // undefined, which the picker renders as the blurb.
+        });
+    }
     return () => {
       cancelled = true;
     };
@@ -198,12 +261,19 @@ export function useCrew(client: HostClient | null): Crew {
     [client, reload],
   );
 
+  // Memoised so the picker is handed the same array identity between renders;
+  // rebuilding it every render would defeat any memo below it.
+  const readyHarnesses = useMemo(
+    () => (harnesses && reports ? withReadiness(harnesses, reports) : harnesses),
+    [harnesses, reports],
+  );
+
   return {
     bots: crew ? crew.bots.map(botRow) : null,
     templates: crew ? crew.templates.map(templateRow) : null,
     tools,
     hostTools: crew ? crew.hostTools.map(hostToolOption) : null,
-    harnesses,
+    harnesses: readyHarnesses,
     error,
     reload,
     save,
