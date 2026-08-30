@@ -244,3 +244,86 @@ describe("markdown in an agent's reply", () => {
     expect(container.querySelector("pre code")?.textContent).toBe("npm ci");
   });
 });
+
+/**
+ * Windowing (#14).
+ *
+ * The deferred half of end-anchored virtualization: render from the tail
+ * rather than the whole history. The record deferred it because nothing had
+ * produced a transcript long enough to jank, and that is still true — so the
+ * bar this has to clear is that it costs nothing, and in particular that it
+ * does not defeat the two memoization properties `Transcript`'s own comments
+ * protect.
+ */
+describe("a transcript long enough to window", () => {
+  const many = (count: number): TranscriptItem[] =>
+    Array.from({ length: count }, (_, i) => ({
+      kind: "agent" as const,
+      id: `a${i}`,
+      text: `line ${i}`,
+    }));
+
+  it("draws the end of a long conversation, not all of it", () => {
+    const items = many(500);
+    const { container } = render(<Transcript items={items} />);
+
+    expect(container.querySelectorAll(".msg")).toHaveLength(80);
+    // The end is what a conversation opens at.
+    expect(container.textContent).toContain("line 499");
+    expect(container.textContent).not.toContain("line 0");
+  });
+
+  it("leaves an ordinary conversation whole, with nothing extra on screen", () => {
+    const { container } = render(<Transcript items={many(12)} />);
+
+    expect(container.querySelectorAll(".msg")).toHaveLength(12);
+    expect(container.querySelector(".show-earlier")).toBeNull();
+  });
+
+  it("says how much is above, and grows the window when asked", async () => {
+    const { container } = render(<Transcript items={many(500)} />);
+
+    const earlier = screen.getByRole("button", { name: /Show earlier/ });
+    expect(earlier).toHaveTextContent("420 more");
+
+    await userEvent.click(earlier);
+
+    expect(container.querySelectorAll(".msg")).toHaveLength(160);
+    expect(container.textContent).toContain("line 340");
+  });
+
+  /**
+   * The property windowing must not cost. #14's reducer returns a new array
+   * whose other elements are the same objects, and `sameCalls` compares by
+   * pointer — so appending a chunk has to leave every other row's DOM node
+   * literally the same element. Slicing `items` before grouping would break
+   * this; slicing the grouped array does not.
+   */
+  it("leaves untouched rows as the same DOM nodes across a chunk", () => {
+    const call = {
+      id: "c1",
+      kind: "read" as const,
+      target: "src/auth.ts",
+      status: "completed" as const,
+    };
+    const prefix: TranscriptItem[] = [
+      ...many(100),
+      { kind: "tool", id: "t1", call },
+    ];
+    const streaming = { kind: "agent" as const, id: "a-live", text: "typ" };
+    const { container, rerender } = render(
+      <Transcript items={[...prefix, streaming]} />,
+    );
+    const toolBefore = container.querySelector(".toolblock");
+    const neighbour = container.querySelector(".msg.bot");
+
+    // Exactly what `replaceAt` produces: a new array, the same objects.
+    rerender(
+      <Transcript items={[...prefix, { ...streaming, text: "typing" }]} />,
+    );
+
+    expect(container.querySelector(".toolblock")).toBe(toolBefore);
+    expect(container.querySelector(".msg.bot")).toBe(neighbour);
+    expect(container.textContent).toContain("typing");
+  });
+});
