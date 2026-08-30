@@ -96,6 +96,10 @@ impl HostSession {
     /// or failure would both be inventions.
     pub fn wake_from_sleep(&mut self, gap: Duration) {
         self.supervisor.sleeps_observed += 1;
+        // The board is as stale as the sleep was long, and the interval that
+        // has "elapsed" was measured across it. Poll on the next pump rather
+        // than waiting out a window that was already spent asleep (#28).
+        self.pr_poll_now();
         // Order matters: reap first, so a thread whose adapter did not survive
         // gets the `failed` card the crash path writes, rather than a `stuck`
         // card about a process that is not there.

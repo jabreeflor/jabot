@@ -183,6 +183,15 @@ impl HostSession {
         // supervisor: a fire dispatched onto a thread whose adapter died this
         // tick should find the reap already done.
         self.schedule_tick();
+        // And the PR poll (#28), which used to live in a `setInterval` inside
+        // the renderer — so it stopped whenever the webview was throttled in
+        // the Dock, and never ran at all under `jabot-hostd`, which has no
+        // renderer. Its own call site rather than a line inside
+        // `supervisor_tick`, because that early-returns on the sleep path and
+        // a machine that has just woken is the one whose board is most stale.
+        // Rate-limited inside, and it does not spawn `gh` at all for a board
+        // with nothing linked.
+        self.pr_tick();
     }
 
     /// Quit, in the sense decision #4 settled: kill the children, keep the

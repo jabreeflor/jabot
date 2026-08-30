@@ -41,6 +41,7 @@ pub mod github;
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -87,6 +88,18 @@ impl HostSession {
     /// it. The reason travels in `unavailable`, in the three-fact shape
     /// `github/status` established, and the rows come back regardless.
     pub fn pr_refresh(&mut self, params: PrRefreshParams) -> Result<PrRefreshResult, RpcError> {
+        self.refresh_linked(params.thread_id.as_deref())
+    }
+
+    /// The body of `pr/refresh`, shared with [`HostSession::pr_tick`].
+    ///
+    /// One code path for the RPC and the tick on purpose: the cards are
+    /// written here, and two paths would mean two chances for one of them to
+    /// stop writing them.
+    fn refresh_linked(&mut self, thread_id: Option<&str>) -> Result<PrRefreshResult, RpcError> {
+        let params = PrRefreshParams {
+            thread_id: thread_id.map(str::to_string),
+        };
         // Discovery first, so a thread the caller just asked about can gain a
         // PR and have it polled in the same call rather than the next one.
         if let Some(thread_id) = params.thread_id.as_deref() {
@@ -625,6 +638,177 @@ pub(crate) fn thread_prs(store: &Store, thread_id: &str) -> Vec<PullRequestView>
 /// Per-thread linkage state, keyed by thread id. RAM, like the prompt queue.
 pub(crate) type PrWatchMap = HashMap<String, detect::PrWatch>;
 
+/// The PR poll's clock, on the host rather than in a renderer (#28, #21).
+///
+/// `usePullRequests` owned the whole poll: a `setInterval` in the renderer,
+/// armed only while a webview was alive and running. Since `card::transition`
+/// only writes an Inbox `pr` card when a *refresh* observes a change, no
+/// "checks failed" and no "changes requested" card could ever be written while
+/// the app sat in the Dock with its timers throttled — and `jabot-hostd` runs
+/// the same pump with no renderer at all, so a paired phone got no PR polling
+/// and no PR cards whatsoever.
+///
+/// RAM, like the cron's clock beside it: nothing here needs to survive a quit,
+/// because the first pump after a launch polls immediately.
+#[derive(Debug)]
+pub(crate) struct PrPoll {
+    /// `JABOT_PR_POLL_MS=0` turns the background poll off entirely, the way
+    /// `JABOT_IDLE_EVICT_MS=0` turns idle eviction off. Two callers want it:
+    /// a test that is asserting what an explicit `pr/refresh` does and cannot
+    /// have a tick racing it, and a user who would rather their machine never
+    /// shelled out to `gh` unless they were looking.
+    enabled: bool,
+    last_poll: Instant,
+    /// Checks in flight is the one case where seconds matter (`pr-linkage.md`).
+    pending_interval: Duration,
+    idle_interval: Duration,
+    /// Set when a poll came back `unavailable` — no `gh`, or no login. Without
+    /// it a machine that has never signed in would shell out every minute
+    /// forever to be told the same thing.
+    backoff_until: Option<Instant>,
+}
+
+/// The two cadences `pr-linkage.md` gives, and the same pair the renderer used.
+const DEFAULT_PR_POLL: Duration = Duration::from_secs(15);
+const DEFAULT_PR_POLL_IDLE: Duration = Duration::from_secs(60);
+/// Long enough that a machine with no `gh` is not paying for a subprocess on
+/// any human timescale, short enough that signing in during a session starts
+/// working without a relaunch.
+const PR_UNAVAILABLE_BACKOFF: Duration = Duration::from_secs(300);
+
+impl Default for PrPoll {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            // In the past, so the first pump after a launch polls rather than
+            // waiting out an interval of silence — which is exactly the window
+            // a relaunch after a crash lands in.
+            last_poll: Instant::now() - DEFAULT_PR_POLL_IDLE,
+            pending_interval: DEFAULT_PR_POLL,
+            idle_interval: DEFAULT_PR_POLL_IDLE,
+            backoff_until: None,
+        }
+    }
+}
+
+impl PrPoll {
+    /// `JABOT_PR_POLL_MS` and `JABOT_PR_POLL_IDLE_MS`, stand-ins for the
+    /// settings #26 owns and the only way a test watches a card land in
+    /// milliseconds rather than a minute. Read the way `Supervisor::from_env`
+    /// reads its own three.
+    pub fn from_env() -> Self {
+        let raw = std::env::var("JABOT_PR_POLL_MS").ok();
+        let pending_interval = poll_interval(raw.as_deref(), DEFAULT_PR_POLL);
+        let idle_interval = poll_interval(
+            std::env::var("JABOT_PR_POLL_IDLE_MS").ok().as_deref(),
+            DEFAULT_PR_POLL_IDLE,
+        );
+        Self {
+            enabled: !poll_disabled(raw.as_deref()),
+            last_poll: Instant::now() - idle_interval.max(pending_interval),
+            pending_interval,
+            idle_interval,
+            backoff_until: None,
+        }
+    }
+}
+
+/// One env knob, parsed. Its own function so the rule can be tested without
+/// a process-wide `set_var`, which is racy under a parallel test runner.
+///
+/// Nonsense and absence fall back to the shipped cadence. A zero does too —
+/// it is read by [`poll_disabled`] instead, because "every zero milliseconds"
+/// is not a cadence anybody wants.
+fn poll_interval(raw: Option<&str>, fallback: Duration) -> Duration {
+    raw.and_then(|raw| raw.trim().parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .filter(|d| !d.is_zero())
+        .unwrap_or(fallback)
+}
+
+/// An explicit `0` on `JABOT_PR_POLL_MS`, which turns the background poll off
+/// — the same reading `JABOT_IDLE_EVICT_MS=0` gets. Nonsense does not: a
+/// mistyped value should leave the shipped behaviour alone rather than
+/// silently disable a thing the user never asked to disable.
+fn poll_disabled(raw: Option<&str>) -> bool {
+    raw.map(str::trim).and_then(|raw| raw.parse::<u64>().ok()) == Some(0)
+}
+
+/// How often to ask, given what is on the board.
+///
+/// `None` means never: a board with no linked rows has nothing to ask about,
+/// and the point of checking is that a machine which has never opened a pull
+/// request never spawns `gh` at all.
+pub(crate) fn pr_cadence(rows: &[ThreadPrRow], poll: &PrPoll) -> Option<Duration> {
+    if !poll.enabled || rows.is_empty() {
+        return None;
+    }
+    // The same rule the renderer used: something is running, so seconds
+    // matter. A row with no checks configured is not a row that is waiting.
+    let running = rows
+        .iter()
+        .any(|row| row.check_state.as_deref() == Some("running"));
+    Some(if running {
+        poll.pending_interval
+    } else {
+        poll.idle_interval
+    })
+}
+
+impl HostSession {
+    /// Called from the ACP pump, beside the cron. Rate-limited inside.
+    ///
+    /// Its own call site rather than a line inside `supervisor_tick`, because
+    /// that early-returns on the sleep path — and a machine that has just woken
+    /// is precisely the one whose board is most out of date.
+    pub(crate) fn pr_tick(&mut self) {
+        let Some(store) = self.store.as_ref() else {
+            return;
+        };
+        let rows = match store.list_prs() {
+            Ok(rows) => rows,
+            Err(err) => {
+                eprintln!("pr poll: could not read the board: {err}");
+                return;
+            }
+        };
+        let Some(interval) = pr_cadence(&rows, &self.pr_poll) else {
+            return;
+        };
+        let now = Instant::now();
+        if self.pr_poll.backoff_until.is_some_and(|until| now < until) {
+            return;
+        }
+        if now.duration_since(self.pr_poll.last_poll) < interval {
+            return;
+        }
+        self.pr_poll.last_poll = now;
+        match self.refresh_linked(None) {
+            // `unavailable` is not an error — a board is still a board without
+            // a GitHub login — but it is the answer that means asking again in
+            // fifteen seconds buys nothing.
+            Ok(result) if !result.unavailable.is_empty() => {
+                self.pr_poll.backoff_until = Some(Instant::now() + PR_UNAVAILABLE_BACKOFF);
+            }
+            Ok(_) => self.pr_poll.backoff_until = None,
+            Err(err) => eprintln!("pr poll: {err:?}"),
+        }
+    }
+
+    /// A machine that has just woken has the most out-of-date board in the
+    /// house, so the next pump polls rather than waiting out an interval that
+    /// was measured across the sleep. The backoff is cleared with it: a `gh`
+    /// that was not logged in before the lid closed may well be now.
+    pub(crate) fn pr_poll_now(&mut self) {
+        self.pr_poll.last_poll = Instant::now()
+            - self
+                .pr_poll
+                .idle_interval
+                .max(self.pr_poll.pending_interval);
+        self.pr_poll.backoff_until = None;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -781,6 +965,118 @@ mod tests {
             polled_at: None,
             created_at: "2026-08-21T09:00:00Z".into(),
             updated_at: "2026-08-21T09:00:00Z".into(),
+        }
+    }
+
+    /// The poll's clock (#28), now that it is the host's rather than a
+    /// `setInterval` in a renderer that may not exist.
+    mod poll {
+        use super::*;
+
+        fn poll() -> PrPoll {
+            PrPoll {
+                enabled: true,
+                last_poll: Instant::now(),
+                pending_interval: Duration::from_secs(15),
+                idle_interval: Duration::from_secs(60),
+                backoff_until: None,
+            }
+        }
+
+        /// The load-bearing one. A machine that has never opened a pull
+        /// request must never spawn `gh` — not every fifteen seconds, not
+        /// every minute, not at all — and "no rows" is how that is known
+        /// without asking anybody.
+        #[test]
+        fn an_empty_board_is_never_polled() {
+            assert_eq!(pr_cadence(&[], &poll()), None);
+        }
+
+        /// The same rule the renderer used: checks in flight is the one case
+        /// where seconds matter.
+        #[test]
+        fn a_running_check_earns_the_fast_cadence() {
+            let mut row = pr_row("github.com", 23);
+            row.check_state = Some("running".into());
+            assert_eq!(pr_cadence(&[row], &poll()), Some(Duration::from_secs(15)));
+        }
+
+        #[test]
+        fn a_board_with_nothing_moving_is_polled_once_a_minute() {
+            // `passing`, and a PR with no checks configured at all — which is
+            // not the same as checks that have not started.
+            let mut none = pr_row("github.com", 24);
+            none.check_state = None;
+            assert_eq!(
+                pr_cadence(&[pr_row("github.com", 23), none], &poll()),
+                Some(Duration::from_secs(60))
+            );
+        }
+
+        /// One running row among many is enough: the fast cadence is about
+        /// whether *anything* on the board is moving.
+        #[test]
+        fn one_running_row_speeds_up_the_whole_board() {
+            let mut running = pr_row("github.com", 25);
+            running.check_state = Some("running".into());
+            let rows = vec![pr_row("github.com", 23), running, pr_row("github.com", 24)];
+            assert_eq!(pr_cadence(&rows, &poll()), Some(Duration::from_secs(15)));
+        }
+
+        /// The env knobs are what let an e2e case watch a card land in
+        /// milliseconds rather than a minute. Parsed through a function
+        /// rather than read from the process, so the rule can be pinned
+        /// without a `set_var` race under a parallel runner.
+        #[test]
+        fn a_knob_overrides_the_shipped_cadence() {
+            assert_eq!(
+                poll_interval(Some("200"), DEFAULT_PR_POLL),
+                Duration::from_millis(200)
+            );
+            assert_eq!(
+                poll_interval(Some(" 900 "), DEFAULT_PR_POLL_IDLE),
+                Duration::from_millis(900)
+            );
+        }
+
+        #[test]
+        fn a_zero_or_a_nonsense_value_falls_back() {
+            for raw in [Some("0"), Some("soon"), Some(""), None] {
+                assert_eq!(
+                    poll_interval(raw, DEFAULT_PR_POLL),
+                    DEFAULT_PR_POLL,
+                    "{raw:?}"
+                );
+            }
+        }
+
+        /// An explicit zero turns the poll off, the way `JABOT_IDLE_EVICT_MS`
+        /// turns idle eviction off. A mistyped value must not: silently
+        /// disabling something the user never asked to disable is worse than
+        /// ignoring the typo.
+        #[test]
+        fn an_explicit_zero_turns_the_poll_off_and_a_typo_does_not() {
+            assert!(poll_disabled(Some("0")));
+            assert!(poll_disabled(Some(" 0 ")));
+            for raw in [Some("soon"), Some(""), Some("200"), None] {
+                assert!(!poll_disabled(raw), "{raw:?}");
+            }
+
+            let off = PrPoll {
+                enabled: false,
+                ..poll()
+            };
+            let mut running = pr_row("github.com", 23);
+            running.check_state = Some("running".into());
+            assert_eq!(pr_cadence(&[running], &off), None);
+        }
+
+        /// The first pump after a launch polls rather than waiting an interval
+        /// out — which is exactly the window a relaunch after a crash lands in.
+        #[test]
+        fn the_clock_starts_already_expired() {
+            let fresh = PrPoll::default();
+            assert!(fresh.last_poll.elapsed() >= DEFAULT_PR_POLL_IDLE);
         }
     }
 }

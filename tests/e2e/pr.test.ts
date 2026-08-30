@@ -276,10 +276,23 @@ function viewerBody() {
   });
 }
 
-async function board(gh: { dir: string }) {
+/**
+ * A host with a linked PR on its board.
+ *
+ * The background poll is off by default here (`JABOT_PR_POLL_MS=0`). Every
+ * case below except the two that are *about* the poll is asserting what an
+ * explicit `pr/refresh` does — how many cards it writes, what it does on a
+ * second call with nothing changed — and a tick racing those would make them
+ * about scheduling instead. The poll has its own case; it opts back in.
+ */
+async function board(gh: { dir: string }, env: Record<string, string> = {}) {
   const host = new HostdProcess({
     persistent: true,
-    env: { PATH: `${gh.dir}${path.delimiter}${process.env.PATH ?? ""}` },
+    env: {
+      PATH: `${gh.dir}${path.delimiter}${process.env.PATH ?? ""}`,
+      JABOT_PR_POLL_MS: "0",
+      ...env,
+    },
   });
   running.push(host);
   const client = new HostClient(host);
@@ -407,6 +420,106 @@ describe("the pull request board over the host protocol", () => {
     // The thread never folded, so nothing resurfaced — and the cards still
     // have to be counted, or nobody is ever told they exist.
     expect(inbox.unread).toBeGreaterThanOrEqual(3);
+  });
+
+  /**
+   * The poll is the host's, not a renderer's (#28).
+   *
+   * `usePullRequests` owned the whole thing: a `setInterval` armed only while
+   * a webview was alive and running. Since `card::transition` writes a `pr`
+   * card only when a *refresh* observes a change, that meant no "checks
+   * failed" card while the app sat in the Dock with its timers throttled —
+   * and none at all here, under `jabot-hostd`, which has no renderer to arm
+   * anything. A paired phone got zero PR polling and zero PR cards.
+   *
+   * So this case never calls `refreshPullRequests`. Everything it asserts has
+   * to arrive from the pump, and it fails on the old code however long it
+   * waits.
+   */
+  it("polls GitHub and cards a change with nobody asking", async () => {
+    const gh = fakeGh();
+    // Green to start with, so the red below is a change rather than the state
+    // the first poll happens to find.
+    writeFileSync(
+      gh.bodyPath,
+      body({
+        rollup: "SUCCESS",
+        checks: [{ name: "tests", status: "COMPLETED", conclusion: "SUCCESS" }],
+      }),
+    );
+    const { client } = await board(gh, {
+      JABOT_PR_POLL_MS: "200",
+      JABOT_PR_POLL_IDLE_MS: "200",
+    });
+
+    // The first thing the tick does for a freshly linked row: fill it in.
+    // Nothing in this test ever calls `pr/refresh`.
+    await settle(
+      client,
+      (rows) => rows.pullRequests[0]?.checkState === "passing",
+    );
+
+    // GitHub changes its mind while nobody is looking at the board.
+    writeFileSync(gh.bodyPath, body({}));
+
+    const red = await settle(
+      client,
+      (rows) => rows.pullRequests[0]?.checkState === "failing",
+    );
+    expect(red.pullRequests[0].number).toBe(23);
+
+    // And the card — the whole reason the poll has to be the host's. This is
+    // the row that never got written while the app was in the Dock.
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      const inbox = await client.inbox();
+      const titles = inbox.events
+        .filter((event) => event.kind === "pr")
+        .map((event) => event.title);
+      if (titles.includes("PR #23 · checks failed")) {
+        // The opening card came from the same unasked-for poll.
+        expect(titles).toContain("PR #23 opened");
+        break;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`no card was written: ${JSON.stringify(titles)}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  });
+
+  /**
+   * The board that must never spawn `gh`.
+   *
+   * A poll on the pump is a subprocess every fifteen seconds forever, and the
+   * overwhelming majority of machines have no linked pull request at all. The
+   * tick reads the store first and stops there.
+   */
+  it("does not shell out for a board with nothing linked", async () => {
+    const gh = fakeGh();
+    writeFileSync(gh.bodyPath, body({}));
+    const host = new HostdProcess({
+      persistent: true,
+      env: {
+        PATH: `${gh.dir}${path.delimiter}${process.env.PATH ?? ""}`,
+        JABOT_PR_POLL_MS: "50",
+        JABOT_PR_POLL_IDLE_MS: "50",
+      },
+    });
+    running.push(host);
+    const client = new HostClient(host);
+    await client.connect();
+    await client.hello();
+
+    // Long enough for many ticks at 50ms. Nothing is linked, so nothing is
+    // asked, and the board stays the empty answer `pr/list` gives without a
+    // credential.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    const listed = await client.listPullRequests();
+    expect(listed.pullRequests).toEqual([]);
+    const inbox = await client.inbox();
+    expect(inbox.events.filter((event) => event.kind === "pr")).toEqual([]);
   });
 
   it("reports the PR on the thread that opened it", async () => {
