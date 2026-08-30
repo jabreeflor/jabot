@@ -1,4 +1,19 @@
-//! One ACP stdio connection = one JaBot thread's adapter subprocess.
+//! One ACP stdio connection = one adapter subprocess, carrying one or more
+//! JaBot threads.
+//!
+//! Usually one. A harness the catalog marks `SessionScope::Profile` — Hermes,
+//! OpenClaw — wants a single long-lived process per profile with JaBot's chats
+//! multiplexed onto it as ACP sessions (`setup-porting/hermes.md` §5), so the
+//! supervisor keys its pool by `HarnessDescriptor::profile_key` and several
+//! threads can land here.
+//!
+//! That makes routing this module's job, and there are two directions. Going
+//! out is easy: every ACP request names its `sessionId`. Coming back is not.
+//! `session/update` and `session/request_permission` carry a `sessionId` and
+//! are routed through [`AcpConnection::route`], but the ACP v1 prompt
+//! *response* carries only the JSON-RPC request id — so the id `send_prompt`
+//! allocated is recorded against its thread, and that map is the only thing
+//! that can say whose turn just ended on a shared process.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -51,9 +66,21 @@ pub(crate) struct AgentCapabilities {
 #[derive(Debug)]
 pub enum Inbound {
     Update(Value),
-    Permission { acp_id: RequestId, params: Value },
-    PromptResult(Value),
-    Closed { error: Option<String> },
+    Permission {
+        acp_id: RequestId,
+        params: Value,
+    },
+    /// The response to a `session/prompt`. `request_id` is carried because it
+    /// is the *only* thing on the wire that identifies the turn: ACP v1 puts
+    /// no `sessionId` on this message, so a shared process cannot tell whose
+    /// turn ended without matching the id back to the thread that sent it.
+    PromptResult {
+        request_id: i64,
+        payload: Value,
+    },
+    Closed {
+        error: Option<String>,
+    },
 }
 
 pub(crate) struct AcpConnection {
@@ -62,7 +89,13 @@ pub(crate) struct AcpConnection {
     pending: Arc<Mutex<HashMap<i64, Sender<JsonRpcResponse>>>>,
     inbound_rx: Receiver<Inbound>,
     next_id: i64,
-    pub session_id: Option<String>,
+    /// thread id → the ACP session it owns on this process.
+    sessions: HashMap<String, String>,
+    /// The reverse, for routing an inbound `sessionId` back to a thread.
+    by_session: HashMap<String, String>,
+    /// `session/prompt` request ids in flight, against the thread that sent
+    /// each. See the module docs: the prompt response names no session.
+    prompt_owners: HashMap<i64, String>,
     pub log_path: PathBuf,
     initialized: bool,
     killed: bool,
@@ -73,7 +106,7 @@ impl std::fmt::Debug for AcpConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AcpConnection")
             .field("pid", &self.child.id())
-            .field("session_id", &self.session_id)
+            .field("sessions", &self.sessions)
             .field("log_path", &self.log_path)
             .field("initialized", &self.initialized)
             .finish_non_exhaustive()
@@ -125,7 +158,9 @@ impl AcpConnection {
             pending,
             inbound_rx,
             next_id: 1,
-            session_id: None,
+            sessions: HashMap::new(),
+            by_session: HashMap::new(),
+            prompt_owners: HashMap::new(),
             log_path: spawned.log_path,
             initialized: false,
             killed: false,
@@ -182,7 +217,12 @@ impl AcpConnection {
         Ok(result)
     }
 
-    pub fn new_session(&mut self, cwd: &str, mcp_servers: Value) -> Result<String, RpcError> {
+    pub fn new_session(
+        &mut self,
+        thread_id: &str,
+        cwd: &str,
+        mcp_servers: Value,
+    ) -> Result<String, RpcError> {
         self.initialize()?;
         let result = self.request(
             "session/new",
@@ -197,7 +237,7 @@ impl AcpConnection {
             .and_then(Value::as_str)
             .ok_or_else(|| RpcError::Internal("session/new did not return sessionId".into()))?
             .to_string();
-        self.session_id = Some(session_id.clone());
+        self.adopt(thread_id, &session_id);
         Ok(session_id)
     }
 
@@ -211,6 +251,7 @@ impl AcpConnection {
     /// (`keep-alive.md`, "Resume recipe").
     pub fn resume_session(
         &mut self,
+        thread_id: &str,
         session_id: &str,
         cwd: &str,
         mcp_servers: Value,
@@ -225,7 +266,7 @@ impl AcpConnection {
             }),
             SESSION_RESUME_TIMEOUT,
         )?;
-        self.session_id = Some(session_id.to_string());
+        self.adopt(thread_id, session_id);
         Ok(())
     }
 
@@ -237,6 +278,7 @@ impl AcpConnection {
     /// every message twice (`keep-alive.md` step 4).
     pub fn load_session(
         &mut self,
+        thread_id: &str,
         session_id: &str,
         cwd: &str,
         mcp_servers: Value,
@@ -251,8 +293,99 @@ impl AcpConnection {
             }),
             SESSION_RESUME_TIMEOUT,
         )?;
-        self.session_id = Some(session_id.to_string());
+        self.adopt(thread_id, session_id);
         Ok(())
+    }
+
+    // ---- tenancy ---------------------------------------------------------
+
+    /// Record that `thread_id` owns `session_id` on this process.
+    ///
+    /// Both directions, because both are asked: the outbound path needs a
+    /// session for a thread, and every inbound event needs a thread for a
+    /// session. A thread that re-attaches (resume after a drop, or a load that
+    /// followed a refused resume) replaces its old entry rather than adding
+    /// one, so the reverse map cannot accumulate a stale session pointing at a
+    /// thread that has moved on.
+    pub(crate) fn adopt(&mut self, thread_id: &str, session_id: &str) {
+        if let Some(previous) = self
+            .sessions
+            .insert(thread_id.to_string(), session_id.to_string())
+        {
+            if previous != session_id {
+                self.by_session.remove(&previous);
+            }
+        }
+        self.by_session
+            .insert(session_id.to_string(), thread_id.to_string());
+    }
+
+    /// The ACP session this thread owns here, if it has one yet.
+    pub fn session_for(&self, thread_id: &str) -> Option<String> {
+        self.sessions.get(thread_id).cloned()
+    }
+
+    /// Every thread riding this process. The supervisor asks so it can fan a
+    /// death over all of them, and so it knows when the last tenant has left.
+    pub fn tenants(&self) -> Vec<String> {
+        self.sessions.keys().cloned().collect()
+    }
+
+    /// Forget a thread, returning the session it held so the caller can close
+    /// it. Its outstanding prompt goes too: a response that arrives for a
+    /// thread that has left must not be handed to whoever is still here.
+    pub fn release(&mut self, thread_id: &str) -> Option<String> {
+        self.prompt_owners
+            .retain(|_, owner| owner.as_str() != thread_id);
+        let session_id = self.sessions.remove(thread_id)?;
+        self.by_session.remove(&session_id);
+        Some(session_id)
+    }
+
+    /// Whether anything is still riding this process.
+    ///
+    /// A connection with no tenants is not necessarily new — `ensure_connection`
+    /// spawns before `session/new` runs — so this is asked only where a thread
+    /// was just released.
+    pub fn is_vacant(&self) -> bool {
+        self.sessions.is_empty()
+    }
+
+    /// Who an inbound event belongs to.
+    ///
+    /// `Closed` is everybody's: the process is gone and every thread on it has
+    /// lost its adapter. The rest name one thread, or none — and none means
+    /// *drop it*, not "give it to whoever". Misattributing a neighbour's tool
+    /// call to this chat would write it into the wrong transcript permanently,
+    /// which is worse than losing an event that already has nowhere to go.
+    pub fn route(&mut self, event: &Inbound) -> Vec<String> {
+        match event {
+            Inbound::Closed { .. } => self.tenants(),
+            Inbound::PromptResult { request_id, .. } => {
+                self.prompt_owners.remove(request_id).into_iter().collect()
+            }
+            Inbound::Update(params) => self.owner_of_session(params),
+            Inbound::Permission { params, .. } => self.owner_of_session(params),
+        }
+    }
+
+    /// The thread a `sessionId`-bearing payload belongs to.
+    ///
+    /// One tenant is the overwhelmingly common case and an adapter that omits
+    /// `sessionId` is within its rights on a process serving a single session,
+    /// so that is answered without the field. With two, a payload that names
+    /// nothing is genuinely unroutable.
+    fn owner_of_session(&self, params: &Value) -> Vec<String> {
+        match params.get("sessionId").and_then(Value::as_str) {
+            Some(session_id) => self
+                .by_session
+                .get(session_id)
+                .cloned()
+                .into_iter()
+                .collect(),
+            None if self.sessions.len() == 1 => self.tenants(),
+            None => Vec::new(),
+        }
     }
 
     /// ACP `session/close`. Frees the agent's own resources before we drop the
@@ -272,17 +405,31 @@ impl AcpConnection {
     /// Fire `session/prompt` without waiting for the turn to finish. Completion
     /// arrives later as a `PromptResult` inbound event (ACP v1 returns a stop
     /// reason; the host API returns as soon as the agent has accepted the write).
-    pub fn send_prompt(&mut self, session_id: &str, content: &Value) -> Result<(), RpcError> {
+    pub fn send_prompt(
+        &mut self,
+        thread_id: &str,
+        session_id: &str,
+        content: &Value,
+    ) -> Result<(), RpcError> {
         let prompt = prompt_blocks(content)?;
         let id = self.next_id();
-        self.write_request(
+        // Before the write, not after: the response can be read by the reader
+        // thread and queued the instant the bytes land, and an owner recorded
+        // afterwards would be a race a shared process loses by misrouting a
+        // turn to a neighbour chat.
+        self.prompt_owners.insert(id, thread_id.to_string());
+        let sent = self.write_request(
             id,
             "session/prompt",
             json!({
                 "sessionId": session_id,
                 "prompt": prompt
             }),
-        )
+        );
+        if sent.is_err() {
+            self.prompt_owners.remove(&id);
+        }
+        sent
     }
 
     /// ACP v1 `session/cancel` is a notification.
@@ -501,7 +648,10 @@ fn dispatch_message(
                         "error": response.error.as_ref().map(|e| e.message.clone())
                     })
                 });
-                let _ = inbound.send(Inbound::PromptResult(payload));
+                let _ = inbound.send(Inbound::PromptResult {
+                    request_id: id,
+                    payload,
+                });
                 wake.ping();
             }
         }

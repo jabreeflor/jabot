@@ -104,20 +104,19 @@ impl HostSession {
         // The adapter has to still be there. If it is not, the prompt stays
         // undelivered and the client is told by the drop path, not by silence.
         let Some(session_id) = self
-            .connections
-            .get(thread_id)
-            .and_then(|conn| conn.session_id.clone())
+            .conn(thread_id)
+            .and_then(|conn| conn.session_for(thread_id))
         else {
             self.requeue_front(thread_id, next);
             self.drop_prompt_queue(thread_id, "the adapter is no longer running");
             return;
         };
-        let Some(conn) = self.connections.get_mut(thread_id) else {
+        let Some(conn) = self.conn_mut(thread_id) else {
             return;
         };
-        if let Err(err) = conn.send_prompt(&session_id, &next.content) {
+        if let Err(err) = conn.send_prompt(thread_id, &session_id, &next.content) {
             eprintln!("failed to send a queued prompt for {thread_id}: {err}");
-            self.connections.remove(thread_id);
+            self.drop_adapter(thread_id);
             self.requeue_front(thread_id, next);
             self.drop_prompt_queue(thread_id, "the adapter stopped accepting prompts");
             return;
@@ -221,9 +220,8 @@ impl HostSession {
     /// before it is sent. Empty when the thread has never had one.
     fn acp_session_id_for(&self, thread_id: &str) -> String {
         if let Some(id) = self
-            .connections
-            .get(thread_id)
-            .and_then(|conn| conn.session_id.clone())
+            .conn(thread_id)
+            .and_then(|conn| conn.session_for(thread_id))
         {
             return id;
         }

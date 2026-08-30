@@ -143,7 +143,17 @@ pub struct HostSession {
     store: Option<Store>,
     secrets: Secrets,
     store_error: Option<String>,
+    /// Live adapter processes, keyed by **connection key**, not by thread.
+    ///
+    /// For every `SessionScope::Thread` harness — claude, codex, gemini — the
+    /// key embeds the thread id, so this stays one process per thread exactly
+    /// as it always was. For a `SessionScope::Profile` harness the key is the
+    /// profile, and several threads share the entry (#13, #21).
     connections: HashMap<String, acp::AcpConnection>,
+    /// thread id → its connection key. A cache, filled when a thread attaches:
+    /// resolving the key from scratch is a store read plus a catalog scan, and
+    /// the lookup sits on the pump's inner loop.
+    thread_keys: HashMap<String, String>,
     /// Live asks, by the `requestId` the client answers with. The durable half
     /// is `permission_requests`; this holds the adapter call blocked on each
     /// one, which is the part that cannot outlive the process (#20).
@@ -294,6 +304,7 @@ impl HostSession {
             secrets: Secrets::memory(),
             store_error: None,
             connections: HashMap::new(),
+            thread_keys: HashMap::new(),
             pending_permissions: HashMap::new(),
             wake: acp::AdapterWake::new(),
             log_dir,

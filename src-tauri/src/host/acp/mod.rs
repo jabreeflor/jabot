@@ -1,9 +1,16 @@
 //! ACP client + adapter subprocess supervisor (#10).
 //!
-//! The UI never talks to ACP stdio. This module spawns one adapter process
-//! per live JaBot thread, speaks ACP v1 JSON-RPC over newline-delimited
-//! stdio, and forwards `session/update` / `session/request_permission` onto
-//! the host notification bus.
+//! The UI never talks to ACP stdio. This module spawns adapter processes,
+//! speaks ACP v1 JSON-RPC over newline-delimited stdio, and forwards
+//! `session/update` / `session/request_permission` onto the host notification
+//! bus.
+//!
+//! One process per live thread, *except* where the catalog says otherwise:
+//! a `SessionScope::Profile` harness gets one process per profile with its
+//! threads multiplexed onto it as ACP sessions, which is what
+//! `HarnessDescriptor::profile_key` has meant since #13. The pool is keyed by
+//! that key — see [`HostSession::connection_key`] — and inbound traffic is
+//! routed back to a thread by [`AcpConnection::route`].
 
 mod connection;
 mod runtime;
@@ -14,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use super::harness::catalog;
 use super::permission::Withdrawal;
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
@@ -28,6 +36,97 @@ pub(crate) use runtime::HarnessRuntime;
 pub use wake::AdapterWake;
 
 impl HostSession {
+    // ---- the adapter pool -------------------------------------------------
+
+    /// Which process a thread belongs on.
+    ///
+    /// `HarnessDescriptor::profile_key` is the authority and has been since
+    /// #13: it collapses every thread on a `SessionScope::Profile` harness to
+    /// one key and keeps `SessionScope::Thread` harnesses one-per-thread. The
+    /// field already reached the wire through `supervisor/status`, so clients
+    /// could *see* that Hermes chats belong together; this is what finally
+    /// makes them land together.
+    ///
+    /// The fallback for an unknown harness embeds the thread id, so a custom
+    /// runtime the catalog has never heard of keeps its own process — the safe
+    /// reading, since sharing a process is a claim about the agent and not
+    /// about us.
+    pub(crate) fn connection_key(&self, thread_id: &str) -> String {
+        if let Some(key) = self.thread_keys.get(thread_id) {
+            return key.clone();
+        }
+        let harness_id = self
+            .store
+            .as_ref()
+            .and_then(|store| store.get_thread(thread_id).ok().flatten())
+            .map(|thread| thread.harness_id)
+            .unwrap_or_else(|| "custom".to_string());
+        catalog::compiled_in()
+            .iter()
+            .find(|descriptor| descriptor.id == harness_id)
+            .map(|descriptor| descriptor.profile_key(thread_id))
+            .unwrap_or_else(|| format!("{harness_id}:{thread_id}"))
+    }
+
+    /// Every thread that currently has a session on some adapter.
+    ///
+    /// The supervisor's sweeps used to read `connections.keys()`, which was the
+    /// same list only while the pool was keyed by thread. On a shared process
+    /// those keys are profiles, and a sweep over them would idle-evict a
+    /// profile rather than a chat.
+    pub(crate) fn attached_threads(&self) -> Vec<String> {
+        self.connections
+            .values()
+            .flat_map(|conn| conn.tenants())
+            .collect()
+    }
+
+    /// Put a connection into the pool under a thread, as `ensure_connection`
+    /// and `session/new` between them would. Unit tests that need a *live
+    /// adapter* without a live agent — the MCP profile lease is the one — get
+    /// the real keying this way rather than reaching into the map and
+    /// accidentally testing a key shape nothing produces.
+    #[cfg(test)]
+    pub(crate) fn attach_adapter_for_test(
+        &mut self,
+        thread_id: &str,
+        mut conn: AcpConnection,
+        session_id: &str,
+    ) {
+        let key = self.connection_key(thread_id);
+        conn.adopt(thread_id, session_id);
+        self.connections.insert(key.clone(), conn);
+        self.thread_keys.insert(thread_id.to_string(), key);
+    }
+
+    pub(crate) fn conn(&self, thread_id: &str) -> Option<&AcpConnection> {
+        self.connections.get(&self.connection_key(thread_id))
+    }
+
+    pub(crate) fn conn_mut(&mut self, thread_id: &str) -> Option<&mut AcpConnection> {
+        let key = self.connection_key(thread_id);
+        self.connections.get_mut(&key)
+    }
+
+    /// Whether this thread has a live adapter — which, on a shared process,
+    /// means more than the process existing: a thread that has not been
+    /// attached to it yet has no session there and is not being served.
+    pub(crate) fn has_adapter(&self, thread_id: &str) -> bool {
+        self.conn(thread_id)
+            .map(|conn| conn.session_for(thread_id).is_some())
+            .unwrap_or(false)
+    }
+
+    /// Detach one thread: forget its session, forget its key, and give back
+    /// the connection key if the process is now empty.
+    fn release_thread(&mut self, thread_id: &str) -> Option<String> {
+        let key = self.connection_key(thread_id);
+        self.thread_keys.remove(thread_id);
+        let conn = self.connections.get_mut(&key)?;
+        conn.release(thread_id);
+        conn.is_vacant().then_some(key)
+    }
+
     pub fn session_prompt(&mut self, params: PromptParams) -> Result<PromptResult, RpcError> {
         let thread_id = params.thread_id.clone();
         // Before anything is spawned: a turn already in flight owns this
@@ -41,9 +140,8 @@ impl HostSession {
         // exists is what decides the next question. A freshly spawned
         // connection never has one, so asking first is the same answer.
         let existing = self
-            .connections
-            .get(&thread_id)
-            .and_then(|conn| conn.session_id.clone());
+            .conn(&thread_id)
+            .and_then(|conn| conn.session_for(&thread_id));
         let cwd = self.resolve_cwd(&params)?;
         if existing.is_none() && !Path::new(&cwd).is_dir() {
             // `keep-alive.md`'s resume recipe, applied to the path a user
@@ -70,7 +168,7 @@ impl HostSession {
                 match self.attach_session(&thread_id, &cwd) {
                     Ok(id) => id,
                     Err(err) => {
-                        self.connections.remove(&thread_id);
+                        self.forget_adapter(&thread_id);
                         return Err(err);
                     }
                 }
@@ -79,13 +177,13 @@ impl HostSession {
         if let Some(store) = &self.store {
             let _ = store.set_thread_acp_session(&thread_id, &session_id);
         }
-        if let Err(err) = self
-            .connections
-            .get_mut(&thread_id)
-            .expect("spawned")
-            .send_prompt(&session_id, &params.content)
-        {
-            self.connections.remove(&thread_id);
+        let sent = self.conn_mut(&thread_id).expect("spawned").send_prompt(
+            &thread_id,
+            &session_id,
+            &params.content,
+        );
+        if let Err(err) = sent {
+            self.forget_adapter(&thread_id);
             return Err(err);
         }
         // The user's own words go into the transcript here, as the ACP
@@ -112,12 +210,12 @@ impl HostSession {
         params: SessionCancelParams,
     ) -> Result<SessionCancelResult, RpcError> {
         let thread_id = params.thread_id.clone();
-        let Some(conn) = self.connections.get_mut(&thread_id) else {
+        let Some(conn) = self.conn(&thread_id) else {
             return Err(RpcError::Internal(format!(
                 "no live adapter for thread {thread_id}"
             )));
         };
-        let Some(session_id) = conn.session_id.clone() else {
+        let Some(session_id) = conn.session_for(&thread_id) else {
             return Err(RpcError::Internal(format!(
                 "adapter for {thread_id} has no ACP session"
             )));
@@ -130,7 +228,7 @@ impl HostSession {
         // `withdraw_pending_permissions` borrows self, so the connection is
         // re-fetched after it rather than held across the call.
         self.withdraw_pending_permissions(&thread_id, "session/cancel", Withdrawal::Cancelled);
-        let Some(conn) = self.connections.get_mut(&thread_id) else {
+        let Some(conn) = self.conn_mut(&thread_id) else {
             return Err(RpcError::Internal(format!(
                 "no live adapter for thread {thread_id}"
             )));
@@ -155,15 +253,40 @@ impl HostSession {
     }
 
     pub fn pump_acp(&mut self) {
-        let thread_ids: Vec<String> = self.connections.keys().cloned().collect();
-        for thread_id in thread_ids {
-            let mut events = Vec::new();
-            if let Some(conn) = self.connections.get_mut(&thread_id) {
+        let keys: Vec<String> = self.connections.keys().cloned().collect();
+        for key in keys {
+            // Drained and routed in one pass while the connection is borrowed,
+            // because routing is the connection's own bookkeeping: which
+            // session belongs to which thread, and which thread sent the
+            // request the response answers. `handle_inbound` borrows all of
+            // `self`, so the pairs are collected first.
+            let mut routed: Vec<(String, Inbound)> = Vec::new();
+            if let Some(conn) = self.connections.get_mut(&key) {
                 while let Ok(event) = conn.try_recv() {
-                    events.push(event);
+                    let owners = conn.route(&event);
+                    match owners.len() {
+                        0 => eprintln!("adapter {key}: unroutable event dropped: {event:?}"),
+                        1 => routed.push((owners.into_iter().next().expect("one"), event)),
+                        // Only `Closed` fans out, and it carries nothing but an
+                        // error string, so cloning it per tenant is honest.
+                        _ => {
+                            let Inbound::Closed { error } = &event else {
+                                eprintln!("adapter {key}: {event:?} claimed several owners");
+                                continue;
+                            };
+                            for owner in owners {
+                                routed.push((
+                                    owner,
+                                    Inbound::Closed {
+                                        error: error.clone(),
+                                    },
+                                ));
+                            }
+                        }
+                    }
                 }
             }
-            for event in events {
+            for (thread_id, event) in routed {
                 self.handle_inbound(&thread_id, event);
             }
         }
@@ -198,10 +321,15 @@ impl HostSession {
     /// question. An ask the user never answered stays `pending` on disk so the
     /// next launch can put it back in front of them (#20, #21).
     pub fn shutdown_adapters(&mut self) {
-        let ids: Vec<String> = self.connections.keys().cloned().collect();
-        for id in &ids {
+        let threads: Vec<String> = self
+            .connections
+            .values()
+            .flat_map(|conn| conn.tenants())
+            .collect();
+        for id in &threads {
             self.withdraw_pending_permissions(id, "host shutdown", Withdrawal::Abandoned);
         }
+        self.thread_keys.clear();
         for (_, mut conn) in self.connections.drain() {
             conn.kill();
         }
@@ -224,12 +352,19 @@ impl HostSession {
     /// discoveries are not: an adapter that forks something holding its stdout
     /// never produces the EOF, so a host that only listened for EOF would keep
     /// a dead session marked live for as long as the app ran (#21).
+    /// Called once per *thread* on the dead process: `pump_acp` fans a
+    /// `Closed` over every tenant, and the keep-alive probe does the same for a
+    /// pid it reaped. Each thread's cleanup is its own — a permission withdrawn
+    /// for a neighbour would be a chat losing an ask it was still waiting on —
+    /// so the connection is dropped only once the last tenant has been through.
     pub(crate) fn on_adapter_gone(&mut self, thread_id: &str, error: Option<&str>) {
         if let Some(err) = error {
             eprintln!("adapter for {thread_id} closed: {err}");
         }
         self.withdraw_pending_permissions(thread_id, "adapter closed", Withdrawal::Cancelled);
-        self.connections.remove(thread_id);
+        if let Some(vacated) = self.release_thread(thread_id) {
+            self.connections.remove(&vacated);
+        }
         // The session that was being served host tools is gone; the listener
         // serving them should not outlive it (#24).
         self.drop_chief_bridge(thread_id);
@@ -250,27 +385,53 @@ impl HostSession {
     /// which is why the order here is close-then-kill and not kill-only. It
     /// stays best-effort: an adapter that will not answer must not be able to
     /// hold up the user's Archive.
+    /// On a shared process this closes one session and leaves the rest
+    /// running. Killing the group is the *last* tenant's business only:
+    /// archiving one Hermes chat must not take every other Hermes chat's
+    /// adapter down with it, which is exactly the failure that keying the pool
+    /// by thread hid until now.
     pub(crate) fn drop_adapter(&mut self, thread_id: &str) {
-        if let Some(mut conn) = self.connections.remove(thread_id) {
-            if let Some(session_id) = conn.session_id.clone() {
+        let key = self.connection_key(thread_id);
+        if let Some(conn) = self.connections.get_mut(&key) {
+            if let Some(session_id) = conn.release(thread_id) {
                 if let Err(err) = conn.close_session(&session_id) {
                     eprintln!("session/close for {thread_id} failed: {err}");
                 }
             }
-            conn.kill();
+            if conn.is_vacant() {
+                if let Some(mut conn) = self.connections.remove(&key) {
+                    conn.kill();
+                }
+            }
         }
+        self.thread_keys.remove(thread_id);
         self.drop_chief_bridge(thread_id);
         self.pr_forget_thread(thread_id);
+    }
+
+    /// Forget a thread's adapter without asking the agent anything — the
+    /// spawn-then-fail path, where there is nothing to close politely.
+    fn forget_adapter(&mut self, thread_id: &str) {
+        if let Some(vacated) = self.release_thread(thread_id) {
+            if let Some(mut conn) = self.connections.remove(&vacated) {
+                conn.kill();
+            }
+        }
     }
 
     /// The adapter's pid, for `thread/state` and `supervisor/status`.
     /// Diagnostic only: nothing durable is keyed on a pid (decision #4).
     pub(crate) fn adapter_pid(&self, thread_id: &str) -> Option<u32> {
-        self.connections.get(thread_id).map(|conn| conn.pid())
+        self.conn(thread_id).map(|conn| conn.pid())
     }
 
     pub(crate) fn ensure_connection(&mut self, params: &PromptParams) -> Result<(), RpcError> {
-        if self.connections.contains_key(&params.thread_id) {
+        let key = self.connection_key(&params.thread_id);
+        // The hit that makes pooling real: a second thread on a profile-scoped
+        // harness resolves to a key that is already here and rides the process
+        // that is already running.
+        if self.connections.contains_key(&key) {
+            self.thread_keys.insert(params.thread_id.clone(), key);
             return Ok(());
         }
         let runtime = self.resolve_runtime(params)?;
@@ -292,7 +453,8 @@ impl HostSession {
             &log_path,
             std::sync::Arc::clone(&self.wake),
         )?;
-        self.connections.insert(params.thread_id.clone(), conn);
+        self.connections.insert(key.clone(), conn);
+        self.thread_keys.insert(params.thread_id.clone(), key);
         Ok(())
     }
 
@@ -334,6 +496,10 @@ impl HostSession {
         Ok(fallback.to_string_lossy().into_owned())
     }
 
+    /// Named after the thread that *spawned* the process. On a shared adapter
+    /// that is one of several tenants, which is unhelpful but honest: the file
+    /// is the process's stderr, and a per-thread name would promise a split
+    /// the stream does not have.
     fn adapter_log_path(&self, thread_id: &str) -> PathBuf {
         self.log_dir.join(format!("{thread_id}.stderr.log"))
     }
@@ -354,7 +520,9 @@ impl HostSession {
             Inbound::Permission { acp_id, params } => {
                 self.open_permission_request(thread_id, acp_id, &params)
             }
-            Inbound::PromptResult(result) => {
+            Inbound::PromptResult {
+                payload: result, ..
+            } => {
                 let stop_reason = result
                     .get("stopReason")
                     .and_then(Value::as_str)

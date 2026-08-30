@@ -105,11 +105,10 @@ impl HostSession {
         // card about a process that is not there.
         self.reap_dead_adapters();
         let survivors: Vec<String> = self
-            .connections
-            .keys()
+            .attached_threads()
+            .into_iter()
             .filter(|thread_id| self.lifecycle_is_running(thread_id))
             .filter(|thread_id| self.pending_permission_count(thread_id) == 0)
-            .cloned()
             .collect();
         let summary = format!("the Mac slept for {}s while it was working", gap.as_secs());
         for thread_id in survivors {
@@ -159,13 +158,12 @@ impl HostSession {
     /// end-of-adapter path already does.
     fn drain_stranded_queues(&mut self) {
         let stranded: Vec<String> = self
-            .connections
-            .keys()
+            .attached_threads()
+            .into_iter()
             .filter(|thread_id| self.queue_depth(thread_id) > 0)
             .filter(|thread_id| self.acp_state(thread_id) == AcpState::Idle)
             .filter(|thread_id| self.open_run(thread_id).is_none())
             .filter(|thread_id| self.pending_permission_count(thread_id) == 0)
-            .cloned()
             .collect();
         for thread_id in stranded {
             self.drain_prompt_queue(&thread_id);
@@ -173,7 +171,7 @@ impl HostSession {
         let orphaned: Vec<String> = self
             .queued_thread_ids()
             .into_iter()
-            .filter(|thread_id| !self.connections.contains_key(thread_id))
+            .filter(|thread_id| !self.has_adapter(thread_id))
             // An open run without an adapter is a *lost* run, and the boot and
             // reap paths own it; touching the queue here would race them.
             .filter(|thread_id| self.open_run(thread_id).is_none())
@@ -185,14 +183,20 @@ impl HostSession {
 
     /// Adapters whose process is gone, whatever their stdout says.
     fn reap_dead_adapters(&mut self) {
+        // A dead process takes every thread riding it, so the reap is per
+        // tenant even though the liveness question is per process.
         let dead: Vec<String> = self
             .connections
-            .iter_mut()
-            .filter_map(|(thread_id, conn)| (!conn.is_alive()).then(|| thread_id.clone()))
+            .values_mut()
+            .filter_map(|conn| (!conn.is_alive()).then(|| conn.tenants()))
+            .flatten()
             .collect();
         for thread_id in dead {
             self.on_adapter_gone(&thread_id, Some("the adapter process exited"));
         }
+        // A process with no tenants left cannot be reaped by the loop above,
+        // because it has nobody to fan the death over. It is still a corpse.
+        self.connections.retain(|_, conn| conn.is_alive());
     }
 
     /// Close sessions that are doing nothing for a thread nobody is watching.
@@ -221,15 +225,14 @@ impl HostSession {
             return;
         }
         let candidates: Vec<String> = self
-            .connections
-            .keys()
+            .attached_threads()
+            .into_iter()
             .filter(|thread_id| self.acp_state(thread_id) == AcpState::Idle)
             .filter(|thread_id| self.thread_idle_for(thread_id) >= grace)
             .filter(|thread_id| self.pending_permission_count(thread_id) == 0)
             .filter(|thread_id| self.open_run(thread_id).is_none())
             .filter(|thread_id| self.queue_depth(thread_id) == 0)
             .filter(|thread_id| !self.thread_is_active(thread_id))
-            .cloned()
             .collect();
         for thread_id in candidates {
             if !self.can_come_back(&thread_id) {
@@ -247,8 +250,7 @@ impl HostSession {
     /// to still describe the job.
     fn can_come_back(&self, thread_id: &str) -> bool {
         let restorable = self
-            .connections
-            .get(thread_id)
+            .conn(thread_id)
             .map(|conn| conn.capabilities())
             .map(|caps| caps.resume || caps.load_session)
             .unwrap_or(false);

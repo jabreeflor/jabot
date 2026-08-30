@@ -67,6 +67,12 @@ fn main() {
     // is what keeps their behaviour exactly as it was.
     let mut steps: Vec<String> = Vec::new();
     let mut ask_seq: i64 = 9001;
+    // One process can carry several sessions: a `SessionScope::Profile`
+    // harness multiplexes JaBot's chats onto one adapter (#13, #21). A fake
+    // that answered every `session/new` with the same id could not tell
+    // multiplexing from misrouting, which is the only thing such a test is
+    // for. First is still `sess-fake-1`, so nothing that asserts on it moves.
+    let mut sessions_minted: u32 = 0;
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -137,12 +143,10 @@ fn main() {
                 // servers a session sees (#18), and the only honest place to
                 // check that from a test is the agent's side of the wire.
                 eprintln!("session_new={}", msg["params"]);
-                session_id = Some("sess-fake-1".into());
-                reply(
-                    &mut stdout,
-                    id,
-                    serde_json::json!({ "sessionId": "sess-fake-1" }),
-                );
+                sessions_minted += 1;
+                let minted = format!("sess-fake-{sessions_minted}");
+                session_id = Some(minted.clone());
+                reply(&mut stdout, id, serde_json::json!({ "sessionId": minted }));
             }
             "session/resume" => {
                 // The host must send back the session it stored, the same
@@ -175,6 +179,14 @@ fn main() {
                 reply(&mut stdout, id, serde_json::json!({}));
             }
             "session/prompt" => {
+                // Answer *this* prompt's session, not whichever was created
+                // last. On a shared process those differ, and an agent that
+                // stamped the wrong one would make a misrouting host look
+                // correct.
+                let session_id = msg["params"]["sessionId"]
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| session_id.clone());
                 notify(
                     &mut stdout,
                     "session/update",
