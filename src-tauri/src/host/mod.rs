@@ -20,6 +20,7 @@ mod repo;
 mod router;
 mod schedule;
 mod seq;
+mod settings;
 mod store;
 mod supervisor;
 mod tools;
@@ -64,35 +65,35 @@ pub use protocol::{
     decode_frame, decode_frames, encode_frame, BotTemplateView, BotView, CrewCreateParams,
     CrewHostToolView, CrewListResult, CrewRefParams, CrewRemoveResult, CrewUpdateParams,
     DeviceInfo, DeviceRole, Envelope, FolderForgetResult, FolderListResult, FolderOriginView,
-    FolderThreadView, FolderView, GithubStatusResult, HandoffView, HarnessCardView,
-    HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier, HealthResult, HelloParams,
-    HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest,
-    JsonRpcResponse, PendingPermissionView, PermissionPendingParams, PermissionPendingResult,
-    PermissionReplyParams, PermissionReplyResult, PromptMode, QueuedPromptView, RequestId,
-    ResumeOutcome, ResurfaceReason, RpcError, ScheduleCreateParams, ScheduleFireView,
-    ScheduleListResult, ScheduleRefParams, ScheduleRemoveResult, ScheduleRunResult,
-    ScheduleUpdateParams, ScheduleView, StoreStatus, SupervisorStatusResult, ThreadResumeResult,
-    ThreadStateResult, ThreadTranscriptParams, ThreadTranscriptResult, ToolCardView,
-    ToolConnectResult, ToolConnectionStatus, ToolDisconnectResult, ToolListResult, ToolRefParams,
-    ToolTransport, TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST, CREW_REMOVE,
-    CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE,
-    GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, HOST_NOTIFICATIONS,
-    INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK, PERMISSION_PENDING,
-    PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT,
-    SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
-    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
-    TOOLS_LIST,
+    FolderThreadView, FolderView, GithubLoginParams, GithubStatusResult, HandoffView,
+    HarnessCardView, HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier,
+    HealthResult, HelloParams, HelloResult, JsonRpcError, JsonRpcMessage, JsonRpcNotification,
+    JsonRpcRequest, JsonRpcResponse, PendingPermissionView, PermissionPendingParams,
+    PermissionPendingResult, PermissionReplyParams, PermissionReplyResult, PromptMode,
+    QueuedPromptView, RequestId, ResumeOutcome, ResurfaceReason, RpcError, ScheduleCreateParams,
+    ScheduleFireView, ScheduleListResult, ScheduleRefParams, ScheduleRemoveResult,
+    ScheduleRunResult, ScheduleUpdateParams, ScheduleView, StoreStatus, SupervisorStatusResult,
+    ThreadResumeResult, ThreadStateResult, ThreadTranscriptParams, ThreadTranscriptResult,
+    ToolCardView, ToolConnectResult, ToolConnectionStatus, ToolDisconnectResult, ToolListResult,
+    ToolRefParams, ToolTransport, TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST,
+    CREW_REMOVE, CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
+    FOLDER_UPDATE, GITHUB_LOGIN, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH,
+    HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
+    PERMISSION_PENDING, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL,
+    SESSION_PROMPT, SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD,
+    THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT,
+    TOOLS_DISCONNECT, TOOLS_LIST,
+};
+#[allow(unused_imports)]
+pub use protocol::{
+    GithubPullRequestView, PrCheckView, PrListParams, PrListResult, PrMineParams, PrMineResult,
+    PrRefreshParams, PrRefreshResult, PrUnavailable, PullRequestView, PR_LIST, PR_MINE, PR_REFRESH,
 };
 /// Native notifications (#27). The result type and the method name live with
 /// the rest of the wire; delivery lives in `crate::notify`, off the host so a
 /// platform framework never becomes a dependency of the JSON-RPC layer.
 #[allow(unused_imports)]
 pub use protocol::{NotifyStatusResult, NOTIFY_STATUS};
-#[allow(unused_imports)]
-pub use protocol::{
-    PrCheckView, PrListParams, PrListResult, PrRefreshParams, PrRefreshResult, PrUnavailable,
-    PullRequestView, PR_LIST, PR_REFRESH,
-};
 #[allow(unused_imports)]
 pub use protocol::{
     INBOX_EVENT, SCHEDULE_CREATE, SCHEDULE_LIST, SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE,
@@ -115,6 +116,7 @@ pub use tools::catalog::CATALOG as TOOL_CATALOG;
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde_json::Value;
 
@@ -141,7 +143,17 @@ pub struct HostSession {
     store: Option<Store>,
     secrets: Secrets,
     store_error: Option<String>,
+    /// Live adapter processes, keyed by **connection key**, not by thread.
+    ///
+    /// For every `SessionScope::Thread` harness — claude, codex, gemini — the
+    /// key embeds the thread id, so this stays one process per thread exactly
+    /// as it always was. For a `SessionScope::Profile` harness the key is the
+    /// profile, and several threads share the entry (#13, #21).
     connections: HashMap<String, acp::AcpConnection>,
+    /// thread id → its connection key. A cache, filled when a thread attaches:
+    /// resolving the key from scratch is a store read plus a catalog scan, and
+    /// the lookup sits on the pump's inner loop.
+    thread_keys: HashMap<String, String>,
     /// Live asks, by the `requestId` the client answers with. The durable half
     /// is `permission_requests`; this holds the adapter call blocked on each
     /// one, which is the part that cannot outlive the process (#20).
@@ -166,6 +178,18 @@ pub struct HostSession {
     /// the same spirit as `connections`: a queued prompt has not been said to
     /// the agent, so nothing durable should claim it has.
     prompt_queue: HashMap<String, VecDeque<transcript::queue::QueuedPrompt>>,
+    /// When `session/cancel` was last sent for a thread whose turn has not
+    /// ended since (#14). RAM, and per-process: it is the start of a stopwatch
+    /// on an adapter that may never answer, and a restart has no adapter left
+    /// to be waiting on.
+    ///
+    /// `session/cancel` is a notification — ACP gives it no reply, and the
+    /// only acknowledgement is the prompt response that follows. An adapter
+    /// that ignores it keeps its run open, which makes the thread invisible to
+    /// every path in `supervisor/keepalive.rs`, and the prompts the user typed
+    /// meanwhile sit in `prompt_queue` behind a turn that will never end. This
+    /// is what lets the supervisor notice.
+    cancel_requested: HashMap<String, Instant>,
     /// Per-turn PR linkage state: which tool calls this thread's adapter called
     /// `execute`, and whether anything in the turn suggested a pull request
     /// (#28). RAM, and rightly so — it describes one turn, and the post-turn
@@ -215,6 +239,10 @@ pub struct HostSession {
     /// `schedule_fires`, because decision #4 stops this process every time the
     /// user quits and a schedule has to survive that.
     schedules: schedule::ScheduleState,
+    /// The PR poll's clock (#28). RAM for the same reason the cron's is: the
+    /// first pump after a launch polls immediately, so nothing here is worth
+    /// surviving a quit.
+    pr_poll: pr::PrPoll,
 }
 
 impl HostSession {
@@ -276,6 +304,7 @@ impl HostSession {
             secrets: Secrets::memory(),
             store_error: None,
             connections: HashMap::new(),
+            thread_keys: HashMap::new(),
             pending_permissions: HashMap::new(),
             wake: acp::AdapterWake::new(),
             log_dir,
@@ -284,6 +313,7 @@ impl HostSession {
             connect_flows: HashMap::new(),
             mcp_profiles: HashMap::new(),
             prompt_queue: HashMap::new(),
+            cancel_requested: HashMap::new(),
             pr_watch: HashMap::new(),
             lifecycle: LifecycleState::from_env(),
             supervisor: SupervisorState::from_env(),
@@ -294,12 +324,18 @@ impl HostSession {
             connection_devices: HashMap::new(),
             current_connection: None,
             schedules: schedule::ScheduleState::from_env(),
+            pr_poll: pr::PrPoll::from_env(),
         }
     }
 
     fn with_store_at(mut self, sqlite_path: &Path) -> Self {
         match Store::open(sqlite_path) {
             Ok(store) => {
+                // The user's own idle timeout, now that there is somewhere to
+                // set one (#26). Before the store is assigned, because
+                // `apply_stored` takes the store by reference and the field
+                // move below would otherwise need it back.
+                self.lifecycle.apply_stored(&store);
                 self.store = Some(store);
                 self.secrets = Secrets::platform();
                 self.store_error = None;
@@ -416,9 +452,17 @@ impl HostSession {
             // client that borrows it fails the lookup like any other name it
             // has no credential for.
             Some(id) => {
-                let device = self.authenticate_paired_device(id, params.auth.as_ref())?;
+                let (device, host_auth) =
+                    self.authenticate_paired_device(id, params.auth.as_ref())?;
                 self.connected_device_id = Some(device.device_id.clone());
                 self.connected_device = Some(device);
+                // The only arm that answers with a proof. The two above are
+                // the colocated console, which has no token — so `hello_result`
+                // leaves the field `None` and this is the one place it is set.
+                return Ok(HelloResult {
+                    host_auth: Some(host_auth),
+                    ..self.hello_result()
+                });
             }
         }
 
@@ -636,6 +680,9 @@ impl HostSession {
                 .collect(),
             store: self.store_status(),
             store_error: self.store_error.clone(),
+            // Nothing to prove with. Only the paired-device arm of `hello()`
+            // holds a token, and it is the one that fills this in.
+            host_auth: None,
         }
     }
 

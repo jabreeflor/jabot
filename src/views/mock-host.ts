@@ -82,9 +82,20 @@ export const HARNESSES: readonly HarnessCard[] = [
  * browser server — already usable. The live values come from `tools/list`.
  */
 export const TOOL_CATALOG: readonly ToolOption[] = [
-  { id: "gmail", label: "Gmail", status: "needs_auth" },
-  { id: "calendar", label: "Calendar", status: "needs_auth" },
-  { id: "github", label: "GitHub", status: "needs_auth" },
+  { id: "gmail", label: "Gmail", status: "needs_auth", provider: "google" },
+  { id: "calendar", label: "Calendar", status: "needs_auth", provider: "google" },
+  // The `connecting` state had no fixture at all, so `modal.css`'s
+  // `[data-status="connecting"]` rule and the amber "Open sign-in" beside it
+  // were unreachable in the shell — nobody could look at the one state that
+  // is hardest to get right, because it only exists while a human is away in
+  // a browser (#18).
+  {
+    id: "github",
+    label: "GitHub",
+    status: "connecting",
+    provider: "github",
+    authorizeUrl: "https://github.com/login/oauth/authorize?client_id=preview",
+  },
   {
     id: "terminal",
     label: "Terminal",
@@ -187,7 +198,8 @@ export function initialMockState(): MockState {
         id: "code",
         name: "Code",
         color: "b-yellow",
-        instructions: "Run coding sessions in my repos. Open PRs, never push to main.",
+        instructions:
+          "Run coding sessions in my repos. Open PRs, never push to main.",
         tools: ["github", "terminal"],
         harnessId: "claude",
         isChief: false,
@@ -197,7 +209,8 @@ export function initialMockState(): MockState {
         id: "inboxm",
         name: "Inbox Mgr",
         color: "b-purple",
-        instructions: "Keep Gmail at zero. Park drafts for anything that needs my voice.",
+        instructions:
+          "Keep Gmail at zero. Park drafts for anything that needs my voice.",
         tools: ["gmail"],
         harnessId: "claude",
         isChief: false,
@@ -206,7 +219,8 @@ export function initialMockState(): MockState {
         id: "sched",
         name: "Scheduler",
         color: "b-violet",
-        instructions: "Guard the calendar. Fix conflicts, protect deep-work mornings.",
+        instructions:
+          "Guard the calendar. Fix conflicts, protect deep-work mornings.",
         tools: ["calendar"],
         harnessId: "claude",
         isChief: false,
@@ -318,7 +332,7 @@ export function initialMockState(): MockState {
           kind: "notice",
           id: "chief-3",
           title: "Auth migration",
-          pill: "✳ Long-running",
+          pill: "Long-running",
           body: "Est. 40 min. If folded, this thread disappears and reappears in Inbox on done, failure, or question.",
           threadId: "auth",
           actions: [
@@ -552,7 +566,11 @@ export function initialMockState(): MockState {
         title: "Inbox Manager needs a call",
         summary: "Two invoices from UGREEN — archive, or flag for finance?",
         createdAt: minutesAgo(63),
-        source: { type: "bot", name: "Inbox Mgr", color: "b-purple" },
+        source: {
+          type: "bot",
+          name: "Inbox Mgr",
+          color: "b-purple",
+        },
       },
       {
         id: "inbox-digest",
@@ -561,7 +579,11 @@ export function initialMockState(): MockState {
         title: "Weekly digest draft ready",
         summary: "1,240 words in your voice. Awaiting review before it sends.",
         createdAt: minutesAgo(140),
-        source: { type: "bot", name: "Writer", color: "b-orange" },
+        source: {
+          type: "bot",
+          name: "Writer",
+          color: "b-orange",
+        },
       },
       {
         id: "inbox-nas",
@@ -690,7 +712,10 @@ export type MockAction =
   | { type: "saveBot"; botId: string | null; draft: BotDraft }
   | { type: "removeBot"; botId: string };
 
-export function mockHostReducer(state: MockState, action: MockAction): MockState {
+export function mockHostReducer(
+  state: MockState,
+  action: MockAction,
+): MockState {
   switch (action.type) {
     case "startThread":
       return startThread(state, action.draft);
@@ -708,7 +733,9 @@ export function mockHostReducer(state: MockState, action: MockAction): MockState
     case "deleteThread":
       return {
         ...state,
-        threads: state.threads.filter((thread) => thread.id !== action.threadId),
+        threads: state.threads.filter(
+          (thread) => thread.id !== action.threadId,
+        ),
         inbox: state.inbox.filter((card) => card.threadId !== action.threadId),
       };
     case "sendMessage":
@@ -774,12 +801,23 @@ function startThread(state: MockState, draft: NewChatDraft): MockState {
             kind: "other",
             target: `${draft.harnessId} session in ${folder?.name ?? "~"}`,
             status: "in_progress",
-            note: "starting…",
+            // Says which tree the thread will work in, because the card can
+            // now ask for the folder's own checkout (#23). A mock that
+            // reported "worktree" whatever was ticked would be quietly lying
+            // about the one thing the new control decides.
+            note: worktreeNote(draft, folder?.name),
           },
         },
       ],
     },
   };
+}
+
+/** What the bootstrap line says about where the thread will work (#23). */
+function worktreeNote(draft: NewChatDraft, folderName?: string): string {
+  if (!draft.folderId) return "starting…";
+  if (draft.useCheckout) return `in ${folderName ?? "the folder"}`;
+  return `worktree from ${draft.baseRef ?? "origin/main"}`;
 }
 
 /**

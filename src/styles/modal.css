@@ -14,37 +14,70 @@
 }
 
 .modal {
-  width: 440px;
+  width: 460px;
   max-width: 92vw;
   max-height: 88vh;
   overflow-y: auto;
   background: var(--side);
   border: 1px solid #333336;
   border-radius: var(--r-modal);
-  padding: var(--sp-6);
+  padding: var(--sp-6) var(--sp-6) 0;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 }
 
 .modal h2 {
   font-size: 17px;
   font-weight: 700;
+  margin-bottom: var(--sp-6);
 }
 
-.modal .mlab {
+/* The vertical rhythm of every card: a group is a label, its control, and
+   whatever the control needs explained. 20px between groups against 6px
+   inside one is what makes them read as groups and not as one long column.
+   `display: block` is what makes those numbers real: FieldLabel renders a
+   <label> when it has an htmlFor, an inline box has no vertical margins, and
+   every gap in this file was therefore whatever the line box happened to
+   leave. The schedule editor is all <label>, which is why it was the card
+   that felt tight.
+
+   `line-height: 1.2` for the same reason: the card's 14px/1.45 strut wraps
+   8px of caps in a 20px line box, so six dead pixels sit above and below the
+   label whatever the margins say — and a label you cannot tighten to its own
+   control is a label that belongs to neither.
+
+   .mlab is emitted by FieldLabel, .mfield by any text field wearing the modal
+   recipe. Both are used outside modals too (first-run setup shares this rule
+   by selector rather than restating it), so the bare classes ride along —
+   additively, keeping every existing modal byte-identical. */
+.modal .mlab,
+.mlab {
+  display: block;
+  line-height: 1.2;
   color: var(--faint);
   font-size: var(--fs-caps);
   font-weight: 600;
-  letter-spacing: 0.09em;
-  margin: 18px 0 var(--sp-3);
+  letter-spacing: var(--track-caps);
+  margin: 20px 0 var(--sp-2);
+}
+
+/* The heading already spaces the first group; a second margin on top of it
+   would open a gap the card never asked for. Keyed on the heading rather than
+   on :first-of-type — FieldLabel renders a <label> when it has an htmlFor and
+   a <div> when it does not, and :first-of-type would zero the first of *each*,
+   which is New Chat's FOLDER and the bot editor's COLOR. */
+.modal h2 + .mlab {
+  margin-top: 0;
 }
 
 .modal select,
-.modal input[type="text"] {
+.modal input[type="text"],
+.modal input[type="password"],
+.mfield {
   width: 100%;
   background: var(--raise);
   border: 1px solid var(--edge-strong);
   border-radius: 11px;
-  padding: var(--sp-3) 13px;
+  padding: 10px 13px;
   font-size: var(--fs-ui);
   color: var(--ink);
   outline: 0;
@@ -54,34 +87,79 @@
   width: 100%;
   min-height: 74px;
   resize: vertical;
+  /* Block, or the inline baseline leaves a phantom gap under the box that no
+     margin explains. */
+  display: block;
   background: var(--raise);
   border: 1px solid var(--edge-strong);
   border-radius: 11px;
-  padding: var(--sp-3) 13px;
-  font: var(--fs-body) / var(--lh-chat) var(--font-ui);
+  padding: 10px 13px;
+  font: var(--fs-ui) / var(--lh-ui) var(--font-ui);
   color: var(--ink);
   outline: 0;
 }
 
+.modal input[type="text"][aria-invalid="true"] {
+  border-color: var(--red);
+}
+
 .modal select:focus,
 .modal input[type="text"]:focus,
-.modal textarea:focus {
+.modal input[type="password"]:focus,
+.modal textarea:focus,
+.mfield:focus {
   border-color: var(--dim);
+}
+
+/* Prose inside a modal: what a step is for, and what it will and will not do
+   with what you type. The GitHub sign-in is the one dialog that needs to
+   explain itself, because it is the one that asks for a secret. */
+.modal-note {
+  margin-top: 10px;
+  color: var(--faint);
+  font-size: var(--fs-meta);
+  line-height: var(--lh-chat);
+}
+
+.modal-note code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--dim);
+  background: var(--raise);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+
+/* A row of actions that belongs to the step above it rather than to the
+   dialog as a whole. */
+.modal .macts.start {
+  justify-content: flex-start;
+  margin-top: var(--sp-3);
 }
 
 /* What the host said went wrong — the only place a registration failure can
    be read, since the modal stays open on error rather than losing the form. */
 .modal-error {
-  margin-top: 14px;
+  margin-top: var(--sp-6);
   color: var(--red);
   font-size: var(--fs-meta);
 }
 
+/* Sticky, because `max-height: 88vh` means a long card scrolls and Save is the
+   one control that must never be the thing below the fold. The card's bottom
+   padding lives on this row rather than on `.modal` because WebKit — which is
+   what Tauri renders in on macOS — does not count a scroll container's
+   block-end padding, and Save resting on the rounded edge is the bug that
+   causes. */
 .modal .macts {
+  position: sticky;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
   gap: var(--sp-3);
-  margin-top: 22px;
+  margin-top: 30px;
+  padding: var(--sp-4) 0 var(--sp-6);
+  background: var(--side);
 }
 
 .modal .macts .danger {
@@ -122,13 +200,14 @@
   gap: var(--sp-3);
 }
 
-.harness-card b i {
-  width: var(--sp-3);
-  height: var(--sp-3);
-  border-radius: 50%;
-  font-style: normal;
+/* The engine's own mark, in the engine's own accent. Sized against the card
+   title rather than against the old dot: a glyph has to be read, not just
+   noticed. */
+.harness-card b .hmark {
+  width: 17px;
+  height: 17px;
   flex: none;
-  background: var(--dot, var(--faint));
+  color: var(--dot, var(--faint));
 }
 
 .harness-card p {
@@ -142,6 +221,41 @@
 }
 
 /* ---- bot editor ---- */
+
+/* ---- the icon row -------------------------------------------------------
+   The preview at the size the sidebar draws it (54px), the two controls
+   beside it, and a line saying what happens if you never touch either. */
+
+.iconpick {
+  --blob-size: 54px;
+  --rim: var(--raise2);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+}
+
+.iconacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+/* The real control, kept out of the layout: it opens the picker when the
+   button beside it is clicked, and `display: none` is what stops a browser
+   from drawing its own "Choose File" next to ours. It is never the focus
+   target — the button is — so nothing is lost by taking it out of the tab
+   order with it. */
+.iconfile {
+  display: none;
+}
+
+.iconhint {
+  flex-basis: 100%;
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  max-width: 34ch;
+}
 
 .swatches {
   display: flex;
@@ -160,7 +274,8 @@
   border-radius: 50%;
 }
 
-.swatch[aria-pressed="true"] .blob {
+.swatch[aria-pressed="true"] .av {
+  border-radius: 50%;
   box-shadow:
     0 0 0 2px var(--side),
     0 0 0 4px var(--ink);
@@ -169,7 +284,13 @@
 .toolrow {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  /* Row gap stays 7px; the column gap is wider since #18 gave each chip a
+     sign-in link beside it. At 7px both ways the gap *inside* a chip-and-link
+     pair matched the gap *between* pairs, and the eye could not tell which
+     link belonged to which chip — a screenshot caught it, and on a row where
+     the links say "Disconnect" that ambiguity is expensive. */
+  row-gap: 7px;
+  column-gap: 18px;
 }
 
 .toolchip {
@@ -210,4 +331,119 @@
 .toolchip[data-status="error"] .chipdot,
 .toolchip[data-status="missing"] .chipdot {
   background: var(--danger);
+}
+
+/* New Chat's worktree controls (#23), behind a disclosure and shut by default.
+ *
+ * A fresh worktree per thread is what stops two threads in one repo standing
+ * on each other's uncommitted work, so the opt-out is deliberately not a
+ * control the card invites anyone to reach for.
+ */
+.modal .advanced {
+  margin-top: var(--sp-4);
+}
+
+.modal .advanced-toggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--dim);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.modal .advanced-toggle:hover {
+  color: var(--ink);
+}
+
+.modal .advanced-toggle::after {
+  content: " ▸";
+}
+
+.modal .advanced-toggle[aria-expanded="true"]::after {
+  content: " ▾";
+}
+
+.modal .checkline {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  color: var(--ink);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+
+.modal .checkline input {
+  margin-top: 2px;
+  flex: none;
+}
+
+/* The consequence, under the label rather than in a tooltip: this is the one
+   control on the card that can lose somebody's uncommitted work. */
+.modal .checkline small {
+  display: block;
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+
+.modal .advanced input[type="text"]:disabled {
+  color: var(--dim);
+  cursor: not-allowed;
+}
+
+/* A folder's registered path, shown and not editable (#16). The host has no
+   move method, and a folder pointed somewhere else is a different folder. */
+.modal .modal-static {
+  margin: 0;
+  padding: var(--sp-2) 0;
+  color: var(--dim);
+  font: var(--fs-meta) / 1.4 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* The provider grant, beside the chip (#18).
+ *
+ * Beside, not on: the chip toggles this bot's allowlist, and whether Gmail is
+ * signed in is a different fact from whether this bot may use it. One control
+ * doing both would make "add Gmail to this bot" and "sign this Mac into
+ * Google" the same click.
+ *
+ * Quiet on purpose. The row's job is picking tools; signing one in is the rare
+ * thing you do once, and a button loud enough to compete with the chips would
+ * make the common action harder to see. */
+.toolslot {
+  display: inline-flex;
+  align-items: center;
+  /* Deliberately tighter than the row's column gap: the chip and its sign-in
+     link are one thing, and proximity is the only thing saying so. */
+  gap: 7px;
+}
+
+.toolgrant .linkish {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-meta);
+  color: var(--dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.toolgrant .linkish:hover {
+  color: var(--ink);
+}
+
+/* A flow that is waiting is the one state worth a colour: something is
+   genuinely in progress somewhere else, and the row should not look idle. */
+.toolgrant.waiting .linkish,
+.toolgrant-note {
+  color: var(--amber);
+  font-size: var(--fs-meta);
 }

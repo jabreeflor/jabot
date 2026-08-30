@@ -4,8 +4,9 @@
 //! Each card shows the bot's harness next to its tools, because after #6 the
 //! engine is part of who a bot is — not a preference buried in a settings pane.
 
-import { Blob } from "../components/Blob";
+import { Avatar } from "../components/avatar";
 import { HarnessChip } from "../components/HarnessChip";
+import { PlusIcon } from "../components/Icon";
 import type { Bot, HarnessCard, ToolOption } from "../components/types";
 
 export function CrewView({
@@ -15,6 +16,7 @@ export function CrewView({
   onEdit,
   onAdd,
   onRemove,
+  onRunSetup,
 }: {
   bots: readonly Bot[];
   harnesses: readonly HarnessCard[];
@@ -22,6 +24,8 @@ export function CrewView({
   onEdit: (botId: string) => void;
   onAdd: () => void;
   onRemove: (botId: string) => void;
+  /** Re-run first-run setup — the one in-app way to change your name. */
+  onRunSetup?: () => void;
 }) {
   return (
     <div className="view">
@@ -30,13 +34,27 @@ export function CrewView({
           <div className="page-top">
             <h1>Your Crew</h1>
             <p>Edit, add, or remove bots — each one is yours to customize</p>
+            {onRunSetup && (
+              <button
+                type="button"
+                className="btn setup-again"
+                onClick={onRunSetup}
+              >
+                Run setup again
+              </button>
+            )}
           </div>
 
           <div className="crew-grid">
             {bots.map((bot) => (
               <div className="crew-card" key={bot.id}>
                 <div className="r1">
-                  <Blob color={bot.color} unread={bot.unread} />
+                  <Avatar
+                    name={bot.name}
+                    color={bot.color}
+                    image={bot.image}
+                    unread={bot.unread}
+                  />
                   <div>
                     <div className="nm">{bot.name}</div>
                   </div>
@@ -77,7 +95,7 @@ export function CrewView({
 
             <button type="button" className="add-card" onClick={onAdd}>
               <span className="big" aria-hidden="true">
-                ＋
+                <PlusIcon />
               </span>
               Add a bot
             </button>

@@ -32,7 +32,54 @@ impl HostSession {
         }
         self.reap_dead_adapters();
         self.drain_stranded_queues();
+        self.release_unacknowledged_cancels();
         self.evict_idle_adapters();
+    }
+
+    /// Stop holding a user's words behind a cancel the adapter ignored.
+    ///
+    /// `session/cancel` is an ACP *notification*: there is no reply, and the
+    /// only acknowledgement is the prompt response that ends the turn. An
+    /// adapter that ignores it therefore keeps `AcpState::Running` and an open
+    /// run, which makes the thread invisible to both branches of
+    /// [`Self::drain_stranded_queues`] — the first wants an idle adapter with
+    /// no open run, the second wants no adapter at all. So anything the user
+    /// typed after pressing stop sits in `prompt_queue` behind a turn that
+    /// will never end, showing "N messages waiting", until the adapter
+    /// eventually dies and they are reported dropped — possibly hours later.
+    ///
+    /// What this deliberately does **not** do is end the run or synthesize a
+    /// stop reason. The host cannot know the turn ended, and saying it did
+    /// would be exactly the invention that was refused when this was first
+    /// considered. The run stays open, the adapter stays running, and the
+    /// `stuck` backstop in `lifecycle_tick` still owns the run itself.
+    ///
+    /// The only thing corrected here is the lie of omission: the user is told
+    /// their queued prompts are not going to be delivered, at the point that
+    /// becomes true, instead of finding out whenever the adapter happens to
+    /// close.
+    fn release_unacknowledged_cancels(&mut self) {
+        let grace = self.supervisor.cancel_grace;
+        // Zero means "wait as long as it takes", which is a real choice.
+        if grace.is_zero() {
+            return;
+        }
+        let overdue: Vec<String> = self
+            .cancel_requested
+            .iter()
+            .filter(|(_, requested)| requested.elapsed() >= grace)
+            .map(|(thread_id, _)| thread_id.clone())
+            .collect();
+        for thread_id in overdue {
+            // Whatever happens below, this thread has had its grace. Clearing
+            // first means a thread whose queue is already empty stops being
+            // scanned every tick, and a later cancel starts a fresh stopwatch.
+            self.cancel_requested.remove(&thread_id);
+            if self.queue_depth(&thread_id) == 0 {
+                continue;
+            }
+            self.drop_prompt_queue(&thread_id, "the agent never acknowledged the stop");
+        }
     }
 
     /// The machine was asleep for `gap`, and is not any more.
@@ -49,16 +96,19 @@ impl HostSession {
     /// or failure would both be inventions.
     pub fn wake_from_sleep(&mut self, gap: Duration) {
         self.supervisor.sleeps_observed += 1;
+        // The board is as stale as the sleep was long, and the interval that
+        // has "elapsed" was measured across it. Poll on the next pump rather
+        // than waiting out a window that was already spent asleep (#28).
+        self.pr_poll_now();
         // Order matters: reap first, so a thread whose adapter did not survive
         // gets the `failed` card the crash path writes, rather than a `stuck`
         // card about a process that is not there.
         self.reap_dead_adapters();
         let survivors: Vec<String> = self
-            .connections
-            .keys()
+            .attached_threads()
+            .into_iter()
             .filter(|thread_id| self.lifecycle_is_running(thread_id))
             .filter(|thread_id| self.pending_permission_count(thread_id) == 0)
-            .cloned()
             .collect();
         let summary = format!("the Mac slept for {}s while it was working", gap.as_secs());
         for thread_id in survivors {
@@ -108,13 +158,12 @@ impl HostSession {
     /// end-of-adapter path already does.
     fn drain_stranded_queues(&mut self) {
         let stranded: Vec<String> = self
-            .connections
-            .keys()
+            .attached_threads()
+            .into_iter()
             .filter(|thread_id| self.queue_depth(thread_id) > 0)
             .filter(|thread_id| self.acp_state(thread_id) == AcpState::Idle)
             .filter(|thread_id| self.open_run(thread_id).is_none())
             .filter(|thread_id| self.pending_permission_count(thread_id) == 0)
-            .cloned()
             .collect();
         for thread_id in stranded {
             self.drain_prompt_queue(&thread_id);
@@ -122,7 +171,7 @@ impl HostSession {
         let orphaned: Vec<String> = self
             .queued_thread_ids()
             .into_iter()
-            .filter(|thread_id| !self.connections.contains_key(thread_id))
+            .filter(|thread_id| !self.has_adapter(thread_id))
             // An open run without an adapter is a *lost* run, and the boot and
             // reap paths own it; touching the queue here would race them.
             .filter(|thread_id| self.open_run(thread_id).is_none())
@@ -134,14 +183,20 @@ impl HostSession {
 
     /// Adapters whose process is gone, whatever their stdout says.
     fn reap_dead_adapters(&mut self) {
+        // A dead process takes every thread riding it, so the reap is per
+        // tenant even though the liveness question is per process.
         let dead: Vec<String> = self
             .connections
-            .iter_mut()
-            .filter_map(|(thread_id, conn)| (!conn.is_alive()).then(|| thread_id.clone()))
+            .values_mut()
+            .filter_map(|conn| (!conn.is_alive()).then(|| conn.tenants()))
+            .flatten()
             .collect();
         for thread_id in dead {
             self.on_adapter_gone(&thread_id, Some("the adapter process exited"));
         }
+        // A process with no tenants left cannot be reaped by the loop above,
+        // because it has nobody to fan the death over. It is still a corpse.
+        self.connections.retain(|_, conn| conn.is_alive());
     }
 
     /// Close sessions that are doing nothing for a thread nobody is watching.
@@ -170,15 +225,14 @@ impl HostSession {
             return;
         }
         let candidates: Vec<String> = self
-            .connections
-            .keys()
+            .attached_threads()
+            .into_iter()
             .filter(|thread_id| self.acp_state(thread_id) == AcpState::Idle)
             .filter(|thread_id| self.thread_idle_for(thread_id) >= grace)
             .filter(|thread_id| self.pending_permission_count(thread_id) == 0)
             .filter(|thread_id| self.open_run(thread_id).is_none())
             .filter(|thread_id| self.queue_depth(thread_id) == 0)
             .filter(|thread_id| !self.thread_is_active(thread_id))
-            .cloned()
             .collect();
         for thread_id in candidates {
             if !self.can_come_back(&thread_id) {
@@ -196,8 +250,7 @@ impl HostSession {
     /// to still describe the job.
     fn can_come_back(&self, thread_id: &str) -> bool {
         let restorable = self
-            .connections
-            .get(thread_id)
+            .conn(thread_id)
             .map(|conn| conn.capabilities())
             .map(|caps| caps.resume || caps.load_session)
             .unwrap_or(false);

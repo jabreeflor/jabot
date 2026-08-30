@@ -39,7 +39,8 @@ use super::protocol::methods::{
     ResurfaceReason, RunView, SleepingThreadView, ThreadFoldParams, ThreadOpenParams,
     ThreadRefParams, ThreadStateResult,
 };
-use super::store::{InboxEventRow, NewThread, RunRow, SessionReceiptRow, Store, ThreadRow};
+use super::schedule::RUN_KIND_SCHEDULE;
+use super::store::{self, InboxEventRow, NewThread, RunRow, SessionReceiptRow, Store, ThreadRow};
 use super::HostSession;
 use ledger::RunState;
 use process::{AcpState, ProcessStatus};
@@ -49,6 +50,15 @@ use state::{ThreadAction, ThreadState};
 /// Silence that counts as stuck. A backstop, never the completion signal —
 /// `resurface.md` is explicit that "stdout went quiet" must not be primary.
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
+
+/// The hard cap on one run, after which the host stops waiting and says so.
+///
+/// Four hours, which is far longer than any turn anybody watches and short
+/// enough that a wedged run does not hold a thread until the next quit. It is
+/// deliberately not the stuck threshold's neighbour: stuck is "no output for a
+/// while" and keeps the process so the user can wait, reopen or cancel
+/// (`resurface.md`); this is the other thing, the one that actually ends a run.
+const DEFAULT_RUN_CAP: Duration = Duration::from_secs(4 * 60 * 60);
 
 /// How many runs a `thread/state` reply carries. The Inbox card wants the
 /// latest; the header wants recent history; nobody wants the whole ledger.
@@ -63,6 +73,7 @@ const RUN_PAGE: usize = 50;
 pub struct LifecycleState {
     threads: HashMap<String, ProcessStatus>,
     idle_timeout: Duration,
+    run_cap: Duration,
 }
 
 impl Default for LifecycleState {
@@ -70,24 +81,55 @@ impl Default for LifecycleState {
         Self {
             threads: HashMap::new(),
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            run_cap: DEFAULT_RUN_CAP,
         }
     }
 }
 
 impl LifecycleState {
-    /// `JABOT_IDLE_TIMEOUT_MS` shortens the stuck backstop. It exists so tests
-    /// can watch a real timeout fire in a second instead of ten minutes; the
-    /// setting this stands in for is a user preference (#26).
+    /// Two knobs. `JABOT_IDLE_TIMEOUT_MS` is no longer only a stand-in — the
+    /// idle timeout has a Settings surface now, and [`Self::apply_stored`]
+    /// reads it. The env var stays and **wins**, because it is what the e2e
+    /// suite sets on a spawned host and a stored preference must not be able
+    /// to make a test's own threshold quietly not apply.
+    ///
+    /// The run cap has no surface yet and is still env-only: it is the
+    /// obvious third row on that pane, and putting it there is its own change.
+    ///
+    /// - `JABOT_IDLE_TIMEOUT_MS` — the stuck backstop's silence threshold.
+    /// - `JABOT_RUN_CAP_MS` — the hard cap on one run.
     pub fn from_env() -> Self {
-        let idle_timeout = std::env::var("JABOT_IDLE_TIMEOUT_MS")
-            .ok()
-            .and_then(|raw| raw.parse::<u64>().ok())
-            .filter(|ms| *ms > 0)
-            .map(Duration::from_millis)
-            .unwrap_or(DEFAULT_IDLE_TIMEOUT);
+        let read = |key: &str, fallback: Duration| {
+            std::env::var(key)
+                .ok()
+                .and_then(|raw| raw.parse::<u64>().ok())
+                .filter(|ms| *ms > 0)
+                .map(Duration::from_millis)
+                .unwrap_or(fallback)
+        };
         Self {
-            idle_timeout,
+            idle_timeout: read("JABOT_IDLE_TIMEOUT_MS", DEFAULT_IDLE_TIMEOUT),
+            run_cap: read("JABOT_RUN_CAP_MS", DEFAULT_RUN_CAP),
             ..Self::default()
+        }
+    }
+
+    /// Fold in what the user actually set, once a store is open.
+    ///
+    /// Only when the env var was absent. A host spawned by the e2e suite with
+    /// `JABOT_IDLE_TIMEOUT_MS=200` and a store that happens to hold ten
+    /// minutes has to keep the two hundred milliseconds, or the test is
+    /// waiting on a preference it never wrote.
+    pub(crate) fn apply_stored(&mut self, store: &Store) {
+        if std::env::var("JABOT_IDLE_TIMEOUT_MS").is_ok() {
+            return;
+        }
+        match store.idle_timeout_ms() {
+            // A store that will not answer costs the preference and nothing
+            // else: the shipped default is a working backstop.
+            Err(err) => eprintln!("could not read the idle timeout: {err}"),
+            Ok(None) => {}
+            Ok(Some(ms)) => self.idle_timeout = Duration::from_millis(ms),
         }
     }
 
@@ -126,6 +168,17 @@ impl HostSession {
             // `cwd` *is* the worktree, and the repo stamp is read out of it, so
             // the tree has to exist by the time the INSERT runs.
             let worktree = self.provision_worktree(&thread_id, &params)?;
+            // The user's own default, for a caller that did not name one
+            // (#26). Before this the answer was the column default, which
+            // nobody could change; asked here rather than in the store so a
+            // caller that *did* name a policy still wins.
+            let fold_policy = match params.fold_policy {
+                Some(policy) => policy.as_str().to_string(),
+                None => self
+                    .store_or_err()?
+                    .default_fold_policy()
+                    .unwrap_or_else(|_| store::DEFAULT_FOLD_POLICY.to_string()),
+            };
             let cwd = worktree
                 .as_ref()
                 .map(|tree| tree.path.to_string_lossy().into_owned())
@@ -138,7 +191,7 @@ impl HostSession {
                 cwd: cwd.clone(),
                 runtime_json,
                 title: params.title.clone(),
-                fold_policy: params.fold_policy.unwrap_or_default().as_str().to_string(),
+                fold_policy,
                 worktree_path: worktree
                     .as_ref()
                     .map(|tree| tree.path.to_string_lossy().into_owned()),
@@ -329,6 +382,7 @@ impl HostSession {
             sleeping.push(SleepingThreadView {
                 thread_id: row.id.clone(),
                 title: row.title.clone(),
+                bot_id: row.bot_id.clone(),
                 fold_policy: FoldPolicy::parse(&row.fold_policy),
                 folded_at: row.folded_at.clone(),
                 run_state,
@@ -364,7 +418,7 @@ impl HostSession {
         let Some((run_id, state)) = self.open_run(thread_id) else {
             return Ok(());
         };
-        if !self.connections.contains_key(thread_id) {
+        if !self.has_adapter(thread_id) {
             return Ok(());
         }
         Err(RpcError::RunInFlight {
@@ -385,6 +439,7 @@ impl HostSession {
             let entry = self.lifecycle.entry(thread_id);
             entry.connected = true;
             entry.acp = AcpState::Running;
+            entry.run_started = Some(std::time::Instant::now());
             entry.touch();
         }
         let Some(store) = self.store.as_ref() else {
@@ -501,7 +556,9 @@ impl HostSession {
         if let Some(store) = self.store.as_ref() {
             let _ = store.set_thread_stop(thread_id, stop_reason, error.as_deref());
         }
-        self.lifecycle.entry(thread_id).run_id = None;
+        let entry = self.lifecycle.entry(thread_id);
+        entry.run_id = None;
+        entry.run_started = None;
         let Some(reason) = outcome.resurface_reason() else {
             // A cancel the user asked for gets a quiet row, not a card.
             return;
@@ -672,7 +729,9 @@ impl HostSession {
             }
             let _ = store.set_thread_stop(thread_id, Some("adapter_exit"), Some(detail));
         }
-        self.lifecycle.entry(thread_id).run_id = None;
+        let entry = self.lifecycle.entry(thread_id);
+        entry.run_id = None;
+        entry.run_started = None;
         // A thread already resurfaced as Needs you keeps that card: the ask is
         // still the thing the human has to deal with.
         if was != AcpState::RequiresAction {
@@ -683,6 +742,7 @@ impl HostSession {
     /// Idle-timeout backstop. Run every pump cycle; costs a clock read per
     /// live thread.
     pub(crate) fn lifecycle_tick(&mut self) {
+        self.cap_overlong_runs();
         let timeout = self.lifecycle.idle_timeout;
         let stalled: Vec<String> = self
             .lifecycle
@@ -735,11 +795,81 @@ impl HostSession {
         }
     }
 
+    /// The hard cap: stop waiting on a run that is never going to end.
+    ///
+    /// The distinction from the stuck backstop above is the whole of it.
+    /// `resurface.md` is explicit that stuck must **keep the process**, so the
+    /// user can wait, reopen or cancel — and the run stays `running`, which is
+    /// right for "no output for a while". `timed_out` has been a legal edge in
+    /// the ledger and a state the renderer draws since #15, produced by
+    /// nothing: there was no path that actually ended a run.
+    ///
+    /// Measured from when the run opened and never reset by output. A run that
+    /// streams a token a minute for a day is exactly what this is for, and it
+    /// would reset the stuck clock forever.
+    ///
+    /// A run wedged on an unanswered permission is capped too, with its asks
+    /// withdrawn as cancelled the way the close-out path does. Skipping those
+    /// would exempt the one shape most likely to sit for hours — and after the
+    /// cap the ask is not answerable anyway, because the adapter it would be
+    /// delivered to is gone.
+    fn cap_overlong_runs(&mut self) {
+        let cap = self.lifecycle.run_cap;
+        let overlong: Vec<String> = self
+            .lifecycle
+            .threads
+            .iter()
+            .filter(|(_, status)| {
+                status
+                    .run_started
+                    .is_some_and(|started| started.elapsed() >= cap)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for thread_id in overlong {
+            let summary = format!("run exceeded {}s", cap.as_secs());
+            self.withdraw_pending_permissions(
+                &thread_id,
+                &summary,
+                PermissionWithdrawal::Cancelled,
+            );
+            let run_id = self.close_run(&thread_id, RunState::TimedOut, Some(&summary));
+            if let Some(store) = self.store.as_ref() {
+                let _ = store.set_thread_stop(&thread_id, Some("run_cap"), Some(&summary));
+            }
+            // The adapter goes with the run. Leaving it would leave a process
+            // holding a session the ledger says is over, and the next prompt
+            // would be refused as overlapping a run that no longer exists.
+            self.drop_adapter(&thread_id);
+            let entry = self.lifecycle.entry(&thread_id);
+            entry.run_id = None;
+            entry.run_started = None;
+            entry.acp = AcpState::Unknown;
+            entry.connected = false;
+            self.try_resurface(
+                &thread_id,
+                ResurfaceReason::Failed,
+                &summary,
+                run_id.as_deref(),
+            );
+        }
+    }
+
     /// The stuck backstop's threshold. `resurface.md` starts it at ten minutes
     /// and says to make it a setting; this is that setting's entry point, and
     /// what a test uses to watch a real timeout fire in milliseconds.
     pub fn set_idle_timeout(&mut self, timeout: Duration) {
         self.lifecycle.idle_timeout = timeout;
+    }
+
+    /// The threshold actually in force, for `settings/get` to report.
+    pub(crate) fn idle_timeout(&self) -> Duration {
+        self.lifecycle.idle_timeout
+    }
+
+    /// The hard cap on one run (#25, #21). A test's only way to watch it fire.
+    pub fn set_run_cap(&mut self, cap: Duration) {
+        self.lifecycle.run_cap = cap;
     }
 
     pub(crate) fn acp_state(&self, thread_id: &str) -> AcpState {
@@ -772,6 +902,7 @@ impl HostSession {
         entry.connected = false;
         entry.acp = AcpState::Unknown;
         entry.run_id = None;
+        entry.run_started = None;
     }
 
     /// How long since this thread's adapter last said anything.
@@ -895,8 +1026,46 @@ impl HostSession {
         if state::next_state(from, ThreadAction::Resurface(reason), current_reason).is_err() {
             return Ok(false);
         }
-        let title = resurface::card_title(&row.title, reason);
-        let payload = json!({ "reason": reason.as_str() });
+        // Name the card after the job, when the job is a schedule.
+        //
+        // A fire that lands on a folded thread resurfaces it, and #25's own
+        // `schedule_card` then stands down rather than writing a second row —
+        // one finished job, one card. But the card it stands down in favour of
+        // is built from the *thread*, so a scheduled run came back as "Writer
+        // finished" when what finished was "Morning triage". The user folded a
+        // schedule; the row that brings it back should say so.
+        //
+        // Everything needed is already durable: `runs.trigger_json` is written
+        // at run open and carries the schedule's title and ids. Read back
+        // rather than kept in RAM because this resurface can happen long after
+        // the dispatch — a `stuck` backstop, or a card written on the next
+        // launch entirely.
+        //
+        // A run that is not a schedule, a trigger that will not parse, or no
+        // run at all all fall through to the thread's own name, which is the
+        // right answer for every prompted turn.
+        let scheduled = run_id
+            .and_then(|id| self.store.as_ref()?.get_run(id).ok().flatten())
+            .filter(|run| run.kind == RUN_KIND_SCHEDULE)
+            .and_then(|run| serde_json::from_str::<Value>(run.trigger_json.as_deref()?).ok());
+        let name = scheduled
+            .as_ref()
+            .and_then(|trigger| trigger.get("schedule").and_then(Value::as_str))
+            .unwrap_or(&row.title);
+        let title = resurface::card_title(name, reason);
+        let mut payload = json!({ "reason": reason.as_str() });
+        // The same fields `schedule_card` would have attached had it been the
+        // one to write the row, so a card means the same thing whichever path
+        // produced it.
+        if let Some(trigger) = scheduled.as_ref() {
+            let object = payload.as_object_mut().expect("built as an object above");
+            object.insert("source".into(), Value::String("schedule".into()));
+            for key in ["scheduleId", "schedule", "fireId"] {
+                if let Some(value) = trigger.get(key) {
+                    object.insert(key.into(), value.clone());
+                }
+            }
+        }
         self.store_or_err()?
             .resurface_thread(
                 thread_id,
@@ -1219,6 +1388,7 @@ fn inbox_event_view(row: InboxEventRow, thread: Option<&ThreadRow>) -> InboxEven
         thread_state: thread
             .map(|t| effective_state(t).as_str().to_string())
             .unwrap_or_else(|| ThreadState::Deleted.as_str().to_string()),
+        bot_id: thread.and_then(|t| t.bot_id.clone()),
         kind: row.kind,
         title: row.title,
         summary: row.summary,
@@ -1245,6 +1415,55 @@ mod tests {
     use super::*;
     use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
     use crate::host::protocol::{HOST_HELLO, THREAD_FOLD, THREAD_OPEN};
+    use crate::host::store::KEY_IDLE_TIMEOUT_MS;
+
+    /// Which of the three sources of the idle timeout wins (#26).
+    ///
+    /// Before Settings this was env-or-default and the env var was the only
+    /// way a user could move it — which a bundled Tauri app gives nobody.
+    /// Now there is a stored preference between them, and the order matters
+    /// in a way a test can be wrong about silently: the e2e suite sets the
+    /// env var on a spawned host, so a stored value that beat it would make
+    /// every timeout test wait on a threshold it never wrote.
+    mod idle_timeout_precedence {
+        use super::*;
+
+        fn store() -> (crate::host::store::Store, tempfile::TempDir) {
+            let dir = tempfile::tempdir().unwrap();
+            let store = crate::host::store::Store::open(dir.path().join("jabot.sqlite")).unwrap();
+            (store, dir)
+        }
+
+        #[test]
+        fn an_empty_store_leaves_the_shipped_default() {
+            let (store, _dir) = store();
+            let mut state = LifecycleState::default();
+            state.apply_stored(&store);
+            assert_eq!(state.idle_timeout, DEFAULT_IDLE_TIMEOUT);
+        }
+
+        #[test]
+        fn a_stored_preference_beats_the_shipped_default() {
+            let (store, _dir) = store();
+            store.set_setting(KEY_IDLE_TIMEOUT_MS, "90000").unwrap();
+            let mut state = LifecycleState::default();
+            state.apply_stored(&store);
+            assert_eq!(state.idle_timeout, Duration::from_millis(90_000));
+        }
+
+        /// A row an older build or a hand edit left behind costs the
+        /// preference, not the launch.
+        #[test]
+        fn a_stored_value_that_makes_no_sense_leaves_the_default() {
+            let (store, _dir) = store();
+            for raw in ["0", "soon", ""] {
+                store.set_setting(KEY_IDLE_TIMEOUT_MS, raw).unwrap();
+                let mut state = LifecycleState::default();
+                state.apply_stored(&store);
+                assert_eq!(state.idle_timeout, DEFAULT_IDLE_TIMEOUT, "{raw}");
+            }
+        }
+    }
 
     /// Wait for Inbox is the only place in this host that answers an agent
     /// *without a human*. Every gate below is the difference between "the host

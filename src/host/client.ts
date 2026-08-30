@@ -12,6 +12,7 @@ import {
   FOLDER_LIST,
   FOLDER_REGISTER,
   FOLDER_UPDATE,
+  GITHUB_LOGIN,
   GITHUB_STATUS,
   HARNESS_DOCTOR,
   HARNESS_LIST,
@@ -25,6 +26,7 @@ import {
   PERMISSION_PENDING,
   PERMISSION_REPLY,
   PR_LIST,
+  PR_MINE,
   PR_REFRESH,
   PROTOCOL_VERSION,
   SCHEDULE_CREATE,
@@ -34,6 +36,8 @@ import {
   SCHEDULE_UPDATE,
   SESSION_CANCEL,
   SESSION_PROMPT,
+  SETTINGS_GET,
+  SETTINGS_SET,
   SUPERVISOR_STATUS,
   SYNC_RESUME_FROM,
   DEVICE_LIST,
@@ -56,6 +60,8 @@ import {
   TOOLS_LIST,
   type BotView,
   type ScheduleCreateParams,
+  type SettingsSetParams,
+  type SettingsView,
   type ScheduleListResult,
   type ScheduleRefParams,
   type ScheduleRemoveResult,
@@ -73,6 +79,7 @@ import {
   type FolderRegisterParams,
   type FolderUpdateParams,
   type FolderView,
+  type GithubLoginParams,
   type GithubStatusParams,
   type GithubStatusResult,
   type HarnessDoctorParams,
@@ -96,6 +103,8 @@ import {
   type PermissionReplyResult,
   type PrListParams,
   type PrListResult,
+  type PrMineParams,
+  type PrMineResult,
   type PrRefreshParams,
   type PrRefreshResult,
   type PromptParams,
@@ -349,6 +358,17 @@ export class HostClient {
     return this.request<ThreadStateResult>(CREW_THREAD, params);
   }
 
+  /** Every app-wide preference, as it is actually in force (#26). */
+  async settings(): Promise<SettingsView> {
+    return this.request<SettingsView>(SETTINGS_GET);
+  }
+
+  /** Write what changed and get the whole view back — the host's answer is the
+      state, so nothing here has to merge a patch into a guess. */
+  async saveSettings(params: SettingsSetParams): Promise<SettingsView> {
+    return this.request<SettingsView>(SETTINGS_SET, params);
+  }
+
   /** Every recurring job, with its recent fires beside it (#25). */
   async listSchedules(): Promise<ScheduleListResult> {
     return this.request<ScheduleListResult>(SCHEDULE_LIST);
@@ -417,8 +437,26 @@ export class HostClient {
 
   /** Whether the host can act as the user on GitHub, and as whom. Never
       carries a token: MVP auth is the user's own `gh` login (#16). */
-  async githubStatus(params: GithubStatusParams = {}): Promise<GithubStatusResult> {
+  async githubStatus(
+    params: GithubStatusParams = {},
+  ): Promise<GithubStatusResult> {
     return this.request<GithubStatusResult>(GITHUB_STATUS, params);
+  }
+
+  /** Sign in: hand the host a token to give `gh`, and get back who it makes
+      us. The one call that carries a secret, and it carries it one way — the
+      token is never stored by JaBot and no method reads it back. Rejects when
+      GitHub refused it, because a person is waiting at the dialog to be told
+      whether their paste worked. */
+  async githubLogin(params: GithubLoginParams): Promise<GithubStatusResult> {
+    return this.request<GithubStatusResult>(GITHUB_LOGIN, params);
+  }
+
+  /** Every open pull request the signed-in user wrote, wherever it lives.
+      Resolves even when GitHub could not be reached — the reason is in
+      `unavailable`, exactly as for `refreshPullRequests`. */
+  async myPullRequests(params: PrMineParams = {}): Promise<PrMineResult> {
+    return this.request<PrMineResult>(PR_MINE, params);
   }
 
   /**

@@ -186,6 +186,72 @@ describe("schedules on the wire", () => {
   });
 
   /**
+   * The same fire, on a thread the user had folded.
+   *
+   * Folding changes which code writes the Inbox card. #15's resurface path
+   * gets there first and #25's `schedule_card` then stands down rather than
+   * writing a second row — one finished job, one card. But the resurface
+   * builds its title from the *thread*, so the card came back as "Writer
+   * finished" when what finished was "Morning triage". The user folded a
+   * schedule; the row that brings it back should say so.
+   */
+  it("names the card after the schedule even when the thread was folded", async () => {
+    const dataDir = dataDirWithFakeHarness();
+    const { client } = await connected(dataDir);
+    const writer = named((await client.listCrew()).bots, "Writer");
+    await client.updateBot({ botId: writer.botId, harnessId: "fake-acp" });
+
+    const created = await client.createSchedule({
+      botId: writer.botId,
+      name: "Morning triage",
+      cron: "0 9 * * 1-5",
+      prompt: "Summarise overnight mail.",
+    });
+
+    // The thread has to exist before it can be folded, and the first fire is
+    // what creates it. Fold immediately, while that run is still open, so the
+    // fold sticks: folding a thread whose work has already finished
+    // resurfaces it straight away (`settle_after_fold`), which is not the
+    // case under test.
+    const first = await client.runSchedule({ scheduleId: created.scheduleId });
+    const threadId = first.fire.threadId!;
+    await client.fold({ threadId });
+
+    const settled = await until(
+      client,
+      created.scheduleId,
+      (row) => row.lastFire?.state === "delivered",
+    );
+
+    // The card for *this* run, found by its run id so the first fire's card
+    // cannot be mistaken for it.
+    const runId = settled.lastFire!.runId!;
+    const inbox = await client.inbox({ limit: 50 });
+    const card = inbox.events.find((event) => event.runId === runId);
+    expect(card, `no card for run ${runId}: ${JSON.stringify(inbox.events)}`).toBeDefined();
+    // `reason` is the resurface path's own field, and its presence is what
+    // makes this test about the folded case: `schedule_card` does not write
+    // it. If this ever stops being here, the fold is no longer sticking and
+    // the rest of the assertions are testing the wrong code path.
+    expect(card!.payload).toMatchObject({ reason: "done" });
+
+    // Named after the job, not the bot whose thread it ran on.
+    expect(card!.title).toContain("Morning triage");
+    expect(card!.title).not.toContain("Writer");
+    // And carrying what `schedule_card` would have attached, so a card means
+    // the same thing whichever path wrote it.
+    expect(card!.payload).toMatchObject({
+      source: "schedule",
+      scheduleId: created.scheduleId,
+      schedule: "Morning triage",
+    });
+
+    // Still exactly one card for the run: the resurface wrote it and the
+    // schedule stood down, which is the behaviour this must not disturb.
+    expect(inbox.events.filter((event) => event.runId === runId)).toHaveLength(1);
+  });
+
+  /**
    * The failure the issue names, with a host that really stops.
    *
    * A two-second schedule stands in for a daily one: what is being tested is

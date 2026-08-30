@@ -25,7 +25,7 @@ reason the tooling below exists rather than being a nicety:
 - `clippy -D warnings` failing in CI twice while it passed locally, because
   `rust-toolchain.toml` tracks `stable` and this box had drifted behind the one
   CI installs. Hence the `toolchain` gate, and the 24-hour expiry on the
-  "already verified" note described below. See `DEVIATIONS.md` D-014.
+  "already verified" note described below. See [issue #69](https://github.com/jabreeflor/jabot/issues/69).
 
 ## Setup
 
@@ -52,6 +52,7 @@ to nobody. `verify.sh` warns when it is not set.
 | --- | --- |
 | `./scripts/verify.sh` | before you commit anything; the whole gate, ~1.5 min |
 | `./scripts/verify.sh --fast` | tight iteration — skips building `jabot-hostd` and the e2e suite |
+| `./scripts/verify.sh --check-mac` | **whenever you touch `src-tauri/src/notify/`** — the only thing that lints `notify/mac.rs` (below) |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:e2e` | one slice, while you are working on it |
@@ -78,6 +79,7 @@ one run tells you everything that is wrong.
 | `build jabot-hostd` | the NDJSON host the e2e suite drives still links | not run under `--fast` |
 | `e2e (ts to rust host)` | 123 cases over 17 suites: the production TypeScript client against a live `jabot-hostd` over real NDJSON | `npx vitest run --project e2e -t "<name>"`. Needs the binary, so build it first or run the full `verify.sh`. Not run under `--fast`. |
 | `renderer build` | `vite build` produces a bundle | usually an import that typechecks but does not resolve |
+| `mac notify cross-check` | opt-in, `--check-mac` only: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
@@ -169,8 +171,11 @@ Deleting a branch pushes no content and is not gated.
 
 ## Before you call something a gap
 
-`DEVIATIONS.md` records every deliberate departure and deferral, D-001 through
-D-024, with the reasoning. Check it before filing or "fixing" one.
+Every deliberate departure and deferral is recorded as a GitHub issue labelled
+[`decision`](https://github.com/jabreeflor/jabot/issues?q=is%3Aissue+label%3Adecision),
+one per entry (D-001 through D-025), with the reasoning. These used to live in
+`DEVIATIONS.md`; that file was retired in favour of issues. Check them before
+filing or "fixing" a gap.
 
 ## House rules
 
@@ -179,8 +184,15 @@ D-024, with the reasoning. Check it before filing or "fixing" one.
 - TypeScript: strict, no `any`.
 - Anything added to `verify.sh` must run offline, need no display, no macOS and
   no GitHub token, and be fast enough that people still run it. If a check
-  needs any of those, it goes behind a flag — `--check-toolchain` is the
-  precedent.
+  needs any of those, it goes behind a flag — `--check-toolchain` and
+  `--check-mac` are the precedents.
+- `src-tauri/src/notify/mac.rs` is `cfg(target_os = "macos")`, so the default
+  gate compiles straight past it and CI's macOS `bundle` job does not run on
+  pull requests. **If you touch `src-tauri/src/notify/`, run
+  `./scripts/verify.sh --check-mac`** — it is the only thing between that file
+  and a Mac build. It needs the network and `rustup target add
+  x86_64-apple-darwin`, and no Mac. `scripts/check-mac-notify.sh` carries the
+  reason the whole crate cannot be cross-checked the same way.
 - A test that cannot fail when the thing it covers breaks is worse than no
   test, because it reads as coverage. Break it once and watch it fail before
   you trust it.

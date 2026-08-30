@@ -33,10 +33,17 @@ import {
   PERMISSION_RESOLVED,
   type HostClient,
   type InboxEventView,
+  type NotifyStatusResult,
   type PermissionPendingResult,
   type ThreadOverlayState,
 } from "../host";
-import type { InboxCard, InboxDetail, NoticeAction } from "../components/types";
+import type {
+  Bot,
+  CardSource,
+  InboxCard,
+  InboxDetail,
+  NoticeAction,
+} from "../components/types";
 // The projection lives under `src/mobile/` because #29 needed it first, and it
 // is deliberately device-neutral: its own module docs say two devices
 // disagreeing about what needs you would be two products. Importing it is what
@@ -71,6 +78,9 @@ export interface HostInbox {
   open: (threadId: string) => Promise<void>;
   /** Whatever the card's own buttons do. Unknown ids are ignored. */
   act: (cardId: string, actionId: string) => Promise<void>;
+  /** What the OS says about banners (#27). `null` until asked, and on any host
+      that will not answer — the Inbox is complete without it. */
+  notify: NotifyStatusResult | null;
 }
 
 /**
@@ -80,8 +90,12 @@ export interface HostInbox {
 export function useInbox(
   client: HostClient | null,
   onThreadChanged?: () => void,
+  /** The crew, so a card belonging to a bot can wear that bot's face. `null`
+      while it loads, which draws the code mark — see `cardSource`. */
+  bots?: readonly Bot[] | null,
 ): HostInbox {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [notify, setNotify] = useState<NotifyStatusResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [generation, setGeneration] = useState(0);
@@ -112,6 +126,29 @@ export function useInbox(
       cancelled = true;
     };
   }, [client, generation]);
+
+  // Asked once, not on every reload and not inside `load`. An OS notification
+  // permission is changed in System Settings, not by anything this app does,
+  // so re-asking on every poll would be a round trip per refresh for an answer
+  // that does not move. Its failure is swallowed for the same reason
+  // `pendingOrNone` swallows its own: the Inbox is complete without it, and
+  // every card is written whether or not a banner was ever allowed.
+  useEffect(() => {
+    if (!client) return;
+    if (typeof client.notifyStatus !== "function") return;
+    let cancelled = false;
+    client
+      .notifyStatus()
+      .then((status) => {
+        if (!cancelled) setNotify(status);
+      })
+      .catch(() => {
+        // Deliberately silent; see above.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   // The Inbox is the one view that has to be right while nobody is looking at
   // it: the badge is drawn from it, and the card the user came back for was
@@ -181,8 +218,9 @@ export function useInbox(
   );
 
   const cards = useMemo(
-    () => (snapshot ? snapshot.cards.map((card) => cardRow(card, snapshot)) : null),
-    [snapshot],
+    () =>
+      snapshot ? snapshot.cards.map((card) => cardRow(card, snapshot, bots ?? null)) : null,
+    [snapshot, bots],
   );
 
   return {
@@ -193,6 +231,7 @@ export function useInbox(
     reload,
     open,
     act,
+    notify,
   };
 }
 
@@ -251,7 +290,11 @@ async function pendingOrNone(
   }
 }
 
-function cardRow(card: ProjectedCard, snapshot: Snapshot): InboxCard {
+function cardRow(
+  card: ProjectedCard,
+  snapshot: Snapshot,
+  bots: readonly Bot[] | null,
+): InboxCard {
   return {
     id: card.id,
     threadId: card.threadId,
@@ -259,12 +302,30 @@ function cardRow(card: ProjectedCard, snapshot: Snapshot): InboxCard {
     title: card.title,
     summary: card.summary,
     createdAt: card.at,
-    // `inbox/list` does not say which bot a card came from — the row is about
-    // a *thread*, and a folded thread is not in any list that carries a face.
-    // The code avatar is the honest one; inventing a bot would not be.
-    source: { type: "code" },
+    source: cardSource(card.botId, bots),
     detail: detail(card, snapshot),
   };
+}
+
+/**
+ * The face on an Inbox row.
+ *
+ * The avatar is the only thing on the row that says *who* this is, and until
+ * `inbox/list` carried `botId` every host card wore the generic code mark —
+ * including the ones belonging to a named crew member. #22 was right to refuse
+ * to invent a bot rather than guess; the fix was to put the id on the wire.
+ *
+ * Still the code mark in two cases, and both are honest rather than lazy: a
+ * thread with no bot really is a code session, and a bot the roster does not
+ * (yet) contain cannot be drawn — the crew loads separately, and a card
+ * holding only a reference has to draw *something* in between. A face with the
+ * wrong name on it would be worse than no face.
+ */
+function cardSource(botId: string | undefined, bots: readonly Bot[] | null): CardSource {
+  if (!botId) return { type: "code" };
+  const bot = bots?.find((candidate) => candidate.id === botId);
+  if (!bot) return { type: "code" };
+  return { type: "bot", name: bot.name, color: bot.color, image: bot.image };
 }
 
 /**

@@ -2,6 +2,28 @@
 
 Bot-crew messenger UI prototypes. Wraps coding TUIs (Claude Code, Codex, Pi, or bring-your-own harness) in a chat-first interface with a Chief of Staff bot, folding "disappearing" threads, and an Inbox where long-running tasks resurface.
 
+## Install
+
+macOS 13+, Apple Silicon or Intel:
+
+```sh
+curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash
+```
+
+That downloads the latest signed, notarized release, checks Apple's own
+verdict on it (`spctl`) plus our bundle identifier *before* anything is
+copied, and puts `JaBot.app` in `/Applications`. Options go after `bash -s --`
+— `--version v0.2.0` to pin a release, `--to ~/Applications` to install
+somewhere you own, `--force` to quit a running copy, `--dry-run` to see what
+it would do. The script is [`scripts/install.sh`](scripts/install.sh); it is
+uploaded to each release, so that URL always serves the installer that shipped
+with the latest published build.
+
+Prefer doing it by hand? Download the `.dmg` from
+[Releases](https://github.com/jabreeflor/jabot/releases/latest) and drag JaBot
+to Applications. Either way, installed copies update themselves after that —
+the script is a one-time thing.
+
 ## Desktop app (Tauri 2)
 
 The scaffold (#7) lives at the repo root:
@@ -40,5 +62,26 @@ and the escape hatches.
 Open `prototypes/jabot-classic.html` in a browser — the main MVP (chat, Inbox, Pull Requests, thread sessions, New Chat with harness picker, Crew management).
 
 Build plan and settled architecture decisions (#4 host/quit, #5 fold/run/Inbox, #6 every bot is a harness): [`docs/plan.md`](docs/plan.md), [`docs/decisions/issues-4-6.md`](docs/decisions/issues-4-6.md).
+
+`prototypes/jabot-avatars.html` is the avatar exploration for #44 — five
+directions for a bot's identity (monogram blob, glyph tile, generative
+identicon, refined blob, shape-as-role sigil) shown at every size the shell
+asks for, with greyscale and light-theme toggles. It is a phone-sized page on
+purpose: open it on a phone and scroll.
+
+`prototypes/jabot-avatars-characters.html` is round two of the same issue, and
+the more interesting half. The systems above all pass the tests and none of
+them is anybody, so this one starts from the animator's rule instead: black out
+a character, and if you cannot tell who it is, it was never a character — which
+is the same test as greyscale at 28px. Five crews: a blob with a face that
+answers back, a body whose hat is its name, a generated critter kit, hand-drawn
+pixel pets, and watchers whose eyes follow the page and look straight at you
+when they need something.
+
+Both pages are now the record of an exploration rather than a preview of one:
+#44 landed on neither set. A bot wears a flat colour disc with its initials in
+it, and anyone who wants it to be somebody in particular uploads a picture in
+the bot editor — the app stopped inventing an identity for a bot and made one
+the user can give it. `src/components/avatar/` is the whole of it.
 
 Other prototypes in `prototypes/` are earlier design directions.

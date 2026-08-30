@@ -117,7 +117,13 @@ interface CrewStatus {
     botId: string;
     name: string;
     idle: boolean;
-    threads: Array<{ threadId: string; state: string }>;
+    threads: Array<{
+      threadId: string;
+      state: string;
+      acpState: string;
+      busy: boolean;
+      run: { state: string; startedAt: string | null } | null;
+    }>;
   }>;
 }
 
@@ -385,13 +391,27 @@ describe("spawn_code_session", () => {
     });
     expect(folded.value.state).toBe("folded");
     expect(folded.value.foldPolicy).toBe("wait_for_inbox");
-    expect((await client.inbox()).sleeping.map((row) => row.threadId)).toContain(
-      thread.threadId,
-    );
+    const inbox = await client.inbox();
+    expect(inbox.sleeping.map((row) => row.threadId)).toContain(thread.threadId);
+    // And the row says whose thread it is, so the Inbox can draw that bot's
+    // face instead of the generic code mark. Chief spawned this one onto the
+    // Code bot, and `inbox/list` carried no bot at all until now.
+    expect(
+      inbox.sleeping.find((row) => row.threadId === thread.threadId)?.botId,
+    ).toBe("code");
     const status = await callTool<CrewStatus>(server, "list_crew_status");
     const code = status.value.crew.find((bot) => bot.name === "Code");
     expect(code?.idle).toBe(false);
     expect(code?.threads[0].state).toBe("folded");
+    // The distinction `idle` alone cannot draw, and the reason `busy` exists.
+    // Code has a thread, so it is not `idle` — but that thread is asleep with
+    // no open run and no adapter attached, so nothing is actually happening on
+    // it. Before this field, Chief had to re-derive that from `run` and
+    // `acpState` itself, and the tool's own description told it to check
+    // "already busy" against a value that only meant "has any thread at all".
+    expect(code?.threads[0].busy).toBe(false);
+    expect(code?.threads[0].run).toBeNull();
+    expect(code?.threads[0].acpState).toBe("unknown");
   });
 
   it("says which folders exist when asked for one that does not", async () => {

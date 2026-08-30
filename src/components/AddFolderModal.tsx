@@ -11,8 +11,9 @@
 
 import { useId, useState } from "react";
 
+import { describe, splitFiles } from "./folderFields";
 import { FieldLabel, Modal } from "./Modal";
-import { HostRpcError, RPC_ERROR, type FolderRegisterParams } from "../host";
+import type { FolderRegisterParams } from "../host";
 
 export function AddFolderModal({
   onRegister,
@@ -110,22 +111,4 @@ export function AddFolderModal({
       </div>
     </Modal>
   );
-}
-
-/** Comma or newline separated, because both are what people paste. */
-function splitFiles(raw: string): string[] {
-  return raw
-    .split(/[\n,]/)
-    .map((file) => file.trim())
-    .filter((file) => file.length > 0);
-}
-
-/** The host's own words, except where it has a code that means something
-    specific enough to say better. */
-function describe(err: unknown): string {
-  if (err instanceof HostRpcError && err.code === RPC_ERROR.FOLDER_EXISTS) {
-    return "That checkout is already a folder.";
-  }
-  if (err instanceof Error) return err.message;
-  return String(err);
 }

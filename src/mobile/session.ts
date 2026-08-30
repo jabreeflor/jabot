@@ -12,9 +12,10 @@
 //! paired device carries an HMAC under the token its pairing derived, with a
 //! counter that must strictly climb. Which secure enclave, keystore or file
 //! that token lives in is a device question, not a protocol question, so this
-//! takes a [`DeviceCredentials`] and never sees the token. The derivation a
-//! real implementation has to match is documented on `PairingClaimParams` and
-//! implemented, independently, in `tests/support/pairing.ts`.
+//! takes a [`DeviceCredentials`] and never sees the token. `./credentials`
+//! ships one built on WebCrypto, with storage and the counter still injected;
+//! `tests/support/pairing.ts` is a second implementation written from the
+//! protocol docs alone, which is what lets the two be compared byte for byte.
 //!
 //! **Notifications are applied synchronously; refreshing is a separate act.**
 //! `permission/ask` carries everything a card needs, so the phone can draw it
@@ -35,13 +36,17 @@ import {
   PERMISSION_REPLY,
   PERMISSION_RESOLVED,
   SESSION_CANCEL,
+  SESSION_UPDATE,
+  SYNC_RESUME_FROM,
   THREAD_TRANSCRIPT,
   type DeviceAuth,
+  type Envelope,
   type HelloResult,
   type JsonRpcNotification,
   type PermissionAskParams,
   type PermissionReplyResult,
   type PermissionResolvedParams,
+  type SessionUpdateParams,
   type ThreadTranscriptResult,
 } from "../host/protocol";
 import { askTitle } from "./ask";
@@ -80,6 +85,9 @@ export interface MobileSessionOptions {
 
 export type InboxListener = (inbox: MobileInbox) => void;
 
+/** One `session/update` for a thread somebody is watching. */
+export type ThreadListener = (update: SessionUpdateParams) => void;
+
 /** Refused before it reached the wire, because this role cannot call it. */
 export class OutOfScopeError extends Error {
   constructor(readonly method: string) {
@@ -96,6 +104,17 @@ export class MobileSession {
   private unsubscribe: (() => void) | null = null;
   private snapshot: MobileInbox = EMPTY_INBOX;
   private hello: HelloResult | null = null;
+  /**
+   * The highest envelope `seq` seen per thread.
+   *
+   * Every host notification extends `Envelope { hostId, threadId, seq }`, so
+   * this is filled by *every* frame and not only by the two the Inbox draws —
+   * a thread whose only traffic was a `session/update` still has to be
+   * resumable, and it is the one whose gap nothing else can close.
+   */
+  private readonly heads = new Map<string, number>();
+  /** Per-thread `session/update` subscribers, for whoever is reading one. */
+  private readonly watchers = new Map<string, Set<ThreadListener>>();
 
   constructor(options: MobileSessionOptions) {
     this.client = new HostClient(options.transport);
@@ -145,6 +164,82 @@ export class MobileSession {
   }
 
   get inbox(): MobileInbox {
+    return this.snapshot;
+  }
+
+  /**
+   * Watch one thread's `session/update` stream.
+   *
+   * Narrow on purpose: a caller reading a transcript wants that thread, and
+   * handing every frame to every screen would make each one responsible for
+   * filtering traffic about conversations it is not showing.
+   *
+   * De-duplication against a replay is *not* done here. The transcript
+   * reducer already drops anything at or below the seq its hydrate reached
+   * (`views/transcript.ts`), which is the only place that knows how far the
+   * replay got — and doing it twice, in two places, is how the two drift.
+   */
+  watchThread(threadId: string, listener: ThreadListener): () => void {
+    const set = this.watchers.get(threadId) ?? new Set<ThreadListener>();
+    set.add(listener);
+    this.watchers.set(threadId, set);
+    return () => {
+      const live = this.watchers.get(threadId);
+      if (!live) return;
+      live.delete(listener);
+      if (live.size === 0) this.watchers.delete(threadId);
+    };
+  }
+
+  /**
+   * Come back after the phone was offline, and ask for what was missed.
+   *
+   * `connect()` + `refresh()` alone is correct and lossy. It rebuilds every
+   * card from authoritative endpoints — so a missed ask reappears and a missed
+   * resolve disappears — but a `session/update` that arrived while the phone
+   * was in a tunnel is simply gone, and that is the one stream nothing else
+   * re-derives.
+   *
+   * So: reconnect, refresh, then ask `sync/resumeFrom` for each thread this
+   * device has heard of and replay what comes back. Order matters —
+   * `refresh()` first, so a replayed frame lands on a screen that is already
+   * up to date rather than fighting it.
+   */
+  async reconnect(): Promise<MobileInbox> {
+    await this.connect();
+    const inbox = await this.refresh();
+    if (this.heads.size === 0) return inbox;
+    if (!this.allows(SYNC_RESUME_FROM)) return inbox;
+    // A copy: applying the replay moves the heads underneath us.
+    for (const [threadId, seq] of [...this.heads]) {
+      let answer;
+      try {
+        answer = await this.client.resumeFrom({ threadId, seq });
+      } catch {
+        // One thread the host cannot answer for — deleted, or a log that has
+        // rolled past it — must not cost the rest of the reconnect.
+        continue;
+      }
+      // The host's log is RAM: `SeqStore` and `EventLog` are plain maps that
+      // reset with the process. A head *below* ours is a host that restarted,
+      // not a host with nothing to say — and reading it as "nothing was
+      // missed" would leave this device asking for a seq that will never come
+      // round again.
+      if (answer.headSeq < seq) {
+        this.heads.set(threadId, answer.headSeq);
+      }
+      for (const event of answer.events) {
+        // Above the head we recorded, and nothing else. A replayed
+        // `permission/ask` for a request that has since been answered would
+        // re-add a card `permission/pending` had correctly just omitted.
+        if (event.seq <= seq) continue;
+        this.apply({
+          jsonrpc: "2.0",
+          method: event.method,
+          params: event.params,
+        } as JsonRpcNotification);
+      }
+    }
     return this.snapshot;
   }
 
@@ -238,6 +333,17 @@ export class MobileSession {
 
   /** Host-initiated frames. Everything here is applied without a round trip. */
   private apply(notification: JsonRpcNotification): void {
+    // Before the dispatch, and for every method rather than the two below:
+    // the frames this client does not draw are exactly the ones whose loss
+    // nothing else notices, so their seq is the one worth remembering.
+    this.note(notification);
+    if (notification.method === SESSION_UPDATE) {
+      const update = notification.params as SessionUpdateParams;
+      for (const listener of this.watchers.get(update.threadId) ?? []) {
+        listener(update);
+      }
+      return;
+    }
     if (notification.method === PERMISSION_ASK) {
       const ask = notification.params as PermissionAskParams;
       this.publish(
@@ -260,6 +366,27 @@ export class MobileSession {
       const resolved = notification.params as PermissionResolvedParams;
       this.publish(withoutAsk(this.snapshot, resolved.requestId));
     }
+  }
+
+  /** Remember how far this thread has got. Monotonic: a frame that arrived
+      out of order behind a later one must not walk the head backwards, or the
+      next reconnect would ask for a stretch it already has. */
+  private note(notification: JsonRpcNotification): void {
+    const envelope = notification.params as Partial<Envelope> | undefined;
+    const threadId = envelope?.threadId;
+    const seq = envelope?.seq;
+    if (typeof threadId !== "string" || !threadId) return;
+    if (typeof seq !== "number" || !Number.isFinite(seq)) return;
+    this.heads.set(threadId, Math.max(this.heads.get(threadId) ?? 0, seq));
+  }
+
+  /** Like `assertAllowed`, but as a question. `reconnect` asks rather than
+      throws: a host that will not replay is a smaller loss than a reconnect
+      that fails. */
+  private allows(method: string): boolean {
+    const scoped = this.scopedMethods;
+    if (scoped.length > 0 && !scoped.includes(method)) return false;
+    return allowedForApprover(method);
   }
 
   private publish(inbox: MobileInbox): MobileInbox {

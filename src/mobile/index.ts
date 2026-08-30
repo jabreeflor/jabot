@@ -6,6 +6,16 @@
 //! whatever duplex it has to the same frames the desktop uses.
 
 export { askDetail, askTitle, allowOption, parseAskOptions, rejectOption } from "./ask";
+export {
+  createDeviceCredentials,
+  frameHash,
+  helloProof,
+  verifyHostProof,
+} from "./credentials";
+export type {
+  DeviceCredentialsOptions,
+  HelloProofInput,
+} from "./credentials";
 export type { AskOption } from "./ask";
 export {
   askCard,
@@ -22,6 +32,13 @@ export type {
 } from "./inbox";
 export { InboxScreen } from "./InboxScreen";
 export type { InboxScreenProps } from "./InboxScreen";
+export { MobileApp } from "./MobileApp";
+export type { MobileAppProps } from "./MobileApp";
+export { TranscriptScreen, useThreadTranscript } from "./TranscriptScreen";
+export type {
+  ThreadTranscript,
+  TranscriptScreenProps,
+} from "./TranscriptScreen";
 export { allowedForApprover, APPROVER_METHODS, checkScope } from "./scope";
 export { MobileSession, OutOfScopeError } from "./session";
 export type {

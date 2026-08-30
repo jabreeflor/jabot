@@ -9,6 +9,8 @@
 
 import { useState, type FormEvent } from "react";
 
+import { MicIcon, PlusIcon, StopIcon } from "./Icon";
+
 export function Composer({
   placeholder,
   onSend,
@@ -42,7 +44,7 @@ export function Composer({
           aria-label="Attach"
           disabled={disabled}
         >
-          ＋
+          <PlusIcon />
         </button>
         <input
           value={text}
@@ -59,7 +61,7 @@ export function Composer({
             title="Stop this turn"
             onClick={onCancel}
           >
-            ■
+            <StopIcon />
           </button>
         ) : (
           <button
@@ -68,7 +70,7 @@ export function Composer({
             aria-label="Voice"
             disabled={disabled}
           >
-            🎙
+            <MicIcon />
           </button>
         )}
       </form>

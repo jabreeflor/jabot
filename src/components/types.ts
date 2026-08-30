@@ -102,6 +102,11 @@ export interface Folder {
   isGit?: boolean;
   /** `owner/name` from `origin`, when there is one. */
   repo?: string;
+  /** What a fresh worktree runs before the agent gets it (#23). Editable in
+      folder settings; absent means the folder has none. */
+  setupCommand?: string;
+  /** Gitignored files a fresh worktree needs — `.env` and friends (#23). */
+  filesToCopy?: readonly string[];
 }
 
 /** The sidebar needs each folder with its threads — the join #16 will do. */
@@ -138,7 +143,13 @@ export interface Bot {
   harnessId: string;
   isChief: boolean;
   templateId?: string | null;
-  /** Unread work on this bot's standing thread — the red dot on its blob. */
+  /**
+   * The picture this bot was given, as a `data:` URL, or null for the colour
+   * mark. Held on the bot and not looked up per surface, because every place
+   * that draws a bot already has the bot.
+   */
+  image?: string | null;
+  /** Unread work on this bot's standing thread — the red dot on its avatar. */
   unread?: boolean;
 }
 
@@ -160,6 +171,12 @@ export interface BotDraft {
   tools: string[];
   harnessId: string;
   templateId?: string | null;
+  /**
+   * The icon as the editor left it: a `data:` URL to set one, `null` to go
+   * back to the colour mark. Distinct from absent — a draft that omits it is
+   * one from a surface that does not edit icons, and the saved picture stays.
+   */
+  image?: string | null;
 }
 
 /**
@@ -221,9 +238,16 @@ export interface NoticeAction {
   primary?: boolean;
 }
 
-/** Who a card is from: a crew bot with a face, or a code session. */
+/** Who a card is from: a crew bot with an icon, or a code session.
+ *
+ * The bot variant carries everything its icon is drawn from rather than an id
+ * to look one up by: a card is built where the crew is already in hand, and a
+ * card holding only a reference would have to draw something else for the time
+ * between the crew loading and the card doing so. `inbox/list` has no bot on it
+ * at all today and every host card is a `code` one, so this costs the host
+ * nothing; it is the fixtures and #24's handoff cards that supply it. */
 export type CardSource =
-  | { type: "bot"; name: string; color: BotColor }
+  | { type: "bot"; name: string; color: BotColor; image?: string | null }
   | { type: "code" };
 
 /** An `inbox_events` row plus what the row needs to draw itself (#22). */
@@ -252,7 +276,10 @@ export interface InboxDetail {
  */
 export interface PullRequest {
   id: string;
-  threadId: string;
+  /** The session that opened it. Absent for one of the user's own pull
+      requests written somewhere else (#28) — the board shows those too once
+      they have signed in, and they have no thread here to reopen. */
+  threadId?: string;
   provider: string;
   repo: string;
   number: number;
@@ -304,6 +331,16 @@ export interface ToolOption {
   status?: ToolConnectionStatus;
   /** One sentence for the chip's tooltip: which account, or what went wrong. */
   detail?: string;
+  /** The provider grant this chip's status belongs to. Gmail, Calendar and
+      Drive share one, which is why connecting any of them lights all three —
+      and why the editor names the *provider* when it offers to sign in. */
+  provider?: string;
+  /** Live only while a `tools/connect` flow is waiting for the human. This is
+      the URL the UI opens; the host publishes it onto every card the flow's
+      provider covers and takes it away when the flow settles (#18). */
+  authorizeUrl?: string;
+  /** Where to read about what this tool can do, when the provider says. */
+  docsUrl?: string;
 }
 
 /** What New Chat emits. The host resolves the runtime and spawns (#6, #10). */
@@ -311,6 +348,14 @@ export interface NewChatDraft {
   harnessId: string;
   folderId: string | null;
   task: string;
+  /** Work in the folder's own checkout instead of a fresh worktree (#23).
+      Advanced, and omitted when unset so the ordinary request on the wire is
+      exactly what it was. */
+  useCheckout?: boolean;
+  /** What the thread's branch forks from — a branch, tag or sha. Omitted for
+      the host's own default, which is `origin/<default branch>` and never the
+      user's possibly-dirty `HEAD`. */
+  baseRef?: string;
 }
 
 /**
@@ -323,4 +368,6 @@ export type Selection =
   | { view: "crew" }
   | { view: "inbox" }
   | { view: "prs" }
-  | { view: "schedules" };
+  | { view: "schedules" }
+  | { view: "devices" }
+  | { view: "settings" };

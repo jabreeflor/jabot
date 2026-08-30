@@ -2,15 +2,22 @@
  * The single stylesheet entry point. Order is the cascade: tokens define the
  * vocabulary, the shell owns the frame, then each component sheet. A component
  * importing its own CSS would make that order depend on module resolution.
+ *
+ * The @font-face block goes first so the face is declared before any rule
+ * asks for it.
  */
 
+@import "./styles/fonts.css";
 @import "./styles/tokens.css";
 @import "./styles/shell.css";
-@import "./styles/blob.css";
+@import "./styles/codeav.css";
+@import "./styles/avatar.css";
 @import "./styles/sidebar.css";
 @import "./styles/chat.css";
 @import "./styles/cards.css";
 @import "./styles/crew.css";
 @import "./styles/schedules.css";
+@import "./styles/devices.css";
 @import "./styles/modal.css";
 @import "./styles/menu.css";
+@import "./styles/onboarding.css";

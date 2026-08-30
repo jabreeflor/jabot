@@ -8,9 +8,38 @@
 .chat-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-3);
   padding: 14px 20px;
   --blob-size: 28px;
+}
+
+/* Provenance, when a bot started this thread rather than the person reading
+   it (#24). Its own line under the title rather than another chip in the row:
+   it carries the task the bot was given, which is a sentence, and a sentence
+   in among the chips would push the fold button onto a line of its own. */
+.chat-head .chat-handoff {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--dim);
+  /* One line. The task can be long, and the header is not where it is read in
+     full — the transcript's first message is. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-head .chat-handoff .from {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* A handoff nobody picked up. The task was really sent and the thread really
+   exists, so this is not an error state for the thread — but a line that said
+   only "Handed off by Chief" would be describing work that is not happening. */
+.chat-head .chat-handoff[data-tone="warn"] .undelivered {
+  color: var(--amber);
 }
 
 .chat-head h2 {
@@ -49,7 +78,7 @@
   color: var(--danger);
 }
 
-/* The 🖥 affordance. MVP1 only ever has one host, but the button exists so
+/* The host affordance. MVP1 only ever has one host, but the button exists so
    picking a host later is not a new piece of chrome. */
 .host-picker {
   margin-left: auto;
@@ -71,6 +100,11 @@
   background: var(--raise2);
 }
 
+.host-picker svg {
+  width: 15px;
+  height: 15px;
+}
+
 .harness-chip {
   display: flex;
   align-items: center;
@@ -84,12 +118,11 @@
   white-space: nowrap;
 }
 
-.harness-chip i {
-  width: var(--sp-3);
-  height: var(--sp-3);
-  border-radius: 50%;
-  font-style: normal;
-  background: var(--dot, var(--faint));
+.harness-chip .hmark {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--dot, var(--faint));
 }
 
 .chat-scroll {
@@ -170,6 +203,14 @@
   color: var(--ink);
 }
 
+/* Line markers are SVG in a `white-space: pre` block, so they size against
+   the mono line and sit on its baseline like the characters they replaced. */
+.toolblock svg {
+  width: 11px;
+  height: 11px;
+  vertical-align: -1.5px;
+}
+
 .toolblock .tick {
   color: var(--ok);
 }
@@ -214,6 +255,9 @@
 
 .notice .pill {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--amber);
   background: rgba(232, 163, 61, 0.12);
   font-size: 12px;
@@ -221,6 +265,12 @@
   border-radius: var(--r-pill);
   padding: 3px var(--sp-3);
   white-space: nowrap;
+}
+
+.notice .pill svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
 }
 
 .notice p {
@@ -286,6 +336,11 @@
   color: var(--ink);
 }
 
+.round-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
 /* Queued follow-ups (#14).
  *
  * ACP cannot inject a message into a turn that is already running, so what you
@@ -333,8 +388,241 @@
   color: var(--red);
 }
 
+/* Drift: the stored session no longer matches the job that would be spawned,
+   so the next prompt starts a new conversation (#21). Amber, not red — nothing
+   has failed and nothing is lost; it is a fact about what Enter will do. Sits
+   directly above the composer for that reason. */
+.chat-drift {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-meta);
+  color: var(--dim);
+  line-height: 1.45;
+}
+
+.chat-drift b {
+  color: var(--amber);
+  font-weight: 600;
+}
+
 /* Stop, in the mic's place while a turn is running. */
 .round-btn.stop {
   color: var(--amber);
-  font-size: 13px;
+}
+
+/* Where a code thread is actually editing (#23).
+ *
+ * A thread opened in a git folder runs in a host-owned worktree on a
+ * `jabot/<id>` branch, not in the user's checkout — so the header says which,
+ * or the person goes looking for the edits in the wrong tree. The branch is
+ * the visible half; the full path is the tooltip, because it is long,
+ * machine-generated and identical in prefix for every thread.
+ */
+.chat-head .worktree-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 220px;
+  min-width: 0;
+  color: var(--dim);
+  font-size: var(--fs-meta);
+}
+
+.chat-head .worktree-chip svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+/* One line, truncated: a long branch name must not push the status and the
+   host control off the row. */
+.chat-head .worktree-chip .ref {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+/* Resume: put the conversation back after a quit, a crash, or an idle evict
+ * (#21).
+ *
+ * Only drawn when the host says both halves — no adapter attached *and*
+ * resumable — so it is not a button that sits there greyed for the life of
+ * every thread. `thread/reopen`, which the Inbox's Open thread runs, is a
+ * store write that spawns nothing; this is the verb that reattaches.
+ */
+.chat-head .resume-btn {
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-pill);
+  background: none;
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--ink);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  cursor: pointer;
+}
+
+.chat-head .resume-btn:hover {
+  background: var(--sunk);
+}
+
+.chat-head .resume-btn:disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+/* What the resume actually did. Three tones because the six outcomes are three
+   different situations: it worked, the stored session is a different job now,
+   or it cannot be resumed at all. */
+.chat-resume {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  color: var(--dim);
+}
+
+.chat-resume[data-tone="ok"] {
+  color: var(--ok);
+}
+
+.chat-resume[data-tone="warn"] {
+  color: var(--amber);
+}
+
+.chat-resume[data-tone="bad"] {
+  color: var(--danger);
+}
+
+/* Markdown inside an agent bubble (#14).
+ *
+ * `.bubble` has `white-space: pre-line`, which is right for a text node and
+ * fights real block elements — every newline between a `</p>` and the next
+ * `<p>` becomes a blank line. The agent bubble draws elements now, so it takes
+ * `normal` and the elements below carry the spacing; `pre` and `code` put
+ * `pre-wrap` back, because inside code the whitespace is the content.
+ *
+ * The user bubble is untouched and stays literal: a person's asterisks are
+ * their own.
+ */
+.msg.bot .bubble {
+  white-space: normal;
+}
+
+.msg.bot .bubble > p {
+  margin: 0;
+  /* The one thing `pre-line` was doing that is still wanted: an agent's line
+     breaks inside a paragraph are usually deliberate. */
+  white-space: pre-line;
+}
+
+.msg.bot .bubble > p + p,
+.msg.bot .bubble > ul,
+.msg.bot .bubble > ol,
+.msg.bot .bubble > pre {
+  margin-top: var(--sp-3);
+}
+
+.msg.bot .bubble > ul,
+.msg.bot .bubble > ol {
+  margin-bottom: 0;
+  padding-left: var(--sp-5);
+}
+
+.msg.bot .bubble li + li {
+  margin-top: 2px;
+}
+
+.msg.bot .bubble code {
+  font: 0.92em / var(--lh-mono) var(--font-mono);
+  background: var(--sunk);
+  border-radius: 5px;
+  padding: 1px 5px;
+  white-space: pre-wrap;
+}
+
+.msg.bot .bubble pre {
+  margin-bottom: 0;
+  background: var(--sunk);
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  /* A long line scrolls rather than widening the 72% bubble past it. */
+  overflow-x: auto;
+}
+
+/* Inside a block the background is the block's, so the inline chip would be a
+   second shade on top of it. */
+.msg.bot .bubble pre code {
+  background: none;
+  border-radius: 0;
+  padding: 0;
+  white-space: pre;
+}
+
+.msg.bot .bubble strong {
+  font-weight: 650;
+}
+
+/* Back to the end (#14).
+ *
+ * The transcript used to snap to the bottom on every streamed chunk, so
+ * reading back through history while an agent was talking was impossible. It
+ * holds the reader's position now — and this is the only sign that it is
+ * deliberately not following, plus the way back.
+ */
+.chat-scroll {
+  position: relative;
+}
+
+.jump-latest {
+  /* Sticky at the foot of the scroller, so it stays reachable however far up
+     the reader has gone. It sits *over* the transcript — there is nowhere
+     else for it to be — so it has to read as chrome rather than as a word in
+     somebody's message: opaque, raised, and shadowed off the column. The
+     first screenshot had it flat, and it looked like text inside a bubble. */
+  position: sticky;
+  z-index: 1;
+  bottom: var(--sp-3);
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) auto 0;
+  background: var(--raise);
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-pill);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: var(--sp-2) var(--sp-4);
+  color: var(--ink);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  cursor: pointer;
+}
+
+.jump-latest:hover {
+  background: var(--sunk);
+}
+
+/* The arrow points up by default; here it means "down to the end". */
+.jump-latest svg {
+  width: 13px;
+  height: 13px;
+  transform: rotate(180deg);
+}
+
+/* The top of a windowed transcript. Only drawn when there is history above
+   what is rendered, so an ordinary conversation never sees it. */
+.show-earlier {
+  align-self: center;
+  background: none;
+  border: 0;
+  padding: var(--sp-2) var(--sp-4);
+  color: var(--dim);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  cursor: pointer;
+}
+
+.show-earlier:hover {
+  color: var(--ink);
 }

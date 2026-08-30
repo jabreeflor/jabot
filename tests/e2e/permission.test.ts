@@ -126,6 +126,69 @@ describe("the permission broker", () => {
     expect(after.requests).toEqual([]);
   });
 
+  /**
+   * The delivered half of the same fix.
+   *
+   * A folded thread that hits a permission resurfaces with an unread
+   * `needs_you` card. Answering the ask has to retire that card — otherwise
+   * the Inbox keeps asking a question the user has already answered, and the
+   * badge keeps counting it.
+   *
+   * Narrow on purpose: only the ask's own card. A `stuck` card the same
+   * thread raised is still owed and must survive.
+   */
+  it("retires the Inbox card once the ask on it is answered", async () => {
+    const { host, client, hello } = await connected();
+    await openThread(client, "t-card", "permission");
+    await client.fold({ threadId: "t-card" });
+    const requestId = await ask(host, client, "t-card");
+
+    const before: InboxListResult = await client.inbox();
+    expect(before.events.map((event) => event.kind)).toContain("needs_you");
+    expect(before.unread).toBeGreaterThan(0);
+
+    const answered = await client.replyPermission({
+      requestId,
+      deviceId: hello.device.deviceId,
+      optionId: "allow_once",
+    });
+    expect(answered).toMatchObject({ delivered: true });
+
+    // The question is answered, so the card stops asking it. Stated as "no
+    // *unread* needs_you" rather than as a row count: `resurface_thread`
+    // dismisses this thread's unread cards before inserting a new one, so
+    // whether the row survives depends on ordering. Whether it is read or
+    // gone, the user is not being asked again — which is the whole claim.
+    const after: InboxListResult = await client.inbox();
+    expect(after.events.filter((e) => e.kind === "needs_you" && !e.readAt)).toEqual([]);
+
+    // And the narrowness is the other half of the claim. Answering lets the
+    // turn finish, which resurfaces the folded thread as `done` — a genuinely
+    // new thing the user has not seen. The blanket `mark_inbox_read` that
+    // reopening a thread uses would have swallowed it; this must not.
+    //
+    // Polled, because that resurface lands on the ACP pump some time after
+    // `permission/reply` returns. Reading the Inbox once straight afterwards
+    // is a race that passes on a slow machine and fails on a fast one — which
+    // is exactly how the first version of this test went red on CI having
+    // been green locally.
+    const deadline = Date.now() + 5000;
+    let done: InboxListResult["events"] = [];
+    for (;;) {
+      const list: InboxListResult = await client.inbox();
+      done = list.events.filter((event) => event.kind === "done");
+      if (done.length > 0) break;
+      if (Date.now() > deadline) {
+        throw new Error(`the turn never resurfaced as done: ${JSON.stringify(list.events)}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(done[0].readAt).toBeFalsy();
+    // …and answering still did not leave an unread question behind it.
+    const settled: InboxListResult = await client.inbox();
+    expect(settled.events.filter((e) => e.kind === "needs_you" && !e.readAt)).toEqual([]);
+  });
+
   it("still has the question after the host that asked it was quit", async () => {
     const dataDir = ownDataDir();
     const first = await connected({ dataDir });
@@ -163,6 +226,17 @@ describe("the permission broker", () => {
     expect(
       (await second.client.pendingPermissions({ threadId: "t-quit" })).requests,
     ).toEqual([]);
+
+    // And the card that brought the user here stops asking. It used to sit
+    // there unread and counted in the badge — the same question re-expanded
+    // as a stale row with no buttons on it, because nothing on the resolve
+    // path ever cleared the `needs_you` row the resurface wrote.
+    //
+    // Cleared even though the answer was undelivered: `delivered` is about
+    // whether a process heard it, and the user has still answered.
+    const after: InboxListResult = await second.client.inbox();
+    expect(after.unread).toBe(0);
+    expect(after.events.filter((event) => !event.readAt)).toEqual([]);
   });
 
   it("resolves an unanswered ask as cancelled when the turn is cancelled", async () => {

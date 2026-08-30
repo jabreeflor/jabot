@@ -19,6 +19,7 @@ import {
   HostRpcError,
   RPC_ERROR,
   type FolderListResult,
+  type FolderUpdateParams,
   type FolderView,
   type HelloResult,
   type HostClient,
@@ -68,6 +69,24 @@ function folder(overrides: Partial<FolderView> = {}): FolderView {
 }
 
 describe("folderRows", () => {
+  /** The two fields folder settings edits (#16). Not carried before, so the
+      settings card had nothing to seed itself from. */
+  it("carries the editable fields onto the sidebar's shape", () => {
+    const [row] = folderRows({
+      folders: [
+        folder({ setupCommand: "npm ci", filesToCopy: [".env", ".env.local"] }),
+      ],
+    });
+
+    expect(row.setupCommand).toBe("npm ci");
+    expect(row.filesToCopy).toEqual([".env", ".env.local"]);
+    // A folder with neither keeps `undefined` and an empty list, which is what
+    // the host answers and what the form reads as "nothing set".
+    const [bare] = folderRows({ folders: [folder()] });
+    expect(bare.setupCommand).toBeUndefined();
+    expect(bare.filesToCopy).toEqual([]);
+  });
+
   it("maps a folder/list result onto the sidebar's own shape", () => {
     const result: FolderListResult = {
       folders: [
@@ -194,12 +213,14 @@ describe("AddFolderModal", () => {
 describe("App, once the host has answered", () => {
   const listFolders = vi.fn<() => Promise<FolderListResult>>();
   const openThread = vi.fn<() => Promise<ThreadStateResult>>();
+  const updateFolder = vi.fn<(p: FolderUpdateParams) => Promise<FolderView>>();
 
   function client(): HostClient {
     return {
       disconnect: vi.fn(),
       listFolders,
       openThread,
+      updateFolder,
       // Selecting a host-owned thread now renders it live (#14): it hydrates
       // from `thread/transcript` and subscribes for `session/update`. A stub
       // without these is a host the renderer cannot talk to at all, so the
@@ -222,6 +243,7 @@ describe("App, once the host has answered", () => {
   beforeEach(() => {
     listFolders.mockReset();
     openThread.mockReset();
+    updateFolder.mockReset().mockImplementation(async () => folder());
     vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
   });
 
@@ -347,6 +369,84 @@ describe("App, once the host has answered", () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * The worktree controls reaching the host (#23).
+   *
+   * `useCheckout` and `baseRef` have been on `thread/open` and honoured by the
+   * Rust host since #23, and no renderer ever set them. This is the trip the
+   * modal's own tests cannot make: draft to wire.
+   */
+  it("carries the advanced worktree choices through to thread/open", async () => {
+    const registered = folder();
+    listFolders.mockResolvedValue({ folders: [registered] });
+    openThread.mockResolvedValue({
+      threadId: "t-new",
+      title: "Rotate the backup keys",
+      state: "active" as ThreadOverlayState,
+      foldPolicy: "default" as const,
+      cwd: registered.cwd,
+      harnessId: "claude",
+      folderId: registered.folderId,
+      process: {
+        connected: false,
+        acpState: "unknown" as const,
+        pendingPermissions: 0,
+        resumable: false,
+      },
+      runs: [],
+      unread: 0,
+    });
+    await renderApp();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "New thread in jabot" }),
+    );
+    await userEvent.type(
+      screen.getByLabelText("WHAT SHOULD IT DO?"),
+      "Rotate the backup keys",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    await userEvent.type(
+      screen.getByLabelText("BASE BRANCH"),
+      "release/2.0",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+
+    expect(openThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folderId: "f-jabot",
+        baseRef: "release/2.0",
+      }),
+    );
+  });
+
+  /** A base ref the repository does not have is the host's to refuse, and its
+      sentence is the useful one — "v9.9.9 is not a commit in this repository"
+      rather than "could not start". The card keeps the draft either way. */
+  it("shows the host's refusal of a base ref that does not resolve", async () => {
+    listFolders.mockResolvedValue({ folders: [folder()] });
+    openThread.mockRejectedValue(
+      new HostRpcError({
+        code: RPC_ERROR.WORKTREE_FAILED,
+        message: "v9.9.9 is not a commit in this repository",
+      }),
+    );
+    await renderApp();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "New thread in jabot" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    await userEvent.type(screen.getByLabelText("BASE BRANCH"), "v9.9.9");
+    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "v9.9.9 is not a commit in this repository",
+    );
+    // And the card is still holding what was typed, so the fix is one edit.
+    expect(screen.getByLabelText("BASE BRANCH")).toHaveValue("v9.9.9");
+  });
+
   it("keeps the New Chat card open when the host refuses the spawn", async () => {
     listFolders.mockResolvedValue({ folders: [folder()] });
     openThread.mockRejectedValue(
@@ -394,5 +494,169 @@ describe("App, once the host has answered", () => {
       await screen.findByRole("button", { name: "New thread in jabot-app" }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/No folders yet/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Folder settings (#16, #23).
+ *
+ * `folder/update` has been routed and handled since #16 — name, setup command,
+ * files-to-copy, and a `refresh` that asks git again — and `client.updateFolder`
+ * had no caller anywhere in `src/`. So everything a folder knows was typed once
+ * at registration and frozen, and a wrong setup command silently produced a
+ * half-built worktree on every thread with no way to correct it.
+ */
+describe("editing a registered folder", () => {
+  const listFolders = vi.fn<() => Promise<FolderListResult>>();
+  const updateFolder = vi.fn<(p: FolderUpdateParams) => Promise<FolderView>>();
+
+  function client(): HostClient {
+    return {
+      disconnect: vi.fn(),
+      listFolders,
+      updateFolder,
+      onNotification: vi.fn(() => () => {}),
+      pendingPermissions: vi.fn(async () => ({ requests: [] })),
+    } as unknown as HostClient;
+  }
+
+  beforeEach(() => {
+    listFolders.mockReset().mockResolvedValue({
+      folders: [
+        folder({ setupCommand: "npm ci", filesToCopy: [".env", ".env.local"] }),
+      ],
+    });
+    updateFolder.mockReset().mockImplementation(async () => folder());
+    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+  });
+
+  async function openSettings() {
+    render(<App />);
+    await screen.findByText("This Mac · v0.1.0");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Folder settings for jabot" }),
+    );
+    return screen.findByRole("heading", { name: "Folder — jabot" });
+  }
+
+  it("opens pre-filled with what the host holds", async () => {
+    await openSettings();
+
+    expect(screen.getByLabelText("DISPLAY NAME")).toHaveValue("jabot");
+    expect(screen.getByLabelText(/SETUP SCRIPT/)).toHaveValue("npm ci");
+    expect(screen.getByLabelText(/FILES TO COPY/)).toHaveValue(
+      ".env, .env.local",
+    );
+    // The path is shown and not editable: the host has no move method, and a
+    // folder pointed somewhere else is a different folder.
+    expect(screen.getByText("/Users/j/code/jabot")).toBeInTheDocument();
+  });
+
+  /**
+   * The load-bearing one. The host reads an absent field as "leave it alone",
+   * so sending everything on every save would let an unrelated edit here
+   * silently overwrite what another window had just changed.
+   */
+  it("sends only what actually moved", async () => {
+    await openSettings();
+
+    await userEvent.clear(screen.getByLabelText(/SETUP SCRIPT/));
+    await userEvent.type(screen.getByLabelText(/SETUP SCRIPT/), "pnpm install");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateFolder).toHaveBeenCalledWith({
+        folderId: "f-jabot",
+        setupCommand: "pnpm install",
+      }),
+    );
+  });
+
+  /** The one field where the empty string is a value rather than an absence.
+      Omitting it would mean a setup command could never be removed. */
+  it("clears the setup command with an empty string, not by omitting it", async () => {
+    await openSettings();
+
+    await userEvent.clear(screen.getByLabelText(/SETUP SCRIPT/));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateFolder).toHaveBeenCalledWith({
+        folderId: "f-jabot",
+        setupCommand: "",
+      }),
+    );
+  });
+
+  it("sends the edited files-to-copy list, split the way it is typed", async () => {
+    await openSettings();
+
+    await userEvent.clear(screen.getByLabelText(/FILES TO COPY/));
+    await userEvent.type(
+      screen.getByLabelText(/FILES TO COPY/),
+      ".env,  config/local.json ",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(updateFolder).toHaveBeenCalledWith({
+        folderId: "f-jabot",
+        filesToCopy: [".env", "config/local.json"],
+      }),
+    );
+  });
+
+  /** A remote added or re-pointed since registration. The host re-probes the
+      directory rather than being told what it found. */
+  it("asks git again without sending any edits", async () => {
+    await openSettings();
+
+    await userEvent.click(screen.getByRole("button", { name: "Ask git again" }));
+
+    await waitFor(() =>
+      expect(updateFolder).toHaveBeenCalledWith({
+        folderId: "f-jabot",
+        refresh: true,
+      }),
+    );
+  });
+
+  it("redraws the sidebar from the host's answer", async () => {
+    listFolders.mockResolvedValueOnce({
+      folders: [folder({ isGit: false, origin: undefined })],
+    });
+    render(<App />);
+    await screen.findByText("This Mac · v0.1.0");
+    expect(await screen.findByText("no git")).toBeInTheDocument();
+
+    listFolders.mockResolvedValue({ folders: [folder()] });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Folder settings for jabot" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Ask git again" }));
+
+    // The re-probe found a checkout, so the badge the old answer earned goes.
+    await waitFor(() => expect(screen.queryByText("no git")).toBeNull());
+  });
+
+  /** Same promise the Add card makes: a refused save keeps the draft, because
+      the fix is one edit away and retyping it is not. */
+  it("keeps the card open and says why when the host refuses", async () => {
+    updateFolder.mockRejectedValue(
+      new HostRpcError({
+        code: RPC_ERROR.INVALID_PARAMS,
+        message: "setupCommand is longer than 2000 characters",
+      }),
+    );
+    await openSettings();
+
+    await userEvent.clear(screen.getByLabelText(/SETUP SCRIPT/));
+    await userEvent.type(screen.getByLabelText(/SETUP SCRIPT/), "make all");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "setupCommand is longer than 2000 characters",
+    );
+    expect(screen.getByLabelText(/SETUP SCRIPT/)).toHaveValue("make all");
   });
 });

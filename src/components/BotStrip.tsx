@@ -4,7 +4,7 @@
 //!
 //! Every bot here has one standing thread (#6) — clicking a face opens it.
 
-import { Blob, BlobCluster } from "./Blob";
+import { Avatar, CrewAvatar } from "./avatar";
 import type { Bot, Selection } from "./types";
 
 export function BotStrip({
@@ -48,7 +48,7 @@ export function BotStrip({
           aria-current={selection.view === "crew"}
           onClick={onOpenCrew}
         >
-          <BlobCluster />
+          <CrewAvatar />
           <small>Crew</small>
         </button>
       </div>
@@ -72,7 +72,12 @@ function BotTile({
       aria-current={selected}
       onClick={() => onSelect(bot.id)}
     >
-      <Blob color={bot.color} unread={bot.unread} />
+      <Avatar
+        name={bot.name}
+        color={bot.color}
+        image={bot.image}
+        unread={bot.unread}
+      />
       <small>{bot.name}</small>
     </button>
   );

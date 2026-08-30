@@ -1,0 +1,353 @@
+/*
+ * The avatar: the JaBot mascot in a bot-specific light well, or the picture a
+ * bot was given, plus the chrome that is true of both.
+ *
+ * The box is a CSS variable and not a prop for the reason Avatar.tsx gives:
+ * sidebar.css, chat.css, cards.css, crew.css, modal.css and onboarding.css
+ * already set --blob-size at every call site. --s is the same number under the
+ * name the chrome does its arithmetic in, so a dot and a ring scale with the
+ * avatar instead of being right at 44px and wrong at 28.
+ */
+
+.av {
+  --s: var(--blob-size, 44px);
+  width: var(--s);
+  height: var(--s);
+  flex: none;
+  position: relative;
+  display: block;
+  --mascot-tilt: -1deg;
+  --mascot-glance: 1px;
+  --mascot-speed: 5.6s;
+  --mascot-delay: -1.2s;
+  /* The box is a frame and paints nothing itself; its children hold the
+     mascot or an explicit uploaded image. */
+  background: none;
+  border-radius: 0;
+}
+
+/*
+ * The palette: a light well and a deeper rim, plus a small motion signature.
+ * Doubled up with .av so a `b-teal` on another element cannot pick these up.
+ */
+.av.b-teal {
+  --lite: #6fe0c0;
+  --deep: #2fb894;
+  --mascot-tilt: -2deg;
+  --mascot-glance: 1.1px;
+  --mascot-speed: 5.4s;
+  --mascot-delay: -2.2s;
+}
+
+.av.b-yellow {
+  --lite: #ffd24d;
+  --deep: #efa92f;
+  --mascot-tilt: 2deg;
+  --mascot-glance: -1.2px;
+  --mascot-speed: 5.9s;
+  --mascot-delay: -0.8s;
+}
+
+.av.b-purple {
+  --lite: #9c8cff;
+  --deep: #6c55e8;
+  --mascot-tilt: -3deg;
+  --mascot-glance: 1.4px;
+  --mascot-speed: 5.1s;
+  --mascot-delay: -3.3s;
+}
+
+.av.b-violet {
+  --lite: #c08bff;
+  --deep: #9257e8;
+  --mascot-tilt: 3deg;
+  --mascot-glance: -1.4px;
+  --mascot-speed: 6.1s;
+  --mascot-delay: -4.1s;
+}
+
+.av.b-blue {
+  --lite: #6fafff;
+  --deep: #3c7fe8;
+  --mascot-tilt: -1deg;
+  --mascot-glance: -1px;
+  --mascot-speed: 5.7s;
+  --mascot-delay: -1.6s;
+}
+
+.av.b-orange {
+  --lite: #ffa65c;
+  --deep: #ef7e2f;
+  --mascot-tilt: 3deg;
+  --mascot-glance: 1.3px;
+  --mascot-speed: 5.2s;
+  --mascot-delay: -2.8s;
+}
+
+.av.b-pink {
+  --lite: #ff9bbb;
+  --deep: #e85d8a;
+  --mascot-tilt: -3deg;
+  --mascot-glance: -1.3px;
+  --mascot-speed: 6.3s;
+  --mascot-delay: -3.8s;
+}
+
+.av.b-green {
+  --lite: #7adb8f;
+  --deep: #3ea65c;
+  --mascot-tilt: 1deg;
+  --mascot-glance: 1px;
+  --mascot-speed: 5.5s;
+  --mascot-delay: -1.1s;
+}
+
+.av .mascot-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border: max(1px, calc(var(--s) * 0.025)) solid
+    color-mix(in srgb, var(--deep) 72%, white 28%);
+  border-radius: 36% 36% 42% 42% / 32% 32% 44% 44%;
+  background:
+    radial-gradient(circle at 33% 20%, rgba(255, 255, 255, 0.42), transparent 34%),
+    radial-gradient(circle at 50% 78%, var(--deep), var(--lite));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 calc(var(--s) * -0.16) calc(var(--s) * 0.27)
+      color-mix(in srgb, var(--deep) 70%, transparent),
+    0 calc(var(--s) * 0.07) calc(var(--s) * 0.2)
+      color-mix(in srgb, var(--deep) 28%, transparent);
+  transform-origin: 50% 82%;
+  animation: av-mascot-hover var(--mascot-speed) ease-in-out
+    var(--mascot-delay) infinite;
+}
+
+.av .mascot-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    118deg,
+    transparent 27%,
+    rgba(255, 255, 255, 0.22) 46%,
+    transparent 63%
+  );
+  transform: translateX(-120%);
+  animation: av-mascot-shine 9.6s ease-in-out var(--mascot-delay) infinite;
+  pointer-events: none;
+}
+
+.av .mascot {
+  position: absolute;
+  width: 126%;
+  max-width: none;
+  height: auto;
+  left: -13%;
+  bottom: -7%;
+  user-select: none;
+  pointer-events: none;
+  filter: drop-shadow(0 calc(var(--s) * 0.04) calc(var(--s) * 0.04) rgba(16, 16, 18, 0.42));
+  transform-origin: 50% 70%;
+  animation: av-mascot-look 7.4s ease-in-out var(--mascot-delay) infinite;
+}
+
+/* An uploaded picture fills the same framed hole the mascot does. `cover` and not
+   `contain`: the file was already centre-cropped square on the way in, so this
+   only has to absorb the rounding, and a letterboxed avatar reads as broken. */
+.av .pic {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 36% 36% 42% 42% / 32% 32% 44% 44%;
+  /* The same rim the mascot has, so a photo and mascot sit at the same weight
+     in a mixed row. */
+  box-shadow: inset 0 0 0 1.5px var(--deep);
+}
+
+@keyframes av-mascot-hover {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--mascot-tilt));
+  }
+  38% {
+    transform: translateY(calc(var(--s) * -0.045))
+      rotate(calc(var(--mascot-tilt) + 1deg));
+  }
+  72% {
+    transform: translateY(calc(var(--s) * 0.01))
+      rotate(calc(var(--mascot-tilt) - 0.6deg));
+  }
+}
+
+@keyframes av-mascot-look {
+  0%,
+  34%,
+  64%,
+  100% {
+    transform: translateX(0) scale(1);
+  }
+  43%,
+  54% {
+    transform: translateX(var(--mascot-glance)) scale(1.025);
+  }
+}
+
+@keyframes av-mascot-shine {
+  0%,
+  46% {
+    transform: translateX(-120%);
+  }
+  62%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+/* ---- chrome -------------------------------------------------------------
+   The dot and the ring are drawn by Avatar.tsx for every avatar, so they are
+   in exactly one place and cannot drift apart. --rim is the colour the dot
+   punches its hole out of; a call site on a raised surface overrides it. */
+
+.av .dot {
+  position: absolute;
+  top: -1px;
+  right: 1px;
+  width: max(9px, calc(var(--s) * 0.24));
+  height: max(9px, calc(var(--s) * 0.24));
+  border-radius: 50%;
+  background: var(--red);
+  border: max(2px, calc(var(--s) * 0.05)) solid var(--rim, var(--side));
+  z-index: 3;
+}
+
+/*
+ * The ring remains the whole state vocabulary around the mascot,
+ * and it says three different things:
+ *
+ *   running — green, and turning, because it is the one state that is going
+ *             somewhere; motion is what you catch out of the corner of an eye.
+ *   waiting — amber and still. A bot that needs you is not working, and a
+ *             spinner on it would say the opposite.
+ *   failed  — red and still. Same shape as the unread dot's colour, which is
+ *             the point: both mean "come here".
+ *
+ * A circle even where the mark is not: a rounded square with a gap rotating
+ * around it reads as a broken tile, where a circle reads as a spinner. The gap
+ * is cut with a conic mask rather than drawn as a dashed border so the arc has
+ * ends, and --spin is registered so the angle can be animated at all — an
+ * unregistered custom property is a string and does not interpolate.
+ */
+.av .ring {
+  position: absolute;
+  inset: max(-4px, calc(var(--s) * -0.12));
+  border-radius: 50%;
+  border: max(2px, calc(var(--s) * 0.055)) solid var(--ring-color, var(--ok));
+  z-index: 1;
+}
+
+.av[data-state="waiting"] .ring {
+  --ring-color: var(--amber);
+}
+
+.av[data-state="failed"] .ring {
+  --ring-color: var(--red);
+}
+
+.av[data-state="running"] .ring {
+  -webkit-mask: conic-gradient(
+    from var(--spin, -0.05turn),
+    #000 0 72%,
+    transparent 72.5% 100%
+  );
+  mask: conic-gradient(
+    from var(--spin, -0.05turn),
+    #000 0 72%,
+    transparent 72.5% 100%
+  );
+  animation: av-spin 1.6s linear infinite;
+}
+
+@property --spin {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: -18deg;
+}
+
+@keyframes av-spin {
+  to {
+    --spin: 342deg;
+  }
+}
+
+/* ---- the crew cluster ---------------------------------------------------
+   Three mascot portraits. It keeps the `cluster` class so sidebar.css's selected-tile
+   ring and onboarding.css's `.setup-cluster` sizing keep working untouched,
+   and adds `av-cluster` so a rule here says plainly that it is about the drawn
+   cluster and not about the class those two sheets happen to target. */
+
+.av-cluster {
+  --s: var(--blob-size, 44px);
+  width: var(--s);
+  height: var(--s);
+  flex: none;
+  position: relative;
+  display: block;
+}
+
+/*
+ * Direct children only. A slot holds a whole avatar, so a descendant selector
+ * here would reach past the slot and into the drawing's own parts. Sizing the
+ * slot rather than the avatar keeps --blob-size and --s out of a definition
+ * cycle.
+ */
+.cluster.av-cluster > i {
+  position: absolute;
+  display: block;
+  width: auto;
+  height: auto;
+  background: none;
+  border-radius: 0;
+  --blob-size: calc(var(--s) * 0.57);
+}
+
+/* Two portraits overlapping is a mess unless the one in front has an edge, so
+   each slot cuts itself out of the surface it sits on. Doubled because one
+   pass of a 1.5px shadow is not enough against a lit disc. */
+.cluster.av-cluster > i > .av {
+  filter: drop-shadow(0 0 1.5px var(--rim, var(--side)))
+    drop-shadow(0 0 1.5px var(--rim, var(--side)));
+}
+
+.av-cluster .mascot-stage .mascot {
+  width: 148%;
+  left: -24%;
+  bottom: -11%;
+}
+
+.cluster.av-cluster > .s1 {
+  top: 0;
+  left: 20%;
+}
+
+.cluster.av-cluster > .s2 {
+  bottom: 0;
+  left: 0;
+}
+
+.cluster.av-cluster > .s3 {
+  bottom: 0;
+  right: 0;
+}
+
+/* The ring still says everything it needs to when it is not turning: colour
+   and presence carry all three states, and only the spin is motion. */
+@media (prefers-reduced-motion: reduce) {
+  .av .ring {
+    animation: none;
+    -webkit-mask: none;
+    mask: none;
+  }
+}

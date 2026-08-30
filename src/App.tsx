@@ -16,7 +16,7 @@
 //! Navigation, overlay state, and the leave animation live here because they are
 //! the only state that spans the sidebar and the main pane.
 
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import {
   connectHost,
@@ -27,9 +27,13 @@ import {
   HostRpcError,
 } from "./host";
 import { AddFolderModal } from "./components/AddFolderModal";
+import { FolderSettingsModal } from "./components/FolderSettingsModal";
+import { GithubSignInModal } from "./components/GithubSignInModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
+import { DevicesView } from "./views/DevicesView";
+import { SettingsView } from "./views/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import {
   ThreadContextMenu,
@@ -46,17 +50,27 @@ import type {
   ThreadSummary,
   ToolOption,
 } from "./components/types";
-import { useCrew } from "./views/crew";
+import { Onboarding } from "./onboarding/Onboarding";
+import {
+  loadOnboarding,
+  saveOnboarding,
+  type OnboardingProfile,
+} from "./onboarding/state";
+import { useCrew, useHarnessCatalog } from "./views/crew";
 import { usePullRequests, type PullRequests } from "./views/pulls";
+import { useGithubAuth, type GithubAuth } from "./views/github";
 import {
   useSchedules,
   type ScheduleDraft,
   type Schedules,
 } from "./views/schedules";
-import { allThreads, useFolders } from "./views/folders";
+import { allThreads, useFolders, useHostThread } from "./views/folders";
 import { useThreadActions } from "./views/fold";
 import { useInbox, type HostInbox } from "./views/inbox";
-import { ChatView } from "./views/ChatView";
+import { useDevices, type Devices } from "./views/devices";
+import { useSettings, type Settings } from "./views/settings";
+import { CrossIcon } from "./components/Icon";
+import { ChatView, LiveChatView } from "./views/ChatView";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
 import { PullRequestsView } from "./views/PullRequestsView";
@@ -81,16 +95,81 @@ import "./App.css";
 /** Matches the row's exit transition, so the state change lands after it. */
 const LEAVE_MS = 380;
 
-const USER_NAME = "Jabree Flor";
-
 type NewChatState = { open: false } | { open: true; folderId: string | null };
 type EditorState = { open: false } | { open: true; botId: string | null };
+/** Editing only: a *new* schedule is written as a prompt inside the Schedules
+    screen (#25), so the modal never opens without a record behind it. */
 type ScheduleEditorState =
   | { open: false }
-  | { open: true; scheduleId: string | null };
+  | { open: true; scheduleId: string };
 type MenuState = { thread: ThreadSummary; position: MenuPosition } | null;
+type HostSession = ReturnType<typeof useHost>;
 
+/**
+ * The first-run gate. On a launch with no stored profile the takeover renders
+ * instead of the shell — none of the shell's hooks run during setup. The host
+ * handshake is hoisted *above* the gate on purpose: the host may have to spawn
+ * on a real first launch, so the connection opens while the user is reading
+ * pane 1, its status shows under the card, and the same live session is handed
+ * to the shell when setup ends — nobody finishes a setup flow and *then*
+ * watches "Connecting to host…".
+ */
 function App() {
+  const host = useHost();
+  // The first harness a user ever picks came from `mock-host.ts` — the three
+  // compiled-in defaults — so a fresh install never saw a tier-2 preset or the
+  // user's own tier-3 JSON on the one screen that asks them to choose, and
+  // could pick an engine the host would refuse at thread start. The connection
+  // is already hoisted above this gate, so the catalog is one call away.
+  //
+  // Falls back to the fixtures exactly as `AppShell` does: `null` means the
+  // host has not answered, and a setup screen that waited on it would be a
+  // blank window.
+  const liveHarnesses = useHarnessCatalog(host.client);
+  const [profile, setProfile] = useState<OnboardingProfile | null>(
+    loadOnboarding,
+  );
+  // The record a re-run is editing. The gate reads this state and never the
+  // store, so storage is not wiped while the takeover is open: `onFinish`
+  // overwrites it, quitting mid-re-run keeps it, and the seeded draft means
+  // Escape or Skip re-persists the name that was already there rather than
+  // "You".
+  const [editing, setEditing] = useState<OnboardingProfile | null>(null);
+
+  return profile ? (
+    <AppShell
+      profile={profile}
+      host={host}
+      onRunSetup={() => {
+        setEditing(profile);
+        setProfile(null);
+      }}
+    />
+  ) : (
+    <Onboarding
+      harnesses={liveHarnesses ?? HARNESSES}
+      profile={editing ?? undefined}
+      hostLine={hostLine(host.hello, host.hostError, host.connecting)}
+      hostOffline={host.hostError !== null}
+      onFinish={(next) => {
+        saveOnboarding(next);
+        setProfile(next);
+        setEditing(null);
+      }}
+    />
+  );
+}
+
+function AppShell({
+  profile,
+  host: hostSession,
+  onRunSetup,
+}: {
+  profile: OnboardingProfile;
+  host: HostSession;
+  /** Re-enter setup from Crew — the one in-app way to change the name. */
+  onRunSetup: () => void;
+}) {
   const [state, dispatch] = useReducer(mockHostReducer, null, initialMockState);
   const [selection, setSelection] = useState<Selection>({
     view: "bot",
@@ -103,20 +182,34 @@ function App() {
   const [menu, setMenu] = useState<MenuState>(null);
   const [leaving, setLeaving] = useState<readonly string[]>([]);
   const [addFolder, setAddFolder] = useState(false);
+  const [folderSettings, setFolderSettings] = useState<string | null>(null);
+  const [signIn, setSignIn] = useState(false);
   const [scheduleEditor, setScheduleEditor] = useState<ScheduleEditorState>({
     open: false,
   });
   const [scheduleError, setScheduleError] = useState<string | null>(null);
-  const { client, hello, hostError, connecting } = useHost();
+  const { client, hello, hostError, connecting } = hostSession;
   const registered = useFolders(client);
-  // The Inbox (#22). Reloads the sidebar too: reopening a card's thread puts
-  // its row back, and archiving one takes it away.
-  const inbox = useInbox(client, registered.reload);
   const crew = useCrew(client);
+  // The Inbox (#22). Reloads the sidebar too: reopening a card's thread puts
+  // its row back, and archiving one takes it away. Handed the crew so a card
+  // on a bot's thread wears that bot's face rather than the code mark — the
+  // roster is the only place a bot id becomes a name and a colour. Declared
+  // after `useCrew` for that reason, and passed `crew.bots` rather than the
+  // fixture fallback below: a host card's bot id would never match a fixture's.
+  const inbox = useInbox(client, registered.reload, crew.bots);
   const schedules = useSchedules(client);
+  const settings = useSettings(client);
+  const devices = useDevices(client);
+  // Whether GitHub can be asked as anybody (#16). The PR board is the only
+  // surface that needs it, and it needs it twice: to decide whether to ask for
+  // the user's own pull requests at all, and to know what to offer if not.
+  const github = useGithubAuth(client);
   // The PR board (#28). Two calls behind one hook: an instant store read on
   // mount, and a poll that keeps it warm without ever being able to empty it.
-  const pulls = usePullRequests(client);
+  // A third once signed in — the user's own open PRs, folded into the same
+  // list.
+  const pulls = usePullRequests(client, github.signedIn);
   // The host wins once it has answered, per source. A crew of `null` is "not
   // asked yet" — a preview build or a unit test — and the fixtures stand in;
   // a real answer always has Chief in it.
@@ -129,7 +222,30 @@ function App() {
   // threads inside them are real rows, so the main pane has to be able to find
   // one that the mock reducer has never heard of.
   const folders = registered.folders ?? sidebarFolders(state);
+  // The row the settings card is open on, resolved against the live list so a
+  // reload after a save re-seeds the form from what the host now holds.
+  const settingsFolder =
+    folderSettings === null
+      ? null
+      : (folders.find((f) => f.id === folderSettings) ?? null);
   const hostThreads = registered.folders ? allThreads(registered.folders) : [];
+  // A thread the host owns that no folder lists — a bot's standing thread,
+  // whose `folder_id` is null. `folder/list` walks folder rows, so those are
+  // invisible to `hostThreads`, and the shell used to treat them as fixtures:
+  // the main pane said "That thread is gone", and fold or archive went to the
+  // mock reducer while the real permissions, runs and process sat untouched.
+  const selectedThreadId = selection.view === "thread" ? selection.threadId : null;
+  const resolved = useHostThread(
+    client,
+    selectedThreadId,
+    selectedThreadId !== null && hostThreads.some((t) => t.id === selectedThreadId),
+  );
+  /** Is this the host's thread, whether or not a folder claims it? */
+  const isHostThread = useCallback(
+    (threadId: string) =>
+      hostThreads.some((t) => t.id === threadId) || resolved?.id === threadId,
+    [hostThreads, resolved],
+  );
 
   // Fold, Archive and Delete are host calls for a host row (#26).
   // `registered.reload` runs whether the host took them or not: the leave
@@ -198,7 +314,7 @@ function App() {
    * thread already had (`state-machine.md`), and both paths honour it.
    */
   function foldThread(threadId: string, policy?: FoldPolicy) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost = client !== null && isHostThread(threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "foldThread", threadId, policy });
@@ -227,7 +343,7 @@ function App() {
    * and leave every one of those still running.
    */
   function archiveThread(threadId: string) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost = client !== null && isHostThread(threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "archiveThread", threadId });
@@ -246,7 +362,7 @@ function App() {
 
   /** Delete a thread. Same split as archive, and the same reason. */
   function deleteThread(threadId: string) {
-    const onHost = client !== null && hostThreads.some((t) => t.id === threadId);
+    const onHost = client !== null && isHostThread(threadId);
     leaveThread(threadId, () => {
       if (!onHost) {
         dispatch({ type: "deleteThread", threadId });
@@ -297,7 +413,7 @@ function App() {
       actionId === "fold" &&
       threadId &&
       client &&
-      hostThreads.some((t) => t.id === threadId)
+      isHostThread(threadId)
     ) {
       void fold({ threadId });
     }
@@ -319,6 +435,11 @@ function App() {
           cwd: folder.cwd ?? folder.path,
           harnessId: draft.harnessId,
           folderId: folder.id,
+          // Advanced, and both undefined unless the card was opened and used
+          // (#23). A base ref the repo does not have comes back as
+          // WORKTREE_FAILED, which the catch below already puts on the card.
+          useCheckout: draft.useCheckout,
+          baseRef: draft.baseRef,
         })
         .then((thread) => {
           registered.reload();
@@ -372,6 +493,19 @@ function App() {
     if (fromEditor) closeEditor();
   }
 
+  /** Start the provider grant, and say so in the modal if the host refuses.
+      The flow returns as soon as it is *running*; what comes back after that
+      arrives on the poll `useCrew` arms while anything is `connecting`. */
+  function connectTool(toolId: string) {
+    setEditorError(null);
+    crew.connectTool(toolId).catch((err) => setEditorError(formatError(err)));
+  }
+
+  function disconnectTool(toolId: string) {
+    setEditorError(null);
+    crew.disconnectTool(toolId).catch((err) => setEditorError(formatError(err)));
+  }
+
   function closeEditor() {
     setEditor({ open: false });
     setEditorError(null);
@@ -411,12 +545,11 @@ function App() {
     editor.open && editor.botId
       ? (bots.find((bot) => bot.id === editor.botId) ?? null)
       : null;
-  const editingSchedule =
-    scheduleEditor.open && scheduleEditor.scheduleId
-      ? ((schedules.schedules ?? []).find(
-          (row) => row.scheduleId === scheduleEditor.scheduleId,
-        ) ?? null)
-      : null;
+  const editingSchedule = scheduleEditor.open
+    ? ((schedules.schedules ?? []).find(
+        (row) => row.scheduleId === scheduleEditor.scheduleId,
+      ) ?? null)
+    : null;
 
   return (
     <div className="app-shell">
@@ -427,6 +560,11 @@ function App() {
         folders={folders}
         foldersEmpty={registered.folders?.length === 0}
         onAddFolder={client ? () => setAddFolder(true) : undefined}
+        // Only for folders the host actually has. A fixture folder has nothing
+        // `folder/update` could be pointed at.
+        onFolderSettings={
+          client && registered.folders ? setFolderSettings : undefined
+        }
         selection={selection}
         // The host's own count, not a second classification of the rows this
         // renderer happens to be holding: `count_unread_inbox` is the badge
@@ -434,16 +572,20 @@ function App() {
         // draws. Two devices disagreeing about one host would be two products.
         inboxCount={inbox.unread ?? needsYouCount(state)}
         openPrCount={openPrCount(state)}
-        userName={USER_NAME}
+        userName={profile.userName}
         hostLine={hostLine(hello, hostError, connecting)}
         hostOffline={hostError !== null}
         leavingThreadIds={leaving}
         onSelectBot={(botId) => setSelection({ view: "bot", botId })}
-        onSelectThread={(threadId) => setSelection({ view: "thread", threadId })}
+        onSelectThread={(threadId) =>
+          setSelection({ view: "thread", threadId })
+        }
         onOpenCrew={() => setSelection({ view: "crew" })}
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
         onOpenSchedules={() => setSelection({ view: "schedules" })}
+        onOpenDevices={client ? () => setSelection({ view: "devices" }) : undefined}
+        onOpenSettings={client ? () => setSelection({ view: "settings" }) : undefined}
         onNewChat={(folderId) => setNewChat({ open: true, folderId })}
         onThreadMenu={(thread, position) => setMenu({ thread, position })}
       />
@@ -452,7 +594,7 @@ function App() {
         <div className="app-error" role="alert">
           <span>{foldError}</span>
           <button type="button" onClick={clearFoldError} aria-label="Dismiss">
-            ×
+            <CrossIcon />
           </button>
         </div>
       )}
@@ -463,15 +605,19 @@ function App() {
           state={state}
           inbox={inbox}
           schedules={schedules}
+          settings={settings}
+          devices={devices}
           pulls={pulls}
+          github={github}
+          onSignIn={() => setSignIn(true)}
           onEditSchedule={(scheduleId) =>
             setScheduleEditor({ open: true, scheduleId })
           }
-          onAddSchedule={() => setScheduleEditor({ open: true, scheduleId: null })}
           bots={bots}
           tools={[...toolChips, ...hostToolChips]}
           harnesses={harnesses}
           hostThreads={hostThreads}
+          resolvedThread={resolved}
           selection={selection}
           host={host}
           onSelect={setSelection}
@@ -496,8 +642,27 @@ function App() {
           onEditBot={(botId) => setEditor({ open: true, botId })}
           onAddBot={() => setEditor({ open: true, botId: null })}
           onRemoveBot={(botId) => removeBot(botId, false)}
+          onRunSetup={onRunSetup}
         />
       </main>
+
+      {signIn && (
+        <GithubSignInModal
+          host={github.status?.host ?? "github.com"}
+          // Absent status means the host has not answered yet; assume `gh` is
+          // there rather than showing an install line we have no evidence for.
+          installed={github.status?.installed !== false}
+          installHint={github.status?.remedy}
+          onSignIn={async (token) => {
+            await github.signIn(token);
+            // The board's own poll is up to a minute away, and somebody who
+            // just signed in is looking at it now.
+            pulls.reload();
+          }}
+          onCancel={() => setSignIn(false)}
+          onOpenUrl={(url) => window.open(url, "_blank", "noopener,noreferrer")}
+        />
+      )}
 
       {addFolder && (
         <AddFolderModal
@@ -508,11 +673,20 @@ function App() {
         />
       )}
 
+      {settingsFolder && (
+        <FolderSettingsModal
+          folder={settingsFolder}
+          onSave={registered.update}
+          onCancel={() => setFolderSettings(null)}
+        />
+      )}
+
       {newChat.open && (
         <NewChatModal
           harnesses={harnesses}
           folders={registered.folders ?? state.folders}
           defaultFolderId={newChat.folderId}
+          defaultHarnessId={profile.harnessId ?? undefined}
           error={newChatError}
           onStart={startThread}
           onCancel={() => {
@@ -532,23 +706,24 @@ function App() {
           onSave={saveBot}
           onRemove={(botId) => removeBot(botId, true)}
           onCancel={closeEditor}
+          // Only with a host. A preview build has nothing to sign into, and a
+          // Connect button there would offer a flow that cannot start.
+          onConnectTool={client ? connectTool : undefined}
+          onDisconnectTool={client ? disconnectTool : undefined}
+          onOpenUrl={(url) => window.open(url, "_blank", "noopener,noreferrer")}
         />
       )}
 
-      {scheduleEditor.open && (
+      {scheduleEditor.open && editingSchedule && (
         <ScheduleEditorModal
-          schedule={
-            editingSchedule
-              ? {
-                  scheduleId: editingSchedule.scheduleId,
-                  botId: editingSchedule.botId,
-                  name: editingSchedule.name,
-                  cron: editingSchedule.cron,
-                  prompt: editingSchedule.prompt,
-                  catchUp: editingSchedule.catchUp,
-                }
-              : null
-          }
+          schedule={{
+            scheduleId: editingSchedule.scheduleId,
+            botId: editingSchedule.botId,
+            name: editingSchedule.name,
+            cron: editingSchedule.cron,
+            prompt: editingSchedule.prompt,
+            catchUp: editingSchedule.catchUp,
+          }}
           bots={bots}
           error={scheduleError}
           onSave={saveSchedule}
@@ -583,13 +758,17 @@ function MainView({
   state,
   inbox,
   schedules,
+  settings,
+  devices,
   pulls,
+  github,
+  onSignIn,
   onEditSchedule,
-  onAddSchedule,
   bots,
   tools,
   harnesses,
   hostThreads,
+  resolvedThread,
   selection,
   host,
   onSelect,
@@ -601,6 +780,7 @@ function MainView({
   onEditBot,
   onAddBot,
   onRemoveBot,
+  onRunSetup,
 }: {
   /** Present once the host has answered. A thread the host owns is rendered
       live — hydrated from `thread/transcript` and streamed from there (#14). */
@@ -610,10 +790,17 @@ function MainView({
   inbox: HostInbox;
   /** Recurring jobs, host-owned from the first answer (#25). */
   schedules: Schedules;
+  /** App-wide preferences (#26). */
+  settings: Settings;
+  /** Everything paired with this Mac (#19, #29). */
+  devices: Devices;
   /** The PR board, host-owned from the first answer (#28). */
   pulls: PullRequests;
+  /** Whether GitHub can be asked as anybody, and as whom (#16). */
+  github: GithubAuth;
+  /** Open the GitHub sign-in dialog. */
+  onSignIn: () => void;
   onEditSchedule: (scheduleId: string) => void;
-  onAddSchedule: () => void;
   /** The crew, host-owned once `crew/list` has answered (#17). */
   bots: readonly Bot[];
   /** Every chip a crew card may have to name: the MCP catalog plus Chief's
@@ -623,6 +810,9 @@ function MainView({
   /** Rows the host owns. Looked up before the fixtures, because a folder the
       host registered lists threads the mock reducer has never heard of. */
   hostThreads: readonly ThreadSummary[];
+  /** The selected thread when the host owns it but no folder lists it — a
+      bot's standing thread. Resolved one id at a time; see `useHostThread`. */
+  resolvedThread: ThreadSummary | null;
   selection: Selection;
   host: HostTarget;
   onSelect: (selection: Selection) => void;
@@ -636,6 +826,8 @@ function MainView({
   onEditBot: (botId: string) => void;
   onAddBot: () => void;
   onRemoveBot: (botId: string) => void;
+  /** Wipe the first-run record and re-enter setup. Surfaced in Crew. */
+  onRunSetup: () => void;
 }) {
   switch (selection.view) {
     case "crew":
@@ -647,6 +839,7 @@ function MainView({
           onEdit={onEditBot}
           onAdd={onAddBot}
           onRemove={onRemoveBot}
+          onRunSetup={onRunSetup}
         />
       );
     case "inbox":
@@ -660,6 +853,30 @@ function MainView({
           loading={inbox.loading && inbox.cards === null}
           onOpenThread={onOpenInboxThread}
           onAction={onInboxAction}
+          notify={inbox.notify}
+        />
+      );
+    case "devices":
+      return (
+        <DevicesView
+          devices={devices.devices}
+          error={devices.error}
+          onReload={devices.reload}
+          // Handed down rather than resolved here so the row can show the
+          // host's own refusal — "the local device cannot be revoked; it is
+          // the host's own console" is the useful sentence.
+          onRevoke={devices.revoke}
+        />
+      );
+    case "settings":
+      return (
+        <SettingsView
+          settings={settings.settings}
+          error={settings.error}
+          // The promise is handed to the pane rather than resolved here: it
+          // keeps what was typed and shows the host's own refusal, which is
+          // the sentence worth reading.
+          onSave={settings.save}
         />
       );
     case "schedules":
@@ -669,7 +886,9 @@ function MainView({
           bots={bots}
           error={schedules.error}
           onReload={schedules.reload}
-          onAdd={onAddSchedule}
+          // The prompt keeps the draft and says why, so the promise is handed
+          // straight to it rather than resolved into a shell-level error.
+          onCreate={(draft) => schedules.save(null, draft)}
           onEdit={onEditSchedule}
           onToggle={(scheduleId, enabled) => {
             void schedules.setEnabled(scheduleId, enabled);
@@ -689,6 +908,9 @@ function MainView({
           pullRequests={pulls.pullRequests ?? state.pullRequests}
           unavailable={pulls.unavailable}
           error={pulls.error}
+          githubStatus={github.status}
+          account={pulls.account}
+          onSignIn={onSignIn}
           onRefresh={() => void pulls.refresh()}
           onOpenThread={(threadId) => onSelect({ view: "thread", threadId })}
           onAction={(prId, actionId) => {
@@ -703,7 +925,9 @@ function MainView({
         />
       );
     case "thread": {
-      const hostThread = hostThreads.find((t) => t.id === selection.threadId);
+      const hostThread =
+        hostThreads.find((t) => t.id === selection.threadId) ??
+        (resolvedThread?.id === selection.threadId ? resolvedThread : undefined);
       // A real row gets the real transcript. The fixtures keep the mock
       // reducer, so the shell still renders before a host has answered.
       if (client && hostThread) {
@@ -740,9 +964,7 @@ function MainView({
           host={host}
           items={state.transcripts[thread.id] ?? []}
           onSend={(text) => onSend(thread.id, text)}
-          onAction={(itemId, actionId) =>
-            onNotice(thread.id, itemId, actionId)
-          }
+          onAction={(itemId, actionId) => onNotice(thread.id, itemId, actionId)}
           onFold={(policy) => onFoldThread(thread.id, policy)}
         />
       );
@@ -750,6 +972,17 @@ function MainView({
     case "bot": {
       const bot = bots.find((b) => b.id === selection.botId);
       if (!bot) return <div className="view" />;
+      // A bot the host serves gets its real standing thread (#24). The
+      // fixtures stay as the fallback for the same reason the thread case
+      // keeps them — the shell renders before a host has answered — and the
+      // method lookup is part of the test: a transport that predates
+      // `crew/thread` has no thread to open, and a preview build drawing its
+      // own fixtures is a better answer than an error where a chat should be.
+      if (client && typeof client.botThread === "function") {
+        return (
+          <LiveChatView key={bot.id} client={client} bot={bot} host={host} />
+        );
+      }
       return (
         <ChatView
           key={bot.id}

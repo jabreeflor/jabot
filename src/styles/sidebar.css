@@ -125,8 +125,14 @@
   background: var(--raise2);
 }
 
-.bot-tile[aria-current="true"] .blob,
+/* The ring is round even though an avatar's box is square: the drawing inside
+   it is a creature on a circular body, and a square halo would read as a tile
+   around the bot rather than a highlight on it. A hat or a crest overflows the
+   box and so paints across the ring, which is the right way round — the mark
+   belongs to the bot, not to the selection. */
+.bot-tile[aria-current="true"] .av,
 .bot-tile[aria-current="true"] .cluster {
+  border-radius: 50%;
   box-shadow:
     0 0 0 2px var(--side),
     0 0 0 4px var(--ink);
@@ -259,11 +265,60 @@
   width: 11px;
   height: 11px;
   color: var(--faint);
-  transition: transform 0.15s;
+  transition: transform var(--t-icon) var(--ease-flap);
 }
 
 .folder-toggle[aria-expanded="false"] .chev {
   transform: rotate(-90deg);
+}
+
+/* ---- the folder glyph ----
+
+   Two paths, one outline. Closed, `.folder-front` sits exactly on the shell's
+   left, right and bottom edges, so the pair draws the single-line folder this
+   icon has always been; the only visible seam is the panel's top edge.
+
+   Open, the panel shears to the right and loses a little height, which is what
+   a front panel actually does when the folder is opened towards you: the
+   bottom edge stays on the desk and the top edge falls away, uncovering the
+   shell behind it. Shear rather than rotate — a rotation tips the floor, and a
+   tipped folder reads as spilling, not opening.
+
+   `fill-box` puts the origin on the panel's own bottom-left corner, so the
+   hinge is the corner the panel would really pivot on rather than the middle
+   of a 24-unit box. */
+
+.folder-toggle .folder-glyph {
+  overflow: visible;
+  transition:
+    transform var(--t-icon) var(--ease-flap),
+    color var(--t-icon) ease;
+}
+
+.folder-glyph .folder-front {
+  transform-box: fill-box;
+  transform-origin: 0 100%;
+  transition: transform var(--t-icon) var(--ease-flap);
+}
+
+/* Sheared right, a little shorter and a hair narrower. The narrowing is what
+   keeps the open panel *inside* the shell: a pure shear throws the top-right
+   corner past the shell's right edge and the outline reads as broken rather
+   than as open. */
+.folder-glyph[data-open="true"] .folder-front {
+  transform: translateX(-0.5px) skewX(-8deg) scale(0.94, 0.84);
+}
+
+/* Hovering lifts the folder a hair — the row is a thing you can open, and the
+   only way a static glyph says so is by moving first. */
+.folder-toggle:hover .folder-glyph {
+  transform: translateY(-1px);
+  color: var(--dim);
+}
+
+.folder-toggle:active .folder-glyph {
+  transform: translateY(0) scale(0.94);
+  transition-duration: 0.08s;
 }
 
 .folder-toggle .name {
@@ -310,8 +365,29 @@
   padding: 0;
 }
 
+.folder-add svg {
+  width: 13px;
+  height: 13px;
+  transition: transform var(--t-icon) var(--ease-flap);
+}
+
+.folder-add:hover svg {
+  transform: scale(1.15);
+}
+
+.folder-add:active svg {
+  transform: scale(0.88);
+  transition-duration: 0.08s;
+}
+
 .section-header .section-add {
   margin-left: auto;
+}
+
+.folder-add {
+  transition:
+    background var(--t-icon) ease,
+    color var(--t-icon) ease;
 }
 
 .folder-add:hover {
@@ -346,6 +422,22 @@
   background: var(--raise);
 }
 
+/* Rows arrive with the folder that holds them: the front panel shears open and
+   what was behind it drops into place. No fill mode on purpose — a filled
+   animation would keep `transform: none` applied and outrank the leaving
+   transform below, so a thread folded in the first frames would blink out
+   instead of sliding. */
+@keyframes thread-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+
+.folder .thread-row {
+  animation: thread-row-in var(--t-icon) ease;
+}
+
 /* Leaving rows slide out — folding a thread should look like it went
    somewhere, not like it was deleted. */
 .thread-row.leaving {
@@ -368,9 +460,15 @@
 }
 
 .thread-row .pip {
-  font-size: var(--fs-caps);
   flex: none;
+  display: grid;
+  place-items: center;
   color: var(--faint);
+}
+
+.thread-row .pip svg {
+  width: 9px;
+  height: 9px;
 }
 
 .thread-row .pip.running {
@@ -395,7 +493,11 @@
   border-top: 1px solid var(--line);
 }
 
-.me-row .av {
+/* Your initials, not an avatar. It wore `.av` until the crews landed (#44)
+   and `.av` became a module with a chassis of its own — this chip restated
+   enough of it to survive, which is not the same as being unaffected, and the
+   next bare `.av` rule over there would have landed on it. */
+.me-face {
   width: 30px;
   height: 30px;
   border-radius: 50%;

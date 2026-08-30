@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { InboxView } from "../views/InboxView";
 import type { InboxCard } from "../components/types";
+import type { NotifyStatusResult } from "../host";
 
 const NOW = new Date("2026-08-20T14:30:00Z");
 const at = (minutes: number) =>
@@ -113,7 +114,9 @@ describe("InboxView", () => {
   it("reopens the thread a card came from", async () => {
     const props = renderInbox();
 
-    await userEvent.click(screen.getByRole("button", { name: "Reopen thread" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Reopen thread" }),
+    );
 
     expect(props.onOpenThread).toHaveBeenCalledWith("sidebar");
   });
@@ -135,6 +138,16 @@ describe("InboxView", () => {
     expect(props.onOpenThread).toHaveBeenCalledWith("nas");
   });
 
+  it("says which bot a card came from, and not only in a tooltip", () => {
+    // The row is a title, a summary, a time and a pill, and none of them names
+    // the bot — the drawing is the only thing that does. That is the case #44
+    // opens with, and the one place in the app where an avatar has to carry a
+    // name of its own rather than sit beside one.
+    renderInbox();
+
+    expect(screen.getByRole("img", { name: "Inbox Mgr" })).toBeInTheDocument();
+  });
+
   it("says when there is nothing waiting", () => {
     renderInbox({ cards: [] });
 
@@ -144,7 +157,70 @@ describe("InboxView", () => {
   it("stamps each card with when it arrived", () => {
     renderInbox();
 
-    const row = screen.getByText("Inbox Manager needs a call").closest("button");
+    const row = screen
+      .getByText("Inbox Manager needs a call")
+      .closest("button");
     expect(within(row!).getByText(/^\d/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * Notification permission (#27).
+ *
+ * `notify/status` has been served end to end since #27 and read by nobody, so
+ * a user whose macOS permission was refused could not tell "notifications are
+ * off" from "JaBot is broken" — the Inbox filled up silently and nothing ever
+ * interrupted them.
+ *
+ * The four authorization values are four different situations and only one of
+ * them is worth a word.
+ */
+describe("InboxView, notification permission", () => {
+  const status = (over: Partial<NotifyStatusResult> = {}): NotifyStatusResult => ({
+    supported: true,
+    authorization: "denied",
+    kinds: ["needs_you"],
+    ...over,
+  });
+
+  it("says so when the OS has refused banners", () => {
+    renderInbox({ notify: status() });
+
+    const note = screen.getByText(/Notifications are turned off/);
+    expect(note).toBeInTheDocument();
+    // And says the Inbox is still complete: a refused permission costs the
+    // interruption and nothing else, because the card is written first and
+    // always.
+    expect(note).toHaveTextContent(/complete either way/);
+  });
+
+  /** Not a refusal. A Linux build or a dev build outside JaBot.app has no
+      Notification Center to permit, so pointing at System Settings would send
+      the user somewhere that cannot help them. */
+  it("stays quiet where there is nothing to permit", () => {
+    renderInbox({ notify: status({ supported: false, authorization: "unsupported" }) });
+
+    expect(screen.queryByText(/Notifications are turned off/)).not.toBeInTheDocument();
+  });
+
+  /** Nobody has been asked yet — the first banner asks. Saying "notifications
+      are off" now would be wrong the moment it is read. */
+  it("stays quiet before anyone has been asked", () => {
+    renderInbox({ notify: status({ authorization: "notDetermined" }) });
+
+    expect(screen.queryByText(/Notifications are turned off/)).not.toBeInTheDocument();
+  });
+
+  it("stays quiet when banners are allowed", () => {
+    renderInbox({ notify: status({ authorization: "granted" }) });
+
+    expect(screen.queryByText(/Notifications are turned off/)).not.toBeInTheDocument();
+  });
+
+  /** A host that will not answer is not a host that said "denied". */
+  it("stays quiet when the host never answered", () => {
+    renderInbox({ notify: null });
+
+    expect(screen.queryByText(/Notifications are turned off/)).not.toBeInTheDocument();
   });
 });

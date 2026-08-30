@@ -1,19 +1,33 @@
-//! The prototype's icon set, verbatim paths.
+//! The prototype's icon set, verbatim paths — plus the glyphs that used to be
+//! typed as characters (＋, ✓, ✗, ●, 🖥, 🎙, …) and now render as SVG so they
+//! look the same on every platform instead of falling back to whatever the
+//! system's symbol or emoji font does.
 //!
-//! They are drawn, not imported, because there are ten of them and a sprite
-//! dependency would be more machinery than SVG. Every icon is decorative — the
-//! control around it carries the accessible name — so all of them are hidden
-//! from the accessibility tree.
+//! They are drawn, not imported, because a sprite dependency would be more
+//! machinery than SVG. Every icon is decorative — the control around it
+//! carries the accessible name — so all of them are hidden from the
+//! accessibility tree.
 
 import type { ReactNode } from "react";
 
 type IconProps = { className?: string };
 
+type FolderIconProps = IconProps & {
+  /** Expanded folders draw an open one. Default closed, for callers with no state. */
+  open?: boolean;
+};
+
 function Stroke({
   className,
   width = 2.4,
+  dataOpen,
   children,
-}: IconProps & { width?: number; children: ReactNode }) {
+}: IconProps & {
+  width?: number;
+  /** State an icon draws rather than announces — styled, and asserted in tests. */
+  dataOpen?: boolean;
+  children: ReactNode;
+}) {
   return (
     <svg
       className={className}
@@ -25,6 +39,7 @@ function Stroke({
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
+      data-open={dataOpen === undefined ? undefined : String(dataOpen)}
     >
       {children}
     </svg>
@@ -75,6 +90,39 @@ export function PullRequestMergedIcon({ className }: IconProps) {
   );
 }
 
+/** A branch splitting off a trunk. Used on the chat header's location chip,
+    where the branch name is the thing being labelled (#23). */
+export function BranchIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <circle cx="6" cy="5" r="2.4" />
+      <circle cx="6" cy="19" r="2.4" />
+      <circle cx="18" cy="9" r="2.4" />
+      <path d="M6 7.4v9.2" />
+      <path d="M18 11.4c0 3.2-2.6 5.2-6 5.6" />
+    </Stroke>
+  );
+}
+
+/**
+ * Settings — sliders, not a gear.
+ *
+ * A gear is the convention and it does not survive 14px: the teeth close up
+ * and it reads as a sun. Three tracks with a knob each stay legible at the
+ * size the folder row actually draws them, which is the only size that
+ * matters here.
+ */
+export function SlidersIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <path d="M4 7h11M18.5 7H20M4 12h3.5M11 12h9M4 17h8.5M16 17h4" />
+      <circle cx="16.75" cy="7" r="1.75" />
+      <circle cx="9.25" cy="12" r="1.75" />
+      <circle cx="14.25" cy="17" r="1.75" />
+    </Stroke>
+  );
+}
+
 export function InboxIcon({ className }: IconProps) {
   return (
     <Stroke className={className} width={1.8}>
@@ -85,6 +133,23 @@ export function InboxIcon({ className }: IconProps) {
 }
 
 /** Schedules. A clock, because the thing a schedule is about is a time. */
+/**
+ * A paired device: a phone, because that is what every device other than this
+ * Mac actually is (#19, #29).
+ *
+ * A laptop glyph would have been the neutral choice and the wrong one — the
+ * nav row it labels is about the things that are *not* this machine, and a
+ * second laptop beside "Settings" reads as another copy of the app.
+ */
+export function DeviceIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <rect x="7" y="3" width="10" height="18" rx="2.5" />
+      <path d="M10.8 18.2h2.4" />
+    </Stroke>
+  );
+}
+
 export function ClockIcon({ className }: IconProps) {
   return (
     <Stroke className={className} width={1.8}>
@@ -94,11 +159,35 @@ export function ClockIcon({ className }: IconProps) {
   );
 }
 
-export function FolderIcon({ className }: IconProps) {
+/**
+ * The folder in the code section, drawn in two parts so that it can open.
+ *
+ * A folder row already carries a chevron, so a folder glyph that never changed
+ * was the row saying "collapsed" once and drawing a box the second time. The
+ * shell and the front panel are separate paths instead: closed, the panel's
+ * sides sit exactly on the shell's and the pair renders as the one outline it
+ * always was; open, the panel shears out and settles, and the glyph is the
+ * thing the row is about rather than a label for it.
+ *
+ * The motion lives in `sidebar.css` (`.folder-glyph`) because it is the same
+ * transition the chevron beside it runs, and reduced motion has to be able to
+ * take both away and still leave two honest states.
+ */
+export function FolderIcon({ className, open = false }: FolderIconProps) {
   return (
-    <Stroke className={className} width={1.8}>
-      <path d="M3.2 7.2V17a2 2 0 0 0 2 2h13.6a2 2 0 0 0 2-2v-7.2a2 2 0 0 0-2-2h-6.9l-1.9-2.3a2 2 0 0 0-1.5-.7H5.2a2 2 0 0 0-2 2.4Z" />
-      <path d="M3.2 9.8h17.6" />
+    <Stroke
+      className={className ? `folder-glyph ${className}` : "folder-glyph"}
+      width={1.8}
+      dataOpen={open}
+    >
+      <path
+        className="folder-shell"
+        d="M3.2 9.8V7.2a2 2 0 0 1 2-2h3.8a2 2 0 0 1 1.5.7l1.9 2.3h6.4a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5.2a2 2 0 0 1-2-2Z"
+      />
+      <path
+        className="folder-front"
+        d="M3.2 9.8h17.6V17a2 2 0 0 1-2 2H5.2a2 2 0 0 1-2-2Z"
+      />
     </Stroke>
   );
 }
@@ -137,6 +226,132 @@ export function TrashIcon({ className }: IconProps) {
       <path d="M3 6h18" />
       <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
       <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    </Stroke>
+  );
+}
+
+/** The host affordance in the chat header: this Mac, drawn as a monitor. */
+export function MonitorIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2}>
+      <rect x="2.5" y="4" width="19" height="13" rx="2" />
+      <path d="M8.5 21h7" />
+      <path d="M12 17v4" />
+    </Stroke>
+  );
+}
+
+/** The composer's decorative mic. */
+export function MicIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2}>
+      <rect x="9" y="2.5" width="6" height="11" rx="3" />
+      <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
+      <path d="M12 18v3.5" />
+    </Stroke>
+  );
+}
+
+/** Stop, in the mic's place while a turn is running. */
+export function StopIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className}>
+      <rect
+        x="7"
+        y="7"
+        width="10"
+        height="10"
+        rx="1.5"
+        fill="currentColor"
+        stroke="none"
+      />
+    </Stroke>
+  );
+}
+
+export function PlusIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2}>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </Stroke>
+  );
+}
+
+/** A check: a passing CI check, a finished tool call. */
+export function CheckIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={3}>
+      <path d="M4.5 12.5l5 5.5 10-11.5" />
+    </Stroke>
+  );
+}
+
+/** An ✗: a failed check or tool call — and, smaller, the dismiss button. */
+export function CrossIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2.8}>
+      <path d="M6 6l12 12" />
+      <path d="M18 6L6 18" />
+    </Stroke>
+  );
+}
+
+/** A filled dot: something running, a thread's status pip. */
+export function DotIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className}>
+      <circle cx="12" cy="12" r="7" fill="currentColor" stroke="none" />
+    </Stroke>
+  );
+}
+
+/** A dotted ring: pending — the dot's outline until something is running. */
+export function RingIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2.2}>
+      <circle cx="12" cy="12" r="6.5" strokeDasharray="2.6 3.1" />
+    </Stroke>
+  );
+}
+
+/** The eight-spoked spark on the "Long-running" pill. */
+export function SparkIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2.6}>
+      <path d="M12 3.5v17" />
+      <path d="M3.5 12h17" />
+      <path d="M6 6l12 12" />
+      <path d="M18 6L6 18" />
+    </Stroke>
+  );
+}
+
+/** The toolblock's line marker, in the terminal's ▸ shape. */
+export function CaretRightIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className}>
+      <path d="M9 6.2l7.6 5.8L9 17.8Z" fill="currentColor" stroke="none" />
+    </Stroke>
+  );
+}
+
+/** Send: the composer's submit, and the one on the schedule prompt (#25). */
+export function ArrowUpIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2.6}>
+      <path d="M12 19.5V5" />
+      <path d="M5.5 11.5L12 5l6.5 6.5" />
+    </Stroke>
+  );
+}
+
+/** Back: out of the schedule prompt and into the list behind it. */
+export function ArrowLeftIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2.4}>
+      <path d="M19 12H5" />
+      <path d="M11.5 5.5L5 12l6.5 6.5" />
     </Stroke>
   );
 }

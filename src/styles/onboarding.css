@@ -1,0 +1,157 @@
+/*
+ * First-run setup (the takeover). Imported last in App.css so it can lean on
+ * .btn, .mlab, .mfield, .harness-grid, .me-face and .chief-badge without
+ * fighting them — the field recipe is shared with modal.css by selector,
+ * not copied, so this sheet holds zero field declarations.
+ *
+ * The card grounds on --chat, not --win: --win and --side are the same value,
+ * and .modal only gets away with a --side card because it floats on .overlay's
+ * scrim over a live app. The takeover has no scrim, so the ground is the
+ * darker chat surface and the card is genuinely lighter than what it sits on.
+ */
+
+.setup {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--chat);
+  padding-top: var(--titlebar-h);
+}
+
+.setup-stage {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: var(--sp-6);
+}
+
+/* .modal's card recipe one size up. */
+.setup-card {
+  width: 520px;
+  max-width: 92vw;
+  background: var(--side);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-modal);
+  padding: 32px var(--sp-6) var(--sp-6);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  animation: setup-rise 0.24s ease;
+}
+
+/* Keyed by step, so the rise replays on advance. tokens.css's global
+   prefers-reduced-motion block kills it. */
+@keyframes setup-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.setup-eyebrow {
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  font-weight: 600;
+  letter-spacing: var(--track-caps);
+  margin-bottom: var(--sp-4);
+}
+
+.setup-cluster {
+  --blob-size: 36px;
+  display: block;
+  margin-bottom: var(--sp-4);
+}
+
+.setup-card h1 {
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.setup-lede {
+  color: var(--dim);
+  font-size: var(--fs-body);
+  margin-top: 3px;
+}
+
+/* A preview *of* the me-row badge, and now literally it: `.me-face` in
+   sidebar.css draws the chip and this only lays the row out. A second copy of
+   the geometry is how a preview stops being one. */
+.setup-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+
+.setup-preview .cap {
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  letter-spacing: var(--track-caps);
+}
+
+.setup-meet {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  --blob-size: 54px;
+}
+
+/* Chief's instruction line, sunk like a .toolblock but in body type — this is
+   Chief's own text, not tool output. */
+.setup-quote {
+  background: var(--sunk);
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-lg);
+  padding: 11px var(--sp-5);
+  color: var(--dim);
+  font-size: var(--fs-body);
+  margin-top: var(--sp-5);
+}
+
+.setup-note {
+  color: var(--dim);
+  font-size: var(--fs-body);
+  margin-top: var(--sp-4);
+}
+
+/* Same role and offset as .modal .macts. */
+.setup-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  margin-top: 22px;
+}
+
+/* The ghost treatment of .app-error's dismiss. */
+.setup-skip {
+  margin-right: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--faint);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
+.setup-skip:hover {
+  color: var(--ink);
+}
+
+/* The hoisted handshake, visible: mirrors .me-row .host / .host.bad. */
+.setup-host {
+  padding: 0 var(--sp-6) var(--sp-5);
+  text-align: center;
+  color: var(--faint);
+  font-size: var(--fs-caps);
+}
+
+.setup-host.bad {
+  color: var(--red);
+}
+
+/* The re-entry point, in Crew's page-top. Owned here because it exists for
+   setup, not for the crew grid. */
+.page-top .setup-again {
+  margin-top: var(--sp-3);
+}

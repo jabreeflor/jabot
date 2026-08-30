@@ -4,9 +4,16 @@
 //!
 //! A harness the Doctor could not find is still shown — greying it out and
 //! saying how to install it is more useful than pretending it does not exist.
+//!
+//! The card leads with the engine's own mark rather than a coloured dot: five
+//! dots in five accents is a legend you have to learn, and the shapes are the
+//! thing people already know these tools by. `HarnessIcon.tsx` has the marks
+//! and where each one came from — they are the vendors' own, not drawings of
+//! them.
 
 import type { CSSProperties } from "react";
 
+import { HarnessMark } from "./HarnessIcon";
 import type { HarnessCard } from "./types";
 
 export function HarnessPicker({
@@ -32,7 +39,7 @@ export function HarnessPicker({
           style={{ "--dot": harness.accent } as CSSProperties}
         >
           <b>
-            <i />
+            <HarnessMark harnessId={harness.id} />
             {harness.label}
           </b>
           <p>

@@ -47,6 +47,7 @@ mod tools;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use super::lifecycle::process::AcpState;
 use super::protocol::methods::{
     FoldPolicy, HandoffView, PromptMode, PromptParams, ThreadFoldParams, ThreadOpenParams,
 };
@@ -356,13 +357,18 @@ impl HostSession {
                 let working: Vec<Value> = threads
                     .into_iter()
                     .map(|(thread, run)| {
+                        let acp = self.acp_state(&thread.id);
                         json!({
                             "threadId": thread.id,
                             "title": thread.title,
                             // Folded is a legal answer here and a useful one:
                             // the job is asleep, not finished.
                             "state": thread.state,
-                            "acpState": self.acp_state(&thread.id).as_str(),
+                            "acpState": acp.as_str(),
+                            // The question the tool exists to answer, answered
+                            // rather than left to the caller to re-derive from
+                            // the two fields either side of it.
+                            "busy": is_busy(run.as_ref().map(|r| r.state.as_str()), acp),
                             "repo": thread.repo,
                             "branch": thread.branch,
                             "run": run.map(|run| {
@@ -1140,5 +1146,77 @@ mod tests {
         );
         assert!(long.chars().count() <= 61, "{long}");
         assert!(long.ends_with('…'), "{long}");
+    }
+}
+
+/// Is this thread actually doing something?
+///
+/// Two independent sources, because either alone lies in a way the other
+/// catches. The ledger is durable and survives a restart, but a run stays
+/// `running` across a quit until the boot pass reconciles it; the ACP state is
+/// live but is `Unknown` on every thread until an adapter is attached, which
+/// is most of them on a cold start. Busy if *either* says so.
+///
+/// `needs_you` counts as busy on purpose. The job is not progressing, but it
+/// is not free either — handing that bot a second task buries the question the
+/// first one is waiting on.
+///
+/// This deliberately does not change what `idle` means on the bot above it.
+/// `idle` is "this bot has no thread rows at all", the routing key Chief has
+/// always used, and redefining it was tried once and reverted. This is the
+/// additive half: a fact per thread, leaving every existing caller alone.
+fn is_busy(run_state: Option<&str>, acp: AcpState) -> bool {
+    let run_busy = matches!(run_state, Some("queued" | "running" | "needs_you"));
+    let acp_busy = matches!(acp, AcpState::Running | AcpState::RequiresAction);
+    run_busy || acp_busy
+}
+
+#[cfg(test)]
+mod busy_tests {
+    use super::*;
+
+    #[test]
+    fn a_thread_with_no_run_and_no_adapter_is_not_busy() {
+        assert!(!is_busy(None, AcpState::Unknown));
+        assert!(!is_busy(None, AcpState::Idle));
+    }
+
+    #[test]
+    fn a_finished_run_is_not_busy_however_it_finished() {
+        for state in ["succeeded", "failed", "cancelled", "timed_out", "lost"] {
+            assert!(
+                !is_busy(Some(state), AcpState::Idle),
+                "{state} counted as busy"
+            );
+        }
+    }
+
+    #[test]
+    fn the_ledger_alone_is_enough() {
+        // A folded thread whose adapter was evicted still has an open run, and
+        // the work is still owed.
+        for state in ["queued", "running", "needs_you"] {
+            assert!(
+                is_busy(Some(state), AcpState::Unknown),
+                "{state} was missed"
+            );
+        }
+    }
+
+    #[test]
+    fn the_adapter_alone_is_enough() {
+        // The mirror case: a restart leaves the ledger reconciled but an
+        // adapter can be mid-turn before any run row says so.
+        assert!(is_busy(None, AcpState::Running));
+        assert!(is_busy(Some("succeeded"), AcpState::RequiresAction));
+    }
+
+    /// The one that is a judgement rather than a mechanism: a thread blocked on
+    /// a permission is not progressing, but handing its bot a second job buries
+    /// the question the first is waiting on.
+    #[test]
+    fn a_thread_waiting_on_the_user_is_busy() {
+        assert!(is_busy(Some("needs_you"), AcpState::Idle));
+        assert!(is_busy(None, AcpState::RequiresAction));
     }
 }

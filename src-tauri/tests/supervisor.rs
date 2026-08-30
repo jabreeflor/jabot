@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 
 use jabot_lib::host::{
     HostSession, JsonRpcRequest, JsonRpcResponse, RequestId, SessionFingerprint, HOST_HELLO,
-    INBOX_LIST, SESSION_PROMPT, THREAD_ARCHIVE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
-    THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT,
+    INBOX_LIST, SESSION_CANCEL, SESSION_PROMPT, THREAD_ARCHIVE, THREAD_FOLD, THREAD_OPEN,
+    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT,
 };
 use serde_json::{json, Value};
 
@@ -830,4 +830,371 @@ fn an_adapter_that_cannot_hand_its_session_back_is_never_evicted() {
     // context, and the next prompt would quietly continue in a new session.
     assert_eq!(host.session.live_adapter_count(), 1);
     assert_eq!(host.state("t-keep")["process"]["connected"], true);
+}
+
+/// An adapter that ignores `session/cancel` must not hold the user's next
+/// words hostage.
+///
+/// `session/cancel` is an ACP notification: no reply, and the only
+/// acknowledgement is the prompt response that ends the turn. `hang` never
+/// sends one, so the run stays open and `AcpState` stays `Running` — which is
+/// exactly the shape both branches of `drain_stranded_queues` skip. Before the
+/// grace existed the queued prompt sat there showing "1 message waiting" until
+/// the adapter died, and was only then reported dropped.
+#[test]
+fn a_cancel_the_agent_ignores_still_releases_the_queued_prompts() {
+    let mut host = Host::start();
+    // Short enough to observe, long enough that it is a grace and not zero.
+    host.session.set_cancel_grace(Duration::from_millis(50));
+    host.open_thread("t-deaf-cancel", Some("hang"));
+    host.prompt("t-deaf-cancel");
+    host.settle("t-deaf-cancel", |s| s["latestRun"]["state"] == "running");
+
+    let queued = host.ok(
+        SESSION_PROMPT,
+        json!({
+            "threadId": "t-deaf-cancel",
+            "content": "actually, do the other thing",
+            "mode": "queue"
+        }),
+    );
+    assert_eq!(queued["queued"], true);
+
+    let cancelled = host.ok(SESSION_CANCEL, json!({ "threadId": "t-deaf-cancel" }));
+    assert_eq!(cancelled["cancelled"], true);
+
+    // The agent is deaf, so nothing ends the turn. Pump until the grace has
+    // elapsed and the supervisor has had a tick to notice.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        host.session.pump_acp();
+        let transcript = host.ok(THREAD_TRANSCRIPT, json!({ "threadId": "t-deaf-cancel" }));
+        if transcript.to_string().contains("prompt_dropped") {
+            assert!(
+                transcript
+                    .to_string()
+                    .contains("never acknowledged the stop"),
+                "dropped for the wrong reason: {transcript}"
+            );
+            assert!(
+                transcript["queued"].as_array().unwrap().is_empty(),
+                "the queue was reported dropped but is still held: {transcript}"
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the queued prompt is still held behind an ignored cancel: {transcript}"
+        );
+        thread::sleep(Duration::from_millis(15));
+    }
+
+    // What this must NOT have done is end the run or invent a stop reason.
+    // The host cannot know the turn ended, and saying so would be the
+    // invention that was refused when this was first considered. The `stuck`
+    // backstop in the lifecycle still owns the run itself.
+    let state = host.state("t-deaf-cancel");
+    assert_eq!(
+        state["latestRun"]["state"], "running",
+        "releasing the queue must not end the run: {state}"
+    );
+}
+
+/// The grace is a backstop, not a policy change: an adapter that honours the
+/// cancel promptly must never see a `prompt_dropped`. `cancellable` answers
+/// the pending prompt with `cancelled`, which ends the turn, which drains the
+/// queue the ordinary way.
+#[test]
+fn an_agent_that_honours_the_cancel_still_gets_its_queue_delivered() {
+    let mut host = Host::start();
+    host.session.set_cancel_grace(Duration::from_millis(50));
+    host.open_thread("t-good-cancel", Some("cancellable"));
+    host.prompt("t-good-cancel");
+    host.settle("t-good-cancel", |s| s["latestRun"]["state"] == "running");
+
+    host.ok(
+        SESSION_PROMPT,
+        json!({
+            "threadId": "t-good-cancel",
+            "content": "and then tidy up",
+            "mode": "queue"
+        }),
+    );
+    host.ok(SESSION_CANCEL, json!({ "threadId": "t-good-cancel" }));
+
+    // Give the grace more than enough time to have fired had the cancel gone
+    // unacknowledged. It did not, so nothing here is dropped.
+    let deadline = Instant::now() + Duration::from_millis(600);
+    while Instant::now() < deadline {
+        host.session.pump_acp();
+        thread::sleep(Duration::from_millis(15));
+    }
+    let transcript = host.ok(THREAD_TRANSCRIPT, json!({ "threadId": "t-good-cancel" }));
+    assert!(
+        !transcript
+            .to_string()
+            .contains("never acknowledged the stop"),
+        "an honoured cancel was treated as an ignored one: {transcript}"
+    );
+}
+
+/// Zero is "wait as long as it takes", and it has to keep meaning that: it is
+/// the behaviour this replaced, and a defensible preference for someone who
+/// would rather a prompt sit than be reported dropped.
+#[test]
+fn a_zero_grace_holds_the_queue_the_way_it_always_did() {
+    let mut host = Host::start();
+    host.session.set_cancel_grace(Duration::ZERO);
+    host.open_thread("t-no-grace", Some("hang"));
+    host.prompt("t-no-grace");
+    host.settle("t-no-grace", |s| s["latestRun"]["state"] == "running");
+
+    host.ok(
+        SESSION_PROMPT,
+        json!({ "threadId": "t-no-grace", "content": "held", "mode": "queue" }),
+    );
+    host.ok(SESSION_CANCEL, json!({ "threadId": "t-no-grace" }));
+
+    let deadline = Instant::now() + Duration::from_millis(600);
+    while Instant::now() < deadline {
+        host.session.pump_acp();
+        thread::sleep(Duration::from_millis(15));
+    }
+    let transcript = host.ok(THREAD_TRANSCRIPT, json!({ "threadId": "t-no-grace" }));
+    assert!(
+        !transcript.to_string().contains("prompt_dropped"),
+        "a zero grace dropped the queue anyway: {transcript}"
+    );
+    assert_eq!(transcript["queued"].as_array().unwrap().len(), 1);
+}
+
+// ---- process pooling (#13, #21) ------------------------------------------
+//
+// The catalog has said since #13 that Hermes and OpenClaw are
+// `SessionScope::Profile` — one long-lived process per profile, with JaBot's
+// chats multiplexed onto it as ACP sessions — and `profile_key` reached the
+// wire through `supervisor/status`, so a client could already *see* which
+// chats belonged together. The supervisor still keyed its pool by thread id,
+// so it spawned one process each anyway. These cases are the difference.
+//
+// `harnessId: "hermes"` with the fake agent as the runtime: the scope is a
+// property of the *catalog entry*, and the runtime override is what lets the
+// question be asked without the vendor's binary.
+
+impl Host {
+    fn open_on(&mut self, thread_id: &str, harness_id: &str, mode: Option<&str>) -> Value {
+        let args: Vec<String> = mode.into_iter().map(str::to_string).collect();
+        self.ok(
+            THREAD_OPEN,
+            json!({
+                "threadId": thread_id,
+                "title": thread_id,
+                "cwd": self.dir.path().to_string_lossy(),
+                "harnessId": harness_id,
+                "runtime": { "command": fake_agent(), "args": args }
+            }),
+        )
+    }
+
+    fn adapters(&mut self) -> Vec<Value> {
+        let status = self.ok(SUPERVISOR_STATUS, json!({}));
+        status["liveAdapters"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn adapter_for(&mut self, thread_id: &str) -> Value {
+        self.adapters()
+            .into_iter()
+            .find(|view| view["threadId"] == thread_id)
+            .unwrap_or_else(|| panic!("no live adapter for {thread_id}"))
+    }
+
+    fn transcript(&mut self, thread_id: &str) -> Vec<Value> {
+        let page = self.ok(THREAD_TRANSCRIPT, json!({ "threadId": thread_id }));
+        page["events"].as_array().cloned().unwrap_or_default()
+    }
+}
+
+/// Two chats on a profile-scoped harness are two ACP sessions on **one**
+/// process. This is the assertion the field promised and the pool did not keep.
+#[test]
+fn two_chats_on_a_profile_harness_share_one_adapter() {
+    let mut host = Host::start();
+    host.open_on("t-one", "hermes", None);
+    host.open_on("t-two", "hermes", None);
+    host.prompt("t-one");
+    host.prompt("t-two");
+    host.settle("t-one", |s| s["process"]["connected"] == true);
+    host.settle("t-two", |s| s["process"]["connected"] == true);
+
+    assert_eq!(
+        host.session.live_adapter_count(),
+        1,
+        "one profile, one process"
+    );
+
+    let one = host.adapter_for("t-one");
+    let two = host.adapter_for("t-two");
+    assert_eq!(one["pid"], two["pid"], "the same process serves both");
+    assert_eq!(
+        one["profileKey"], two["profileKey"],
+        "and they are on it because they share a profile"
+    );
+    // Two chats, though — not one. Each has its own ACP session, which is what
+    // makes this multiplexing rather than two clients on one conversation.
+    assert_ne!(one["acpSessionId"], two["acpSessionId"]);
+    assert!(one["acpSessionId"].is_string());
+}
+
+/// The control. Every other harness is `SessionScope::Thread`, and this change
+/// must be a no-op for them: two claude chats are still two processes.
+#[test]
+fn two_chats_on_a_thread_scoped_harness_do_not_share() {
+    let mut host = Host::start();
+    host.open_on("t-a", "claude", None);
+    host.open_on("t-b", "claude", None);
+    host.prompt("t-a");
+    host.prompt("t-b");
+    host.settle("t-a", |s| s["process"]["connected"] == true);
+    host.settle("t-b", |s| s["process"]["connected"] == true);
+
+    assert_eq!(host.session.live_adapter_count(), 2);
+    assert_ne!(
+        host.adapter_for("t-a")["pid"],
+        host.adapter_for("t-b")["pid"]
+    );
+}
+
+/// Routing, which is the half that can be quietly wrong.
+///
+/// A shared process answers both chats down one pipe. `session/update` carries
+/// a `sessionId` and can be routed on it, but the ACP v1 prompt *response*
+/// carries only its JSON-RPC request id — so the turn that ends is identified
+/// by the id the host allocated, and nothing else. Getting that wrong ends the
+/// wrong chat's run and writes its reply into the wrong transcript, for good.
+#[test]
+fn a_shared_process_keeps_the_two_conversations_apart() {
+    let mut host = Host::start();
+    host.open_on("t-mine", "hermes", None);
+    host.open_on("t-yours", "hermes", None);
+    // Attach the neighbour first, so it is a live tenant with an open session
+    // while the thread under test takes its turn.
+    host.prompt("t-yours");
+    host.settle("t-yours", |s| s["latestRun"]["state"] == "succeeded");
+    let quiet_before = host.transcript("t-yours").len();
+
+    host.prompt("t-mine");
+    let mine = host.settle("t-mine", |s| s["latestRun"]["state"] == "succeeded");
+    assert_eq!(mine["latestRun"]["state"], "succeeded");
+
+    // The neighbour saw nothing: not the agent's chunk, not the state_update
+    // the prompt response is turned into.
+    assert_eq!(
+        host.transcript("t-yours").len(),
+        quiet_before,
+        "the neighbour's transcript grew from somebody else's turn"
+    );
+    // And the turn that did land, landed whole: the agent's chunk, stamped
+    // with this thread's own ACP session and not its neighbour's, and the
+    // `state_update` synthesized from the prompt response that ended the run.
+    let events = host.transcript("t-mine");
+    let mine_session = host.adapter_for("t-mine")["acpSessionId"].clone();
+    let chunk = events
+        .iter()
+        .find(|event| event["payload"]["sessionUpdate"] == "agent_message_chunk")
+        .unwrap_or_else(|| panic!("the agent's chunk never reached its own thread: {events:?}"));
+    assert_eq!(chunk["payload"]["content"]["text"], "hello from fake-acp");
+    assert_eq!(
+        chunk["payload"]["sessionId"], mine_session,
+        "routed by sessionId, so it has to be this thread's"
+    );
+    assert!(
+        events
+            .iter()
+            .any(|event| event["method"] == "session/prompt"),
+        "the prompt response — routed by request id alone — never landed: {events:?}"
+    );
+}
+
+/// Leaving is per session. Archiving one chat closes its session and leaves
+/// the process — and every other chat on it — running. Keying the pool by
+/// thread hid this: there was never a second tenant to lose.
+#[test]
+fn archiving_one_chat_leaves_its_neighbours_adapter_alive() {
+    let mut host = Host::start();
+    host.open_on("t-stay", "hermes", None);
+    host.open_on("t-go", "hermes", None);
+    host.prompt("t-stay");
+    host.prompt("t-go");
+    host.settle("t-stay", |s| s["process"]["connected"] == true);
+    host.settle("t-go", |s| s["process"]["connected"] == true);
+    let pid = host.adapter_for("t-stay")["pid"].clone();
+
+    host.ok(THREAD_ARCHIVE, json!({ "threadId": "t-go" }));
+
+    assert_eq!(host.session.live_adapter_count(), 1, "the process stays");
+    let staying = host.adapter_for("t-stay");
+    assert_eq!(staying["pid"], pid, "and it is the same process");
+    assert!(
+        !host
+            .adapters()
+            .iter()
+            .any(|view| view["threadId"] == "t-go"),
+        "the archived chat is no longer a tenant"
+    );
+
+    // The last tenant leaving is what reaps it.
+    host.ok(THREAD_ARCHIVE, json!({ "threadId": "t-stay" }));
+    assert_eq!(host.session.live_adapter_count(), 0);
+}
+
+/// A death is the whole process's, so it is every tenant's. A reap that only
+/// told the thread it happened to be keyed under would leave the other chat
+/// claiming a live adapter that is not there.
+#[test]
+fn a_dead_shared_process_takes_every_chat_on_it() {
+    let mut host = Host::start();
+    // `hang` so both chats have a run genuinely open when the process dies.
+    // Losing the *process* is easy to notice; what has to be fanned over every
+    // tenant is the consequence — each thread's run closed, each thread's
+    // ledger told. A reap that only visited the thread it happened to iterate
+    // first would leave the other one `running` forever.
+    host.open_on("t-first", "hermes", Some("hang"));
+    host.open_on("t-second", "hermes", Some("hang"));
+    host.prompt("t-first");
+    host.prompt("t-second");
+    host.settle("t-first", |s| s["latestRun"]["state"] == "running");
+    host.settle("t-second", |s| s["latestRun"]["state"] == "running");
+    assert_eq!(host.session.live_adapter_count(), 1);
+
+    let pid = host.adapter_for("t-first")["pid"].as_u64().unwrap() as i32;
+    kill_process(pid);
+
+    for thread_id in ["t-first", "t-second"] {
+        let gone = host.settle(thread_id, |s| s["process"]["connected"] == false);
+        assert_eq!(
+            gone["latestRun"]["state"], "failed",
+            "{thread_id} kept a run open on a process that is gone"
+        );
+        // Either discovery is fine and both reach the same place: EOF on the
+        // shared stdout (what a SIGKILL gives) or the keep-alive probe reaping
+        // the pid. What must not happen is a run left open.
+        let why = gone["latestRun"]["error"].as_str().unwrap_or_default();
+        assert!(
+            why == "adapter stdout closed" || why == "the adapter process exited",
+            "{thread_id} closed its run for an unrelated reason: {why}"
+        );
+    }
+    assert_eq!(host.session.live_adapter_count(), 0);
+    assert!(host.adapters().is_empty());
+}
+
+fn kill_process(pid: i32) {
+    // SIGKILL, because the point is a process that goes without saying
+    // anything on stdout — the case `reap_dead_adapters` exists for.
+    unsafe {
+        libc::kill(pid, libc::SIGKILL);
+    }
 }

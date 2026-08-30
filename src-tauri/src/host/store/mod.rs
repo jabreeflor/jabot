@@ -15,6 +15,7 @@ mod pr;
 mod schedule;
 mod secrets;
 mod seed;
+mod settings;
 
 use std::path::{Path, PathBuf};
 
@@ -46,6 +47,9 @@ pub use schedule::{
     CATCH_UP_ONCE, CATCH_UP_SKIP, FIRE_DELIVERED, FIRE_DISPATCHED, FIRE_FAILED, FIRE_SKIPPED,
 };
 pub use secrets::{Secrets, SecretsBackend};
+pub use settings::{
+    is_fold_policy, DEFAULT_FOLD_POLICY, KEY_DEFAULT_FOLD_POLICY, KEY_IDLE_TIMEOUT_MS,
+};
 
 const MIN_SQLITE: (u32, u32, u32) = (3, 51, 3);
 const UNCLEAN_SUFFIX: &str = ".unclean";
@@ -627,8 +631,41 @@ impl Store {
         overlay::count_unread_inbox(&self.conn, thread_id)
     }
 
+    /// Unread cards per bot — the red dot on a crew blob. Same predicate as
+    /// [`Store::count_unread_inbox`], so the dot and the badge cannot disagree.
+    /// App-wide preferences (#26). See [`settings`] for why `app_meta`.
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>, StoreError> {
+        settings::get_setting(&self.conn, key)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<(), StoreError> {
+        settings::set_setting(&self.conn, key, value)
+    }
+
+    /// `None` when unset — not zero, which would be a backstop firing on every
+    /// tick. The caller keeps the shipped default.
+    pub fn idle_timeout_ms(&self) -> Result<Option<u64>, StoreError> {
+        settings::idle_timeout_ms(&self.conn)
+    }
+
+    /// What a new thread's fold policy starts as. Falls back to `default` for
+    /// anything the fold path would refuse.
+    pub fn default_fold_policy(&self) -> Result<String, StoreError> {
+        settings::default_fold_policy(&self.conn)
+    }
+
+    pub fn count_unread_inbox_by_bot(
+        &self,
+    ) -> Result<std::collections::HashMap<String, i64>, StoreError> {
+        overlay::count_unread_inbox_by_bot(&self.conn)
+    }
+
     pub fn mark_inbox_event_read(&self, id: &str) -> Result<(), StoreError> {
         overlay::mark_inbox_event_read(&self.conn, id)
+    }
+
+    pub fn mark_inbox_kind_read(&self, thread_id: &str, kind: &str) -> Result<bool, StoreError> {
+        overlay::mark_inbox_kind_read(&self.conn, thread_id, kind)
     }
 
     pub fn mark_inbox_read(&self, thread_id: &str) -> Result<usize, StoreError> {
@@ -1050,6 +1087,7 @@ pub(crate) fn map_bot(row: &Row<'_>) -> rusqlite::Result<BotRow> {
         sort_order: row.get(9)?,
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
+        image: row.get(12)?,
     })
 }
 
@@ -1605,6 +1643,54 @@ mod tests {
         assert_eq!(store.count_unread_inbox(None).unwrap(), 1);
         store.mark_inbox_read("t-atomic").unwrap();
         assert_eq!(store.count_unread_inbox(None).unwrap(), 0);
+    }
+
+    /// The red dot on a crew blob (#22, #24).
+    ///
+    /// Grouped by `threads.bot_id`, on the same predicate the sidebar badge
+    /// counts with — a dot that disagreed with the number beside the Inbox
+    /// would be worse than no dot.
+    #[test]
+    fn counts_what_is_waiting_on_each_bot_and_nothing_else() {
+        let (store, _dir) = open_store();
+        for (thread, bot) in [("t-writer", "writer"), ("t-code", "code")] {
+            store
+                .insert_thread(&NewThread {
+                    bot_id: Some(bot.into()),
+                    ..sample_thread(thread)
+                })
+                .unwrap();
+        }
+        // A thread nobody owns: it badges the sidebar and belongs to no blob.
+        store
+            .insert_thread(&NewThread {
+                bot_id: None,
+                ..sample_thread("t-loose")
+            })
+            .unwrap();
+
+        for thread in ["t-writer", "t-loose"] {
+            store.set_thread_state(thread, "folded").unwrap();
+            store
+                .resurface_thread(
+                    thread, "folded", "done", "done", "Finished", "finished", None, None,
+                )
+                .unwrap();
+        }
+
+        let counts = store.count_unread_inbox_by_bot().unwrap();
+        assert_eq!(counts.get("writer").copied(), Some(1));
+        // A bot with nothing waiting is absent rather than zero, and the
+        // ownerless thread's card is nobody's dot — though it is still in the
+        // sidebar's own count, which is the number beside the Inbox.
+        assert_eq!(counts.get("code"), None);
+        assert_eq!(counts.len(), 1);
+        assert_eq!(store.count_unread_inbox(None).unwrap(), 2);
+
+        // Reading it is what clears the dot, and it clears only that bot's.
+        store.mark_inbox_read("t-writer").unwrap();
+        assert!(store.count_unread_inbox_by_bot().unwrap().is_empty());
+        assert_eq!(store.count_unread_inbox(None).unwrap(), 1);
     }
 
     #[test]

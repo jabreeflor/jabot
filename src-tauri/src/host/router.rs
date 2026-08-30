@@ -7,26 +7,30 @@ use super::protocol::error::RpcError;
 use super::protocol::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use super::protocol::methods::{
     CrewCreateParams, CrewRefParams, CrewUpdateParams, FolderRefParams, FolderRegisterParams,
-    FolderUpdateParams, GithubStatusParams, HarnessDoctorParams, HelloParams, InboxListParams,
-    PermissionPendingParams, PermissionReplyParams, PromptParams, ResumeFromParams,
-    SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
+    FolderUpdateParams, GithubLoginParams, GithubStatusParams, HarnessDoctorParams, HelloParams,
+    InboxListParams, PermissionPendingParams, PermissionReplyParams, PromptParams,
+    ResumeFromParams, SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
     ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_THREAD,
-    CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_STATUS,
-    HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST, NOTIFY_STATUS,
-    PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SUPERVISOR_STATUS,
-    SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
-    THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_LOGIN,
+    GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST,
+    NOTIFY_STATUS, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT,
+    SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
+    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
+    TOOLS_LIST,
 };
 use super::protocol::methods::{
     DeviceRefParams, PairingClaimParams, PairingConfirmParams, PairingRefParams,
     PairingStartParams, DEVICE_LIST, DEVICE_REVOKE, PAIRING_CANCEL, PAIRING_CLAIM, PAIRING_CONFIRM,
     PAIRING_START, PAIRING_STATUS,
 };
-use super::protocol::methods::{PrListParams, PrRefreshParams, PR_LIST, PR_REFRESH};
+use super::protocol::methods::{
+    PrListParams, PrMineParams, PrRefreshParams, PR_LIST, PR_MINE, PR_REFRESH,
+};
 use super::protocol::methods::{
     ScheduleCreateParams, ScheduleRefParams, ScheduleUpdateParams, SCHEDULE_CREATE, SCHEDULE_LIST,
     SCHEDULE_REMOVE, SCHEDULE_RUN, SCHEDULE_UPDATE,
 };
+use super::protocol::methods::{SettingsSetParams, SETTINGS_GET, SETTINGS_SET};
 use super::HostSession;
 
 pub fn dispatch(session: &mut HostSession, request: JsonRpcRequest) -> JsonRpcResponse {
@@ -175,6 +179,15 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             params.validate()?;
             to_value(session.folder_register(params)?)
         }
+        SETTINGS_GET => {
+            session.require_hello()?;
+            to_value(session.settings_get()?)
+        }
+        SETTINGS_SET => {
+            session.require_hello()?;
+            let params: SettingsSetParams = parse_params(request.params.as_ref())?;
+            to_value(session.settings_set(params)?)
+        }
         FOLDER_UPDATE => {
             session.require_hello()?;
             let params: FolderUpdateParams = parse_params(request.params.as_ref())?;
@@ -220,6 +233,15 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: GithubStatusParams = parse_params_or_default(request.params.as_ref())?;
             to_value(session.github_status(params)?)
         }
+        // The only request frame that carries a secret. `GithubLoginParams`
+        // redacts its own `Debug`, so a traced or logged frame cannot print
+        // the token even by accident.
+        GITHUB_LOGIN => {
+            session.require_hello()?;
+            let params: GithubLoginParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.github_login(params)?)
+        }
         SCHEDULE_LIST => {
             session.require_hello()?;
             to_value(session.schedule_list()?)
@@ -259,6 +281,11 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             session.require_hello()?;
             let params: PrRefreshParams = parse_params_or_default(request.params.as_ref())?;
             to_value(session.pr_refresh(params)?)
+        }
+        PR_MINE => {
+            session.require_hello()?;
+            let params: PrMineParams = parse_params_or_default(request.params.as_ref())?;
+            to_value(session.pr_mine(params)?)
         }
         SYNC_RESUME_FROM => {
             session.require_hello()?;

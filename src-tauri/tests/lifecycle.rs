@@ -669,6 +669,62 @@ fn going_quiet_on_screen_still_resurfaces_stuck_once_it_is_folded() {
     assert_eq!(kinds(&host.ok(INBOX_LIST, json!({}))), vec!["stuck"]);
 }
 
+/// The hard cap (#25, #21).
+///
+/// `RunState::TimedOut` has been a legal edge in the ledger and a state the
+/// renderer draws since #15, produced by nothing. `resurface.md` is explicit
+/// that *stuck* must keep the process so the user can wait, reopen or cancel —
+/// so the idle backstop resurfaces and leaves the run `running`, and there was
+/// no path anywhere that actually ended one.
+///
+/// The payoff is the last assertion: after the cap the thread can be prompted
+/// again. Before this, a wedged run held the thread until the app was quit,
+/// because every new prompt was refused as overlapping a run still open.
+#[test]
+fn a_run_that_never_ends_is_capped_and_the_thread_is_usable_again() {
+    let mut host = Host::start();
+    // Long enough that the stuck backstop cannot fire first and claim this.
+    host.session.set_idle_timeout(Duration::from_secs(60));
+    host.session.set_run_cap(Duration::from_millis(50));
+    host.open_thread("t-endless", Some("hang"));
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-endless" }));
+    host.prompt("t-endless");
+
+    let state = host.settle("t-endless", |s| s["latestRun"]["state"] == "timed_out");
+    // Failed, not stuck: the run is over, which is a different thing to say.
+    assert_eq!(state["resurfacedReason"], "failed");
+    assert_eq!(kinds(&host.ok(INBOX_LIST, json!({}))), vec!["failed"]);
+    // The adapter went with the run. Leaving it would leave a process holding
+    // a session the ledger says is finished.
+    assert_ne!(state["process"]["acpState"], "running");
+    assert_eq!(state["process"]["connected"], false);
+
+    // The payoff. A capped thread is a thread you can use.
+    let accepted = host.prompt("t-endless");
+    assert_eq!(accepted["accepted"], true);
+}
+
+/// A run wedged on an unanswered permission is the shape most likely to sit
+/// for hours, so exempting it would exempt the case the cap is for. The ask
+/// goes with the run: after the cap there is no adapter left to deliver an
+/// answer to.
+#[test]
+fn a_run_capped_while_it_was_asking_takes_the_question_with_it() {
+    let mut host = Host::start();
+    host.session.set_idle_timeout(Duration::from_secs(60));
+    host.open_thread("t-asking", Some("permission"));
+    host.ok(THREAD_FOLD, json!({ "threadId": "t-asking" }));
+    host.prompt("t-asking");
+
+    // Wait for the ask to land before the cap can take it.
+    host.settle("t-asking", |s| s["process"]["pendingPermissions"] == 1);
+    host.session.set_run_cap(Duration::from_millis(1));
+
+    let state = host.settle("t-asking", |s| s["latestRun"]["state"] == "timed_out");
+    assert_eq!(state["process"]["pendingPermissions"], 0);
+    assert_eq!(state["resurfacedReason"], "failed");
+}
+
 #[test]
 fn a_thread_that_went_quiet_and_then_finished_reads_as_done() {
     let mut host = Host::start();

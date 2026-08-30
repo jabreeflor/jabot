@@ -268,6 +268,28 @@ impl HostSession {
             params.option_id.clone(),
             params.cancelled,
         );
+        // The card that brought the user here is answered, so it stops
+        // asking. An ask on a folded thread resurfaces it and writes an
+        // unread `needs_you` row; nothing on this path ever cleared that row,
+        // so the moment the ask was answered the Inbox re-expanded the same
+        // question as a stale card with no buttons, still counted in the
+        // badge, until the turn happened to end.
+        //
+        // Cleared whether or not the answer was `delivered`. `delivered` is
+        // about whether a process heard it, and the run state below rightly
+        // turns on that. The card is about whether the *user* still has a
+        // question waiting, and they do not — they just answered it. An
+        // adapter that died before hearing is a different fact, and the
+        // end-of-adapter paths own saying so.
+        //
+        // Narrow on purpose: only this thread's newest unread `needs_you`,
+        // not the blanket `mark_inbox_read` that reopening a thread uses.
+        // Anything else this thread surfaced is still owed.
+        if let Some(store) = self.store.as_ref() {
+            if let Err(err) = store.mark_inbox_kind_read(&thread_id, "needs_you") {
+                eprintln!("could not clear the needs_you card for {thread_id}: {err}");
+            }
+        }
         // Only when the agent heard it. Putting a run back to `running`
         // because of an answer no process is acting on would be the ledger
         // asserting work that is not happening — the thing #21's boot pass
@@ -415,7 +437,7 @@ impl HostSession {
     /// Hand an outcome to the adapter. `false` when there is no adapter left —
     /// which is a fact about the world, not a failure of the call.
     fn answer_agent(&self, thread_id: &str, acp_id: RequestId, outcome: Value) -> bool {
-        let Some(conn) = self.connections.get(thread_id) else {
+        let Some(conn) = self.conn(thread_id) else {
             return false;
         };
         match conn.respond(acp_id, outcome) {

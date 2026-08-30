@@ -18,7 +18,7 @@
 //! into the crew payload. Chief's host tools are the exception: they are not
 //! MCP and are in no `tools/list` catalog, so `crew/list` carries them.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   BotTemplateView,
@@ -26,6 +26,7 @@ import type {
   CrewHostToolView,
   CrewListResult,
   HarnessCardView,
+  HarnessReport,
   HostClient,
   ToolCardView,
 } from "../host";
@@ -49,6 +50,12 @@ export function botRow(bot: BotView): Bot {
     harnessId: bot.harnessId,
     isChief: bot.isChief,
     templateId: bot.templateId ?? null,
+    image: bot.image ?? null,
+    // A dot, not a number: the blob has room for "something is waiting" and
+    // the count itself is read in the Inbox. An older host that does not send
+    // the field answers `undefined`, which draws no dot — the honest reading,
+    // and the one the app has been living with.
+    unread: bot.unread > 0,
   };
 }
 
@@ -66,7 +73,19 @@ export function templateRow(template: BotTemplateView): BotTemplate {
 /** An MCP catalog entry as a chip. The status is the *provider grant's*, which
     is why connecting Gmail lights Calendar too (#18). */
 export function toolOption(tool: ToolCardView): ToolOption {
-  return { id: tool.id, label: tool.label, status: tool.status, detail: tool.detail };
+  return {
+    id: tool.id,
+    label: tool.label,
+    status: tool.status,
+    detail: tool.detail,
+    // Carried rather than dropped: `authorizeUrl` is the whole of the
+    // asynchronous half of `tools/connect` (#18). The host publishes it while
+    // a flow waits for the human, and a chip that threw it away left the
+    // consent screen with nothing to open it.
+    provider: tool.provider,
+    authorizeUrl: tool.authorizeUrl,
+    docsUrl: tool.docsUrl,
+  };
 }
 
 /** Chief's host tools. No `status`: they are the host's own actions, so there
@@ -76,7 +95,8 @@ export function hostToolOption(tool: CrewHostToolView): ToolOption {
 }
 
 /** A catalog card for the harness picker. `available` stays undefined — that
-    answer comes from the Doctor probe (#13), and "not asked" is not "missing". */
+    answer comes from the Doctor probe (#13), and "not asked" is not "missing".
+    `withReadiness` is what fills it in once the probe answers. */
 export function harnessCard(card: HarnessCardView): HarnessCard {
   return {
     id: card.id,
@@ -85,6 +105,53 @@ export function harnessCard(card: HarnessCardView): HarnessCard {
     accent: card.accent,
     installHint: card.installHint,
   };
+}
+
+/**
+ * Fold the Doctor's answer into the catalog cards.
+ *
+ * `harness/list` is the cheap call — it reads the catalog and probes nothing,
+ * which is what lets the picker open without waiting on a vendor CLI.
+ * `harness/doctor` is the expensive one, and it is the only thing that knows
+ * whether the engine on a card can actually be run. So the list paints first
+ * and this narrows it afterwards.
+ *
+ * A card the report set does not mention keeps `available: undefined`. That is
+ * deliberate and is not the same as `false`: the picker greys out a card it
+ * has been told is missing, and a card nobody asked about has not earned that.
+ *
+ * `remedy` wins over `installHint` because it is the more specific of the two —
+ * the Doctor writes it knowing what it actually found on this machine, where
+ * `installHint` is a constant in the catalog.
+ */
+export function withReadiness(
+  cards: readonly HarnessCard[],
+  reports: readonly HarnessReport[],
+): HarnessCard[] {
+  const byId = new Map(reports.map((report) => [report.id, report]));
+  return cards.map((card) => {
+    const report = byId.get(card.id);
+    if (!report) return card;
+    return {
+      ...card,
+      available: report.ready,
+      installHint: report.remedy ?? report.installHint ?? card.installHint,
+    };
+  });
+}
+
+/**
+ * The editor's icon field, in the shape `crew/update` reads it.
+ *
+ * Three states have to survive the trip and JSON only carries two of them
+ * usefully: a key that is absent means "leave the picture alone", and
+ * `undefined` is how a JSON body spells absent. So "take the picture away" has
+ * to be a value, and the empty string is the one the host already uses for
+ * clearing a text column.
+ */
+function patchImage(image: string | null | undefined): string | undefined {
+  if (image === undefined) return undefined;
+  return image ?? "";
 }
 
 /** The host keeps `bots.color` inside a closed list, so an unknown value means
@@ -115,12 +182,82 @@ export interface Crew {
   /** Throws `CHIEF_REQUIRED` for Chief. The grid hides the button, but the
       host is the one that guarantees it. */
   remove: (botId: string) => Promise<void>;
+  /** Start an OAuth flow. Returns once the flow is *running*, not once the
+      human has consented — consent takes as long as a person takes, and the
+      host answers JSON-RPC on one thread. The authorize URL arrives on the
+      next `tools/list`, which the poll below is for. */
+  connectTool: (toolId: string) => Promise<void>;
+  disconnectTool: (toolId: string) => Promise<void>;
 }
+
+/**
+ * The engine catalog, with the Doctor's answer folded in once it arrives.
+ *
+ * Its own hook because the onboarding gate needs it and nothing else about the
+ * crew: `useCrew` also fetches bots and tools, which a first run has no use
+ * for and which would put two more calls in front of the first screen.
+ *
+ * `null` until the catalog answers, so a caller can keep its fixtures until
+ * there is something real to draw — the same rule `useCrew` follows for bots.
+ */
+export function useHarnessCatalog(client: HostClient | null): HarnessCard[] | null {
+  const [cards, setCards] = useState<HarnessCard[] | null>(null);
+  // Apart from `cards` on purpose; see the note in `useCrew`. The two calls
+  // race, and merging on arrival loses whichever lands first.
+  const [reports, setReports] = useState<readonly HarnessReport[] | null>(null);
+
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    if (typeof client.listHarnesses === "function") {
+      client
+        .listHarnesses()
+        .then((list) => {
+          if (!cancelled) setCards(list.harnesses.map(harnessCard));
+        })
+        .catch(() => {
+          // Silent: the caller keeps its fixtures. A first-run screen that
+          // refused to draw because a catalog read failed would be worse than
+          // one drawing the three compiled-in defaults.
+        });
+    }
+    if (typeof client.harnessDoctor === "function") {
+      client
+        .harnessDoctor({})
+        .then((doctor) => {
+          if (!cancelled) setReports(doctor.reports);
+        })
+        .catch(() => {
+          // Silent, for the reason given in `useCrew`.
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
+
+  return useMemo(
+    () => (cards && reports ? withReadiness(cards, reports) : cards),
+    [cards, reports],
+  );
+}
+
+/** Fast enough that a consent screen finishing feels immediate, slow enough
+    that a flow somebody abandoned is not a busy loop. Only ever armed while a
+    card is `connecting`. */
+const CONNECT_POLL_MS = 2_000;
 
 export function useCrew(client: HostClient | null): Crew {
   const [crew, setCrew] = useState<CrewListResult | null>(null);
   const [tools, setTools] = useState<ToolOption[] | null>(null);
   const [harnesses, setHarnesses] = useState<HarnessCard[] | null>(null);
+  // Held apart from `harnesses` rather than folded into it on arrival, because
+  // the two calls race and either can land first: the catalog is three fields
+  // out of SQLite, the probe is vendor CLIs on disk, and neither ordering is
+  // guaranteed. Merging on arrival meant whichever came second won and the
+  // other was silently dropped. Kept separate, the merge below is the same
+  // answer whatever the order.
+  const [reports, setReports] = useState<readonly HarnessReport[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Bumped to re-run the load: a save or a remove changes the crew, and both
   // happen outside this effect.
@@ -145,6 +282,27 @@ export function useCrew(client: HostClient | null): Crew {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
       });
+    // The Doctor runs on its own, deliberately, and its failure is swallowed.
+    //
+    // Two reasons it is not in the Promise.all above. It probes vendor CLIs on
+    // disk, so it is the slow one, and joining it would make the picker wait on
+    // it for no reason — the blurbs are worth painting immediately. And it is
+    // the one call here that is allowed to fail: a probe that times out, or a
+    // transport too old to know the method, must leave the cards saying what
+    // they can rather than replacing the crew view with an error. Not knowing
+    // whether an engine is installed is a smaller loss than not showing it.
+    if (typeof client.harnessDoctor === "function") {
+      client
+        .harnessDoctor({})
+        .then((doctor) => {
+          if (cancelled) return;
+          setReports(doctor.reports);
+        })
+        .catch(() => {
+          // Deliberately silent: see above. The cards keep `available`
+          // undefined, which the picker renders as the blurb.
+        });
+    }
     return () => {
       cancelled = true;
     };
@@ -156,10 +314,17 @@ export function useCrew(client: HostClient | null): Crew {
     async (botId: string | null, draft: BotDraft) => {
       if (!client) throw new Error("No host connection.");
       const saved = botId
-        ? await client.updateBot({ botId, ...draft })
+        ? await client.updateBot({
+            botId,
+            ...draft,
+            image: patchImage(draft.image),
+          })
         : await client.createBot({
             ...draft,
             templateId: draft.templateId ?? undefined,
+            // No three-way spelling on create: a new bot has no icon to keep,
+            // so "none" and "leave it alone" are the same instruction.
+            image: draft.image ?? undefined,
           });
       reload();
       return botRow(saved);
@@ -176,15 +341,62 @@ export function useCrew(client: HostClient | null): Crew {
     [client, reload],
   );
 
+  const connectTool = useCallback(
+    async (toolId: string) => {
+      if (!client) throw new Error("No host connection.");
+      await client.connectTool({ toolId });
+      reload();
+    },
+    [client, reload],
+  );
+
+  const disconnectTool = useCallback(
+    async (toolId: string) => {
+      if (!client) throw new Error("No host connection.");
+      await client.disconnectTool({ toolId });
+      reload();
+    },
+    [client, reload],
+  );
+
+  // The substitute for a notification, and not an optional one.
+  //
+  // #18 settled that `tools/connect` is asynchronous and that there is no
+  // notification for its result: every host → client notification carries a
+  // `threadId` envelope, and a connection belongs to no thread. So the client
+  // polls — and the poll is also what *commits* the grant, because the host
+  // only runs `drain_connect_flows()` when something asks it for the tool
+  // list. Without this, a user who consented in their browser would sit in
+  // front of a chip that said `connecting` for the rest of the session.
+  //
+  // Armed only while something is actually waiting, and stopped the moment
+  // nothing is: a tab left open on the crew screen must not shell the host
+  // every two seconds forever.
+  const connecting = (tools ?? []).some((tool) => tool.status === "connecting");
+  useEffect(() => {
+    if (!client || !connecting) return;
+    const timer = window.setInterval(reload, CONNECT_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [client, connecting, reload]);
+
+  // Memoised so the picker is handed the same array identity between renders;
+  // rebuilding it every render would defeat any memo below it.
+  const readyHarnesses = useMemo(
+    () => (harnesses && reports ? withReadiness(harnesses, reports) : harnesses),
+    [harnesses, reports],
+  );
+
   return {
     bots: crew ? crew.bots.map(botRow) : null,
     templates: crew ? crew.templates.map(templateRow) : null,
     tools,
     hostTools: crew ? crew.hostTools.map(hostToolOption) : null,
-    harnesses,
+    harnesses: readyHarnesses,
     error,
     reload,
     save,
     remove,
+    connectTool,
+    disconnectTool,
   };
 }

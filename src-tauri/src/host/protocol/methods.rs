@@ -41,8 +41,16 @@ pub const TOOLS_DISCONNECT: &str = "tools/disconnect";
 pub const FOLDER_LIST: &str = "folder/list";
 pub const FOLDER_REGISTER: &str = "folder/register";
 pub const FOLDER_UPDATE: &str = "folder/update";
+
+/// App-wide preferences (#26). The idle timeout and the fold default were an
+/// env var and a column default; this is where a person sets them.
+pub const SETTINGS_GET: &str = "settings/get";
+pub const SETTINGS_SET: &str = "settings/set";
 pub const FOLDER_FORGET: &str = "folder/forget";
 pub const GITHUB_STATUS: &str = "github/status";
+/// Hand `gh` a token to hold, so the PR board can ask GitHub as the user (#28).
+/// The token travels once, on this call, and is never read back.
+pub const GITHUB_LOGIN: &str = "github/login";
 pub const CREW_LIST: &str = "crew/list";
 pub const CREW_CREATE: &str = "crew/create";
 pub const CREW_UPDATE: &str = "crew/update";
@@ -57,6 +65,9 @@ pub const SCHEDULE_RUN: &str = "schedule/run";
 /// the network; `pr/refresh` is the poll.
 pub const PR_LIST: &str = "pr/list";
 pub const PR_REFRESH: &str = "pr/refresh";
+/// Every open pull request the signed-in user wrote, linked to a session here
+/// or not. The one PR method that needs a login to answer at all.
+pub const PR_MINE: &str = "pr/mine";
 pub const SYNC_RESUME_FROM: &str = "sync/resumeFrom";
 
 pub const CLIENT_METHODS: &[&str] = &[
@@ -84,6 +95,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     FOLDER_UPDATE,
     FOLDER_FORGET,
     GITHUB_STATUS,
+    GITHUB_LOGIN,
     CREW_LIST,
     CREW_CREATE,
     CREW_UPDATE,
@@ -100,6 +112,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     NOTIFY_STATUS,
     PR_LIST,
     PR_REFRESH,
+    PR_MINE,
 ];
 
 /// A new Inbox card exists on a thread that did **not** resurface.
@@ -193,6 +206,15 @@ pub struct HelloResult {
     /// `methods`.
     #[serde(default)]
     pub scoped_methods: Vec<String>,
+    /// This host proving itself back, on the one arm where that is meaningful:
+    /// a paired device that has just presented a valid [`DeviceAuth`]. See
+    /// [`HostAuth`] for the derivation and for why an absent value is not
+    /// consent.
+    ///
+    /// `Option` + `default` so a host older than this field is not lying and a
+    /// client older than it is unaffected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_auth: Option<HostAuth>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -805,6 +827,11 @@ pub struct InboxEventView {
     pub thread_id: String,
     pub thread_title: String,
     pub thread_state: String,
+    /// Whose thread this is, when it is a bot's. Absent for a code thread,
+    /// which is most of them — an Inbox row is about a *thread*, and only some
+    /// threads belong to a crew member.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
     pub kind: String,
     pub title: String,
     pub summary: String,
@@ -826,6 +853,9 @@ pub struct InboxEventView {
 pub struct SleepingThreadView {
     pub thread_id: String,
     pub title: String,
+    /// As on [`InboxEventView`]: whose thread this is, when it is a bot's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
     pub fold_policy: FoldPolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub folded_at: Option<String>,
@@ -1545,6 +1575,105 @@ pub struct GithubStatusResult {
     pub gh_path: Option<String>,
 }
 
+/// Sign in: one token, one host, one direction.
+///
+/// The token is the only secret this protocol carries, and it carries it
+/// exactly once — the host hands it to `gh` and forgets it. No method gives it
+/// back, `Debug` is not derived so a traced frame cannot print it, and
+/// [`GithubLoginResult`] is a plain [`GithubStatusResult`] because "who am I
+/// signed in as" is the only question left afterwards.
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubLoginParams {
+    /// Defaults to `github.com`. GHES folders pass their `origin` host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// A GitHub token the user created. Never logged, never stored by JaBot,
+    /// never echoed back.
+    pub token: String,
+}
+
+impl std::fmt::Debug for GithubLoginParams {
+    /// Redacted by construction. A `{:?}` on a request frame is how a secret
+    /// reaches a log file, so this type simply cannot print one.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GithubLoginParams")
+            .field("host", &self.host)
+            .field("token", &"<redacted>")
+            .finish()
+    }
+}
+
+impl GithubLoginParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        if self.token.trim().is_empty() {
+            return Err(super::error::RpcError::InvalidParams(
+                "token is required".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Every app-wide preference, in one answer.
+///
+/// Whole rather than partial on the way out, including from `settings/set`, so
+/// the renderer never has to merge a patch into what it thought it had — the
+/// host's answer is the state.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsView {
+    /// The stuck backstop's silence threshold. Always the value in force, so
+    /// a host running under `JABOT_IDLE_TIMEOUT_MS` reports what it is
+    /// actually using rather than what is stored.
+    pub idle_timeout_ms: u64,
+    /// What a new thread's fold policy starts as: `default` or
+    /// `wait_for_inbox`.
+    pub default_fold_policy: String,
+    /// True when the env var is in force, so the pane can say the control it
+    /// is drawing is not the one deciding. Only the e2e suite and a developer
+    /// ever set it, and both would rather be told than quietly ignored.
+    pub idle_timeout_from_env: bool,
+}
+
+/// A patch. An absent field is "leave it alone" — the same reading
+/// `folder/update` gives its own, so a pane that only changed one control does
+/// not have to send the other back.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsSetParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_timeout_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_fold_policy: Option<String>,
+}
+
+impl SettingsSetParams {
+    /// Refused rather than clamped. A user who asked for a two-second backstop
+    /// and got ten minutes would have no way to find out, and a stored value
+    /// the fold path rejects would break thread creation rather than a pane.
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        if let Some(ms) = self.idle_timeout_ms {
+            // A second is already absurdly short for "the agent has gone
+            // quiet"; below it the backstop is firing mid-sentence. A day is
+            // the other end, past which it is off rather than long.
+            if !(1_000..=86_400_000).contains(&ms) {
+                return Err(super::error::RpcError::InvalidParams(format!(
+                    "idleTimeoutMs must be between 1000 and 86400000, not {ms}"
+                )));
+            }
+        }
+        if let Some(policy) = self.default_fold_policy.as_deref() {
+            if !crate::host::store::is_fold_policy(policy) {
+                return Err(super::error::RpcError::InvalidParams(format!(
+                    "invalid fold policy {policy}"
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// A `bots` row as the crew grid and the bot editor see it (#17).
 ///
 /// `tools` is the parsed allowlist rather than the stored JSON text, because
@@ -1555,9 +1684,15 @@ pub struct GithubStatusResult {
 pub struct BotView {
     pub bot_id: String,
     pub name: String,
-    /// A colour token from [`crate::host::BOT_COLORS`] — the gradient is the
-    /// bot's identity in the UI, so the host keeps the vocabulary closed.
+    /// A colour token from [`crate::host::BOT_COLORS`]. With no uploaded
+    /// picture this *is* the bot's mark, together with its initials, so the
+    /// host keeps the vocabulary closed.
     pub color: String,
+    /// The uploaded icon as a `data:` URL, absent when the bot wears its
+    /// colour. Checked on the way in — shape and size both — so what goes out
+    /// is something an `<img src>` can be handed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
     /// Persona / system prompt. Also mirrored to `instructions.md` in the
     /// bot's memory directory, where the session can read it.
     pub instructions: String,
@@ -1576,6 +1711,13 @@ pub struct BotView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_dir: Option<String>,
     pub sort_order: i64,
+    /// Cards waiting on this bot's standing thread — the red dot on its blob
+    /// (#22, #24). The same projection `inbox/list` badges the sidebar with,
+    /// grouped by bot, so the two readings cannot disagree. `crew/create` and
+    /// `crew/update` answer 0: a bot that has just been written has nothing
+    /// waiting, and querying for that would be asking a question with a known
+    /// answer.
+    pub unread: i64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -1637,6 +1779,10 @@ pub struct CrewCreateParams {
     pub tools: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness_id: Option<String>,
+    /// The bot's icon as a `data:` URL. Refused if it is not one, or if it is
+    /// over the cap; a new bot with no picture simply omits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
 }
 
 /// A patch. An omitted field is left alone; `instructions: ""` really does
@@ -1655,6 +1801,14 @@ pub struct CrewUpdateParams {
     pub tools: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness_id: Option<String>,
+    /// The icon, in this patch's own three-way spelling: omitted leaves the
+    /// picture alone, a `data:` URL replaces it, and `""` takes it away and
+    /// puts the colour mark back. The empty string carries "clear" because
+    /// JSON has no way to say "present, and deliberately nothing" that a
+    /// missing key cannot also mean — the same reading `instructions: ""`
+    /// already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1834,6 +1988,33 @@ mod tests {
         assert_eq!(encoded, json!("needs_you"));
     }
 
+    /// The token is the only secret this protocol carries, and the cheapest
+    /// way to leak one is `{:?}` on a request frame. It has to be impossible
+    /// rather than merely avoided.
+    #[test]
+    fn a_login_frame_cannot_print_its_own_token() {
+        let params = GithubLoginParams {
+            host: Some("github.com".into()),
+            token: "ghp_averyrealsecret".into(),
+        };
+        let printed = format!("{params:?}");
+        assert!(!printed.contains("ghp_averyrealsecret"), "{printed}");
+        assert!(printed.contains("<redacted>"), "{printed}");
+        // It still serialises in full — the wire is where it is meant to go.
+        let wire = serde_json::to_value(&params).unwrap();
+        assert_eq!(wire["token"], json!("ghp_averyrealsecret"));
+        assert_eq!(wire["host"], json!("github.com"));
+    }
+
+    #[test]
+    fn a_login_without_a_token_is_refused_before_it_is_run() {
+        let params = GithubLoginParams {
+            host: None,
+            token: "   ".into(),
+        };
+        assert!(params.validate().is_err());
+    }
+
     #[test]
     fn permission_reply_requires_decision() {
         let params = PermissionReplyParams {
@@ -1969,6 +2150,31 @@ impl DeviceRole {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DeviceAuth {
+    pub counter: u64,
+    pub mac: String,
+}
+
+/// Proof that the answering host holds the same token — the mirror of
+/// [`DeviceAuth`], returned on `host/hello` to a device that has just proved
+/// itself.
+///
+/// `mac = HMAC-SHA256(deviceToken, H["jabot/hello/host/v1", hostId, deviceId,
+/// protocolVersion, counter])`, hex, over the same length-framed transcript
+/// hash and with the **same counter the device sent**, so the proof answers
+/// that one hello and cannot be lifted onto another.
+///
+/// The separator differs from [`DeviceAuth`]'s on purpose. The token is
+/// shared, so a host answering under `jabot/hello/v1` would return a value the
+/// device could have computed itself — no proof at all, and replayable as a
+/// *device* proof by anyone who saw the reply.
+///
+/// Absent for the two colocated arms of `host/hello`: the local console is
+/// implicitly paired because it spawned the host, and has no token to check
+/// one against. A device that expects a proof must therefore treat an absent
+/// `hostAuth` as a failure rather than as consent.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HostAuth {
     pub counter: u64,
     pub mac: String,
 }
@@ -2355,4 +2561,79 @@ pub struct PrRefreshResult {
     /// One entry per forge host that could not be reached. Empty on success,
     /// and empty on a host with nothing linked to refresh.
     pub unavailable: Vec<PrUnavailable>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrMineParams {
+    /// Defaults to `github.com`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+}
+
+/// One of the signed-in user's own pull requests.
+///
+/// Deliberately not a [`PullRequestView`]. That type's `thread_id` is a
+/// promise — every row on the linked board was opened by a session on this Mac
+/// and "Reopen thread" always has somewhere to go. These rows come from
+/// GitHub, so most of them have no session here at all, and the honest way to
+/// say that is a field that can be absent rather than an empty string that
+/// every reader has to remember to check. Where the PR *is* also linked, the
+/// thread travels along and the row gets its button back.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GithubPullRequestView {
+    /// `github:owner/name#12` — stable across polls, and never a store id: a
+    /// PR that is also linked keeps its own row's identity in `linkedId`.
+    pub id: String,
+    /// The `thread_prs.id` of the linked row, when this PR was opened here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub linked_id: Option<String>,
+    pub provider: String,
+    pub forge_host: String,
+    /// `owner/name`.
+    pub repo: String,
+    pub number: i64,
+    pub url: String,
+    pub title: String,
+    /// `open` | `draft` | `merged` | `closed`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub check_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub review_state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub head_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+    pub additions: i64,
+    pub deletions: i64,
+    pub changed_files: i64,
+    pub checks: Vec<PrCheckView>,
+    pub updated_at: String,
+    /// The session that opened it, when one did. Absent for a PR written
+    /// anywhere else — which is most of them, and the point of this method.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread_state: Option<String>,
+}
+
+/// What GitHub says the signed-in user has open.
+///
+/// Same contract as `pr/refresh`: never an error frame for "GitHub was not
+/// reachable". A board that empties itself because a token expired is worse
+/// than one that says so and keeps drawing what it had.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrMineResult {
+    /// Who GitHub answered as. `null` when it could not be asked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    pub pull_requests: Vec<GithubPullRequestView>,
+    /// Why GitHub could not be asked, if it could not. `null` on success.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable: Option<PrUnavailable>,
 }

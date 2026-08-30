@@ -96,9 +96,8 @@ impl HostSession {
         // down and building it again is the difference between reopening a
         // folded thread and interrupting it.
         if let Some(session_id) = self
-            .connections
-            .get(&thread_id)
-            .and_then(|conn| conn.session_id.clone())
+            .conn(&thread_id)
+            .and_then(|conn| conn.session_for(&thread_id))
         {
             return self.resume_result(
                 &thread_id,
@@ -227,10 +226,9 @@ impl HostSession {
         // sees a schema for.
         let mcp_servers = self.mcp_servers_for_thread(thread_id);
         let conn = self
-            .connections
-            .get_mut(thread_id)
+            .conn_mut(thread_id)
             .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-        conn.new_session(cwd, mcp_servers)
+        conn.new_session(thread_id, cwd, mcp_servers)
     }
 
     /// Spawn (if needed), `initialize`, and hand the session back.
@@ -251,8 +249,7 @@ impl HostSession {
         let mcp_servers = self.mcp_servers_for_thread(thread_id);
         let capabilities = {
             let conn = self
-                .connections
-                .get_mut(thread_id)
+                .conn_mut(thread_id)
                 .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
             // Capabilities are only knowable after the handshake, and the
             // handshake failing is the "install hint" case, not a resume case.
@@ -262,10 +259,9 @@ impl HostSession {
 
         if capabilities.resume {
             let conn = self
-                .connections
-                .get_mut(thread_id)
+                .conn_mut(thread_id)
                 .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-            match conn.resume_session(session_id, cwd, mcp_servers.clone()) {
+            match conn.resume_session(thread_id, session_id, cwd, mcp_servers.clone()) {
                 Ok(()) => {
                     self.lifecycle_on_attached(thread_id);
                     return Ok(Restored::Resumed);
@@ -289,10 +285,9 @@ impl HostSession {
                 .unwrap_or(0)
                 == 0;
             let conn = self
-                .connections
-                .get_mut(thread_id)
+                .conn_mut(thread_id)
                 .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-            match conn.load_session(session_id, cwd, mcp_servers) {
+            match conn.load_session(thread_id, session_id, cwd, mcp_servers) {
                 Ok(()) => {
                     self.settle_replay(thread_id, replay_wanted);
                     self.lifecycle_on_attached(thread_id);
@@ -314,16 +309,27 @@ impl HostSession {
     /// adapter that died.
     fn settle_replay(&mut self, thread_id: &str, replay_wanted: bool) {
         let mut carried = Vec::new();
-        if let Some(conn) = self.connections.get_mut(thread_id) {
+        // Only this thread's replay is dropped. On a shared process a
+        // neighbour's chunks can be in the same queue, and they are not part of
+        // anybody's load — so they are routed and carried like any other event.
+        if let Some(conn) = self.conn_mut(thread_id) {
+            let mine = conn.session_for(thread_id);
             while let Ok(event) = conn.try_recv() {
-                match event {
-                    Inbound::Update(_) if !replay_wanted => {}
-                    other => carried.push(other),
+                let owners = conn.route(&event);
+                let is_my_replay = mine.is_some()
+                    && matches!(event, Inbound::Update(_))
+                    && owners.iter().any(|owner| owner == thread_id);
+                if is_my_replay && !replay_wanted {
+                    continue;
+                }
+                match owners.len() {
+                    1 => carried.push((owners.into_iter().next().expect("one"), event)),
+                    _ => carried.push((thread_id.to_string(), event)),
                 }
             }
         }
-        for event in carried {
-            self.handle_inbound(thread_id, event);
+        for (owner, event) in carried {
+            self.handle_inbound(&owner, event);
         }
     }
 

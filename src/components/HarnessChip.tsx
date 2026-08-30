@@ -4,6 +4,7 @@
 
 import type { CSSProperties } from "react";
 
+import { HarnessMark } from "./HarnessIcon";
 import type { HarnessCard } from "./types";
 
 export function HarnessChip({
@@ -20,7 +21,7 @@ export function HarnessChip({
 
   return (
     <span className="harness-chip" style={style}>
-      <i />
+      <HarnessMark harnessId={harnessId} />
       {harness?.label ?? harnessId}
     </span>
   );

@@ -1,38 +1,402 @@
 /*
- * Schedules (#25). One column rather than the crew's two: a schedule row is a
- * sentence — when, as whom, what happened last — and two columns of sentences
- * read as a wall.
+ * Schedules (#25).
+ *
+ * The list is a list, not a grid of cards. Cards were right when a schedule was
+ * a thing you *read*; the moment there are six of them the question is "which
+ * one is about to fire", and that is answered by a column you can run your eye
+ * down — one dot, one name, one sentence of when — not by six bordered boxes
+ * whose edges are the loudest thing on the screen. So the borders go, the rows
+ * get a hairline between them, and everything a card used to show at rest lives
+ * one click down inside the row.
+ *
+ * Creating one is a prompt docked under that list (.sched-dock, at the bottom
+ * of this file) rather than a form opening on top of it — or a screen
+ * replacing it, which is what this was first built as and what took the list
+ * away at the one moment it is most worth reading.
  */
 
-.sched-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-4);
-  margin-top: var(--sp-2);
+.sched-page {
+  padding-bottom: var(--sp-3);
 }
 
-.sched-card .r1 {
-  align-items: flex-start;
-}
+/* ---- search and filters ------------------------------------------------- */
 
-.sched-switch {
-  margin-left: auto;
+.sched-controls {
   display: flex;
   align-items: center;
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+  flex-wrap: wrap;
+}
+
+.sched-search {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  background: var(--raise2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-pill);
+  padding: 0 var(--sp-4);
+  height: 34px;
+  transition: border-color 0.12s ease;
+}
+
+.sched-search:focus-within {
+  border-color: var(--edge-menu);
+}
+
+.sched-search svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--faint);
+}
+
+.sched-search input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  font-size: var(--fs-body);
+}
+
+.sched-search input::placeholder {
+  color: var(--faint);
+}
+
+/* Chrome draws a little grey ✗ in a search field and it is the wrong grey and
+   the wrong ✗. Escape and select-all already clear it. */
+.sched-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.sched-filters {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--raise2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-pill);
+  padding: 2px;
+}
+
+.sched-filter {
+  display: inline-flex;
+  align-items: center;
   gap: var(--sp-2);
-  font-size: var(--fs-caps);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--dim);
+  border: 0;
+  background: none;
   cursor: pointer;
+  color: var(--dim);
+  font: 600 var(--fs-meta) / 1 var(--font-ui);
+  border-radius: var(--r-pill);
+  padding: 7px 11px;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.sched-filter:hover {
+  color: var(--ink);
+}
+
+/* Selected is a filled segment, the way a segmented control has always said it.
+   Colour alone would be a 1.3:1 difference between two greys. */
+.sched-filter[aria-pressed="true"] {
+  background: var(--raise);
+  color: var(--ink);
+}
+
+/* The count is a fact about the segment, not a badge to be noticed: same size,
+   one step down in weight and colour, and it disappears when it is zero-ish
+   only in the sense that nobody reads it until they are looking for it. */
+.sched-filter .count {
+  font-weight: 500;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sched-filter[aria-pressed="true"] .count {
+  color: var(--dim);
+}
+
+/* ---- the list ----------------------------------------------------------- */
+
+.sched-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--sp-5) 0 0;
+}
+
+.sched-row {
+  border-radius: var(--r-lg);
+  /* The separator lives on the row, not between rows, so an open row keeps its
+     own bottom edge and the closed ones under it do not shift. */
+  box-shadow: inset 0 -1px 0 var(--edge);
+  transition: background 0.12s ease;
+}
+
+.sched-row:last-child {
+  box-shadow: none;
+}
+
+.sched-row:hover,
+.sched-row.is-open {
+  background: var(--raise2);
+  box-shadow: none;
+}
+
+/* Open rows earn an edge back — an open row is a panel and needs a boundary,
+   and inset shadows do not compound with the hover fill. */
+.sched-row.is-open {
+  border: 1px solid var(--edge);
+  background: var(--raise2);
+}
+
+.sched-row-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding-right: var(--sp-4);
+}
+
+/* The whole left of the row opens it. A row you can only open by a 12px
+   chevron is a row with a 12px hit target. */
+.sched-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  /* The dot belongs to the *name*, not to the block: centred against two lines
+     it floats between them and reads as punctuation for the meta line. */
+  align-items: flex-start;
+  gap: var(--sp-4);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  padding: 15px var(--sp-2) 15px var(--sp-4);
+  border-radius: var(--r-lg);
+}
+
+.sched-row-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.sched-row-name {
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sched-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  color: var(--dim);
+  font-size: var(--fs-meta);
+}
+
+.sched-row-meta .sep {
+  color: var(--edge-menu);
+}
+
+/* The only thing that says a row opens. Hidden at rest because four static
+   chevrons down the right of a list is a decoration; present on hover and
+   whenever a row is open, because by then it is a state and not a hint. */
+.sched-caret {
+  flex: none;
+  margin: 4px 0 0 auto;
+  width: 11px;
+  height: 11px;
+  color: var(--faint);
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    transform 0.15s ease;
+}
+
+.sched-row:hover .sched-caret,
+.sched-row.is-open .sched-caret {
+  opacity: 1;
+}
+
+.sched-row.is-open .sched-caret {
+  transform: rotate(90deg);
+}
+
+/* The one number on the row that changes on its own. Tabular so a row ticking
+   from "in 9 minutes" to "in 10 minutes" does not nudge the words after it. */
+.sched-next {
+  font-variant-numeric: tabular-nums;
+}
+
+.sched-next.is-due {
+  color: var(--amber);
+}
+
+/* ---- the status dot ------------------------------------------------------ */
+
+/* Five states, and they have to be distinguishable at 9px in a column: two
+   greens would not be. So: filled green ready, pulsing violet running, red
+   failed, amber late, hollow grey paused. Every one of them is also said in
+   words inside the row — the dot is the scan, not the source. */
+.sched-dot {
+  flex: none;
+  /* Optically on the first line: half the 20px line box, less half the dot. */
+  margin-top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(93, 187, 110, 0.14);
+}
+
+.sched-dot.is-paused {
+  background: transparent;
+  border: 1.5px solid var(--faint);
+  box-shadow: none;
+}
+
+.sched-dot.is-failed {
+  background: var(--red);
+  box-shadow: 0 0 0 3px rgba(255, 69, 58, 0.16);
+}
+
+.sched-dot.is-late {
+  background: var(--amber);
+  box-shadow: 0 0 0 3px rgba(232, 163, 61, 0.16);
+}
+
+.sched-dot.is-running {
+  background: var(--violet);
+  animation: sched-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes sched-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(167, 139, 250, 0);
+  }
+}
+
+/* ---- the switch ---------------------------------------------------------- */
+
+/* A real switch, not a checkbox with the word "On" beside it. On/off is the
+   only state on this screen the user changes directly, and it should look like
+   the thing it is on the machine this app runs on. */
+.sched-switch {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  /* Against the name, for the same reason the dot is. */
+  margin-top: 14px;
+}
+
+.sched-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.sched-switch .track {
+  width: 34px;
+  height: 20px;
+  border-radius: var(--r-pill);
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  display: block;
+  position: relative;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.sched-switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--faint);
+  transition:
+    transform 0.16s ease,
+    background 0.16s ease;
+}
+
+.sched-switch input:checked + .track {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+.sched-switch input:checked + .track .knob {
+  background: #fff;
+  transform: translateX(14px);
+}
+
+.sched-switch input:focus-visible + .track {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ---- an opened row ------------------------------------------------------- */
+
+.sched-row-body {
+  padding: 0 var(--sp-4) var(--sp-4) 37px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  animation: sched-open 0.18s ease both;
+}
+
+@keyframes sched-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 .sched-prompt {
-  margin-top: 0;
+  color: var(--ink);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.sched-row-body .tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
 }
 
 .sched-detail {
-  font-size: 12px;
+  color: var(--faint);
+  font-size: var(--fs-meta);
+  margin: 0;
+}
+
+.sched-row-body .acts {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: var(--sp-1);
 }
 
 /* A caught-up run is the one thing on this screen a user did not ask for, so
@@ -42,25 +406,462 @@
   background: rgba(232, 163, 61, 0.12);
 }
 
-.sched-presets {
+/* ---- nothing here yet ---------------------------------------------------- */
+
+.sched-blank {
+  text-align: center;
+  padding: 44px var(--sp-5) 30px;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.sched-blank-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: var(--raise2);
+  border: 1px solid var(--edge);
+  color: var(--faint);
+  margin-bottom: var(--sp-1);
+}
+
+.sched-blank-mark svg {
+  width: 20px;
+  height: 20px;
+}
+
+.sched-blank h2 {
+  font-size: var(--fs-title);
+  font-weight: 700;
+}
+
+.sched-blank p {
+  color: var(--dim);
+  font-size: var(--fs-body);
+  max-width: 46ch;
+  line-height: 1.5;
+}
+
+.sched-blank .btn {
+  margin-top: var(--sp-2);
+}
+
+/* ---- suggestions --------------------------------------------------------- */
+
+/* Not decoration: a schedules screen is the one screen that cannot show you
+   what it is for until you have already used it, and "0 9 * * 1-5" is not a
+   thing anybody guesses. Each one is a whole schedule, and clicking it opens
+   the same prompt a blank one would, already written. */
+.sched-suggest {
+  margin-top: 26px;
+  border-top: 1px solid var(--edge);
+  padding-top: var(--sp-2);
+}
+
+.sched-suggest .page-section {
+  margin-left: var(--sp-4);
+}
+
+.sched-suggest-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.sched-suggest-row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  background: none;
+  border: 0;
+  border-radius: var(--r-lg);
+  cursor: pointer;
+  text-align: left;
+  padding: 11px var(--sp-4);
+  color: inherit;
+  transition: background 0.12s ease;
+}
+
+.sched-suggest-row:hover {
+  background: var(--raise2);
+}
+
+.sched-suggest-row .mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--raise);
+  color: var(--dim);
+  margin-top: 1px;
+}
+
+/* One colour each, the way a row of app glyphs is coloured: three greys in a
+   column read as three copies of the same thing, and the tint is the fastest
+   way to say these are three different jobs. Backgrounds are the same hue at
+   12%, so nothing here is louder than the row it sits in. */
+.sched-suggest-row .mark.is-inbox {
+  color: var(--violet);
+  background: rgba(167, 139, 250, 0.13);
+}
+
+.sched-suggest-row .mark.is-prs {
+  color: var(--ok);
+  background: rgba(93, 187, 110, 0.13);
+}
+
+.sched-suggest-row .mark.is-spark {
+  color: var(--amber);
+  background: rgba(232, 163, 61, 0.13);
+}
+
+.sched-suggest-row .mark svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sched-suggest-row .body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sched-suggest-row .head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.sched-suggest-row .ttl {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sched-suggest-row .when {
+  font-size: var(--fs-meta);
+  color: var(--faint);
+}
+
+.sched-suggest-row .say {
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  /* Two lines, then it is a prompt you open rather than a prompt you read. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* ---- the prompt (creating one) ------------------------------------------- */
+
+/* Docked under the list, the way the message box is docked under a transcript.
+   Not a screen of its own: writing a schedule is a thing you do while looking
+   at the ones you already have — to see that 8am is taken, to copy how you
+   phrased the last one, to notice you are about to write the same job twice. */
+.sched-dock {
+  flex: none;
+  padding: var(--sp-3) var(--sp-6) 18px;
+  background: var(--chat);
+}
+
+/* The box is the one raised surface at the bottom of the screen, so it gets
+   the shadow that lifts it off the list scrolling underneath it. */
+.dock-box {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  background: var(--raise2);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-xl);
+  padding: var(--sp-3) var(--sp-4) var(--sp-3);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+  transition: border-color 0.14s ease;
+}
+
+.dock-box:focus-within,
+.dock-box.is-live {
+  border-color: var(--edge-menu);
+}
+
+.dock-field {
+  width: 100%;
+  display: block;
+  resize: none;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  font: var(--fs-chat) / 1.5 var(--font-ui);
+  padding: var(--sp-2) var(--sp-2) var(--sp-3);
+}
+
+.dock-field::placeholder {
+  color: var(--faint);
+}
+
+.dock-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+/* What the bar is about to create, above the box it will be created from, in
+   the words the list will use once it exists — including the name, which is
+   derived and would otherwise first appear as a surprise in a row. */
+.dock-read {
+  display: flex;
+  align-items: baseline;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  margin-bottom: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
 }
 
-.sched-preset {
-  border: 1px solid transparent;
-  cursor: pointer;
+/* Wraps as two phrases rather than as one sentence broken mid-clause: on a
+   narrow window the derived name takes the first line and the when takes the
+   second, and neither needs a separator to be read as its own thing. */
+.dock-when {
+  white-space: nowrap;
 }
 
-.sched-preset[aria-pressed="true"] {
+.dock-name {
   color: var(--ink);
+  font-weight: 600;
+}
+
+.read-mark {
+  color: var(--violet);
+  font-weight: 700;
+  font-size: var(--fs-caps);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dock-error {
+  padding: 0 var(--sp-2) var(--sp-2);
+  font-size: var(--fs-meta);
+}
+
+/* A chip is a select wearing the shape of a control you can read at a glance:
+   the native arrow is gone and the label carries the value, because "as Writer"
+   is a sentence and "Runs as: [Writer ▾]" is a form. */
+.prompt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-pill);
+  padding: 5px var(--sp-3) 5px 10px;
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.prompt-chip:hover {
+  border-color: var(--dim);
+  color: var(--ink);
+}
+
+.prompt-chip svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+.prompt-chip .chip-key {
+  color: var(--faint);
+  font-weight: 500;
+}
+
+.prompt-chip select {
+  appearance: none;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  font: 600 var(--fs-meta) / 1 var(--font-ui);
+  cursor: pointer;
+  padding: 0;
+  max-width: 22ch;
+}
+
+.prompt-chip select:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* The chip the sentence filled in. It is the one moment this bar does
+   something on your behalf, so it says so — quietly, and only until you touch
+   it. */
+.prompt-chip.read-off {
+  border-color: rgba(167, 139, 250, 0.55);
+  color: var(--violet);
+}
+
+.prompt-chip.read-off svg {
+  color: var(--violet);
+}
+
+/* Refused. The chip is the control the host objected to, so it is the control
+   that wears it — and the raw cron comes out beside it, because a preset
+   cannot be refused and whatever is in there is now worth seeing as text. */
+.prompt-chip.is-bad {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.prompt-chip.is-bad svg {
+  color: var(--red);
+}
+
+.dock-cron {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0 var(--sp-2) var(--sp-3);
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-md);
+  padding: 6px 12px;
+}
+
+.dock-cron span {
+  flex: none;
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  font-weight: 600;
+  letter-spacing: var(--track-caps);
+}
+
+.dock-cron input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  font: var(--fs-meta) / 1.4 var(--font-mono);
+}
+
+.dock-cron:focus-within {
   border-color: var(--dim);
 }
 
-.sched-hint {
+.dock-cron:has(input[aria-invalid="true"]) {
+  border-color: var(--red);
+}
+
+.send-btn {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  border: 0;
+  background: var(--bub-me);
+  color: var(--bub-me-ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.send-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.send-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.send-btn:disabled {
+  background: var(--raise);
   color: var(--faint);
-  font-size: 12px;
-  margin: calc(-1 * var(--sp-2)) 0 var(--sp-3);
+  cursor: default;
+}
+
+/* ---- the editor modal ---------------------------------------------------- */
+
+/* Editing an existing schedule is still a form: the values are already there
+   and the job is to change one of them, which is the case a form is good at.
+   The four presets, two by two — four presets at four different widths break
+   3 + 1 in the card, and an orphan on its own row reads as a fifth thing that
+   failed to fit rather than as one of four equals. */
+.sched-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+/* Its own control, not a .minichip with six overrides. A minichip is the 11px
+   status tag on a crew card — shrink-to-fit, stadium radius, not clickable.
+   This is a 200px-wide interactive cell, and inheriting a 99px radius onto one
+   leaves 13px of pure geometry hanging off each end of centred text.
+
+   The surface matters too: on --raise the chips were the same fill as the cron
+   input directly below them, and the whole block read as one grey mass. --raise2
+   puts them under the field they fill, which is where they belong. */
+.sched-preset {
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--dim);
+  background: var(--raise2);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-lg);
+  padding: var(--sp-1) var(--sp-4);
+  cursor: pointer;
+}
+
+.sched-preset:hover {
+  border-color: var(--dim);
+}
+
+/* Chosen says it the way the harness cards next door say it — a full-strength
+   border. A darker-to-lighter fill between two neighbouring greys is a 1.1:1
+   change nobody can see from more than a foot away, so the border has to carry
+   it whether or not the fill helps. */
+.sched-preset[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--raise);
+  border-color: var(--ink);
+}
+
+/* A hint belongs to the control above it, so it sits close to it — but it is
+   still a line of prose and needs room to be one. The negative top margin this
+   used to carry pulled it flush against the field's border. */
+.sched-hint {
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  margin: var(--sp-2) 0 0;
+}
+
+/* A hint that closes a group needs more room under it than a control does. Two
+   greys of small text stacked 20px apart read as one couplet, and the label
+   belongs to the field under it, not to the sentence over it. */
+.modal .sched-hint + .mlab {
+  margin-top: 26px;
 }

@@ -15,7 +15,14 @@
 
 import { useState } from "react";
 
-import { ChevronDownIcon, FolderIcon } from "./Icon";
+import {
+  ChevronDownIcon,
+  DotIcon,
+  FolderIcon,
+  SlidersIcon,
+  PlusIcon,
+  RingIcon,
+} from "./Icon";
 import { threadStatus } from "./status";
 import type { FolderWithThreads, Selection, ThreadSummary } from "./types";
 import type { MenuPosition } from "./ThreadContextMenu";
@@ -26,6 +33,7 @@ export function FolderList({
   leavingThreadIds = [],
   onSelectThread,
   onNewThread,
+  onFolderSettings,
   onThreadMenu,
 }: {
   folders: readonly FolderWithThreads[];
@@ -34,6 +42,9 @@ export function FolderList({
   leavingThreadIds?: readonly string[];
   onSelectThread: (threadId: string) => void;
   onNewThread: (folderId: string) => void;
+  /** Open this folder's settings (#16). Absent before a host has answered:
+      there is nothing to edit about a fixture. */
+  onFolderSettings?: (folderId: string) => void;
   onThreadMenu: (thread: ThreadSummary, position: MenuPosition) => void;
 }) {
   const [collapsed, setCollapsed] = useState<readonly string[]>([]);
@@ -64,7 +75,9 @@ export function FolderList({
                 }
               >
                 <ChevronDownIcon className="chev" />
-                <FolderIcon />
+                {/* The glyph carries the same state as the chevron: an open
+                    folder for an expanded one. */}
+                <FolderIcon open={open} />
                 <span className="name">{folder.name}</span>
                 {/* Only when the host has actually looked: `undefined` is "not
                     asked yet", and a badge for that would be a lie. */}
@@ -75,6 +88,17 @@ export function FolderList({
                 )}
                 {!open && <span className="count">{folder.threads.length}</span>}
               </button>
+              {onFolderSettings && (
+                <button
+                  type="button"
+                  className="folder-add"
+                  title={`Folder settings for ${folder.name}`}
+                  aria-label={`Folder settings for ${folder.name}`}
+                  onClick={() => onFolderSettings(folder.id)}
+                >
+                  <SlidersIcon />
+                </button>
+              )}
               <button
                 type="button"
                 className="folder-add"
@@ -82,7 +106,7 @@ export function FolderList({
                 aria-label={`New thread in ${folder.name}`}
                 onClick={() => onNewThread(folder.id)}
               >
-                ＋
+                <PlusIcon />
               </button>
             </div>
             {open &&
@@ -129,7 +153,7 @@ function ThreadRow({
       }}
     >
       <span className={`pip ${status.tone}`} aria-hidden="true">
-        {status.tone === "quiet" ? "◌" : "●"}
+        {status.tone === "quiet" ? <RingIcon /> : <DotIcon />}
       </span>
       <span className="title">{thread.title}</span>
       <span className="state">{status.label}</span>

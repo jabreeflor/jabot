@@ -27,12 +27,13 @@ import {
   type CrewRefParams,
   type CrewRemoveResult,
   type CrewUpdateParams,
+  type HarnessDoctorResult,
   type HarnessListResult,
   type HelloResult,
   type HostClient,
   type ToolListResult,
 } from "../host";
-import { botRow, templateRow } from "../views/crew";
+import { botRow, templateRow, withReadiness } from "../views/crew";
 
 vi.mock("../host", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../host")>();
@@ -62,6 +63,7 @@ function bot(overrides: Partial<BotView> = {}): BotView {
     isChief: false,
     memoryDir: "/data/bots/writer",
     sortOrder: 5,
+    unread: 0,
     createdAt: "2026-08-20T10:00:00Z",
     updatedAt: "2026-08-20T10:00:00Z",
     ...overrides,
@@ -107,6 +109,22 @@ const TOOLS: ToolListResult = {
   ],
 };
 
+/** What `tools/list` answers while a flow is waiting for the human: the same
+    cards, plus the URL the host publishes onto every card the flow covers. */
+function connectingTools(): ToolListResult {
+  return {
+    tools: TOOLS.tools.map((tool) =>
+      tool.id === "notion"
+        ? {
+            ...tool,
+            status: "connecting" as const,
+            authorizeUrl: "https://accounts.example.com/consent?flow=1",
+          }
+        : tool,
+    ),
+  };
+}
+
 const HARNESSES: HarnessListResult = {
   harnesses: [
     {
@@ -135,6 +153,38 @@ const HARNESSES: HarnessListResult = {
   issues: [],
 };
 
+/** What the Doctor says about the two cards above: one engine on disk, one
+    not. `remedy` is deliberately different from any `installHint` in the
+    catalog, so a test can tell which of the two the card ended up showing. */
+const DOCTOR: HarnessDoctorResult = {
+  reports: [
+    {
+      id: "claude",
+      label: "Claude Code",
+      tier: "shipped",
+      status: "ready",
+      ready: true,
+      detail: "claude-agent-acp 1.2.0",
+      command: "/usr/local/bin/claude-agent-acp",
+      args: [],
+      elapsedMs: 12,
+    },
+    {
+      id: "hermes",
+      label: "Hermes",
+      tier: "preset",
+      status: "cli_missing",
+      ready: false,
+      detail: "hermes is not on PATH",
+      remedy: "Run: npm i -g hermes-acp",
+      args: ["acp"],
+      elapsedMs: 8,
+    },
+  ],
+  issues: [],
+  path: ["/usr/local/bin", "/usr/bin"],
+};
+
 const TEMPLATES: CrewListResult["templates"] = [
   {
     templateId: "expense",
@@ -161,11 +211,45 @@ describe("botRow / templateRow", () => {
       harnessId: "claude",
       isChief: false,
       templateId: "expense",
+      image: null,
+      unread: false,
     });
     // Absent template = a bot nobody copied, not an unset field the editor
-    // would then send back as the string "undefined".
+    // would then send back as the string "undefined". An absent icon is the
+    // same shape for the same reason: `null` is "wears its colour and
+    // initials", and the editor sends that back as a deliberate clear.
     expect(botRow(bot()).templateId).toBeNull();
+    expect(botRow(bot()).image).toBeNull();
+    expect(botRow(bot({ image: "data:image/png;base64,AAAA" })).image).toBe(
+      "data:image/png;base64,AAAA",
+    );
     expect(templateRow(TEMPLATES[0])).toEqual(TEMPLATES[0]);
+  });
+
+  /**
+   * The dot on a bot's blob (#22, #24).
+   *
+   * `Bot.unread` has been a prop since the prototype and `Avatar` has drawn
+   * the dot for it just as long, but nothing ever set it outside the
+   * fixtures: `BotView` had no such field, so in the shipped app the dot could
+   * not appear however much was waiting.
+   *
+   * A dot rather than the count itself: the blob has room to say "something is
+   * waiting" and the number is read in the Inbox, which is where it can be
+   * acted on.
+   */
+  it("turns the host's per-bot count into the dot", () => {
+    expect(botRow(bot({ unread: 3 })).unread).toBe(true);
+    expect(botRow(bot({ unread: 1 })).unread).toBe(true);
+    expect(botRow(bot({ unread: 0 })).unread).toBe(false);
+  });
+
+  /** An older host does not send the field. No dot is the honest reading, and
+      the one the app has been living with. */
+  it("draws no dot for a host that does not count", () => {
+    const older = bot();
+    delete (older as Partial<BotView>).unread;
+    expect(botRow(older).unread).toBe(false);
   });
 
   it("renders a colour it does not know rather than crashing on it", () => {
@@ -173,6 +257,44 @@ describe("botRow / templateRow", () => {
     // from a row something else wrote — a card is a better answer than a blank
     // page.
     expect(botRow(bot({ color: "chartreuse" })).color).toBe("b-green");
+  });
+});
+
+describe("withReadiness", () => {
+  const cards = [
+    { id: "claude", label: "Claude Code", blurb: "b1", accent: "a1" },
+    { id: "hermes", label: "Hermes", blurb: "b2", accent: "a2", installHint: "from the catalog" },
+    { id: "pi", label: "Pi", blurb: "b3", accent: "a3" },
+  ];
+
+  it("marks each card with what the Doctor found", () => {
+    const [claude, hermes] = withReadiness(cards, DOCTOR.reports);
+    expect(claude.available).toBe(true);
+    expect(hermes.available).toBe(false);
+  });
+
+  it("leaves a card nobody probed alone, rather than calling it missing", () => {
+    // "not asked" is not "missing". Defaulting an unprobed card to false would
+    // grey out an engine that is very likely installed.
+    const pi = withReadiness(cards, DOCTOR.reports)[2];
+    expect(pi.available).toBeUndefined();
+    expect(pi).toEqual(cards[2]);
+  });
+
+  it("prefers the Doctor's remedy over the catalog's install hint", () => {
+    // `remedy` is written against what was found on this machine; installHint
+    // is a constant. The specific one wins.
+    const hermes = withReadiness(cards, DOCTOR.reports)[1];
+    expect(hermes.installHint).toBe("Run: npm i -g hermes-acp");
+  });
+
+  it("falls back to the catalog hint when the report carries no remedy", () => {
+    const reports = [{ ...DOCTOR.reports[1], remedy: undefined }];
+    expect(withReadiness(cards, reports)[1].installHint).toBe("from the catalog");
+  });
+
+  it("is a no-op when the Doctor reported nothing", () => {
+    expect(withReadiness(cards, [])).toEqual(cards);
   });
 });
 
@@ -229,6 +351,20 @@ describe("App, once the host has answered with a crew", () => {
     },
   );
 
+  /** Reassigned per-test so one case can make the probe fail and another can
+      hold it open. Default: the catalog above, probed. */
+  let harnessDoctor = vi.fn(async () => DOCTOR);
+
+  /** What `tools/list` answers *right now*. Reassignable, because the whole
+      point of the connect flow is that the host's answer changes between two
+      polls while the human is away in a browser (#18). */
+  let toolAnswer: ToolListResult = TOOLS;
+  let connectTool = vi.fn(async () => ({}));
+  let disconnectTool = vi.fn(async () => ({}));
+  /** Held here rather than dug out of the `connectHost` mock, so the poll test
+      can count calls without unwrapping a promise. */
+  let listTools = vi.fn(async () => toolAnswer);
+
   function client(): HostClient {
     return {
       disconnect: vi.fn(),
@@ -236,8 +372,11 @@ describe("App, once the host has answered with a crew", () => {
       createBot,
       updateBot,
       removeBot,
-      listTools: vi.fn(async () => TOOLS),
+      listTools,
+      connectTool,
+      disconnectTool,
       listHarnesses: vi.fn(async () => HARNESSES),
+      harnessDoctor,
       listFolders: vi.fn(async () => ({ folders: [] })),
     } as unknown as HostClient;
   }
@@ -245,6 +384,11 @@ describe("App, once the host has answered with a crew", () => {
   beforeEach(() => {
     crew = [CHIEF, bot()];
     vi.clearAllMocks();
+    harnessDoctor = vi.fn(async () => DOCTOR);
+    toolAnswer = TOOLS;
+    connectTool = vi.fn(async () => ({}));
+    disconnectTool = vi.fn(async () => ({}));
+    listTools = vi.fn(async () => toolAnswer);
     vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
   });
 
@@ -283,6 +427,25 @@ describe("App, once the host has answered with a crew", () => {
     ).not.toBeInTheDocument();
   });
 
+  /**
+   * The dot, end to end from the host's count (#22, #24).
+   *
+   * `botRow` turning a number into a boolean is only half of it: nothing drew
+   * a dot before because `crew/list` had no count to turn, so the case worth
+   * pinning is the whole trip — the host says 2, the grid lights that blob and
+   * only that blob.
+   */
+  it("lights the blob of a bot with cards waiting, and no other", async () => {
+    crew = [CHIEF, bot({ unread: 2 })];
+    await openCrew();
+
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    expect(
+      within(card("Writer")).getByTestId("unread-dot"),
+    ).toBeInTheDocument();
+    expect(within(card("Chief")).queryByTestId("unread-dot")).toBeNull();
+  });
+
   it("offers the host's harnesses in the editor, not the compiled-in three", async () => {
     await openCrew();
     await waitFor(() => expect(card("Writer")).toBeInTheDocument());
@@ -298,6 +461,214 @@ describe("App, once the host has answered with a crew", () => {
       "title",
       "Gmail — Connected as jabree@example.com",
     );
+  });
+
+  /**
+   * The half of `tools/connect` that was never built (#18).
+   *
+   * The host has published `authorizeUrl` onto every card of a live flow since
+   * #18, and `FlowState::AwaitingUser` says in so many words "the URL is the
+   * one the UI opens" — and no UI opened it. `connectTool` and `disconnectTool`
+   * had no callers outside the client, `toolOption` threw `authorizeUrl` away,
+   * and `useCrew` fetched the tool list exactly once. So a chip could say
+   * `needs_auth` forever.
+   */
+  it("starts the provider grant from the chip's own row", async () => {
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    // Notion is `needs_auth`, so the row offers the one thing that helps.
+    await userEvent.click(screen.getByRole("button", { name: "Connect Notion" }));
+
+    expect(connectTool).toHaveBeenCalledWith({ toolId: "notion" });
+    // And the chip itself still toggles the allowlist: signing this Mac into
+    // Notion and letting *this bot* use it are two different facts, and one
+    // control doing both would be the bug this split exists to prevent.
+    expect(connectTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Disconnect where there is a grant to drop", async () => {
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    // Gmail is connected, so the useful action is the other one — and the
+    // button names the *provider grant*, which is what is actually dropped.
+    expect(
+      screen.queryByRole("button", { name: "Connect Google" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Disconnect google" }),
+    );
+    expect(disconnectTool).toHaveBeenCalledWith({ toolId: "gmail" });
+  });
+
+  /**
+   * The consent screen, and the reason the URL had to survive `toolOption`.
+   * A browser tab is easy to lose; a user who closed it would otherwise be
+   * left watching a dot with nothing to press.
+   */
+  it("opens the authorize URL the host published", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    toolAnswer = connectingTools();
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Open sign-in" }),
+    );
+
+    expect(open).toHaveBeenCalledWith(
+      "https://accounts.example.com/consent?flow=1",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    open.mockRestore();
+  });
+
+  /**
+   * The substitute for a notification, and the thing that actually commits the
+   * grant. #18 settled that there is none — every host → client notification
+   * carries a `threadId` envelope and a connection belongs to no thread — so
+   * the client polls, and the host runs `drain_connect_flows()` only when
+   * something asks it for the tool list. Without this poll, a user who
+   * consented in their browser would sit in front of `connecting` forever.
+   */
+  it("polls while a flow is waiting, and stops once it settles", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      toolAnswer = connectingTools();
+      await openCrew();
+      await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+      await userEvent.click(
+        within(card("Writer")).getByRole("button", { name: "Edit" }),
+      );
+      await screen.findByRole("button", { name: "Open sign-in" });
+
+      // The human consents in the browser; the host commits it on the next
+      // list. Nothing here calls `reload` — the poll has to find it.
+      toolAnswer = TOOLS;
+      await vi.advanceTimersByTimeAsync(2_500);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Connect Notion" }),
+        ).toBeInTheDocument(),
+      );
+
+      // Settled, so the interval is gone: a crew tab left open must not shell
+      // the host every two seconds for the rest of the session.
+      const settled = listTools.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(listTools.mock.calls.length).toBe(settled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A tool that is not installed cannot be signed into, so nothing is
+      offered — a Connect button there would start a flow that cannot help. */
+  it("offers no sign-in for a tool that is not on this Mac", async () => {
+    toolAnswer = {
+      tools: [
+        { ...TOOLS.tools[1], id: "terminal", label: "Terminal", status: "missing" },
+      ],
+    };
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    expect(await screen.findByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Connect/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Disconnect/ })).not.toBeInTheDocument();
+  });
+
+  it("greys out an engine the Doctor could not find, and says how to install it", async () => {
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    // Hermes is not on this machine, so the card stops advertising itself and
+    // says what to do about it instead. The text is the Doctor's `remedy` —
+    // the one written knowing what was actually found — not the catalog's
+    // constant `installHint`.
+    // Re-queried inside the wait: the probe resolves after the picker has
+    // already painted, so React replaces this node and a reference taken
+    // before then goes stale.
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("button", { name: /Hermes/ })).getByText(
+          "Run: npm i -g hermes-acp",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      within(screen.getByRole("button", { name: /Hermes/ })).queryByText(
+        "A preset the mock has never heard of",
+      ),
+    ).not.toBeInTheDocument();
+
+    // Claude is installed, so nothing about its card changes.
+    const claude = screen.getByRole("button", { name: /Claude Code/ });
+    expect(
+      within(claude).getByText("Anthropic's coding agent, wrapped in JaBot's UI"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the picker usable when the Doctor probe fails", async () => {
+    // A probe shells out to vendor CLIs, so it is the call here most likely to
+    // hang or blow up. When it does, the catalog is still worth drawing: not
+    // knowing whether an engine is installed is a smaller loss than replacing
+    // the crew view with an error.
+    harnessDoctor = vi.fn(async () => {
+      throw new Error("probe timed out");
+    });
+    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    // Every card still there, still showing its blurb — nothing greyed on the
+    // strength of an answer nobody got.
+    const hermes = screen.getByRole("button", { name: /Hermes/ });
+    expect(
+      within(hermes).getByText("A preset the mock has never heard of"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Claude Code/ })).toBeInTheDocument();
+    expect(screen.queryByText("probe timed out")).not.toBeInTheDocument();
+  });
+
+  it("paints the catalog before the Doctor has answered", async () => {
+    // The whole reason `harness/list` and `harness/doctor` are two calls: the
+    // cheap one must not wait on the expensive one. This holds the probe open
+    // forever and asserts the picker opened anyway.
+    harnessDoctor = vi.fn(() => new Promise<HarnessDoctorResult>(() => {}));
+    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    const hermes = screen.getByRole("button", { name: /Hermes/ });
+    expect(
+      within(hermes).getByText("A preset the mock has never heard of"),
+    ).toBeInTheDocument();
   });
 
   it("saves the editor through the host and redraws from what it stored", async () => {

@@ -18,11 +18,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Transcript } from "../components/Transcript";
 import type {
+  HandoffView,
   HostClient,
+  ProcessView,
   JsonRpcNotification,
   PendingPermissionView,
   PermissionReplyParams,
   PromptParams,
+  ThreadResumeResult,
   ThreadTranscriptResult,
 } from "../host";
 import { PERMISSION_ASK, PERMISSION_RESOLVED, SESSION_UPDATE } from "../host";
@@ -468,6 +471,11 @@ const HOST: HostTarget = { hostId: "h1", name: "This Mac", reachable: true };
 function stubHost(
   replay: Partial<ThreadTranscriptResult> = {},
   pending: PendingPermissionView[] = [],
+  handoff?: HandoffView,
+  process?: Partial<ProcessView>,
+  /** Whatever else `thread/state` should answer with — the worktree fields
+      (#23) are read from the same call the handoff and the drift are. */
+  state: Record<string, unknown> = {},
 ) {
   const handlers = new Set<(n: JsonRpcNotification) => void>();
   const prompts: PromptParams[] = [];
@@ -504,6 +512,12 @@ function stubHost(
       ...replay,
     })),
     deviceId: "dev-1",
+    threadState: vi.fn(async () => ({
+      threadId: THREAD.id,
+      handoff,
+      process,
+      ...state,
+    })),
     pendingPermissions: vi.fn(async () => ({
       requests: pending.filter((request) => !resolved.has(request.requestId)),
     })),
@@ -916,5 +930,457 @@ describe("permission prompts", () => {
     await waitFor(() =>
       expect(screen.getAllByRole("button", { name: "Allow" })).toHaveLength(1),
     );
+  });
+});
+
+/**
+ * Provenance: who asked for this thread, when it was not the person reading
+ * it.
+ *
+ * A thread Chief spawned looks exactly like one the human started — same
+ * header, same transcript — and the human coming back tomorrow has no way to
+ * tell which. The host has resolved this all along and nothing drew it.
+ */
+describe("LiveThreadView provenance", () => {
+  const handoff = (over: Partial<HandoffView> = {}): HandoffView => ({
+    handoffId: "h-1",
+    kind: "handoff",
+    task: "Chase the failing migration test",
+    fromBotId: "chief",
+    fromBotName: "Chief",
+    dispatched: true,
+    createdAt: "2026-08-20T10:00:00Z",
+    ...over,
+  });
+
+  function draw(over: Partial<HandoffView> | null) {
+    const host = stubHost({}, [], over === null ? undefined : handoff(over));
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    return host;
+  }
+
+  it("says which bot handed the work over, and what it asked for", async () => {
+    draw({});
+    expect(await screen.findByText(/Handed off by/)).toBeInTheDocument();
+    expect(screen.getByText(/Chief/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Chase the failing migration test/),
+    ).toBeInTheDocument();
+  });
+
+  /** A spawned coding thread is a different sentence: Chief did not hand this
+      to a colleague, it opened a job. */
+  it("calls a spawned code thread a coding job", async () => {
+    draw({ kind: "code_session" });
+    expect(await screen.findByText(/Coding job from/)).toBeInTheDocument();
+  });
+
+  /**
+   * The case worth a different tone. A handoff to a bot whose harness is not
+   * installed is still a real handoff — the task was sent, the thread is here
+   * — but nobody heard it, and a line saying only "Handed off by Chief" would
+   * be describing work that is not happening.
+   */
+  it("says so when the handoff never reached an agent", async () => {
+    draw({ dispatched: false, detail: "Writer's harness is not installed" });
+    expect(
+      await screen.findByText(/Writer's harness is not installed/),
+    ).toBeInTheDocument();
+    const line = document.querySelector(".chat-handoff");
+    expect(line).toHaveAttribute("data-tone", "warn");
+  });
+
+  /** The ordinary case is the person starting their own thread. Nothing to
+      say, and a header that said "started by you" would be noise on every
+      thread in the app. */
+  it("draws nothing for a thread the human started", async () => {
+    draw(null);
+    await screen.findByText("start the migration");
+    expect(document.querySelector(".chat-handoff")).toBeNull();
+  });
+
+  /** A host too old to answer `thread/state` costs the caption and nothing
+      else — the conversation is entirely readable without it. */
+  it("still renders the chat when the host cannot answer", async () => {
+    const host = stubHost();
+    const client = { ...host.client, threadState: undefined } as unknown as HostClient;
+    render(
+      <LiveThreadView
+        client={client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    expect(await screen.findByText("start the migration")).toBeInTheDocument();
+    expect(document.querySelector(".chat-handoff")).toBeNull();
+  });
+});
+
+/**
+ * Receipt drift: the stored session no longer matches the job that would be
+ * spawned, so the next prompt starts a fresh conversation.
+ *
+ * The host has computed this on every `thread/state` since #21 — it is what
+ * `resume_readiness` is for — and it is the one thing on this screen a user
+ * cannot possibly infer. Everything looks normal: the transcript is there, the
+ * composer works, and the next message silently opens a new conversation the
+ * agent has no memory of.
+ */
+describe("LiveThreadView drift", () => {
+  function draw(drift?: string[]) {
+    const host = stubHost({}, [], undefined, {
+      connected: false,
+      acpState: "idle",
+      pendingPermissions: 0,
+      resumable: false,
+      drift,
+    });
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    return host;
+  }
+
+  it("names the fields that moved, in the words the rest of the UI uses", async () => {
+    draw(["harnessId", "cwd"]);
+
+    // Queried by container, not by the phrase: the phrase lives in a <b>
+    // inside the notice, and the field names sit beside it.
+    await screen.findByText(/setup has changed/);
+    const notice = document.querySelector(".chat-drift");
+    // Reads as a sentence, not a comma-joined fragment.
+    expect(notice).toHaveTextContent("the engine and the folder are not");
+    // The wire names themselves are not what a user reads.
+    expect(notice).not.toHaveTextContent("harnessId");
+  });
+
+  it("joins three moved fields into a sentence", async () => {
+    draw(["harnessId", "model", "cwd"]);
+
+    await screen.findByText(/setup has changed/);
+    expect(document.querySelector(".chat-drift")).toHaveTextContent(
+      "the engine, the model and the folder are not",
+    );
+  });
+
+  it("says what the next message will actually do", async () => {
+    draw(["model"]);
+
+    expect(
+      await screen.findByText(/next message begins a new one/),
+    ).toBeInTheDocument();
+  });
+
+  /** A field the host learns to report before this list does is still worth
+      naming — printing it raw beats dropping it silently. */
+  it("prints an unknown field rather than swallowing it", async () => {
+    draw(["someNewField"]);
+
+    expect(await screen.findByText(/someNewField/)).toBeInTheDocument();
+  });
+
+  /** The overwhelmingly common case. A banner on every thread would train the
+      user to ignore the one that matters. */
+  it("draws nothing when nothing has drifted", async () => {
+    draw([]);
+    await screen.findByText("start the migration");
+
+    expect(document.querySelector(".chat-drift")).toBeNull();
+  });
+
+  it("draws nothing when the host reports no drift field at all", async () => {
+    draw(undefined);
+    await screen.findByText("start the migration");
+
+    expect(document.querySelector(".chat-drift")).toBeNull();
+  });
+});
+
+/**
+ * Where a code thread is actually editing (#23).
+ *
+ * A thread opened in a git folder runs in a host-owned worktree under the app
+ * data directory on a `jabot/<id>` branch, not in the user's checkout. The
+ * host has stamped both onto the thread row since #23 and served them on
+ * `thread/state`; nothing drew them, so someone looking at a running thread
+ * could not tell which directory or which branch the agent was changing.
+ */
+describe("LiveThreadView, where the work is happening", () => {
+  function draw(state: Record<string, unknown>) {
+    const host = stubHost({}, [], undefined, undefined, state);
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    return host;
+  }
+
+  it("names the branch, and keeps the whole path for the tooltip", async () => {
+    draw({
+      worktreePath: "/Users/j/Library/Application Support/jabot/worktrees/t-1",
+      branch: "jabot/t-1",
+    });
+
+    const chip = await screen.findByTitle(
+      "/Users/j/Library/Application Support/jabot/worktrees/t-1",
+    );
+    // The branch is the visible half: it is what identifies the work, and the
+    // path is long, machine-generated and the same prefix on every thread.
+    expect(chip).toHaveTextContent("jabot/t-1");
+  });
+
+  /** A tree the host recorded without a branch is still somewhere else, and
+      saying so with the directory beats saying nothing. */
+  it("falls back to the tree's own directory when there is no branch", async () => {
+    draw({ worktreePath: "/data/jabot/worktrees/t-9" });
+
+    expect(
+      await screen.findByTitle("/data/jabot/worktrees/t-9"),
+    ).toHaveTextContent("t-9");
+  });
+
+  /**
+   * The common case for everything that is not a code thread in a checkout: a
+   * bot's standing thread, a non-git folder, the "use my own checkout"
+   * opt-out. A chip on all of those would say nothing about any of them.
+   */
+  it("draws nothing for a thread that works in place", async () => {
+    draw({ branch: "main" });
+
+    await screen.findByText("start the migration");
+    expect(document.querySelector(".worktree-chip")).toBeNull();
+  });
+
+  /** Same trade as the handoff caption: a host that will not answer costs the
+      chip and nothing else. */
+  it("costs nothing on a host that cannot answer thread/state", async () => {
+    const host = stubHost();
+    const client = { ...host.client, threadState: undefined } as unknown as HostClient;
+    render(
+      <LiveThreadView
+        client={client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+
+    expect(await screen.findByText("start the migration")).toBeInTheDocument();
+    expect(document.querySelector(".worktree-chip")).toBeNull();
+  });
+});
+
+/**
+ * Resume: put the conversation back without prompting (#21).
+ *
+ * `thread/resume` has been implemented, routed, typed and e2e-covered since
+ * #21, and `resumeThread` had no caller anywhere in `src/`. The renderer's
+ * only reattach path was `thread/reopen`, which is a store write that spawns
+ * nothing — so after a quit or an idle evict the pane looked live and was
+ * not, and the conversation came back only when the user happened to send
+ * another prompt.
+ */
+describe("LiveThreadView resume", () => {
+  const detached = {
+    connected: false,
+    acpState: "idle" as const,
+    pendingPermissions: 0,
+    resumable: true,
+  };
+
+  function draw(
+    process: Partial<ProcessView>,
+    resume?: Partial<ThreadResumeResult>,
+  ) {
+    const host = stubHost({}, [], undefined, process);
+    const after = {
+      ...detached,
+      ...(resume?.state?.process ?? {}),
+    };
+    const resumeThread = vi.fn(async () => ({
+      threadId: THREAD.id,
+      resumed: true,
+      outcome: "resumed" as const,
+      ...resume,
+      state: { threadId: THREAD.id, process: after },
+    }));
+    const client = { ...host.client, resumeThread } as unknown as HostClient;
+    render(
+      <LiveThreadView
+        client={client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    return { resumeThread };
+  }
+
+  const button = () => screen.queryByRole("button", { name: /^Resum/ });
+
+  it("offers nothing while the adapter is still attached", async () => {
+    draw({ ...detached, connected: true });
+
+    await screen.findByText("start the migration");
+    expect(button()).toBeNull();
+  });
+
+  /** A thread with no session to put back gets no button. Offering one that
+      can only fail is worse than offering none. */
+  it("offers nothing when there is nothing to resume", async () => {
+    draw({ ...detached, resumable: false });
+
+    await screen.findByText("start the migration");
+    expect(button()).toBeNull();
+  });
+
+  it("resumes the thread it is showing, once", async () => {
+    const { resumeThread } = draw(detached);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    await waitFor(() =>
+      expect(resumeThread).toHaveBeenCalledWith({ threadId: THREAD.id }),
+    );
+    expect(resumeThread).toHaveBeenCalledTimes(1);
+  });
+
+  /** The answer carries the thread as it stands afterwards, so the button
+      goes away on that one round trip rather than a second `thread/state`. */
+  it("puts the button away once the conversation is back", async () => {
+    draw(detached, {
+      outcome: "resumed",
+      state: {
+        threadId: THREAD.id,
+        process: { ...detached, connected: true },
+      } as ThreadResumeResult["state"],
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(await screen.findByText(/Conversation restored/)).toBeInTheDocument();
+    await waitFor(() => expect(button()).toBeNull());
+  });
+
+  it("says the agent replayed its history when that is what happened", async () => {
+    draw(detached, { outcome: "loaded" });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(
+      await screen.findByText(/replayed its history/),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * The outcome that is neither a success nor an error. The thread is fine;
+   * the *stored session* is a different job now, and resuming it would
+   * continue someone else's.
+   */
+  it("names what moved when the stored session is no longer this job", async () => {
+    draw(detached, {
+      resumed: false,
+      outcome: "drifted",
+      detail: "The stored session no longer matches this thread.",
+      drift: ["harnessId", "cwd"],
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    const notice = await screen.findByText(/no longer matches/);
+    // Its own sentence, and capitalised: it follows the host's, and
+    // "…this thread. the engine and the folder have moved." reads as a typo.
+    expect(notice).toHaveTextContent(
+      "The stored session no longer matches this thread. The engine and the folder have moved.",
+    );
+    expect(notice).toHaveAttribute("data-tone", "warn");
+  });
+
+  /**
+   * The whole point of rendering the outcome rather than a boolean: "could
+   * not resume" with no reason sends a missing folder, an adapter that cannot
+   * resume, and a thread that never had a session to three different wrong
+   * fixes.
+   */
+  it("gives the host's reason rather than a bare failure", async () => {
+    draw(detached, {
+      resumed: false,
+      outcome: "cwd_missing",
+      detail: "/Users/j/code/jabot is not there any more.",
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    const notice = await screen.findByText(/not there any more/);
+    expect(notice).toHaveAttribute("data-tone", "bad");
+    expect(screen.queryByText(/^Could not resume/)).toBeNull();
+  });
+
+  /** An outcome the host sent with no sentence still has to say something
+      more useful than "failed". */
+  /** A host that sent no full stop still gets two readable sentences. */
+  it("ends the host's sentence before adding its own", async () => {
+    draw(detached, {
+      resumed: false,
+      outcome: "drifted",
+      detail: "The stored session no longer matches this thread",
+      drift: ["cwd"],
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(await screen.findByText(/no longer matches/)).toHaveTextContent(
+      "this thread. The folder has moved.",
+    );
+  });
+
+  it("falls back to naming the outcome when the host sent no sentence", async () => {
+    draw(detached, { resumed: false, outcome: "unsupported" });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(
+      await screen.findByText("Could not resume: unsupported."),
+    ).toBeInTheDocument();
+  });
+
+  /** A host too old to know the method leaves the pane exactly as it was
+      rather than throwing out of the click. */
+  it("does nothing on a host that cannot resume at all", async () => {
+    const host = stubHost({}, [], undefined, detached);
+    const client = {
+      ...host.client,
+      resumeThread: undefined,
+    } as unknown as HostClient;
+    render(
+      <LiveThreadView
+        client={client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+
+    expect(await screen.findByText("start the migration")).toBeInTheDocument();
+    expect(document.querySelector(".chat-resume")).toBeNull();
   });
 });

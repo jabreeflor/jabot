@@ -51,6 +51,11 @@ pub struct ProcessStatus {
     pub last_activity: Instant,
     /// The run this process is currently working through, if any.
     pub run_id: Option<String>,
+    /// When that run opened. Deliberately *not* moved by [`Self::touch`]: the
+    /// stuck backstop measures silence and a chatty run resets it, but the
+    /// hard cap measures the run, and a run that talks forever is the case the
+    /// cap exists for.
+    pub run_started: Option<Instant>,
     /// Set once per silence so the backstop resurfaces a thread once, not every
     /// tick for as long as it stays quiet.
     pub stuck_reported: bool,
@@ -63,6 +68,7 @@ impl Default for ProcessStatus {
             acp: AcpState::Unknown,
             last_activity: Instant::now(),
             run_id: None,
+            run_started: None,
             stuck_reported: false,
         }
     }
@@ -78,6 +84,7 @@ impl ProcessStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn acp_state_parses_what_adapters_actually_send() {
@@ -97,5 +104,27 @@ mod tests {
         };
         status.touch();
         assert!(!status.stuck_reported);
+    }
+
+    /// The one property that separates the two clocks (#25, #21).
+    ///
+    /// The stuck backstop measures *silence*, so any streamed chunk resets it.
+    /// The hard cap measures the *run*, and a run that streams a token a
+    /// minute for a day is exactly what it exists for — so activity must not
+    /// push the cap out. If `touch` reset this, an endless chatty run could
+    /// never be capped and could never go stuck either.
+    #[test]
+    fn activity_does_not_push_the_run_cap_out() {
+        let opened = Instant::now() - Duration::from_secs(60);
+        let mut status = ProcessStatus {
+            run_started: Some(opened),
+            ..ProcessStatus::default()
+        };
+
+        status.touch();
+
+        assert_eq!(status.run_started, Some(opened));
+        // And the silence clock did move, which is the half that should.
+        assert!(status.last_activity > opened);
     }
 }

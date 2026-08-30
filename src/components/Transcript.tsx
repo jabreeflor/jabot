@@ -5,9 +5,29 @@
 //! One agent turn that read six files and ran the tests is one thing that
 //! happened, and six stacked cards would read as six turns.
 
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 
+import {
+  CaretRightIcon,
+  CheckIcon,
+  CrossIcon,
+  DotIcon,
+  RingIcon,
+  SparkIcon,
+} from "./Icon";
+import { renderMarkdown } from "./markdown";
 import type { ToolCall, ToolKind, TranscriptItem } from "./types";
+
+/**
+ * How many grouped entries are rendered from the tail to begin with, and how
+ * many more each time the reader reaches the top of what is drawn.
+ *
+ * Windowed from the *end*, growing upward, and never absolutely positioned.
+ * Bubbles and toolblocks have unknown heights, so a virtual list would need a
+ * measurement cache and would get every guess wrong the first time a code
+ * block or a long tool run appeared. Growing a tail window costs a slice.
+ */
+const WINDOW = 80;
 
 export function Transcript({
   items,
@@ -22,9 +42,36 @@ export function Transcript({
   // the grouping cached on `items` and the rows below memoized, appending a
   // chunk re-renders one bubble instead of the whole conversation.
   const groups = useMemo(() => groupToolRuns(items), [items]);
+  const [window, setWindow] = useState(WINDOW);
+
+  // The *grouped* array is sliced, never `items`.
+  //
+  // Be precise about what that buys, because it is less than it looks.
+  // Slicing `items` first would hand `groupToolRuns` a new array on every
+  // render and make it re-walk the window per streamed chunk — the work the
+  // memo above exists to avoid. It would *not* cost the row memoization:
+  // slicing copies the array, not the elements, so `entry.item` and the
+  // individual `calls` stay the same objects either way and both
+  // `memo(TranscriptRow)` and `sameCalls` still bail out.
+  //
+  // So this is a cost argument, not a correctness one, and the identity test
+  // in transcript.test.tsx pins the rows rather than this choice.
+  const visible =
+    groups.length > window ? groups.slice(groups.length - window) : groups;
+  const hidden = groups.length - visible.length;
+
   return (
     <div className="transcript">
-      {groups.map((entry) =>
+      {hidden > 0 && (
+        <button
+          type="button"
+          className="show-earlier"
+          onClick={() => setWindow((size) => size + WINDOW)}
+        >
+          Show earlier — {hidden} more
+        </button>
+      )}
+      {visible.map((entry) =>
         entry.type === "tools" ? (
           <ToolBlock key={entry.key} calls={entry.calls} />
         ) : (
@@ -65,6 +112,26 @@ const ToolBlock = memo(ToolBlockRow, (before, after) =>
   sameCalls(before.calls, after.calls),
 );
 
+/**
+ * An agent's reply, as markdown (#14).
+ *
+ * Its own component so the parse can be memoized on the text. Appending a
+ * chunk mid-stream replaces this one item and leaves every sibling the same
+ * object, which is what `memo(TranscriptRow)` above keys on — so a streamed
+ * token reparses one bubble and re-renders nothing else. Parsing inline in the
+ * switch would reparse the whole conversation on every chunk.
+ */
+function AgentBubble({ item }: { item: Extract<TranscriptItem, { kind: "agent" }> }) {
+  const nodes = useMemo(() => renderMarkdown(item.text), [item.text]);
+  return (
+    <div className="msg bot">
+      <div className="bubble" data-streaming={item.streaming || undefined}>
+        {nodes}
+      </div>
+    </div>
+  );
+}
+
 /** Identity, not deep equality: the reducer replaces exactly the call it
     changed, so a per-element `===` is both correct and O(n) on pointers. */
 function sameCalls(a: readonly ToolCall[], b: readonly ToolCall[]): boolean {
@@ -96,13 +163,7 @@ function TranscriptRow({
         </div>
       );
     case "agent":
-      return (
-        <div className="msg bot">
-          <div className="bubble" data-streaming={item.streaming || undefined}>
-            {item.text}
-          </div>
-        </div>
-      );
+      return <AgentBubble item={item} />;
     case "notice":
       return <Notice item={item} onAction={onAction} />;
     // Unreachable through the reducer, which only ever builds the kinds above.
@@ -124,7 +185,12 @@ function Notice({
     <div className={item.resolved ? "notice leaving" : "notice"}>
       <div className="r1">
         <b>{item.title}</b>
-        {item.pill && <span className="pill">{item.pill}</span>}
+        {item.pill && (
+          <span className="pill">
+            <SparkIcon />
+            {item.pill}
+          </span>
+        )}
       </div>
       <p>{item.body}</p>
       <div className="acts">
@@ -168,7 +234,9 @@ function ToolBlockRow({ calls }: { calls: readonly ToolCall[] }) {
     <pre className="toolblock">
       {calls.map((call) => (
         <div className="call" key={call.id}>
-          <span className="verb">▸ {verb(call.kind).padEnd(5)}</span>{" "}
+          <span className="verb">
+            <CaretRightIcon /> {verb(call.kind).padEnd(5)}
+          </span>{" "}
           {call.target}
           <ToolMarker call={call} />
         </div>
@@ -184,15 +252,45 @@ function verb(kind: ToolKind): string {
 function ToolMarker({ call }: { call: ToolCall }) {
   switch (call.status) {
     case "pending":
-      return <span className="spin">{"  ◌ waiting"}</span>;
+      return (
+        <span className="spin">
+          {"  "}
+          <RingIcon />
+          {" waiting"}
+        </span>
+      );
     case "in_progress":
-      return <span className="spin">{`  ● ${call.note ?? "running…"}`}</span>;
+      return (
+        <span className="spin">
+          {"  "}
+          <DotIcon />
+          {` ${call.note ?? "running…"}`}
+        </span>
+      );
     case "completed":
-      return call.note ? <span className="tick">{`  ✓ ${call.note}`}</span> : null;
+      return call.note ? (
+        <span className="tick">
+          {"  "}
+          <CheckIcon />
+          {` ${call.note}`}
+        </span>
+      ) : null;
     case "failed":
-      return <span className="fail">{`  ✗ ${call.note ?? "failed"}`}</span>;
+      return (
+        <span className="fail">
+          {"  "}
+          <CrossIcon />
+          {` ${call.note ?? "failed"}`}
+        </span>
+      );
     case "cancelled":
-      return <span className="fail">{`  ✗ ${call.note ?? "cancelled"}`}</span>;
+      return (
+        <span className="fail">
+          {"  "}
+          <CrossIcon />
+          {` ${call.note ?? "cancelled"}`}
+        </span>
+      );
     // A status from an ACP version this build has never met. Returning
     // nothing at all from a component is a React error, so the line renders
     // without a marker rather than not rendering.

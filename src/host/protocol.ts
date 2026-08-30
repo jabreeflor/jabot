@@ -40,8 +40,16 @@ export const TOOLS_DISCONNECT = "tools/disconnect";
 export const FOLDER_LIST = "folder/list";
 export const FOLDER_REGISTER = "folder/register";
 export const FOLDER_UPDATE = "folder/update";
+/** App-wide preferences (#26). The idle timeout was an env var on the host
+    process and the fold default a column default; this is where a person sets
+    them. */
+export const SETTINGS_GET = "settings/get";
+export const SETTINGS_SET = "settings/set";
 export const FOLDER_FORGET = "folder/forget";
 export const GITHUB_STATUS = "github/status";
+/** Hand `gh` a token to hold, so the board can ask GitHub as the user (#28).
+    The only request frame in this protocol that carries a secret. */
+export const GITHUB_LOGIN = "github/login";
 export const CREW_LIST = "crew/list";
 export const CREW_CREATE = "crew/create";
 export const CREW_UPDATE = "crew/update";
@@ -56,6 +64,9 @@ export const SCHEDULE_RUN = "schedule/run";
     the network; `pr/refresh` is the poll. */
 export const PR_LIST = "pr/list";
 export const PR_REFRESH = "pr/refresh";
+/** Every open pull request the signed-in user wrote — linked to a session here
+    or not. The one PR method that needs a login to answer at all. */
+export const PR_MINE = "pr/mine";
 export const SYNC_RESUME_FROM = "sync/resumeFrom";
 /** A new Inbox card on a thread that did *not* resurface — a schedule firing
     on an active standing thread moves nothing in the sidebar (#25). */
@@ -161,6 +172,12 @@ export interface HelloResult {
       that exists and always fails. Empty from a host too old to answer;
       fall back to `methods` in that case. */
   scopedMethods?: string[];
+  /** This host proving itself back, on the one arm where that is meaningful:
+      a paired device that has just presented a valid `DeviceAuth`. Absent from
+      the two colocated arms and from any host too old to answer — which is why
+      a client that wants the guarantee has to check for the field's *presence*
+      as well as its value. See `HostAuth`. */
+  hostAuth?: HostAuth;
   store?: StoreStatus;
   storeError?: string;
 }
@@ -547,6 +564,10 @@ export interface InboxEventView {
   threadId: string;
   threadTitle: string;
   threadState: ThreadOverlayState;
+  /** Whose thread this is, when it is a bot's. Absent for a code thread,
+      which is most of them — an Inbox row is about a *thread*, and only some
+      threads belong to a crew member. */
+  botId?: string;
   kind: string;
   title: string;
   summary: string;
@@ -561,6 +582,8 @@ export interface InboxEventView {
 export interface SleepingThreadView {
   threadId: string;
   title: string;
+  /** As on {@link InboxEventView}: whose thread this is, when it is a bot's. */
+  botId?: string;
   foldPolicy: FoldPolicy;
   foldedAt?: string;
   runState?: RunLedgerState;
@@ -797,6 +820,29 @@ export interface FolderUpdateParams {
   refresh?: boolean;
 }
 
+/** Every app-wide preference, in one answer (#26).
+ *
+ * Whole rather than partial on the way out, including from `settings/set`, so
+ * the renderer never merges a patch into what it thought it had. */
+export interface SettingsView {
+  /** The stuck backstop's silence threshold. Always the value in force, so a
+      host running under `JABOT_IDLE_TIMEOUT_MS` reports what it is using. */
+  idleTimeoutMs: number;
+  /** What a new thread's fold policy starts as. */
+  defaultFoldPolicy: FoldPolicy;
+  /** The env var is in force, so the control on screen is not the one
+      deciding. Only a test or a developer sets it, and both would rather be
+      told than quietly ignored. */
+  idleTimeoutFromEnv: boolean;
+}
+
+/** A patch: an absent field is "leave it alone", the same reading
+    `folder/update` gives its own. */
+export interface SettingsSetParams {
+  idleTimeoutMs?: number;
+  defaultFoldPolicy?: FoldPolicy;
+}
+
 export interface FolderRefParams {
   folderId: string;
 }
@@ -831,6 +877,19 @@ export interface GithubStatusResult {
   ghPath?: string;
 }
 
+/** Sign in: one token, one host, one direction.
+ *
+ * The token travels exactly once, on this call. The host hands it to `gh` and
+ * forgets it — nothing gives it back, and the result is the same three-fact
+ * status a probe answers with, because "who am I signed in as" is the only
+ * question left afterwards. Never log this object. */
+export interface GithubLoginParams {
+  /** Defaults to `github.com`. GHES folders pass their `origin` host. */
+  host?: string;
+  /** A GitHub token the user created. Never stored by JaBot. */
+  token: string;
+}
+
 /** A `bots` row as the crew grid and the bot editor see it (#17).
  *
  * `tools` is the parsed allowlist, not the stored JSON text. The editor **is**
@@ -841,6 +900,10 @@ export interface BotView {
   /** A colour token the renderer can render — `BotColor` in `components/types`.
       The host keeps the vocabulary closed, so this cast is safe. */
   color: string;
+  /** The bot's uploaded icon as a `data:` URL, absent when it has none. The
+      host re-checks the shape and the size on the way in, so what comes back
+      out is something an `<img src>` can be handed. */
+  image?: string;
   /** Persona / system prompt, also mirrored to `instructions.md` in the bot's
       memory directory where the session can read it. */
   instructions: string;
@@ -856,6 +919,11 @@ export interface BotView {
       worker's standing thread runs in. Absent on a host with no data dir. */
   memoryDir?: string;
   sortOrder: number;
+  /** Cards waiting on this bot's standing thread — the red dot on its blob
+      (#22, #24). The same projection `inbox/list` badges the sidebar with,
+      grouped by bot, so the two readings cannot disagree. `crew/create` and
+      `crew/update` answer 0. */
+  unread: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -894,6 +962,9 @@ export interface CrewCreateParams {
   instructions?: string;
   tools?: string[];
   harnessId?: string;
+  /** A `data:` URL for the bot's icon. Refused if it is not one, or if it is
+      bigger than the host's cap. */
+  image?: string;
 }
 
 /** A patch: an omitted field is left alone, so changing a harness cannot
@@ -905,6 +976,10 @@ export interface CrewUpdateParams {
   instructions?: string;
   tools?: string[];
   harnessId?: string;
+  /** The icon, in the patch's own three-way spelling: omitted leaves the
+      picture alone, a `data:` URL replaces it, and `""` takes it away and puts
+      the colour mark back. */
+  image?: string;
 }
 
 export interface CrewRefParams {
@@ -1184,6 +1259,29 @@ export interface DeviceAuth {
   mac: string;
 }
 
+/** Proof that the answering host holds the same token — the mirror of
+    `DeviceAuth`, returned on `host/hello` to a device that has just proved
+    itself.
+
+    `mac = HMAC-SHA256(deviceToken, H["jabot/hello/host/v1", hostId, deviceId,
+    protocolVersion, counter])`, hex, over the same framing and with the *same
+    counter the device sent*, so the proof answers that one hello and cannot be
+    lifted onto another.
+
+    The separator differs from `DeviceAuth`'s deliberately. The token is
+    shared, so a host answering under `jabot/hello/v1` would return a value the
+    device could have computed itself — no proof at all, and replayable as a
+    *device* proof by anyone who saw the reply.
+
+    Absent for the local console, which is implicitly paired because it spawned
+    the host and has no token to check one against. A device that expects a
+    proof must therefore treat an absent `hostAuth` as a failure and not as
+    consent. */
+export interface HostAuth {
+  counter: number;
+  mac: string;
+}
+
 export interface PairingStartParams {
   /** Seconds the offer stays scannable. The host clamps it. */
   ttlSecs?: number;
@@ -1457,4 +1555,59 @@ export interface PrRefreshResult {
   cards: number;
   /** One entry per forge host that could not be reached. */
   unavailable: PrUnavailable[];
+}
+
+export interface PrMineParams {
+  /** Defaults to `github.com`. */
+  host?: string;
+}
+
+/** One of the signed-in user's own pull requests.
+ *
+ * Deliberately not a `PullRequestView`. That type's `threadId` is a promise —
+ * every row on the linked board was opened by a session on this Mac, so
+ * "Reopen thread" always has somewhere to go. These come from GitHub, and most
+ * of them have no session here at all; the honest way to say so is a field
+ * that can be absent. Where the PR *is* also linked, the thread travels with
+ * it and the row gets its button back. */
+export interface GithubPullRequestView {
+  /** `github:owner/name#12`. Stable across polls, and never a store id. */
+  id: string;
+  /** The linked row's id, when a session here opened this PR. */
+  linkedId?: string;
+  provider: string;
+  forgeHost: string;
+  /** `owner/name`. */
+  repo: string;
+  number: number;
+  url: string;
+  title: string;
+  status: PrWireStatus;
+  checkState?: PrCheckStateWire;
+  reviewState?: PrReviewState;
+  headRef?: string;
+  baseRef?: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  checks: PrCheckView[];
+  updatedAt: string;
+  /** The session that opened it, when one did. Absent for a PR written
+      anywhere else — which is most of them, and the point of this method. */
+  threadId?: string;
+  threadTitle?: string;
+  threadState?: ThreadOverlayState;
+}
+
+/** What GitHub says the signed-in user has open.
+ *
+ * Same contract as `pr/refresh`: never an error frame for "GitHub was not
+ * reachable". A board that empties itself because a token expired is worse
+ * than one that says so and keeps drawing what it had. */
+export interface PrMineResult {
+  /** Who GitHub answered as. Absent when it could not be asked. */
+  account?: string;
+  pullRequests: GithubPullRequestView[];
+  /** Why GitHub could not be asked, if it could not. */
+  unavailable?: PrUnavailable;
 }

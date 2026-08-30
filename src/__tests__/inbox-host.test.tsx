@@ -317,3 +317,229 @@ describe("the Inbox on real data", () => {
     );
   });
 });
+
+/**
+ * Notification permission reaches the pane, and a host that cannot answer
+ * costs nothing.
+ *
+ * The stub client above has no `notifyStatus` at all, which is the older-host
+ * case: the Inbox must be entirely unaffected. The other case is a host that
+ * answers "denied", where the pane says so.
+ */
+describe("the Inbox and notification permission", () => {
+  it("is unaffected by a host that cannot answer notify/status", async () => {
+    // The default stub has no `notifyStatus` method whatsoever.
+    await openInbox();
+
+    // The cards are all there, and nothing claims banners are off.
+    expect(await screen.findByText("Nightly NAS backup")).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Notifications are turned off/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("tells the pane when the OS has refused banners", async () => {
+    vi.mocked(connectHost).mockResolvedValue({
+      client: {
+        ...client(),
+        notifyStatus: vi.fn(async () => ({
+          supported: true,
+          authorization: "denied" as const,
+          kinds: ["needs_you"],
+        })),
+      } as unknown as HostClient,
+      hello: HELLO,
+    });
+
+    await openInbox();
+
+    expect(
+      await screen.findByText(/Notifications are turned off/),
+    ).toBeInTheDocument();
+    // The cards are still drawn: this is an aside, not a replacement.
+    expect(screen.getByText("Nightly NAS backup")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The face on an Inbox row.
+ *
+ * Every host card wore the generic code mark, including cards on a named crew
+ * member's thread, because `inbox/list` did not say whose thread it was. #22
+ * was right to refuse to invent a bot; the fix was to put the id on the wire.
+ */
+describe("the Inbox and whose thread a card is on", () => {
+  /** The stub host above serves no crew, which is the "roster has not loaded"
+      case. These tests need one, because resolving a bot id to a face is the
+      thing under test. */
+  const CREW = {
+    bots: [
+      {
+        botId: "writer",
+        name: "Writer",
+        color: "b-orange",
+        instructions: "",
+        tools: [],
+        harnessId: "claude",
+        isChief: false,
+        memoryDir: "/data/bots/writer",
+        sortOrder: 5,
+        createdAt: "2026-08-20T10:00:00Z",
+        updatedAt: "2026-08-20T10:00:00Z",
+      },
+    ],
+    templates: [],
+    hostTools: [],
+  };
+
+  function withBotCard(botId: string | undefined) {
+    const listed = {
+      ...INBOX,
+      events: [{ ...INBOX.events[0], botId }],
+      sleeping: [],
+    };
+    vi.mocked(connectHost).mockResolvedValue({
+      client: {
+        ...client(),
+        inbox: vi.fn(async () => listed),
+        listCrew: vi.fn(async () => CREW),
+        listTools: vi.fn(async () => ({ tools: [] })),
+        listHarnesses: vi.fn(async () => ({ harnesses: [], issues: [] })),
+      } as unknown as HostClient,
+      hello: HELLO,
+    });
+  }
+
+  it("draws the bot's face on a card from that bot's thread", async () => {
+    // `writer` is in the crew this stub host serves.
+    withBotCard("writer");
+    await openInbox();
+
+    // The avatar is labelled with the bot's name; that label is the only thing
+    // on the row that says who it is.
+    expect(await screen.findByLabelText(/Writer/)).toBeInTheDocument();
+  });
+
+  it("keeps the code mark for a thread with no bot", async () => {
+    withBotCard(undefined);
+    await openInbox();
+    await screen.findByText(INBOX.events[0].title);
+
+    expect(screen.queryByLabelText(/Writer/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The crew loads separately, so a card can arrive naming a bot the roster
+   * does not have yet — or one that has since been removed. A face with the
+   * wrong name on it would be worse than no face.
+   */
+  it("falls back to the code mark for a bot the roster does not have", async () => {
+    withBotCard("nobody-by-that-id");
+    await openInbox();
+    await screen.findByText(INBOX.events[0].title);
+
+    expect(screen.queryByLabelText(/Writer/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * A thread the host owns that lives in no folder.
+ *
+ * `folder/list` walks folder rows, so a bot's standing thread — whose
+ * `folder_id` is null — never appears in the flattened set the shell uses to
+ * decide "is this the host's?". It does surface in the Inbox, because
+ * `inbox/list` is not folder-scoped. So the card was clickable and led
+ * nowhere: the main pane said "That thread is gone. Check the Inbox.", and a
+ * fold or archive on it went to the mock reducer while the real permissions,
+ * runs and process behind it were untouched.
+ */
+describe("a host thread that no folder lists", () => {
+  const STANDING = "bot-writer";
+
+  function withStandingThread(over: Record<string, unknown> = {}) {
+    vi.mocked(connectHost).mockResolvedValue({
+      client: {
+        ...client(),
+        inbox: vi.fn(async () => ({
+          ...INBOX,
+          events: [
+            {
+              ...INBOX.events[0],
+              id: "ev-standing",
+              threadId: STANDING,
+              threadTitle: "Writer",
+              title: "Overnight mail summarised",
+            },
+          ],
+          sleeping: [],
+        })),
+        // Active, not resurfaced: "Open thread" runs `thread/reopen` first,
+        // so by the time the pane asks `thread/state` the row is back.
+        threadState: vi.fn(async () => ({
+          threadId: STANDING,
+          title: "Writer",
+          state: "active",
+          foldPolicy: "default",
+          cwd: "/data/bots/writer",
+          harnessId: "claude",
+          botId: "writer",
+          process: {
+            connected: false,
+            acpState: "idle",
+            pendingPermissions: 0,
+            resumable: false,
+          },
+          runs: [],
+          unread: 0,
+        })),
+        threadTranscript: vi.fn(async () => ({
+          threadId: STANDING,
+          headSeq: 1,
+          events: [],
+          truncated: false,
+          queued: [],
+        })),
+        ...over,
+      } as unknown as HostClient,
+      hello: HELLO,
+    });
+  }
+
+  it("opens the thread instead of saying it is gone", async () => {
+    withStandingThread();
+    await openInbox();
+    await expand(/^Overnight mail summarised/);
+    await userEvent.click(screen.getByRole("button", { name: "Open thread" }));
+
+    // The chat, not the dead end.
+    await waitFor(() =>
+      expect(screen.queryByText(/That thread is gone/)).not.toBeInTheDocument(),
+    );
+    expect(await screen.findByRole("heading", { level: 2, name: "Writer" })).toBeInTheDocument();
+  });
+
+  /**
+   * The half that silently lost work. Folding a row the shell mistook for a
+   * fixture moved it on screen and left the host's copy running.
+   */
+  it("folds it on the host rather than in the mock reducer", async () => {
+    const fold = vi.fn(async () => ({ threadId: STANDING, state: "folded" }));
+    withStandingThread({ fold });
+    await openInbox();
+    await expand(/^Overnight mail summarised/);
+    await userEvent.click(screen.getByRole("button", { name: "Open thread" }));
+    await screen.findByRole("heading", { level: 2, name: "Writer" });
+
+    // Exact: the sidebar's folder-settings gear also starts with "Fold".
+    await userEvent.click(screen.getByRole("button", { name: "Fold" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: /Disappear until done/ }),
+    );
+
+    // "Disappear until done" sends no policy — the thread keeps the one it
+    // has — so this is the whole of the call.
+    await waitFor(() =>
+      expect(fold).toHaveBeenCalledWith({ threadId: STANDING }),
+    );
+  });
+});
