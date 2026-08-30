@@ -631,6 +631,10 @@ impl Store {
         overlay::mark_inbox_event_read(&self.conn, id)
     }
 
+    pub fn mark_inbox_kind_read(&self, thread_id: &str, kind: &str) -> Result<bool, StoreError> {
+        overlay::mark_inbox_kind_read(&self.conn, thread_id, kind)
+    }
+
     pub fn mark_inbox_read(&self, thread_id: &str) -> Result<usize, StoreError> {
         overlay::mark_inbox_read(&self.conn, thread_id)
     }

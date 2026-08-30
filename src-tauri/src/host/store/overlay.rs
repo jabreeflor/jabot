@@ -655,6 +655,36 @@ pub fn mark_inbox_event_read(conn: &Connection, id: &str) -> Result<(), StoreErr
     Ok(())
 }
 
+/// Mark this thread's newest undismissed card of one kind read.
+///
+/// Narrower than [`mark_inbox_read`] on purpose. Opening a thread clears
+/// everything it has waiting, because the user is now looking at all of it.
+/// Answering one question clears exactly that question — anything else the
+/// thread has surfaced is still owed, and sweeping it away because a
+/// permission happened to be answered would lose cards nobody read.
+///
+/// Newest-first with the same tie-break as `restate_inbox_event`, so a thread
+/// that asked twice clears the ask that is actually on screen.
+pub fn mark_inbox_kind_read(
+    conn: &Connection,
+    thread_id: &str,
+    kind: &str,
+) -> Result<bool, StoreError> {
+    let changed = conn.execute(
+        "UPDATE inbox_events
+            SET read_at = ?3
+          WHERE id = (
+            SELECT id FROM inbox_events
+             WHERE thread_id = ?1 AND kind = ?2
+               AND dismissed_at IS NULL AND read_at IS NULL
+             ORDER BY created_at DESC, rowid DESC
+             LIMIT 1
+          )",
+        params![thread_id, kind, now_utc()],
+    )?;
+    Ok(changed > 0)
+}
+
 /// Opening the thread is what clears its badge (`resurface.md`, Badge).
 pub fn mark_inbox_read(conn: &Connection, thread_id: &str) -> Result<usize, StoreError> {
     let changed = conn.execute(
