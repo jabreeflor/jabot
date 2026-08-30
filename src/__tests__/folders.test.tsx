@@ -347,6 +347,84 @@ describe("App, once the host has answered", () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * The worktree controls reaching the host (#23).
+   *
+   * `useCheckout` and `baseRef` have been on `thread/open` and honoured by the
+   * Rust host since #23, and no renderer ever set them. This is the trip the
+   * modal's own tests cannot make: draft to wire.
+   */
+  it("carries the advanced worktree choices through to thread/open", async () => {
+    const registered = folder();
+    listFolders.mockResolvedValue({ folders: [registered] });
+    openThread.mockResolvedValue({
+      threadId: "t-new",
+      title: "Rotate the backup keys",
+      state: "active" as ThreadOverlayState,
+      foldPolicy: "default" as const,
+      cwd: registered.cwd,
+      harnessId: "claude",
+      folderId: registered.folderId,
+      process: {
+        connected: false,
+        acpState: "unknown" as const,
+        pendingPermissions: 0,
+        resumable: false,
+      },
+      runs: [],
+      unread: 0,
+    });
+    await renderApp();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "New thread in jabot" }),
+    );
+    await userEvent.type(
+      screen.getByLabelText("WHAT SHOULD IT DO?"),
+      "Rotate the backup keys",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    await userEvent.type(
+      screen.getByLabelText("BASE BRANCH"),
+      "release/2.0",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+
+    expect(openThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folderId: "f-jabot",
+        baseRef: "release/2.0",
+      }),
+    );
+  });
+
+  /** A base ref the repository does not have is the host's to refuse, and its
+      sentence is the useful one — "v9.9.9 is not a commit in this repository"
+      rather than "could not start". The card keeps the draft either way. */
+  it("shows the host's refusal of a base ref that does not resolve", async () => {
+    listFolders.mockResolvedValue({ folders: [folder()] });
+    openThread.mockRejectedValue(
+      new HostRpcError({
+        code: RPC_ERROR.WORKTREE_FAILED,
+        message: "v9.9.9 is not a commit in this repository",
+      }),
+    );
+    await renderApp();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "New thread in jabot" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    await userEvent.type(screen.getByLabelText("BASE BRANCH"), "v9.9.9");
+    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "v9.9.9 is not a commit in this repository",
+    );
+    // And the card is still holding what was typed, so the fix is one edit.
+    expect(screen.getByLabelText("BASE BRANCH")).toHaveValue("v9.9.9");
+  });
+
   it("keeps the New Chat card open when the host refuses the spawn", async () => {
     listFolders.mockResolvedValue({ folders: [folder()] });
     openThread.mockRejectedValue(

@@ -421,6 +421,11 @@ function AppShell({
           cwd: folder.cwd ?? folder.path,
           harnessId: draft.harnessId,
           folderId: folder.id,
+          // Advanced, and both undefined unless the card was opened and used
+          // (#23). A base ref the repo does not have comes back as
+          // WORKTREE_FAILED, which the catch below already puts on the card.
+          useCheckout: draft.useCheckout,
+          baseRef: draft.baseRef,
         })
         .then((thread) => {
           registered.reload();

@@ -326,3 +326,66 @@
 .toolchip[data-status="missing"] .chipdot {
   background: var(--danger);
 }
+
+/* New Chat's worktree controls (#23), behind a disclosure and shut by default.
+ *
+ * A fresh worktree per thread is what stops two threads in one repo standing
+ * on each other's uncommitted work, so the opt-out is deliberately not a
+ * control the card invites anyone to reach for.
+ */
+.modal .advanced {
+  margin-top: var(--sp-4);
+}
+
+.modal .advanced-toggle {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--dim);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.modal .advanced-toggle:hover {
+  color: var(--ink);
+}
+
+.modal .advanced-toggle::after {
+  content: " ▸";
+}
+
+.modal .advanced-toggle[aria-expanded="true"]::after {
+  content: " ▾";
+}
+
+.modal .checkline {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  color: var(--ink);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+
+.modal .checkline input {
+  margin-top: 2px;
+  flex: none;
+}
+
+/* The consequence, under the label rather than in a tooltip: this is the one
+   control on the card that can lose somebody's uncommitted work. */
+.modal .checkline small {
+  display: block;
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+
+.modal .advanced input[type="text"]:disabled {
+  color: var(--dim);
+  cursor: not-allowed;
+}

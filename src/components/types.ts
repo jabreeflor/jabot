@@ -333,6 +333,14 @@ export interface NewChatDraft {
   harnessId: string;
   folderId: string | null;
   task: string;
+  /** Work in the folder's own checkout instead of a fresh worktree (#23).
+      Advanced, and omitted when unset so the ordinary request on the wire is
+      exactly what it was. */
+  useCheckout?: boolean;
+  /** What the thread's branch forks from — a branch, tag or sha. Omitted for
+      the host's own default, which is `origin/<default branch>` and never the
+      user's possibly-dirty `HEAD`. */
+  baseRef?: string;
 }
 
 /**
