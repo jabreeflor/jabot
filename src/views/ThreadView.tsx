@@ -20,7 +20,7 @@ import { Conversation } from "../components/Conversation";
 import { canFold, FoldButton } from "../components/FoldButton";
 import { HarnessChip } from "../components/HarnessChip";
 import { HostPicker } from "../components/HostPicker";
-import { CodeSessionIcon } from "../components/Icon";
+import { BranchIcon, CodeSessionIcon } from "../components/Icon";
 import { threadStatus, type ThreadStatus } from "../components/status";
 import type {
   FoldPolicy,
@@ -48,6 +48,8 @@ export function ThreadView({
   error,
   handoff,
   drift,
+  worktreePath,
+  branch,
 }: {
   thread: ThreadSummary;
   harnesses: readonly HarnessCard[];
@@ -73,6 +75,12 @@ export function ThreadView({
       wire name. Non-empty means the next prompt starts a fresh conversation
       rather than continuing this one (#21). */
   drift?: readonly string[];
+  /** The host-owned worktree this thread edits in, and the branch it is on
+      (#23). Both absent for every thread that works in place — a bot's
+      standing thread, a folder that is not a checkout, the "use my own
+      checkout" opt-out — and absent again once the tree has been collected. */
+  worktreePath?: string;
+  branch?: string;
 }) {
   const line = status ?? threadStatus(thread);
 
@@ -85,6 +93,9 @@ export function ThreadView({
           </div>
           <h2>{thread.title}</h2>
           <HarnessChip harnessId={thread.harnessId} harnesses={harnesses} />
+          {worktreePath && (
+            <WorktreeChip worktreePath={worktreePath} branch={branch} />
+          )}
           <span className="status" data-tone={line.tone}>
             {line.label}
           </span>
@@ -104,6 +115,51 @@ export function ThreadView({
       notice={drift && drift.length > 0 ? <DriftNotice drift={drift} /> : null}
     />
   );
+}
+
+/**
+ * Where this thread is actually editing.
+ *
+ * A code thread opened in a git folder does not run in the user's checkout: it
+ * runs in a host-owned worktree under the app data directory, on a `jabot/<id>`
+ * branch (#23). That is the right design — two threads in one repo cannot
+ * stand on each other's uncommitted work — and until now nothing on screen
+ * said it. Someone looking at a running thread could not tell which directory
+ * or which branch the agent was changing, and would go looking for the edits
+ * in the wrong tree.
+ *
+ * The branch is the visible half because it is the one that identifies the
+ * work; the path is long, machine-generated and the same prefix for every
+ * thread, so it lives in the tooltip where it can be read when it is wanted.
+ * A thread whose branch the host did not record still gets the chip, naming
+ * the tree's own directory — the point is to say *somewhere else*, and the
+ * path alone says that.
+ *
+ * Nothing at all for a thread that works in place: a bot's standing thread, a
+ * folder that is not a checkout, the "use my own checkout" opt-out. A chip on
+ * every thread would say nothing about any of them.
+ */
+function WorktreeChip({
+  worktreePath,
+  branch,
+}: {
+  worktreePath: string;
+  branch?: string;
+}) {
+  return (
+    <span className="worktree-chip" title={worktreePath}>
+      <BranchIcon />
+      <span className="ref">{branch ?? basename(worktreePath)}</span>
+    </span>
+  );
+}
+
+/** The last segment of a path, for the fallback label. Trailing separators are
+    dropped first so a path that ends in one does not resolve to "". */
+function basename(path: string): string {
+  const trimmed = path.replace(/[/\\]+$/, "");
+  const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return cut === -1 ? trimmed : trimmed.slice(cut + 1);
 }
 
 /**
@@ -247,6 +303,8 @@ export function LiveThreadView({
       error={error}
       handoff={facts?.handoff}
       drift={facts?.process?.drift}
+      worktreePath={facts?.worktreePath}
+      branch={facts?.branch}
     />
   );
 }
@@ -259,13 +317,18 @@ export function LiveThreadView({
  * cost the caption and nothing else — the same call that would blank the
  * chat over it is the wrong trade.
  */
+interface ThreadFacts {
+  handoff?: HandoffView;
+  process?: ProcessView;
+  worktreePath?: string;
+  branch?: string;
+}
+
 function useThreadFacts(
   client: HostClient,
   threadId: string,
-): { handoff?: HandoffView; process?: ProcessView } | undefined {
-  const [facts, setFacts] = useState<
-    { handoff?: HandoffView; process?: ProcessView } | undefined
-  >(undefined);
+): ThreadFacts | undefined {
+  const [facts, setFacts] = useState<ThreadFacts | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
     // Method lookup guarded too, the way `useCrew` guards the Doctor: a
@@ -275,7 +338,14 @@ function useThreadFacts(
     client
       .threadState({ threadId })
       .then((state) => {
-        if (!cancelled) setFacts({ handoff: state.handoff, process: state.process });
+        if (!cancelled) {
+          setFacts({
+            handoff: state.handoff,
+            process: state.process,
+            worktreePath: state.worktreePath,
+            branch: state.branch,
+          });
+        }
       })
       .catch(() => {
         // Deliberately silent: see above.
