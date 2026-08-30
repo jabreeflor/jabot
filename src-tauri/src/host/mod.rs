@@ -228,6 +228,10 @@ pub struct HostSession {
     /// `schedule_fires`, because decision #4 stops this process every time the
     /// user quits and a schedule has to survive that.
     schedules: schedule::ScheduleState,
+    /// The PR poll's clock (#28). RAM for the same reason the cron's is: the
+    /// first pump after a launch polls immediately, so nothing here is worth
+    /// surviving a quit.
+    pr_poll: pr::PrPoll,
 }
 
 impl HostSession {
@@ -308,6 +312,7 @@ impl HostSession {
             connection_devices: HashMap::new(),
             current_connection: None,
             schedules: schedule::ScheduleState::from_env(),
+            pr_poll: pr::PrPoll::from_env(),
         }
     }
 

@@ -24,7 +24,7 @@
 //! number)` — the same identity the host dedupes linkage on. Signed out,
 //! nothing is lost: the linked board is exactly what it was.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   GithubPullRequestView,
@@ -81,10 +81,6 @@ export function usePullRequests(
   const [unavailable, setUnavailable] = useState<PrUnavailable | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
-  // The interval reads this rather than closing over the rows, so changing the
-  // cadence does not mean tearing down and re-arming the timer on every poll.
-  const pending = useRef(false);
-
   useEffect(() => {
     if (!client) return;
     let cancelled = false;
@@ -94,9 +90,7 @@ export function usePullRequests(
     (async () => client.listPullRequests())()
       .then((listed) => {
         if (cancelled) return;
-        const rows = listed.pullRequests.map(prRow);
-        pending.current = rows.some((pr) => pr.checkState === "running");
-        setLinked(rows);
+        setLinked(listed.pullRequests.map(prRow));
         setError(null);
       })
       .catch((err: unknown) => {
@@ -144,13 +138,23 @@ export function usePullRequests(
     };
   }, [client, signedIn, generation]);
 
+  /** The board as the host holds it. No `gh`, no network — see the poll. */
+  const reread = useCallback(async () => {
+    if (!client) return;
+    try {
+      const listed = await client.listPullRequests();
+      setLinked(listed.pullRequests.map(prRow));
+      setError(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [client]);
+
   const refresh = useCallback(async () => {
     if (!client) return;
     try {
       const refreshed = await client.refreshPullRequests();
-      const rows = refreshed.pullRequests.map(prRow);
-      pending.current = rows.some((pr) => pr.checkState === "running");
-      setLinked(rows);
+      setLinked(refreshed.pullRequests.map(prRow));
       // One host in MVP1, so the first entry is the answer. It is `null` on a
       // successful refresh, which is what clears a stale "gh is not installed".
       setUnavailable(refreshed.unavailable[0] ?? null);
@@ -178,16 +182,27 @@ export function usePullRequests(
     [linked, mine],
   );
 
-  // The poll. Re-armed whenever the cadence changes, which is whenever the
-  // board crosses between "something is running" and "nothing is".
+  // Reading what the host has already fetched, not fetching.
+  //
+  // This used to be `refresh()` — `pr/refresh`, a subprocess and a network
+  // round trip — armed only while a webview was alive and running. Since
+  // `card::transition` writes an Inbox `pr` card only when a *refresh*
+  // observes a change, that meant no "checks failed" card could be written
+  // while the app sat in the Dock with its timers throttled, and none at all
+  // under `jabot-hostd`, which has no renderer to arm anything. The poll is
+  // the host's now (#28), on the same two cadences and the same code path.
+  //
+  // What is left here is `pr/list`: a pure store read that cannot fail without
+  // a GitHub login, so a board on a machine that has never signed in costs a
+  // SQLite query a minute and nothing else.
   const cadence = pullRequests?.some((pr) => pr.checkState === "running")
     ? POLL_WHILE_PENDING_MS
     : POLL_IDLE_MS;
   useEffect(() => {
     if (!client) return;
-    const timer = setInterval(() => void refresh(), cadence);
+    const timer = setInterval(() => void reread(), cadence);
     return () => clearInterval(timer);
-  }, [client, refresh, cadence]);
+  }, [client, reread, cadence]);
 
   return { pullRequests, account, unavailable, error, reload, refresh };
 }
