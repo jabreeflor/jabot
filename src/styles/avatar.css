@@ -16,7 +16,7 @@
   flex: none;
   position: relative;
   display: block;
-  --mascot-tilt: -1deg;
+  --mascot-tilt: -0.2deg;
   --mascot-glance: 1px;
   --mascot-speed: 5.6s;
   --mascot-delay: -1.2s;
@@ -33,7 +33,7 @@
 .av.b-teal {
   --lite: #6fe0c0;
   --deep: #2fb894;
-  --mascot-tilt: -2deg;
+  --mascot-tilt: -0.4deg;
   --mascot-glance: 1.1px;
   --mascot-speed: 5.4s;
   --mascot-delay: -2.2s;
@@ -42,7 +42,7 @@
 .av.b-yellow {
   --lite: #ffd24d;
   --deep: #efa92f;
-  --mascot-tilt: 2deg;
+  --mascot-tilt: 0.4deg;
   --mascot-glance: -1.2px;
   --mascot-speed: 5.9s;
   --mascot-delay: -0.8s;
@@ -51,7 +51,7 @@
 .av.b-purple {
   --lite: #9c8cff;
   --deep: #6c55e8;
-  --mascot-tilt: -3deg;
+  --mascot-tilt: -0.6deg;
   --mascot-glance: 1.4px;
   --mascot-speed: 5.1s;
   --mascot-delay: -3.3s;
@@ -60,7 +60,7 @@
 .av.b-violet {
   --lite: #c08bff;
   --deep: #9257e8;
-  --mascot-tilt: 3deg;
+  --mascot-tilt: 0.6deg;
   --mascot-glance: -1.4px;
   --mascot-speed: 6.1s;
   --mascot-delay: -4.1s;
@@ -69,7 +69,7 @@
 .av.b-blue {
   --lite: #6fafff;
   --deep: #3c7fe8;
-  --mascot-tilt: -1deg;
+  --mascot-tilt: -0.2deg;
   --mascot-glance: -1px;
   --mascot-speed: 5.7s;
   --mascot-delay: -1.6s;
@@ -78,7 +78,7 @@
 .av.b-orange {
   --lite: #ffa65c;
   --deep: #ef7e2f;
-  --mascot-tilt: 3deg;
+  --mascot-tilt: 0.6deg;
   --mascot-glance: 1.3px;
   --mascot-speed: 5.2s;
   --mascot-delay: -2.8s;
@@ -87,7 +87,7 @@
 .av.b-pink {
   --lite: #ff9bbb;
   --deep: #e85d8a;
-  --mascot-tilt: -3deg;
+  --mascot-tilt: -0.6deg;
   --mascot-glance: -1.3px;
   --mascot-speed: 6.3s;
   --mascot-delay: -3.8s;
@@ -96,7 +96,7 @@
 .av.b-green {
   --lite: #7adb8f;
   --deep: #3ea65c;
-  --mascot-tilt: 1deg;
+  --mascot-tilt: 0.2deg;
   --mascot-glance: 1px;
   --mascot-speed: 5.5s;
   --mascot-delay: -1.1s;
@@ -118,24 +118,6 @@
       color-mix(in srgb, var(--deep) 70%, transparent),
     0 calc(var(--s) * 0.07) calc(var(--s) * 0.2)
       color-mix(in srgb, var(--deep) 28%, transparent);
-  transform-origin: 50% 82%;
-  animation: av-mascot-hover var(--mascot-speed) ease-in-out
-    var(--mascot-delay) infinite;
-}
-
-.av .mascot-stage::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    118deg,
-    transparent 27%,
-    rgba(255, 255, 255, 0.22) 46%,
-    transparent 63%
-  );
-  transform: translateX(-120%);
-  animation: av-mascot-shine 9.6s ease-in-out var(--mascot-delay) infinite;
-  pointer-events: none;
 }
 
 .av .mascot {
@@ -152,7 +134,9 @@
   pointer-events: none;
   filter: drop-shadow(0 calc(var(--s) * 0.04) calc(var(--s) * 0.04) rgba(16, 16, 18, 0.42));
   transform-origin: 50% 70%;
-  animation: av-mascot-look 7.4s ease-in-out var(--mascot-delay) infinite;
+  will-change: transform;
+  animation: av-mascot-alive var(--mascot-speed) ease-in-out
+    var(--mascot-delay) infinite;
 }
 
 /* An uploaded picture fills the same framed hole the mascot does. `cover` and not
@@ -170,42 +154,30 @@
   box-shadow: inset 0 0 0 1.5px var(--deep);
 }
 
-@keyframes av-mascot-hover {
+/* The portrait frame stays completely still. Only the robot inside it moves:
+   a small settle, look, and weight shift that reads at both 28px and 54px. */
+@keyframes av-mascot-alive {
   0%,
+  24%,
   100% {
-    transform: translateY(0) rotate(var(--mascot-tilt));
+    transform: translate3d(0, 0, 0) rotate(0) scale(1);
   }
-  38% {
-    transform: translateY(calc(var(--s) * -0.045))
-      rotate(calc(var(--mascot-tilt) + 1deg));
+  36% {
+    transform: translate3d(0, calc(var(--s) * 0.018), 0)
+      rotate(var(--mascot-tilt)) scale(1.008);
+  }
+  47%,
+  57% {
+    transform: translate3d(
+        var(--mascot-glance),
+        calc(var(--s) * 0.012),
+        0
+      )
+      rotate(var(--mascot-tilt)) scale(1.018);
   }
   72% {
-    transform: translateY(calc(var(--s) * 0.01))
-      rotate(calc(var(--mascot-tilt) - 0.6deg));
-  }
-}
-
-@keyframes av-mascot-look {
-  0%,
-  34%,
-  64%,
-  100% {
-    transform: translateX(0) scale(1);
-  }
-  43%,
-  54% {
-    transform: translateX(var(--mascot-glance)) scale(1.025);
-  }
-}
-
-@keyframes av-mascot-shine {
-  0%,
-  46% {
-    transform: translateX(-120%);
-  }
-  62%,
-  100% {
-    transform: translateX(120%);
+    transform: translate3d(0, calc(var(--s) * 0.03), 0)
+      rotate(0) scale(0.995, 1.012);
   }
 }
 
@@ -349,6 +321,7 @@
 /* The ring still says everything it needs to when it is not turning: colour
    and presence carry all three states, and only the spin is motion. */
 @media (prefers-reduced-motion: reduce) {
+  .av .mascot,
   .av .ring {
     animation: none;
     -webkit-mask: none;
