@@ -222,6 +222,41 @@
 
 /* ---- bot editor ---- */
 
+/* ---- the icon row -------------------------------------------------------
+   The preview at the size the sidebar draws it (54px), the two controls
+   beside it, and a line saying what happens if you never touch either. */
+
+.iconpick {
+  --blob-size: 54px;
+  --rim: var(--raise2);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+}
+
+.iconacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+/* The real control, kept out of the layout: it opens the picker when the
+   button beside it is clicked, and `display: none` is what stops a browser
+   from drawing its own "Choose File" next to ours. It is never the focus
+   target — the button is — so nothing is lost by taking it out of the tab
+   order with it. */
+.iconfile {
+  display: none;
+}
+
+.iconhint {
+  flex-basis: 100%;
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  max-width: 34ch;
+}
+
 .swatches {
   display: flex;
   gap: var(--sp-3);

@@ -18,7 +18,7 @@ const FOLDER_COLUMNS: &str = "id, name, path, sort_order, created_at, updated_at
 /// Column order for [`map_bot`], for the same reason `FOLDER_COLUMNS` exists:
 /// three reads of one table that have to stay in step.
 const BOT_COLUMNS: &str = "id, name, color, instructions, tools_json, harness_id, is_chief, \
-     template_id, host_id, sort_order, created_at, updated_at";
+     template_id, host_id, sort_order, created_at, updated_at, image";
 
 pub fn insert_folder(conn: &Connection, new: &NewFolder) -> Result<FolderRow, StoreError> {
     if new.name.trim().is_empty() || new.path.trim().is_empty() {
@@ -288,8 +288,9 @@ pub fn insert_bot(conn: &Connection, new: &NewBot) -> Result<BotRow, StoreError>
     conn.execute(
         "INSERT INTO bots (
             id, name, color, instructions, tools_json, harness_id,
-            is_chief, template_id, host_id, sort_order, created_at, updated_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, NULL, ?8, ?9, ?9)",
+            is_chief, template_id, host_id, sort_order, created_at, updated_at,
+            image
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, NULL, ?8, ?9, ?9, ?10)",
         params![
             id,
             new.name.trim(),
@@ -300,6 +301,7 @@ pub fn insert_bot(conn: &Connection, new: &NewBot) -> Result<BotRow, StoreError>
             new.template_id,
             new.sort_order,
             now,
+            new.image,
         ],
     )?;
     get_bot(conn, &id)?.ok_or_else(|| StoreError::NotFound(id))
@@ -331,6 +333,14 @@ pub fn update_bot(conn: &Connection, id: &str, patch: &BotPatch) -> Result<BotRo
         serde_json::from_str::<Vec<String>>(tools)?;
     }
     let now = now_utc();
+    // `image` is the one nullable column a patch can reach, so it is the one
+    // COALESCE cannot express: `COALESCE(NULL, image)` and "set this to NULL"
+    // are the same SQL, and clearing a picture would be indistinguishable from
+    // not mentioning it. The flag says which of the two the caller meant.
+    let (set_image, image) = match &patch.image {
+        None => (false, None),
+        Some(value) => (true, value.as_deref()),
+    };
     let changed = conn.execute(
         "UPDATE bots SET
             name = COALESCE(?2, name),
@@ -338,7 +348,8 @@ pub fn update_bot(conn: &Connection, id: &str, patch: &BotPatch) -> Result<BotRo
             instructions = COALESCE(?4, instructions),
             tools_json = COALESCE(?5, tools_json),
             harness_id = COALESCE(?6, harness_id),
-            updated_at = ?7
+            image = CASE WHEN ?7 THEN ?8 ELSE image END,
+            updated_at = ?9
          WHERE id = ?1",
         params![
             id,
@@ -347,6 +358,8 @@ pub fn update_bot(conn: &Connection, id: &str, patch: &BotPatch) -> Result<BotRo
             patch.instructions,
             patch.tools_json,
             patch.harness_id,
+            set_image,
+            image,
             now,
         ],
     )?;

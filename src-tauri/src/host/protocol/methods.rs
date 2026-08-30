@@ -1603,9 +1603,15 @@ impl GithubLoginParams {
 pub struct BotView {
     pub bot_id: String,
     pub name: String,
-    /// A colour token from [`crate::host::BOT_COLORS`] — the gradient is the
-    /// bot's identity in the UI, so the host keeps the vocabulary closed.
+    /// A colour token from [`crate::host::BOT_COLORS`]. With no uploaded
+    /// picture this *is* the bot's mark, together with its initials, so the
+    /// host keeps the vocabulary closed.
     pub color: String,
+    /// The uploaded icon as a `data:` URL, absent when the bot wears its
+    /// colour. Checked on the way in — shape and size both — so what goes out
+    /// is something an `<img src>` can be handed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
     /// Persona / system prompt. Also mirrored to `instructions.md` in the
     /// bot's memory directory, where the session can read it.
     pub instructions: String,
@@ -1685,6 +1691,10 @@ pub struct CrewCreateParams {
     pub tools: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness_id: Option<String>,
+    /// The bot's icon as a `data:` URL. Refused if it is not one, or if it is
+    /// over the cap; a new bot with no picture simply omits it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
 }
 
 /// A patch. An omitted field is left alone; `instructions: ""` really does
@@ -1703,6 +1713,14 @@ pub struct CrewUpdateParams {
     pub tools: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub harness_id: Option<String>,
+    /// The icon, in this patch's own three-way spelling: omitted leaves the
+    /// picture alone, a `data:` URL replaces it, and `""` takes it away and
+    /// puts the colour mark back. The empty string carries "clear" because
+    /// JSON has no way to say "present, and deliberately nothing" that a
+    /// missing key cannot also mean — the same reading `instructions: ""`
+    /// already has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

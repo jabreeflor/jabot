@@ -1,0 +1,22 @@
+-- The picture a bot was given (#44).
+--
+-- A bot's icon is its colour and its initials until someone uploads one, and
+-- this column is where the upload lands: a `data:` URL, already centre-cropped
+-- and scaled to icon size by the renderer, re-checked for shape and size by
+-- the host before it is written. NULL is the ordinary case and means "wears
+-- its colour", which is why the column is nullable rather than defaulting to
+-- the empty string — "no picture" and "a picture that is zero bytes long" are
+-- not the same fact, and only one of them can be true.
+--
+-- Stored inline rather than as a path to a file the user picked, for the
+-- reason the renderer's `image.ts` gives: their file can be renamed, moved, or
+-- live on a volume that is not mounted, and an avatar that turns into a broken
+-- image because a disk was ejected is worse than no avatar. The size cap
+-- (256 KiB, enforced in `crew/create` and `crew/update`) is what keeps that
+-- decision cheap: a crew of twelve is a few megabytes at the very worst.
+--
+-- Nothing here is a credential, and nothing here is executable: the accepted
+-- media types are the three raster formats the renderer's canvas can produce,
+-- and `image/svg+xml` — a document with script in it — is refused at the door.
+
+ALTER TABLE bots ADD COLUMN image TEXT;

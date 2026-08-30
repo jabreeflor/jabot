@@ -1050,6 +1050,7 @@ pub(crate) fn map_bot(row: &Row<'_>) -> rusqlite::Result<BotRow> {
         sort_order: row.get(9)?,
         created_at: row.get(10)?,
         updated_at: row.get(11)?,
+        image: row.get(12)?,
     })
 }
 

@@ -1,58 +1,55 @@
-//! The one component every call site uses, and the chrome all six styles share.
+//! A bot's icon: a colour, its initials, or the picture the user gave it.
 //!
-//! The split is the whole point of the module: a renderer draws a creature and
-//! nothing else, and everything that is true of *any* avatar — the box, the
-//! colour, the unread dot, the running ring, the accessible name — lives here.
-//! Six copies of the dot is six chances for one of them to sit a pixel off,
-//! and the prototype had already settled where it goes.
+//! #44 asked what should replace the blob and shipped six answers behind a
+//! switch so they could be lived with. The answer that came back is that a
+//! bot's identity is not something the app should be inventing for it — a
+//! dealt hat is a stranger's face, and no generated creature is ever the one
+//! the user had in mind. So the app draws the plainest thing that is still
+//! legible, and gets out of the way of anyone who wants to say who a bot is:
+//!
+//!   * **A colour and a monogram.** Flat, one disc, the bot's initials in it.
+//!     Legible at 28px, legible in greyscale, and — unlike a palette of eight
+//!     — it does not run out at the ninth bot, which was #44's first
+//!     complaint.
+//!   * **An uploaded image**, when there is one. It replaces the disc
+//!     entirely; the chrome around it does not change.
+//!
+//! State still has somewhere to live, which was #44's last requirement: the
+//! ring. It is the same ring the running state always drew, now in three
+//! colours, because a face that can squint is exactly what this change gave
+//! up and something has to say "this one needs you" at a glance.
 //!
 //! There is no `size` prop, deliberately. The app sizes avatars from CSS
 //! already: the sidebar sets `--blob-size: 54px` on the chief tile, chat.css
 //! sets 28px on the header, cards.css 38px on an Inbox row. A prop would mean
 //! every one of those stylesheets had to be replaced with a threaded number,
-//! and the drawings are 24-unit SVGs that scale to whatever box they land in,
-//! so there is nothing a number would buy.
+//! and the disc is a 24-unit SVG that scales to whatever box it lands in.
 
-import type { CSSProperties, JSX } from "react";
 import type { BotColor } from "../types";
-import { useCrewStyle } from "./CrewStyleContext";
-import type { AvatarState, CrewRenderProps, CrewStyle } from "./crew";
-import { hash, reserveDeal } from "./hash";
-import { Classic } from "./Classic";
-import { Moodblob } from "./Moodblob";
-import { HatCrew } from "./HatCrew";
-import { CritterKit } from "./CritterKit";
-import { PixelPets } from "./PixelPets";
-import { Watchers } from "./Watchers";
-
-/**
- * Rendered as elements rather than called as functions, so a style is free to
- * hold state or read a context of its own — the watchers want a gaze, and a
- * plain function call would have made that a rewrite rather than an edit.
- */
-const RENDERERS: Record<CrewStyle, (props: CrewRenderProps) => JSX.Element> = {
-  classic: Classic,
-  moodblob: Moodblob,
-  hats: HatCrew,
-  critters: CritterKit,
-  pixels: PixelPets,
-  watchers: Watchers,
-};
+import type { AvatarState } from "./state";
+import { isBotImage } from "./image";
+import { monogram } from "./monogram";
 
 export function Avatar({
-  id,
   name,
   color,
+  image,
   state = "idle",
   unread = false,
   labelled = false,
   titled = true,
-  crewStyle,
   className,
 }: {
-  id: string;
   name: string;
   color: BotColor;
+  /**
+   * The bot's own picture, as a `data:` URL, or nothing for the colour mark.
+   *
+   * Checked rather than trusted: it goes straight into a `src`, and the value
+   * has been through the host and back. A row carrying something else draws
+   * the monogram instead of fetching it.
+   */
+  image?: string | null;
   state?: AvatarState;
   /** The red dot: this bot's standing thread has something for you. */
   unread?: boolean;
@@ -69,84 +66,78 @@ export function Avatar({
    */
   labelled?: boolean;
   /**
-   * Draw without the name tooltip.
-   *
-   * The picker again, and for the same reason it needs `crewStyle`: its
-   * buttons carry a `title` saying what the style is, nested tooltips resolve
-   * innermost first, and the drawing is half the button and the half a person
-   * points at. With a name on it the only explanation of a candidate was
-   * unreachable by hover. The sample is a style rather than a bot, so it has
-   * no name to give up.
+   * Draw without the name tooltip, for a caller whose own `title` says
+   * something the avatar's would hide — nested tooltips resolve innermost
+   * first, and the drawing is usually the half a person points at.
    */
   titled?: boolean;
-  /**
-   * Draw in a named style instead of the one that is switched on.
-   *
-   * Exists for one caller: the temporary picker in Crew, where six previews
-   * have to disagree with the setting and with each other or there is nothing
-   * to compare. Nothing else should pass it — an avatar that ignores the
-   * setting is the bug this module was built to make impossible — and it goes
-   * out with the picker when #44 picks a winner.
-   */
-  crewStyle?: CrewStyle;
   className?: string;
 }) {
-  const current = useCrewStyle();
-  const style = crewStyle ?? current;
-  const Draw = RENDERERS[style];
-
-  // Each bot blinks on its own clock, and switching styles reshuffles them:
-  // a crew that blinks in unison reads as one animation rather than as a room
-  // of separate creatures. Negative, so the offset is into a cycle already
-  // running instead of a pause before the first blink.
-  const blink = (hash(id + style) % 40) / 10;
+  const picture = image && isBotImage(image) ? image : null;
 
   return (
     <span
-      className={["av", style, color, className].filter(Boolean).join(" ")}
+      className={["av", color, className].filter(Boolean).join(" ")}
       data-state={state}
       title={titled ? name : undefined}
-      style={{ "--blink": `-${blink}s` } as CSSProperties}
       {...(labelled ? { role: "img", "aria-label": name } : {})}
     >
-      <Draw id={id} name={name} color={color} state={state} />
+      {picture ? (
+        // Empty alt, not the name: the wrapper is what carries the accessible
+        // name when there is one to carry, and a nested one would announce
+        // the bot twice wherever `labelled` is on.
+        <img className="pic" src={picture} alt="" draggable={false} />
+      ) : (
+        <Mark name={name} />
+      )}
       {unread && <span className="dot" data-testid="unread-dot" />}
-      {state === "running" && <span className="ring" />}
+      {state !== "idle" && <span className="ring" data-testid="state-ring" />}
     </span>
+  );
+}
+
+/**
+ * The colour mark: a disc, and one or two letters.
+ *
+ * A 24-unit SVG rather than a styled `<div>` with text in it, because that is
+ * what makes the initials the same shape at 54px and at 28px — an SVG glyph
+ * scales with the box, where a font-size in a shrinking box has to be
+ * recomputed at every call site and rounds to something slightly wrong at each
+ * of them.
+ */
+function Mark({ name }: { name: string }) {
+  const letters = monogram(name);
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      {/* Inset by the stroke's own half-width, so the rim is drawn inside the
+          box and not clipped in half by it. */}
+      <circle className="disc" cx="12" cy="12" r="11.2" />
+      <text
+        className="initials"
+        x="12"
+        y="12"
+        // The two-letter form is set smaller because it is nearly twice as
+        // wide; both are chosen to sit inside the disc rather than to fill it.
+        fontSize={letters.length > 1 ? 10 : 13}
+      >
+        {letters}
+      </text>
+    </svg>
   );
 }
 
 /**
  * The crew as a whole — the one avatar that is not a single bot.
  *
- * Built from three of the current style's own marks rather than from three
- * generic circles, because the cluster is where a person reads what the crew
- * *is*: three hats say "hats" at a glance in a way three teal blobs never
- * would. The three colours are the ones today's cluster already uses, so the
- * tile does not change hue when the style does.
+ * Three discs in the three colours today's cluster already uses, so the tile
+ * does not change hue. They are marks rather than members: no monogram, since
+ * "C" three times says nothing, and the shape alone is what reads as "several
+ * bots" beside the single disc of one.
  *
- * The places are reserved rather than dealt, and they are the prototype's
- * own: its cluster was `BOTS[0]`, `BOTS[2]` and `BOTS[3]`, so the same first,
- * third and fourth marks appear here. Reserving is the load-bearing half —
- * these three are not members of the crew, and when they took places off the
- * top of the deck every real bot's mark moved by three on any launch that went
- * through setup.
- *
- * `aria-hidden` on the wrapper: all three marks carry a `title`, and the
- * controls this sits in ("Crew") are already named by their own text.
+ * `aria-hidden` on the wrapper: the controls this sits in ("Crew") are already
+ * named by their own text.
  */
-const CREW_FACES: readonly {
-  id: string;
-  name: string;
-  color: BotColor;
-  place: number;
-}[] = [
-  { id: "crew.a", name: "Crew", color: "b-teal", place: 0 },
-  { id: "crew.b", name: "Crew", color: "b-purple", place: 2 },
-  { id: "crew.c", name: "Crew", color: "b-violet", place: 3 },
-];
-
-CREW_FACES.forEach((face) => reserveDeal(face.id, face.place));
+const CREW_COLORS: readonly BotColor[] = ["b-teal", "b-purple", "b-violet"];
 
 export function CrewAvatar({ className }: { className?: string }) {
   return (
@@ -154,13 +145,17 @@ export function CrewAvatar({ className }: { className?: string }) {
       className={["cluster", "av-cluster", className].filter(Boolean).join(" ")}
       aria-hidden="true"
     >
-      {CREW_FACES.map((face, i) => (
-        // The slot class, not `:nth-child`. The prototype positioned these
-        // by index and hit the trap it sets: `:nth-child` on a cluster whose
+      {CREW_COLORS.map((color, i) => (
+        // The slot class, not `:nth-child`. The prototype positioned these by
+        // index and hit the trap it sets: `:nth-child` on a cluster whose
         // children each contain a whole drawing eventually matches something
         // inside one of them and rearranges its parts.
-        <i className={`s${i + 1}`} key={face.id}>
-          <Avatar id={face.id} name={face.name} color={face.color} />
+        <i className={`s${i + 1}`} key={color}>
+          <span className={`av ${color}`} data-state="idle">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle className="disc" cx="12" cy="12" r="11.2" />
+            </svg>
+          </span>
         </i>
       ))}
     </span>

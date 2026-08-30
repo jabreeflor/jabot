@@ -1,40 +1,40 @@
 /**
- * `avatarStateFor`, the one place the app's vocabulary becomes a face.
+ * `avatarStateFor`, the one place the app's vocabulary becomes a ring.
  *
- * `RunState` has eight cases and a drawing at 28px can carry four, so
- * something has to collapse them, and it matters that it happens once rather
- * than in each of six renderers. The rule it collapses by is #5's: a thread's
- * state says whether you can see it, its latest run says what the machine is
- * doing, and when the two disagree visibility wins. A folded thread reads as
- * asleep in its row, so its bot must not be caught mid-squint in the sidebar —
- * two surfaces disagreeing about one thread is worse than either being wrong.
+ * `RunState` has eight cases and a ring at 28px can carry four, so something
+ * has to collapse them, and it matters that it happens once rather than at
+ * each call site. The rule it collapses by is #5's: a thread's state says
+ * whether you can see it, its latest run says what the machine is doing, and
+ * when the two disagree visibility wins. A folded thread reads as asleep in
+ * its row, so its bot must not be ringed as busy in the sidebar — two surfaces
+ * disagreeing about one thread is worse than either being wrong.
  */
 import { describe, expect, it } from "vitest";
 
-import { avatarStateFor } from "../crew";
+import { avatarStateFor } from "../state";
 import type { RunState, ThreadState } from "../../types";
 
 describe("avatarStateFor", () => {
-  it("squints while the work is in flight, queued or running", () => {
+  it("turns while the work is in flight, queued or running", () => {
     expect(avatarStateFor("running")).toBe("running");
     // Queued is running on purpose: from the outside a turn that is about to
     // start and one that has started are the same wait.
     expect(avatarStateFor("queued")).toBe("running");
   });
 
-  it("looks up when the run wants something from you", () => {
+  it("goes amber when the run wants something from you", () => {
     expect(avatarStateFor("needs_you")).toBe("waiting");
   });
 
-  it("winces at all three ways a run can end badly", () => {
+  it("goes red at all three ways a run can end badly", () => {
     for (const run of ["failed", "timed_out", "lost"] as const) {
       expect(avatarStateFor(run)).toBe("failed");
     }
   });
 
-  it("wears its own face for everything a drawing cannot usefully say", () => {
+  it("drops the ring for everything a mark cannot usefully say", () => {
     // Succeeded and cancelled are both "nothing is happening now", and idle is
-    // the bot's own face, so falling to it is never a lie.
+    // the bot's plain icon, so falling to it is never a lie.
     expect(avatarStateFor(null)).toBe("idle");
     expect(avatarStateFor("succeeded")).toBe("idle");
     expect(avatarStateFor("cancelled")).toBe("idle");

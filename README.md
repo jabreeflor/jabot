@@ -56,4 +56,10 @@ answers back, a body whose hat is its name, a generated critter kit, hand-drawn
 pixel pets, and watchers whose eyes follow the page and look straight at you
 when they need something.
 
+Both pages are now the record of an exploration rather than a preview of one:
+#44 landed on neither set. A bot wears a flat colour disc with its initials in
+it, and anyone who wants it to be somebody in particular uploads a picture in
+the bot editor — the app stopped inventing an identity for a bot and made one
+the user can give it. `src/components/avatar/` is the whole of it.
+
 Other prototypes in `prototypes/` are earlier design directions.

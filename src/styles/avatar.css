@@ -1,16 +1,258 @@
 /*
- * The avatar module's stylesheet. One file per style on purpose: the five
- * candidates are written in parallel, and a single shared sheet would make
- * every one of them a conflict against the other four.
+ * The avatar: a colour disc with initials in it, or the picture a bot was
+ * given, plus the chrome that is true of both.
  *
- * base.css first — it owns the box, the palette and the chrome, and the style
- * sheets only ever add to or override what it establishes.
+ * The box is a CSS variable and not a prop for the reason Avatar.tsx gives:
+ * sidebar.css, chat.css, cards.css, crew.css, modal.css and onboarding.css
+ * already set --blob-size at every call site. --s is the same number under the
+ * name the chrome does its arithmetic in, so a dot and a ring scale with the
+ * avatar instead of being right at 44px and wrong at 28.
  */
 
-@import "./avatar/base.css";
-@import "./avatar/classic.css";
-@import "./avatar/moodblob.css";
-@import "./avatar/hats.css";
-@import "./avatar/critters.css";
-@import "./avatar/pixels.css";
-@import "./avatar/watchers.css";
+.av {
+  --s: var(--blob-size, 44px);
+  width: var(--s);
+  height: var(--s);
+  flex: none;
+  position: relative;
+  display: block;
+  /* The box is a frame and paints nothing itself. Stated rather than assumed:
+     `.b-*` used to be a gradient a caller could set on any element, and a call
+     site that reaches for one again should find the mark on top of it rather
+     than behind it. */
+  background: none;
+  border-radius: 0;
+}
+
+.av > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/*
+ * The palette: a lit body and a deeper rim of the same hue.
+ *
+ * The disc is the *light* tone and the initials are near-black, which is the
+ * one pairing that clears 6:1 on all eight colours — white on a mid-tone teal
+ * does not come close, and an avatar whose initials cannot be read is a
+ * coloured dot with a smudge on it. Doubled up with .av so a `b-teal` on some
+ * other element cannot pick these up by accident: the colour classes come off
+ * host rows and are only ever a palette *here*.
+ */
+.av.b-teal {
+  --lite: #6fe0c0;
+  --deep: #2fb894;
+}
+
+.av.b-yellow {
+  --lite: #ffd24d;
+  --deep: #efa92f;
+}
+
+.av.b-purple {
+  --lite: #9c8cff;
+  --deep: #6c55e8;
+}
+
+.av.b-violet {
+  --lite: #c08bff;
+  --deep: #9257e8;
+}
+
+.av.b-blue {
+  --lite: #6fafff;
+  --deep: #3c7fe8;
+}
+
+.av.b-orange {
+  --lite: #ffa65c;
+  --deep: #ef7e2f;
+}
+
+.av.b-pink {
+  --lite: #ff9bbb;
+  --deep: #e85d8a;
+}
+
+.av.b-green {
+  --lite: #7adb8f;
+  --deep: #3ea65c;
+}
+
+.av .disc {
+  fill: var(--lite);
+  stroke: var(--deep);
+  stroke-width: 1.6;
+}
+
+/* Set in the app's own face, so a bot's initials look like the rest of the
+   chrome rather than like a diagram label. The weight carries the letter at
+   28px, where a regular one starts to thin out. */
+.av .initials {
+  fill: #14141a;
+  font-family: var(--font-ui);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-anchor: middle;
+  dominant-baseline: central;
+  /* The glyph is part of the drawing, not text on the page: a drag-select
+     across the sidebar should not pick up eight sets of initials. */
+  user-select: none;
+}
+
+/* An uploaded picture fills the same round hole the disc does. `cover` and not
+   `contain`: the file was already centre-cropped square on the way in, so this
+   only has to absorb the rounding, and a letterboxed avatar reads as broken. */
+.av .pic {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  /* The same rim the disc has, so a photo and a monogram sit at the same
+     weight in a row of both. */
+  box-shadow: inset 0 0 0 1.5px var(--deep);
+}
+
+/* ---- chrome -------------------------------------------------------------
+   The dot and the ring are drawn by Avatar.tsx for every avatar, so they are
+   in exactly one place and cannot drift apart. --rim is the colour the dot
+   punches its hole out of; a call site on a raised surface overrides it. */
+
+.av .dot {
+  position: absolute;
+  top: -1px;
+  right: 1px;
+  width: max(9px, calc(var(--s) * 0.24));
+  height: max(9px, calc(var(--s) * 0.24));
+  border-radius: 50%;
+  background: var(--red);
+  border: max(2px, calc(var(--s) * 0.05)) solid var(--rim, var(--side));
+  z-index: 3;
+}
+
+/*
+ * The ring is the whole state vocabulary now that the mark is a flat disc,
+ * and it says three different things:
+ *
+ *   running — green, and turning, because it is the one state that is going
+ *             somewhere; motion is what you catch out of the corner of an eye.
+ *   waiting — amber and still. A bot that needs you is not working, and a
+ *             spinner on it would say the opposite.
+ *   failed  — red and still. Same shape as the unread dot's colour, which is
+ *             the point: both mean "come here".
+ *
+ * A circle even where the mark is not: a rounded square with a gap rotating
+ * around it reads as a broken tile, where a circle reads as a spinner. The gap
+ * is cut with a conic mask rather than drawn as a dashed border so the arc has
+ * ends, and --spin is registered so the angle can be animated at all — an
+ * unregistered custom property is a string and does not interpolate.
+ */
+.av .ring {
+  position: absolute;
+  inset: max(-4px, calc(var(--s) * -0.12));
+  border-radius: 50%;
+  border: max(2px, calc(var(--s) * 0.055)) solid var(--ring-color, var(--ok));
+  z-index: 1;
+}
+
+.av[data-state="waiting"] .ring {
+  --ring-color: var(--amber);
+}
+
+.av[data-state="failed"] .ring {
+  --ring-color: var(--red);
+}
+
+.av[data-state="running"] .ring {
+  -webkit-mask: conic-gradient(
+    from var(--spin, -0.05turn),
+    #000 0 72%,
+    transparent 72.5% 100%
+  );
+  mask: conic-gradient(
+    from var(--spin, -0.05turn),
+    #000 0 72%,
+    transparent 72.5% 100%
+  );
+  animation: av-spin 1.6s linear infinite;
+}
+
+@property --spin {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: -18deg;
+}
+
+@keyframes av-spin {
+  to {
+    --spin: 342deg;
+  }
+}
+
+/* ---- the crew cluster ---------------------------------------------------
+   Three discs. It keeps the `cluster` class so sidebar.css's selected-tile
+   ring and onboarding.css's `.setup-cluster` sizing keep working untouched,
+   and adds `av-cluster` so a rule here says plainly that it is about the drawn
+   cluster and not about the class those two sheets happen to target. */
+
+.av-cluster {
+  --s: var(--blob-size, 44px);
+  width: var(--s);
+  height: var(--s);
+  flex: none;
+  position: relative;
+  display: block;
+}
+
+/*
+ * Direct children only. A slot holds a whole avatar, so a descendant selector
+ * here would reach past the slot and into the drawing's own parts. Sizing the
+ * slot rather than the avatar keeps --blob-size and --s out of a definition
+ * cycle.
+ */
+.cluster.av-cluster > i {
+  position: absolute;
+  display: block;
+  width: auto;
+  height: auto;
+  background: none;
+  border-radius: 0;
+  --blob-size: calc(var(--s) * 0.57);
+}
+
+/* Two marks overlapping is a mess unless the one in front has an edge, so
+   each slot cuts itself out of the surface it sits on. Doubled because one
+   pass of a 1.5px shadow is not enough against a lit disc. */
+.cluster.av-cluster > i > .av {
+  filter: drop-shadow(0 0 1.5px var(--rim, var(--side)))
+    drop-shadow(0 0 1.5px var(--rim, var(--side)));
+}
+
+.cluster.av-cluster > .s1 {
+  top: 0;
+  left: 20%;
+}
+
+.cluster.av-cluster > .s2 {
+  bottom: 0;
+  left: 0;
+}
+
+.cluster.av-cluster > .s3 {
+  bottom: 0;
+  right: 0;
+}
+
+/* The ring still says everything it needs to when it is not turning: colour
+   and presence carry all three states, and only the spin is motion. */
+@media (prefers-reduced-motion: reduce) {
+  .av .ring {
+    animation: none;
+    -webkit-mask: none;
+    mask: none;
+  }
+}
