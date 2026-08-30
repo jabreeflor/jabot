@@ -40,6 +40,10 @@
 //!   the thread has to still be *running* at the moment it is folded, and then
 //!   go on running, and only then end. A sleep would make that a race; a gate
 //!   makes it an ordering. See [`wait_for_gate`] for the script it reads.
+//! - `say`: stream the prompt back as an `agent_message_chunk` and end the
+//!   turn — prose with no tool call and no URL. What an agent that only
+//!   *claims* to have opened a pull request looks like, which is what arms the
+//!   host's post-turn `gh` probe without proving anything (#28).
 
 use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
@@ -181,6 +185,29 @@ fn main() {
                     }),
                 );
                 match mode.as_str() {
+                    // Prose, and nothing else: the agent *says* it opened a
+                    // pull request and never prints a URL. `pr-linkage.md` §4
+                    // is explicit that this proves nothing — it only raises
+                    // the flag that sends the host to ask `gh` at turn end —
+                    // so it is the only way to reach rungs 2 and 3 from a real
+                    // turn rather than from a unit test's synthetic link.
+                    "say" => {
+                        let said = prompt_text(&msg["params"]["prompt"]);
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id,
+                                "sessionUpdate": "agent_message_chunk",
+                                "content": { "type": "text", "text": said }
+                            }),
+                        );
+                        reply(
+                            &mut stdout,
+                            id,
+                            serde_json::json!({ "stopReason": "end_turn" }),
+                        );
+                    }
                     // A shell call whose stdout is whatever the user typed.
                     // `gh pr create` prints the new PR's URL and nothing else,
                     // so a test can hand this agent that one line and exercise
