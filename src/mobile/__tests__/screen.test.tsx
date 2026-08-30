@@ -295,6 +295,68 @@ describe("opening a card", () => {
     expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
   });
 
+  /**
+   * The payoff for #101's replay, and the reason a snapshot was not enough.
+   *
+   * The screen follows the thread while it is open, and the *same* reducer
+   * folds the replay and the live stream — so a chunk that arrives while the
+   * read is still in flight is neither lost nor drawn twice. The
+   * de-duplication is the reducer's, against the seq the hydrate reached;
+   * doing it a second time in the client is how two copies drift.
+   */
+  it("follows the thread while it is open, without drawing anything twice", async () => {
+    const watchers: Array<(update: unknown) => void> = [];
+    render(
+      <MobileApp
+        inbox={inboxWith()}
+        session={{
+          transcript: vi.fn(async () => RESULT),
+          watchThread: (_threadId: string, listener: (u: unknown) => void) => {
+            watchers.push(listener);
+            return () => {};
+          },
+        } as never}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Run ls" }));
+    await screen.findByText("I need to run rm -rf build.");
+
+    // A replayed frame the hydrate already covered (seq 2), and a genuinely
+    // new one (seq 3).
+    for (const listener of watchers) {
+      listener({
+        threadId: "t9",
+        seq: 2,
+        transcriptSeq: 2,
+        acp: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: " (again)" },
+        },
+      });
+      listener({
+        threadId: "t9",
+        seq: 3,
+        transcriptSeq: 3,
+        acp: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: " Doing that now." },
+        },
+      });
+    }
+
+    // The new chunk landed. A new bubble rather than an append, which is
+    // right: the replay carried no open run, so `hydrate` closed the last
+    // bubble — a caret blinking over a turn that ended a week ago is the lie
+    // the stop reason exists to stop telling.
+    expect(await screen.findByText("Doing that now.")).toBeInTheDocument();
+    // And the replayed frame did not draw itself a second time.
+    expect(screen.getAllByText(/rm -rf build/)).toHaveLength(1);
+    expect(screen.queryByText(/again/)).toBeNull();
+  });
+
   /** A host that refuses is a sentence on the screen, not a blank one. */
   it("says what the host said when the read fails", async () => {
     render(

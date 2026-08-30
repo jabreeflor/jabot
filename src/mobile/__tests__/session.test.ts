@@ -22,6 +22,8 @@ import {
   PERMISSION_RESOLVED,
   SESSION_CANCEL,
   SESSION_PROMPT,
+  SESSION_UPDATE,
+  SYNC_RESUME_FROM,
   THREAD_TRANSCRIPT,
   type JsonRpcNotification,
   type JsonRpcRequest,
@@ -36,6 +38,9 @@ class FakeHost implements HostTransport {
   private handlers = new Set<NotificationHandler>();
   asks: unknown[] = [];
   scoped: readonly string[] = APPROVER_METHODS;
+  /** What `sync/resumeFrom` answers. Set per-test: the whole point of the
+      call is a host that has something this device missed. */
+  resume: { threadId: string; headSeq: number; events: unknown[] } | null = null;
 
   constructor(private readonly deviceRole: "full" | "approver" = "approver") {}
 
@@ -75,6 +80,14 @@ class FakeHost implements HostTransport {
           alreadyAnswered: false,
           cancelled: false,
         });
+      case SYNC_RESUME_FROM:
+        return ok(
+          this.resume ?? {
+            threadId: (request.params as { threadId: string }).threadId,
+            headSeq: 0,
+            events: [],
+          },
+        );
       // Answered rather than refused since #29's transcript screen: a call a
       // real screen depends on should be asserted to *succeed*, not to be
       // swallowed by a `.catch`.
@@ -334,5 +347,150 @@ describe("the phone client", () => {
     );
     // An ask whose adapter is gone is still answerable and says so (#20).
     expect(inbox.needs[0].ask).toMatchObject({ requestId: "req-2", stale: true });
+  });
+});
+
+
+/**
+ * Coming back after a tunnel (#29).
+ *
+ * `connect()` + `refresh()` is correct and lossy, and it is worth being exact
+ * about which half is which. Every card the phone draws is re-derived from
+ * `inbox/list` + `permission/pending`, so a missed ask reappears and a missed
+ * resolve disappears — those were never lost. What *is* lost is
+ * `session/update`, and since #29 gave the phone a transcript to read, that
+ * loss is a gap in a conversation somebody is looking at.
+ */
+describe("reconnecting after the phone was offline", () => {
+  function update(threadId: string, seq: number, text: string): JsonRpcNotification {
+    return {
+      jsonrpc: JSONRPC_VERSION,
+      method: SESSION_UPDATE,
+      params: {
+        hostId: "host-1",
+        threadId,
+        seq,
+        transcriptSeq: seq,
+        acp: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
+      },
+    };
+  }
+
+  async function connected() {
+    const host = new FakeHost();
+    const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
+    await session.connect();
+    return { host, session };
+  }
+
+  it("asks only about threads it has actually heard of", async () => {
+    const { host, session } = await connected();
+
+    await session.reconnect();
+
+    // Nothing has ever arrived, so there is no gap to close and nothing to
+    // ask about — a reconnect that asked anyway would be a round trip per
+    // thread on a device whose network just came back.
+    expect(host.sent.filter((r) => r.method === SYNC_RESUME_FROM)).toEqual([]);
+  });
+
+  it("replays what arrived while it was away, and only that", async () => {
+    const { host, session } = await connected();
+    const seen: string[] = [];
+    host.push(update("t9", 4, "before the tunnel"));
+    session.watchThread("t9", (u) => {
+      seen.push(
+        ((u.acp as { content: { text: string } }).content).text,
+      );
+    });
+    host.resume = {
+      threadId: "t9",
+      headSeq: 6,
+      events: [
+        // At the head this device already has. Replaying it would draw a
+        // chunk twice.
+        { seq: 4, method: SESSION_UPDATE, params: update("t9", 4, "before the tunnel").params },
+        { seq: 5, method: SESSION_UPDATE, params: update("t9", 5, "while you were away").params },
+        { seq: 6, method: SESSION_UPDATE, params: update("t9", 6, "and this too").params },
+      ],
+    };
+
+    await session.reconnect();
+
+    const asked = host.sent.filter((r) => r.method === SYNC_RESUME_FROM);
+    expect(asked).toHaveLength(1);
+    expect(asked[0].params).toEqual({ threadId: "t9", seq: 4 });
+    expect(seen).toEqual(["while you were away", "and this too"]);
+  });
+
+  /**
+   * The hazard the host's own storage creates. `SeqStore` and `EventLog` are
+   * plain in-memory maps that reset with the process, so a resume against a
+   * host that restarted answers `headSeq: 0` with no events. Reading that as
+   * "nothing was missed" would leave this device asking, forever, for a seq
+   * that will never come round again.
+   */
+  it("treats a head below its own as a host that restarted", async () => {
+    const { host, session } = await connected();
+    host.push(update("t9", 12, "before the restart"));
+    host.resume = { threadId: "t9", headSeq: 0, events: [] };
+
+    await session.reconnect();
+    // The next reconnect asks from the host's counter, not from ours.
+    host.sent.length = 0;
+    host.resume = { threadId: "t9", headSeq: 0, events: [] };
+    await session.reconnect();
+
+    const asked = host.sent.filter((r) => r.method === SYNC_RESUME_FROM);
+    expect(asked[0].params).toEqual({ threadId: "t9", seq: 0 });
+  });
+
+  /** A thread the host cannot answer for — deleted, or a log that rolled past
+      it — must not cost the rest of the reconnect. */
+  it("survives a thread the host will not replay", async () => {
+    const { host, session } = await connected();
+    host.push(update("t9", 2, "one"));
+    // The default answer is an empty body; make it refuse instead.
+    const original = host.request.bind(host);
+    host.request = async (request) =>
+      request.method === SYNC_RESUME_FROM
+        ? {
+            jsonrpc: JSONRPC_VERSION,
+            id: request.id,
+            error: { code: -32603, message: "no such thread" },
+          }
+        : original(request);
+
+    // The Inbox still comes back, which is what a reconnect is mostly for.
+    await expect(session.reconnect()).resolves.toBeDefined();
+  });
+
+  /** The heads are filled by *every* frame, not only the two the Inbox draws.
+      A thread whose only traffic was a `session/update` is exactly the one
+      whose gap nothing else can close. */
+  it("remembers a thread it only ever saw a transcript event for", async () => {
+    const { host, session } = await connected();
+    host.push(update("t-quiet", 9, "nobody drew this"));
+    host.resume = { threadId: "t-quiet", headSeq: 9, events: [] };
+
+    await session.reconnect();
+
+    const asked = host.sent.filter((r) => r.method === SYNC_RESUME_FROM);
+    expect(asked[0].params).toEqual({ threadId: "t-quiet", seq: 9 });
+  });
+
+  /** Out of order is a thing a host with two notification drainers can do.
+      Walking the head backwards would make the next reconnect ask for a
+      stretch this device already has. */
+  it("does not walk a head backwards", async () => {
+    const { host, session } = await connected();
+    host.push(update("t9", 7, "later"));
+    host.push(update("t9", 3, "earlier, arriving second"));
+    host.resume = { threadId: "t9", headSeq: 7, events: [] };
+
+    await session.reconnect();
+
+    const asked = host.sent.filter((r) => r.method === SYNC_RESUME_FROM);
+    expect(asked[0].params).toEqual({ threadId: "t9", seq: 7 });
   });
 });

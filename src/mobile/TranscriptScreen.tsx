@@ -22,11 +22,11 @@
 //! somebody answer a permission on a conversation whose start they think they
 //! have read.
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { MobileSession } from "./session";
 import type { TranscriptItem } from "../components/types";
-import { EMPTY_STREAM, hydrate } from "../views/transcript";
+import { applyAcpEvent, EMPTY_STREAM, hydrate } from "../views/transcript";
 import "./mobile.css";
 
 export interface TranscriptScreenProps {
@@ -149,8 +149,22 @@ export interface ThreadTranscript {
  * that belongs; a screen you opened to read what you are answering is
  * correct as a snapshot, and a wrong one would be worse than a still one.
  */
+/**
+ * Read one thread, and then follow it.
+ *
+ * `null` for `threadId` means no thread is open, and nothing is asked — which
+ * is what lets the shell mount this hook unconditionally.
+ *
+ * The replay and the live stream go through the *same* reducer, which is what
+ * makes following safe: `applyAcpEvent` drops anything at or below the seq the
+ * hydrate reached, so a frame that arrives while the read is in flight cannot
+ * be drawn twice. That de-duplication is the reducer's, deliberately, because
+ * it is the only thing that knows how far the replay got.
+ */
 export function useThreadTranscript(
-  session: Pick<MobileSession, "transcript"> | null,
+  session:
+    | (Pick<MobileSession, "transcript"> & Partial<Pick<MobileSession, "watchThread">>)
+    | null,
   threadId: string | null,
 ): ThreadTranscript {
   const [state, setState] = useState<ThreadTranscript>({
@@ -161,28 +175,57 @@ export function useThreadTranscript(
     error: null,
   });
 
-  const read = useCallback(async () => {
-    if (!session || !threadId) return;
-    const result = await session.transcript(threadId);
-    const stream = hydrate(result, EMPTY_STREAM);
-    return {
-      items: stream.items,
-      truncated: Boolean(result.truncated),
-      queued: stream.queued,
-    };
-  }, [session, threadId]);
-
   useEffect(() => {
     if (!session || !threadId) {
       setState({ items: [], truncated: false, queued: [], loading: false, error: null });
       return;
     }
     let cancelled = false;
+    let stream = EMPTY_STREAM;
+    // Buffered until the replay lands. A chunk that arrived first is not
+    // dropped — it is folded in afterwards, where the reducer can compare it
+    // against the head the replay established.
+    let pending: Array<{ payload: unknown; seq: number }> = [];
+    let hydrated = false;
+
+    // A property of the *replay*, not of the stream: a live chunk arriving
+    // afterwards does not make the window any less of a window.
+    let truncated = false;
+
+    const draw = () =>
+      setState({
+        items: stream.items,
+        truncated,
+        queued: stream.queued,
+        loading: false,
+        error: null,
+      });
+
+    const fold = (payload: unknown, seq: number) => {
+      stream = applyAcpEvent(stream, payload, seq);
+      draw();
+    };
+
+    const stop = session.watchThread?.(threadId, (update) => {
+      if (cancelled) return;
+      if (!hydrated) {
+        pending.push({ payload: update.acp, seq: update.transcriptSeq ?? 0 });
+        return;
+      }
+      fold(update.acp, update.transcriptSeq ?? 0);
+    });
+
     setState((prev) => ({ ...prev, loading: true, error: null }));
-    read()
-      .then((next) => {
-        if (cancelled || !next) return;
-        setState({ ...next, loading: false, error: null });
+    session
+      .transcript(threadId)
+      .then((result) => {
+        if (cancelled) return;
+        stream = hydrate(result, EMPTY_STREAM);
+        truncated = Boolean(result.truncated);
+        hydrated = true;
+        for (const held of pending) fold(held.payload, held.seq);
+        pending = [];
+        draw();
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -194,10 +237,12 @@ export function useThreadTranscript(
           error: err instanceof Error ? err.message : String(err),
         });
       });
+
     return () => {
       cancelled = true;
+      stop?.();
     };
-  }, [session, threadId, read]);
+  }, [session, threadId]);
 
   return state;
 }
