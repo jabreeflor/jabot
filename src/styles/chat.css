@@ -494,3 +494,73 @@
 .chat-resume[data-tone="bad"] {
   color: var(--danger);
 }
+
+/* Markdown inside an agent bubble (#14).
+ *
+ * `.bubble` has `white-space: pre-line`, which is right for a text node and
+ * fights real block elements — every newline between a `</p>` and the next
+ * `<p>` becomes a blank line. The agent bubble draws elements now, so it takes
+ * `normal` and the elements below carry the spacing; `pre` and `code` put
+ * `pre-wrap` back, because inside code the whitespace is the content.
+ *
+ * The user bubble is untouched and stays literal: a person's asterisks are
+ * their own.
+ */
+.msg.bot .bubble {
+  white-space: normal;
+}
+
+.msg.bot .bubble > p {
+  margin: 0;
+  /* The one thing `pre-line` was doing that is still wanted: an agent's line
+     breaks inside a paragraph are usually deliberate. */
+  white-space: pre-line;
+}
+
+.msg.bot .bubble > p + p,
+.msg.bot .bubble > ul,
+.msg.bot .bubble > ol,
+.msg.bot .bubble > pre {
+  margin-top: var(--sp-3);
+}
+
+.msg.bot .bubble > ul,
+.msg.bot .bubble > ol {
+  margin-bottom: 0;
+  padding-left: var(--sp-5);
+}
+
+.msg.bot .bubble li + li {
+  margin-top: 2px;
+}
+
+.msg.bot .bubble code {
+  font: 0.92em / var(--lh-mono) var(--font-mono);
+  background: var(--sunk);
+  border-radius: 5px;
+  padding: 1px 5px;
+  white-space: pre-wrap;
+}
+
+.msg.bot .bubble pre {
+  margin-bottom: 0;
+  background: var(--sunk);
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  /* A long line scrolls rather than widening the 72% bubble past it. */
+  overflow-x: auto;
+}
+
+/* Inside a block the background is the block's, so the inline chip would be a
+   second shade on top of it. */
+.msg.bot .bubble pre code {
+  background: none;
+  border-radius: 0;
+  padding: 0;
+  white-space: pre;
+}
+
+.msg.bot .bubble strong {
+  font-weight: 650;
+}

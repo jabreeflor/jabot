@@ -117,3 +117,130 @@ describe("Transcript", () => {
     ).toBeDisabled();
   });
 });
+
+/**
+ * Markdown inside an agent bubble (#14).
+ *
+ * An agent replies in markdown because that is what agents do, and the bubble
+ * rendered it as a text node — so a fenced diff arrived as a wall of backticks
+ * and a bulleted plan arrived as a paragraph starting with a hyphen.
+ *
+ * The user bubble stays literal throughout. A person's asterisks are their
+ * own, and a renderer that ate them would be editing what somebody said.
+ */
+describe("markdown in an agent's reply", () => {
+  function bot(text: string) {
+    const { container } = render(
+      <Transcript items={[{ kind: "agent", id: "a1", text }]} />,
+    );
+    return container.querySelector(".msg.bot") as HTMLElement;
+  }
+
+  function me(text: string) {
+    const { container } = render(
+      <Transcript items={[{ kind: "user", id: "u1", text }]} />,
+    );
+    return container.querySelector(".msg.me") as HTMLElement;
+  }
+
+  it("draws a fence as a code block, without its backticks", () => {
+    const bubble = bot("Here:\n```ts\nconst x = 1;\n```\nDone.");
+
+    const code = bubble.querySelector("pre code");
+    expect(code?.textContent).toBe("const x = 1;");
+    expect(bubble.textContent).not.toContain("```");
+    // The prose either side survives as prose.
+    expect(bubble.textContent).toContain("Here:");
+    expect(bubble.textContent).toContain("Done.");
+  });
+
+  /**
+   * The streaming case, and the reason it is not an edge case. A fence being
+   * typed is unterminated on every chunk until the last one, so falling back
+   * to literal text would make the block flicker in and out on every token.
+   */
+  it("grows a code block from a fence that is still being typed", () => {
+    const bubble = bot("```sh\nnpm ci");
+
+    expect(bubble.querySelector("pre code")?.textContent).toBe("npm ci");
+  });
+
+  it("draws a bulleted run as a list", () => {
+    const bubble = bot("Plan:\n- read the file\n- fix the bug\n- run tests");
+
+    const items = [...bubble.querySelectorAll("ul li")].map((li) => li.textContent);
+    expect(items).toEqual(["read the file", "fix the bug", "run tests"]);
+  });
+
+  it("draws a numbered run as an ordered list", () => {
+    const bubble = bot("1. first\n2. second");
+
+    expect(bubble.querySelectorAll("ol li")).toHaveLength(2);
+    // The numbers are the list's own, not text: "1." must not appear twice.
+    expect(bubble.textContent).not.toContain("1.");
+  });
+
+  it("draws emphasis and inline code", () => {
+    const bubble = bot("**four** tests, one *slow*, in `auth.test.ts`");
+
+    expect(bubble.querySelector("strong")?.textContent).toBe("four");
+    expect(bubble.querySelector("em")?.textContent).toBe("slow");
+    expect(bubble.querySelector("code")?.textContent).toBe("auth.test.ts");
+  });
+
+  /**
+   * The load-bearing negative. An agent writing about multiplication, a lone
+   * underscore in a filename, or a hyphen mid-sentence has to come out as
+   * typed — this is prose, not a document, and most of it is not markup.
+   */
+  it("leaves an unmatched delimiter as the character it is", () => {
+    expect(bot("2 * 3 * 4 is 24").textContent).toBe("2 * 3 * 4 is 24");
+    expect(bot("see run_once_at for the field").textContent).toBe(
+      "see run_once_at for the field",
+    );
+    expect(bot("**").textContent).toBe("**");
+  });
+
+  /** Inside a backtick span nothing is markup: `**` there is two asterisks. */
+  it("does not read markup inside code", () => {
+    const bubble = bot("use `**kwargs` for that");
+
+    expect(bubble.querySelector("code")?.textContent).toBe("**kwargs");
+    expect(bubble.querySelector("strong")).toBeNull();
+  });
+
+  it("leaves what a person typed exactly as they typed it", () => {
+    expect(me("**bold**").textContent).toBe("**bold**");
+    expect(me("- a\n- b").textContent).toBe("- a\n- b");
+    expect(me("```\ncode\n```").textContent).toBe("```\ncode\n```");
+  });
+
+  /**
+   * The streaming budget (#14). Appending a chunk replaces one item and leaves
+   * every sibling the same object, and `memo(TranscriptRow)` keys on that — so
+   * a streamed token must reparse one bubble and leave the neighbouring
+   * toolblock's DOM node alone, literally the same element.
+   */
+  it("reparses one bubble and leaves its neighbours untouched", () => {
+    const call = {
+      id: "c1",
+      kind: "read" as const,
+      target: "src/auth.ts",
+      status: "completed" as const,
+    };
+    const tool: TranscriptItem = { kind: "tool", id: "t1", call };
+    const { container, rerender } = render(
+      <Transcript items={[tool, { kind: "agent", id: "a1", text: "```sh\nnpm" }]} />,
+    );
+    const before = container.querySelector(".toolblock");
+
+    rerender(
+      <Transcript
+        items={[tool, { kind: "agent", id: "a1", text: "```sh\nnpm ci" }]}
+      />,
+    );
+
+    expect(container.querySelector(".toolblock")).toBe(before);
+    expect(container.querySelector("pre code")?.textContent).toBe("npm ci");
+  });
+});
