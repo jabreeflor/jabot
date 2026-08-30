@@ -8,9 +8,38 @@
 .chat-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--sp-3);
   padding: 14px 20px;
   --blob-size: 28px;
+}
+
+/* Provenance, when a bot started this thread rather than the person reading
+   it (#24). Its own line under the title rather than another chip in the row:
+   it carries the task the bot was given, which is a sentence, and a sentence
+   in among the chips would push the fold button onto a line of its own. */
+.chat-head .chat-handoff {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--dim);
+  /* One line. The task can be long, and the header is not where it is read in
+     full — the transcript's first message is. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-head .chat-handoff .from {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* A handoff nobody picked up. The task was really sent and the thread really
+   exists, so this is not an error state for the thread — but a line that said
+   only "Handed off by Chief" would be describing work that is not happening. */
+.chat-head .chat-handoff[data-tone="warn"] .undelivered {
+  color: var(--amber);
 }
 
 .chat-head h2 {

@@ -14,6 +14,8 @@
 //! is what lets the shell keep rendering fixtures before a host has answered,
 //! and what keeps the chat testable without one.
 
+import { useEffect, useState } from "react";
+
 import { Conversation } from "../components/Conversation";
 import { canFold, FoldButton } from "../components/FoldButton";
 import { HarnessChip } from "../components/HarnessChip";
@@ -27,7 +29,7 @@ import type {
   ThreadSummary,
   TranscriptItem,
 } from "../components/types";
-import type { HostClient } from "../host";
+import type { HandoffView, HostClient } from "../host";
 import { streamStatus, useThreadTranscript } from "./transcript";
 
 export function ThreadView({
@@ -44,6 +46,7 @@ export function ThreadView({
   queued,
   onCancel,
   error,
+  handoff,
 }: {
   thread: ThreadSummary;
   harnesses: readonly HarnessCard[];
@@ -62,6 +65,9 @@ export function ThreadView({
   queued?: readonly string[];
   onCancel?: () => void;
   error?: string | null;
+  /** Where this thread's work came from, when a bot sent it rather than the
+      human (#24). Absent for the ordinary case: the person started it. */
+  handoff?: HandoffView;
 }) {
   const line = status ?? threadStatus(thread);
 
@@ -79,6 +85,7 @@ export function ThreadView({
           </span>
           <HostPicker host={host} onPick={onPickHost} />
           {onFold && canFold(thread.state) && <FoldButton onFold={onFold} />}
+          {handoff && <HandoffLine handoff={handoff} />}
         </div>
       }
       items={items}
@@ -90,6 +97,43 @@ export function ThreadView({
       onCancel={onCancel}
       error={error}
     />
+  );
+}
+
+/**
+ * Who asked for this, when it was not the person reading it.
+ *
+ * A thread Chief spawned looks exactly like one the human started — same
+ * header, same transcript, same everything — and the human coming back to it
+ * tomorrow has no way to tell which. The host has always resolved this
+ * (`ThreadStateResult.handoff`); nothing ever drew it.
+ *
+ * `dispatched: false` is the case worth the different tone. A handoff to a bot
+ * whose harness is not installed is still a real handoff — the task was sent,
+ * the row exists, the thread is here — but nobody heard it, and a line that
+ * said only "Handed off by Chief" would be describing work that is not
+ * happening. `detail` is the host's own sentence about why.
+ */
+function HandoffLine({ handoff }: { handoff: HandoffView }) {
+  const who = handoff.fromBotName ?? "a bot";
+  const verb = handoff.kind === "code_session" ? "Coding job from" : "Handed off by";
+  return (
+    <p
+      className="chat-handoff"
+      data-tone={handoff.dispatched ? "note" : "warn"}
+      title={handoff.context ?? undefined}
+    >
+      <span className="from">
+        {verb} {who}
+      </span>
+      {" — "}
+      {handoff.task}
+      {!handoff.dispatched && (
+        <span className="undelivered">
+          {handoff.detail ? ` · ${handoff.detail}` : " · nobody picked this up"}
+        </span>
+      )}
+    </p>
   );
 }
 
@@ -119,6 +163,12 @@ export function LiveThreadView({
     client,
     thread.id,
   );
+  // Fetched once per thread rather than folded into the transcript stream:
+  // provenance is a fact about how the thread began, so it cannot change while
+  // you are reading it, and re-asking on every `session/update` would be a
+  // round trip per streamed chunk. The component is keyed on the thread by its
+  // caller, so switching threads remounts and asks again.
+  const handoff = useHandoff(client, thread.id);
 
   return (
     <ThreadView
@@ -137,6 +187,38 @@ export function LiveThreadView({
       queued={stream.queued}
       onCancel={cancel}
       error={error}
+      handoff={handoff}
     />
   );
+}
+
+/**
+ * `thread/state`, for the one field the transcript does not carry.
+ *
+ * Swallows its failure on purpose. Provenance is a caption on a conversation
+ * that is otherwise entirely readable, so a host that cannot answer should
+ * cost the caption and nothing else — the same call that would blank the
+ * chat over it is the wrong trade.
+ */
+function useHandoff(client: HostClient, threadId: string): HandoffView | undefined {
+  const [handoff, setHandoff] = useState<HandoffView | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    // Method lookup guarded too, the way `useCrew` guards the Doctor: a
+    // transport that predates `thread/state` should cost the caption, not
+    // throw synchronously out of an effect and take the chat down with it.
+    if (typeof client.threadState !== "function") return;
+    client
+      .threadState({ threadId })
+      .then((state) => {
+        if (!cancelled) setHandoff(state.handoff);
+      })
+      .catch(() => {
+        // Deliberately silent: see above.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, threadId]);
+  return handoff;
 }

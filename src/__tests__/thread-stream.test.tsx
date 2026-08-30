@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { Transcript } from "../components/Transcript";
 import type {
+  HandoffView,
   HostClient,
   JsonRpcNotification,
   PendingPermissionView,
@@ -468,6 +469,7 @@ const HOST: HostTarget = { hostId: "h1", name: "This Mac", reachable: true };
 function stubHost(
   replay: Partial<ThreadTranscriptResult> = {},
   pending: PendingPermissionView[] = [],
+  handoff?: HandoffView,
 ) {
   const handlers = new Set<(n: JsonRpcNotification) => void>();
   const prompts: PromptParams[] = [];
@@ -504,6 +506,7 @@ function stubHost(
       ...replay,
     })),
     deviceId: "dev-1",
+    threadState: vi.fn(async () => ({ threadId: THREAD.id, handoff })),
     pendingPermissions: vi.fn(async () => ({
       requests: pending.filter((request) => !resolved.has(request.requestId)),
     })),
@@ -916,5 +919,96 @@ describe("permission prompts", () => {
     await waitFor(() =>
       expect(screen.getAllByRole("button", { name: "Allow" })).toHaveLength(1),
     );
+  });
+});
+
+/**
+ * Provenance: who asked for this thread, when it was not the person reading
+ * it.
+ *
+ * A thread Chief spawned looks exactly like one the human started — same
+ * header, same transcript — and the human coming back tomorrow has no way to
+ * tell which. The host has resolved this all along and nothing drew it.
+ */
+describe("LiveThreadView provenance", () => {
+  const handoff = (over: Partial<HandoffView> = {}): HandoffView => ({
+    handoffId: "h-1",
+    kind: "handoff",
+    task: "Chase the failing migration test",
+    fromBotId: "chief",
+    fromBotName: "Chief",
+    dispatched: true,
+    createdAt: "2026-08-20T10:00:00Z",
+    ...over,
+  });
+
+  function draw(over: Partial<HandoffView> | null) {
+    const host = stubHost({}, [], over === null ? undefined : handoff(over));
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    return host;
+  }
+
+  it("says which bot handed the work over, and what it asked for", async () => {
+    draw({});
+    expect(await screen.findByText(/Handed off by/)).toBeInTheDocument();
+    expect(screen.getByText(/Chief/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Chase the failing migration test/),
+    ).toBeInTheDocument();
+  });
+
+  /** A spawned coding thread is a different sentence: Chief did not hand this
+      to a colleague, it opened a job. */
+  it("calls a spawned code thread a coding job", async () => {
+    draw({ kind: "code_session" });
+    expect(await screen.findByText(/Coding job from/)).toBeInTheDocument();
+  });
+
+  /**
+   * The case worth a different tone. A handoff to a bot whose harness is not
+   * installed is still a real handoff — the task was sent, the thread is here
+   * — but nobody heard it, and a line saying only "Handed off by Chief" would
+   * be describing work that is not happening.
+   */
+  it("says so when the handoff never reached an agent", async () => {
+    draw({ dispatched: false, detail: "Writer's harness is not installed" });
+    expect(
+      await screen.findByText(/Writer's harness is not installed/),
+    ).toBeInTheDocument();
+    const line = document.querySelector(".chat-handoff");
+    expect(line).toHaveAttribute("data-tone", "warn");
+  });
+
+  /** The ordinary case is the person starting their own thread. Nothing to
+      say, and a header that said "started by you" would be noise on every
+      thread in the app. */
+  it("draws nothing for a thread the human started", async () => {
+    draw(null);
+    await screen.findByText("start the migration");
+    expect(document.querySelector(".chat-handoff")).toBeNull();
+  });
+
+  /** A host too old to answer `thread/state` costs the caption and nothing
+      else — the conversation is entirely readable without it. */
+  it("still renders the chat when the host cannot answer", async () => {
+    const host = stubHost();
+    const client = { ...host.client, threadState: undefined } as unknown as HostClient;
+    render(
+      <LiveThreadView
+        client={client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    expect(await screen.findByText("start the migration")).toBeInTheDocument();
+    expect(document.querySelector(".chat-handoff")).toBeNull();
   });
 });
