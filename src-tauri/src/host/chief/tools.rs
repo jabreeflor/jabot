@@ -61,7 +61,10 @@ pub const SPECS: &[HostToolSpec] = &[
         title: "See what the crew is doing",
         description: "List every bot and what it is working on right now, including jobs \
                       that are folded away. Check this before handing off, so a bot that is \
-                      already busy is not given a second job by mistake.",
+                      already busy is not given a second job by mistake. Each thread carries \
+                      `busy`: true while its work is queued, running, or waiting on the user. \
+                      A bot's `idle` only means it has no threads at all, so read `busy` to \
+                      tell a bot whose only job is asleep from one mid-run.",
         schema: no_args_schema,
     },
 ];

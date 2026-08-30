@@ -117,7 +117,13 @@ interface CrewStatus {
     botId: string;
     name: string;
     idle: boolean;
-    threads: Array<{ threadId: string; state: string }>;
+    threads: Array<{
+      threadId: string;
+      state: string;
+      acpState: string;
+      busy: boolean;
+      run: { state: string; startedAt: string | null } | null;
+    }>;
   }>;
 }
 
@@ -392,6 +398,15 @@ describe("spawn_code_session", () => {
     const code = status.value.crew.find((bot) => bot.name === "Code");
     expect(code?.idle).toBe(false);
     expect(code?.threads[0].state).toBe("folded");
+    // The distinction `idle` alone cannot draw, and the reason `busy` exists.
+    // Code has a thread, so it is not `idle` — but that thread is asleep with
+    // no open run and no adapter attached, so nothing is actually happening on
+    // it. Before this field, Chief had to re-derive that from `run` and
+    // `acpState` itself, and the tool's own description told it to check
+    // "already busy" against a value that only meant "has any thread at all".
+    expect(code?.threads[0].busy).toBe(false);
+    expect(code?.threads[0].run).toBeNull();
+    expect(code?.threads[0].acpState).toBe("unknown");
   });
 
   it("says which folders exist when asked for one that does not", async () => {
