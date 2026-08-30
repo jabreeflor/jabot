@@ -3,14 +3,20 @@
 //! and no way to accumulate twelve half-finished conversations with the Writer.
 //!
 //! The conversation controls #14 added to the code thread are optional props
-//! here rather than a second implementation: nothing opens a bot's standing
-//! thread yet (#24 does), and when something does, this view already carries
-//! the queue strip, the Stop button and the error line that a live turn needs.
+//! here rather than a second implementation. `LiveChatView` below is what
+//! fills them in: it resolves the bot's standing thread with `crew/thread`
+//! (#24) and drives this view from the same transcript hook the code thread
+//! uses, so the queue strip, the Stop button and the error line are one
+//! implementation rather than two.
+
+import { useEffect, useState } from "react";
 
 import { Avatar, avatarStateFor } from "../components/avatar";
 import { Conversation } from "../components/Conversation";
 import { HostPicker } from "../components/HostPicker";
 import type { Bot, HostTarget, TranscriptItem } from "../components/types";
+import type { HostClient } from "../host";
+import { useThreadTranscript } from "./transcript";
 
 export function ChatView({
   bot,
@@ -65,6 +71,82 @@ export function ChatView({
       queued={queued}
       onCancel={onCancel}
       error={error}
+    />
+  );
+}
+
+/**
+ * The same view, driven by the host.
+ *
+ * `crew/thread` has been served since #24 and `HostClient.botThread` typed
+ * beside it, with no caller anywhere in `src/` — so a bot's chat drew the mock
+ * reducer's fixtures keyed by bot id, and every message typed into it went to
+ * the reducer too. The bot's real standing thread, its runs and its memory
+ * directory were somewhere else entirely.
+ *
+ * Two steps rather than one because they are two facts: which thread this bot
+ * has, and what is in it. `botThread` is idempotent host-side — the id is
+ * derived from the bot — so a remount cannot fork the conversation, and
+ * `useThreadTranscript` already tolerates a null id, which is what makes the
+ * resolve an ordinary effect rather than a conditional hook.
+ *
+ * Keyed on the bot by its caller, so switching bots remounts and starts a
+ * fresh hydrate rather than folding one bot's stream into another's.
+ */
+export function LiveChatView({
+  client,
+  bot,
+  host,
+  onPickHost,
+}: {
+  client: HostClient;
+  bot: Bot;
+  host: HostTarget;
+  onPickHost?: (hostId: string) => void;
+}) {
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setThreadId(null);
+    setOpenError(null);
+    (async () => client.botThread({ botId: bot.id }))()
+      .then((thread) => {
+        if (!cancelled) setThreadId(thread.threadId);
+      })
+      .catch((err: unknown) => {
+        // Said rather than swallowed: without a thread there is no
+        // conversation to fall back to, and an empty chat that silently
+        // discards what you type is the failure this view existed to fix.
+        if (!cancelled) {
+          setOpenError(err instanceof Error ? err.message : String(err));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, bot.id]);
+
+  const { stream, error, send, cancel, answer } = useThreadTranscript(
+    client,
+    threadId,
+  );
+
+  return (
+    <ChatView
+      bot={bot}
+      host={host}
+      items={stream.items}
+      onSend={send}
+      // The buttons on a permission card are the agent's own ACP options, and
+      // this is what carries the one the user pressed back to it (#20).
+      onAction={answer}
+      onPickHost={onPickHost}
+      busy={stream.busy}
+      queued={stream.queued}
+      onCancel={cancel}
+      error={openError ?? error}
     />
   );
 }
