@@ -82,9 +82,20 @@ export const HARNESSES: readonly HarnessCard[] = [
  * browser server — already usable. The live values come from `tools/list`.
  */
 export const TOOL_CATALOG: readonly ToolOption[] = [
-  { id: "gmail", label: "Gmail", status: "needs_auth" },
-  { id: "calendar", label: "Calendar", status: "needs_auth" },
-  { id: "github", label: "GitHub", status: "needs_auth" },
+  { id: "gmail", label: "Gmail", status: "needs_auth", provider: "google" },
+  { id: "calendar", label: "Calendar", status: "needs_auth", provider: "google" },
+  // The `connecting` state had no fixture at all, so `modal.css`'s
+  // `[data-status="connecting"]` rule and the amber "Open sign-in" beside it
+  // were unreachable in the shell — nobody could look at the one state that
+  // is hardest to get right, because it only exists while a human is away in
+  // a browser (#18).
+  {
+    id: "github",
+    label: "GitHub",
+    status: "connecting",
+    provider: "github",
+    authorizeUrl: "https://github.com/login/oauth/authorize?client_id=preview",
+  },
   {
     id: "terminal",
     label: "Terminal",

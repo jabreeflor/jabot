@@ -47,6 +47,89 @@ function chipTitle(tool: ToolOption): string | undefined {
   }
 }
 
+/**
+ * The sign-in affordance beside a chip (#18).
+ *
+ * Beside it, not on it: the chip toggles this bot's allowlist, and whether
+ * Gmail is signed in is a different fact from whether this bot may use it.
+ * Merging the two would make "add Gmail to this bot" and "sign this Mac into
+ * Google" the same click, which is the one thing the two-fact split exists to
+ * prevent.
+ *
+ * `tools/connect` is asynchronous with no notification (#18), so a live flow
+ * shows *two* things: that we are waiting, and the URL to open — because the
+ * browser tab is easy to lose, and a user who closed it would otherwise be
+ * stuck watching a dot.
+ */
+function ToolGrant({
+  tool,
+  onConnect,
+  onDisconnect,
+  onOpenUrl,
+}: {
+  tool: ToolOption;
+  onConnect?: (toolId: string) => void;
+  onDisconnect?: (toolId: string) => void;
+  onOpenUrl?: (url: string) => void;
+}) {
+  // No host, nothing to sign into. And no status at all is Chief's host tools,
+  // which are the host's own actions — a Connect button there would be a lie.
+  if (!tool.status || (!onConnect && !onDisconnect)) return null;
+  // Not installed on this Mac. Signing in cannot help, so nothing is offered.
+  if (tool.status === "missing") return null;
+
+  const provider = tool.provider ?? tool.label;
+
+  if (tool.status === "connecting") {
+    return (
+      <span className="toolgrant waiting">
+        {tool.authorizeUrl && onOpenUrl ? (
+          <button
+            type="button"
+            className="linkish"
+            onClick={() => onOpenUrl(tool.authorizeUrl as string)}
+          >
+            Open sign-in
+          </button>
+        ) : (
+          <span className="toolgrant-note">Waiting…</span>
+        )}
+      </span>
+    );
+  }
+
+  if (tool.status === "connected") {
+    return (
+      <span className="toolgrant">
+        <button
+          type="button"
+          className="linkish"
+          aria-label={`Disconnect ${provider}`}
+          onClick={() => onDisconnect?.(tool.id)}
+        >
+          Disconnect
+        </button>
+      </span>
+    );
+  }
+
+  // `needs_auth` and `error`. Both are "sign in", and the error's own sentence
+  // is already in the chip's tooltip — repeating it here would put the same
+  // words twice on one row.
+  return (
+    <span className="toolgrant">
+      <button
+        type="button"
+        className="linkish"
+        aria-label={`Connect ${provider}`}
+        onClick={() => onConnect?.(tool.id)}
+      >
+        Connect
+      </button>
+    </span>
+  );
+}
+
 export function BotEditorModal({
   bot,
   templates,
@@ -56,6 +139,9 @@ export function BotEditorModal({
   onSave,
   onRemove,
   onCancel,
+  onConnectTool,
+  onDisconnectTool,
+  onOpenUrl,
 }: {
   /** null = adding a bot. */
   bot: Bot | null;
@@ -69,6 +155,14 @@ export function BotEditorModal({
   onSave: (draft: BotDraft) => void;
   onRemove?: (botId: string) => void;
   onCancel: () => void;
+  /** Start / drop the *provider grant* (#18). Absent on a preview build,
+      which has no host to sign into anything — the row then shows status and
+      offers nothing, which is what it did before this existed. */
+  onConnectTool?: (toolId: string) => void;
+  onDisconnectTool?: (toolId: string) => void;
+  /** Injected so a test can watch where the consent screen would have gone.
+      The app passes `window.open(url, "_blank", "noopener,noreferrer")`. */
+  onOpenUrl?: (url: string) => void;
 }) {
   const adding = bot === null;
   const templateFieldId = useId();
@@ -267,20 +361,27 @@ export function BotEditorModal({
       <FieldLabel>TOOLS</FieldLabel>
       <div className="toolrow" role="group" aria-label="Tools">
         {tools.map((tool) => (
-          <button
-            key={tool.id}
-            type="button"
-            className="toolchip"
-            aria-pressed={selectedTools.includes(tool.id)}
-            // The chip's name stays the tool's name — the connection state is
-            // a dot and a tooltip, not part of what the button is called.
-            data-status={tool.status}
-            title={chipTitle(tool)}
-            onClick={() => toggleTool(tool.id)}
-          >
-            {tool.status && <i className="chipdot" aria-hidden="true" />}
-            {tool.label}
-          </button>
+          <span key={tool.id} className="toolslot">
+            <button
+              type="button"
+              className="toolchip"
+              aria-pressed={selectedTools.includes(tool.id)}
+              // The chip's name stays the tool's name — the connection state
+              // is a dot and a tooltip, not part of what the button is called.
+              data-status={tool.status}
+              title={chipTitle(tool)}
+              onClick={() => toggleTool(tool.id)}
+            >
+              {tool.status && <i className="chipdot" aria-hidden="true" />}
+              {tool.label}
+            </button>
+            <ToolGrant
+              tool={tool}
+              onConnect={onConnectTool}
+              onDisconnect={onDisconnectTool}
+              onOpenUrl={onOpenUrl}
+            />
+          </span>
         ))}
       </div>
 

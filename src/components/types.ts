@@ -331,6 +331,16 @@ export interface ToolOption {
   status?: ToolConnectionStatus;
   /** One sentence for the chip's tooltip: which account, or what went wrong. */
   detail?: string;
+  /** The provider grant this chip's status belongs to. Gmail, Calendar and
+      Drive share one, which is why connecting any of them lights all three —
+      and why the editor names the *provider* when it offers to sign in. */
+  provider?: string;
+  /** Live only while a `tools/connect` flow is waiting for the human. This is
+      the URL the UI opens; the host publishes it onto every card the flow's
+      provider covers and takes it away when the flow settles (#18). */
+  authorizeUrl?: string;
+  /** Where to read about what this tool can do, when the provider says. */
+  docsUrl?: string;
 }
 
 /** What New Chat emits. The host resolves the runtime and spawns (#6, #10). */

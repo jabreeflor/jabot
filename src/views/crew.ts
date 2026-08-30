@@ -73,7 +73,19 @@ export function templateRow(template: BotTemplateView): BotTemplate {
 /** An MCP catalog entry as a chip. The status is the *provider grant's*, which
     is why connecting Gmail lights Calendar too (#18). */
 export function toolOption(tool: ToolCardView): ToolOption {
-  return { id: tool.id, label: tool.label, status: tool.status, detail: tool.detail };
+  return {
+    id: tool.id,
+    label: tool.label,
+    status: tool.status,
+    detail: tool.detail,
+    // Carried rather than dropped: `authorizeUrl` is the whole of the
+    // asynchronous half of `tools/connect` (#18). The host publishes it while
+    // a flow waits for the human, and a chip that threw it away left the
+    // consent screen with nothing to open it.
+    provider: tool.provider,
+    authorizeUrl: tool.authorizeUrl,
+    docsUrl: tool.docsUrl,
+  };
 }
 
 /** Chief's host tools. No `status`: they are the host's own actions, so there
@@ -170,6 +182,12 @@ export interface Crew {
   /** Throws `CHIEF_REQUIRED` for Chief. The grid hides the button, but the
       host is the one that guarantees it. */
   remove: (botId: string) => Promise<void>;
+  /** Start an OAuth flow. Returns once the flow is *running*, not once the
+      human has consented — consent takes as long as a person takes, and the
+      host answers JSON-RPC on one thread. The authorize URL arrives on the
+      next `tools/list`, which the poll below is for. */
+  connectTool: (toolId: string) => Promise<void>;
+  disconnectTool: (toolId: string) => Promise<void>;
 }
 
 /**
@@ -223,6 +241,11 @@ export function useHarnessCatalog(client: HostClient | null): HarnessCard[] | nu
     [cards, reports],
   );
 }
+
+/** Fast enough that a consent screen finishing feels immediate, slow enough
+    that a flow somebody abandoned is not a busy loop. Only ever armed while a
+    card is `connecting`. */
+const CONNECT_POLL_MS = 2_000;
 
 export function useCrew(client: HostClient | null): Crew {
   const [crew, setCrew] = useState<CrewListResult | null>(null);
@@ -318,6 +341,44 @@ export function useCrew(client: HostClient | null): Crew {
     [client, reload],
   );
 
+  const connectTool = useCallback(
+    async (toolId: string) => {
+      if (!client) throw new Error("No host connection.");
+      await client.connectTool({ toolId });
+      reload();
+    },
+    [client, reload],
+  );
+
+  const disconnectTool = useCallback(
+    async (toolId: string) => {
+      if (!client) throw new Error("No host connection.");
+      await client.disconnectTool({ toolId });
+      reload();
+    },
+    [client, reload],
+  );
+
+  // The substitute for a notification, and not an optional one.
+  //
+  // #18 settled that `tools/connect` is asynchronous and that there is no
+  // notification for its result: every host → client notification carries a
+  // `threadId` envelope, and a connection belongs to no thread. So the client
+  // polls — and the poll is also what *commits* the grant, because the host
+  // only runs `drain_connect_flows()` when something asks it for the tool
+  // list. Without this, a user who consented in their browser would sit in
+  // front of a chip that said `connecting` for the rest of the session.
+  //
+  // Armed only while something is actually waiting, and stopped the moment
+  // nothing is: a tab left open on the crew screen must not shell the host
+  // every two seconds forever.
+  const connecting = (tools ?? []).some((tool) => tool.status === "connecting");
+  useEffect(() => {
+    if (!client || !connecting) return;
+    const timer = window.setInterval(reload, CONNECT_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [client, connecting, reload]);
+
   // Memoised so the picker is handed the same array identity between renders;
   // rebuilding it every render would defeat any memo below it.
   const readyHarnesses = useMemo(
@@ -335,5 +396,7 @@ export function useCrew(client: HostClient | null): Crew {
     reload,
     save,
     remove,
+    connectTool,
+    disconnectTool,
   };
 }

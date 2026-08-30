@@ -284,7 +284,13 @@
 .toolrow {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  /* Row gap stays 7px; the column gap is wider since #18 gave each chip a
+     sign-in link beside it. At 7px both ways the gap *inside* a chip-and-link
+     pair matched the gap *between* pairs, and the eye could not tell which
+     link belonged to which chip — a screenshot caught it, and on a row where
+     the links say "Disconnect" that ambiguity is expensive. */
+  row-gap: 7px;
+  column-gap: 18px;
 }
 
 .toolchip {
@@ -398,4 +404,46 @@
   color: var(--dim);
   font: var(--fs-meta) / 1.4 var(--font-mono);
   overflow-wrap: anywhere;
+}
+
+/* The provider grant, beside the chip (#18).
+ *
+ * Beside, not on: the chip toggles this bot's allowlist, and whether Gmail is
+ * signed in is a different fact from whether this bot may use it. One control
+ * doing both would make "add Gmail to this bot" and "sign this Mac into
+ * Google" the same click.
+ *
+ * Quiet on purpose. The row's job is picking tools; signing one in is the rare
+ * thing you do once, and a button loud enough to compete with the chips would
+ * make the common action harder to see. */
+.toolslot {
+  display: inline-flex;
+  align-items: center;
+  /* Deliberately tighter than the row's column gap: the chip and its sign-in
+     link are one thing, and proximity is the only thing saying so. */
+  gap: 7px;
+}
+
+.toolgrant .linkish {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-meta);
+  color: var(--dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.toolgrant .linkish:hover {
+  color: var(--ink);
+}
+
+/* A flow that is waiting is the one state worth a colour: something is
+   genuinely in progress somewhere else, and the row should not look idle. */
+.toolgrant.waiting .linkish,
+.toolgrant-note {
+  color: var(--amber);
+  font-size: var(--fs-meta);
 }
