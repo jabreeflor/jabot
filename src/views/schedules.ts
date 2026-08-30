@@ -361,7 +361,7 @@ export function suggestName(prompt: string): string {
     .split(/[.,;\n]/)
     .map((segment) => withoutWhen(segment))
     .filter(Boolean);
-  const said = segments[0];
+  const said = firstClause(segments[0] ?? "");
   if (!said) return "";
 
   const words = said.split(/\s+/).slice(0, 6);
@@ -371,6 +371,16 @@ export function suggestName(prompt: string): string {
   const name = words.join(" ");
   const clipped = name.length > 42 ? `${name.slice(0, 42).trimEnd()}\u2026` : name;
   return clipped.charAt(0).toUpperCase() + clipped.slice(1);
+}
+
+/** The first thing a schedule does, when it does two. "Summarise overnight
+    mail and flag anything urgent" is called "Summarise overnight mail" — the
+    second clause is what the prompt is for, not what the row is called. Only
+    when something real precedes the conjunction, so "and flag anything" as a
+    whole prompt keeps its words. */
+function firstClause(said: string): string {
+  const cut = said.split(/\s+(?:and|then|but|also|plus)\s+/i)[0];
+  return cut.split(/\s+/).length >= 2 ? cut : said;
 }
 
 function withoutWhen(segment: string): string {

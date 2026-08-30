@@ -15,7 +15,9 @@
 //! Above them, the two controls a list earns as soon as it is a list: a search
 //! box and All/Active/Paused. Below them, suggestions, because an empty
 //! schedules screen is the one screen in the app that cannot demonstrate
-//! itself.
+//! itself. Under all of it, docked, the prompt that writes a new one — the
+//! list is what you write a schedule *against*, so it stays on screen while
+//! you do.
 //!
 //! The list polls. A fire is the one thing on this screen that happens without
 //! the user doing anything, and a row still saying "next: 09:00" ten minutes
@@ -23,7 +25,7 @@
 //! poll is deliberately slow — the host is authoritative and a schedule is
 //! measured in hours, not frames.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ScheduleView } from "../host";
 import type { Bot } from "../components/types";
@@ -31,15 +33,15 @@ import {
   CaretRightIcon,
   ClockIcon,
   InboxIcon,
-  PlusIcon,
   PullRequestIcon,
   SearchIcon,
   SparkIcon,
 } from "../components/Icon";
 import {
-  ScheduleComposer,
+  SchedulePrompt,
+  type SchedulePromptHandle,
   type ScheduleSeed,
-} from "../components/ScheduleComposer";
+} from "../components/SchedulePrompt";
 import type { ScheduleDraft } from "./schedules";
 import { describeCron, describeFire, relativeWhen, shortTime } from "./schedules";
 
@@ -110,10 +112,12 @@ export function SchedulesView({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [openRow, setOpenRow] = useState<string | null>(null);
-  // `null` is the list; anything else is the prompt, seeded or blank.
-  const [composing, setComposing] = useState<ScheduleSeed | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The prompt owns its draft. This is how the list writes into it — a
+  // suggestion is a sentence handed over, "New schedule" is a cursor put in
+  // the box — without the whole draft living up here to be passed back down.
+  const prompt = useRef<SchedulePromptHandle>(null);
 
   useEffect(() => {
     const timer = window.setInterval(onReload, POLL_MS);
@@ -140,9 +144,9 @@ export function SchedulesView({
     });
   }, [rows, query, filter]);
 
-  function startComposing(seed: ScheduleSeed | null) {
+  function write(seed: ScheduleSeed) {
     setSaveError(null);
-    setComposing(seed ?? { prompt: "", cron: "0 9 * * 1-5" });
+    prompt.current?.write(seed);
   }
 
   function create(draft: ScheduleDraft) {
@@ -150,7 +154,9 @@ export function SchedulesView({
     setSaveError(null);
     onCreate(draft)
       .then(() => {
-        setComposing(null);
+        // The new row has to be somewhere the user can see it, or a create
+        // under a filter looks like a create that did nothing.
+        prompt.current?.clear();
         setFilter("all");
         setQuery("");
       })
@@ -160,50 +166,18 @@ export function SchedulesView({
       .finally(() => setSaving(false));
   }
 
-  if (composing) {
-    return (
-      <ScheduleComposer
-        bots={bots}
-        seed={composing}
-        error={saveError}
-        busy={saving}
-        onCreate={create}
-        onCancel={() => {
-          setComposing(null);
-          setSaveError(null);
-        }}
-      />
-    );
-  }
-
   const empty = schedules?.length === 0;
 
   return (
     <div className="view">
       <div className="page-scroll">
         <div className="page sched-page">
-          <div className="page-top sched-top">
-            <div className="sched-head">
-              <div>
-                <h1>Schedules</h1>
-                <p>
-                  Recurring jobs. Each one runs as a bot, on that bot’s thread,
-                  and lands in your Inbox when it is done.
-                </p>
-              </div>
-              {/* The empty state has its own, brighter one; two calls to the
-                  same action on one screen is one too many. */}
-              {rows.length > 0 && (
-                <button
-                  type="button"
-                  className="btn sched-new"
-                  onClick={() => startComposing(null)}
-                >
-                  <PlusIcon />
-                  New schedule
-                </button>
-              )}
-            </div>
+          <div className="page-top">
+            <h1>Schedules</h1>
+            <p>
+              Recurring jobs. Each one runs as a bot, on that bot’s thread, and
+              lands in your Inbox when it is done.
+            </p>
           </div>
 
           {error && (
@@ -255,17 +229,14 @@ export function SchedulesView({
                 <ClockIcon />
               </span>
               <h2>No schedules yet</h2>
+              {/* Pointing at the box rather than repeating it: the prompt is
+                  docked at the bottom of this very screen, and a button that
+                  only puts a cursor in a field the user can already see is one
+                  affordance too many. */}
               <p>
-                Describe a job and when it should run — “summarise overnight
-                mail every weekday at 9am” — and a bot will do it on a timer.
+                Say what a bot should do and when, in the box below —
+                “summarise overnight mail every weekday at 9am”.
               </p>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => startComposing(null)}
-              >
-                Write one
-              </button>
             </div>
           )}
 
@@ -309,7 +280,7 @@ export function SchedulesView({
                     type="button"
                     className="sched-suggest-row"
                     onClick={() =>
-                      startComposing({
+                      write({
                         prompt: suggestion.prompt,
                         cron: suggestion.cron,
                       })
@@ -343,6 +314,14 @@ export function SchedulesView({
           </div>
         </div>
       </div>
+
+      <SchedulePrompt
+        handleRef={prompt}
+        bots={bots}
+        error={saveError}
+        busy={saving}
+        onCreate={create}
+      />
     </div>
   );
 }

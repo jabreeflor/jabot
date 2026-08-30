@@ -9,51 +9,14 @@
  * get a hairline between them, and everything a card used to show at rest lives
  * one click down inside the row.
  *
- * Creating one is a screen of its own (.sched-compose, at the bottom of this
- * file): the list leaves and a prompt arrives, rather than a form opening on
- * top of a list that is still sitting there.
+ * Creating one is a prompt docked under that list (.sched-dock, at the bottom
+ * of this file) rather than a form opening on top of it — or a screen
+ * replacing it, which is what this was first built as and what took the list
+ * away at the one moment it is most worth reading.
  */
 
 .sched-page {
-  padding-bottom: var(--sp-6);
-}
-
-/* ---- header ------------------------------------------------------------- */
-
-.sched-head {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--sp-4);
-}
-
-.sched-head > div {
-  flex: 1;
-  min-width: 0;
-}
-
-/* The one affirmative action on the screen, and it is a *verb* — so it sits on
-   the baseline of the title rather than under the paragraph, where it would be
-   just another thing in the column of things. */
-.sched-new {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin-top: 3px;
-  background: var(--raise2);
-  border: 1px solid var(--edge-strong);
-  color: var(--dim);
-}
-
-.sched-new:hover {
-  background: var(--raise);
-  border-color: var(--dim);
-  color: var(--ink);
-}
-
-.sched-new svg {
-  width: 13px;
-  height: 13px;
+  padding-bottom: var(--sp-3);
 }
 
 /* ---- search and filters ------------------------------------------------- */
@@ -603,93 +566,35 @@
 
 /* ---- the prompt (creating one) ------------------------------------------- */
 
-/* Deliberately a screen and not a modal. A modal says "answer this and go
-   back"; this says "you are writing a schedule now", which is the difference
-   between five fields and one sentence. */
-.sched-compose {
-  animation: sched-arrive 0.22s ease both;
-}
-
-@keyframes sched-arrive {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-
-/* The way out sits where a way out sits — the top-left of the screen — rather
-   than above the title, where it was one more thing in the hero. */
-.compose-bar {
+/* Docked under the list, the way the message box is docked under a transcript.
+   Not a screen of its own: writing a schedule is a thing you do while looking
+   at the ones you already have — to see that 8am is taken, to copy how you
+   phrased the last one, to notice you are about to write the same job twice. */
+.sched-dock {
   flex: none;
-  padding: var(--sp-3) var(--sp-6) 0;
+  padding: var(--sp-3) var(--sp-6) 18px;
+  background: var(--chat);
 }
 
-.compose-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 var(--sp-6) 40px;
-  display: flex;
-}
-
-.compose-stage {
-  width: 100%;
-  max-width: 620px;
-  margin: auto;
-  padding: 24px 0;
-}
-
-.compose-back {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  background: none;
-  border: 0;
-  padding: var(--sp-2) 0;
-  color: var(--dim);
-  font: 600 var(--fs-meta) / 1 var(--font-ui);
-  cursor: pointer;
-}
-
-.compose-back:hover {
-  color: var(--ink);
-}
-
-.compose-back svg {
-  width: 14px;
-  height: 14px;
-}
-
-.compose-title {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.compose-sub {
-  color: var(--dim);
-  font-size: var(--fs-body);
-  line-height: 1.5;
-  margin-top: var(--sp-2);
-  max-width: 52ch;
-}
-
-/* The box is the screen's centre of gravity, so it gets the one shadow on the
-   page and a border a shade brighter than anything else. */
-.prompt-box {
-  margin-top: 20px;
+/* The box is the one raised surface at the bottom of the screen, so it gets
+   the shadow that lifts it off the list scrolling underneath it. */
+.dock-box {
+  max-width: var(--page-max);
+  margin: 0 auto;
   background: var(--raise2);
   border: 1px solid var(--edge-strong);
   border-radius: var(--r-xl);
-  padding: var(--sp-4) var(--sp-4) var(--sp-3);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.32);
+  padding: var(--sp-3) var(--sp-4) var(--sp-3);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
   transition: border-color 0.14s ease;
 }
 
-.prompt-box:focus-within {
+.dock-box:focus-within,
+.dock-box.is-live {
   border-color: var(--edge-menu);
 }
 
-.prompt-field {
+.dock-field {
   width: 100%;
   display: block;
   resize: none;
@@ -697,20 +602,58 @@
   border: 0;
   outline: 0;
   color: var(--ink);
-  font: var(--fs-chat) / 1.55 var(--font-ui);
-  padding: var(--sp-2) var(--sp-2) var(--sp-4);
-  min-height: 76px;
+  font: var(--fs-chat) / 1.5 var(--font-ui);
+  padding: var(--sp-2) var(--sp-2) var(--sp-3);
 }
 
-.prompt-field::placeholder {
+.dock-field::placeholder {
   color: var(--faint);
 }
 
-.prompt-bar {
+.dock-bar {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   flex-wrap: wrap;
+}
+
+/* What the bar is about to create, above the box it will be created from, in
+   the words the list will use once it exists — including the name, which is
+   derived and would otherwise first appear as a surprise in a row. */
+.dock-read {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  color: var(--dim);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+}
+
+/* Wraps as two phrases rather than as one sentence broken mid-clause: on a
+   narrow window the derived name takes the first line and the when takes the
+   second, and neither needs a separator to be read as its own thing. */
+.dock-when {
+  white-space: nowrap;
+}
+
+.dock-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.read-mark {
+  color: var(--violet);
+  font-weight: 700;
+  font-size: var(--fs-caps);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dock-error {
+  padding: 0 var(--sp-2) var(--sp-2);
+  font-size: var(--fs-meta);
 }
 
 /* A chip is a select wearing the shape of a control you can read at a glance:
@@ -766,7 +709,7 @@
   border-radius: 3px;
 }
 
-/* The chip the sentence filled in. It is the one moment this screen does
+/* The chip the sentence filled in. It is the one moment this bar does
    something on your behalf, so it says so — quietly, and only until you touch
    it. */
 .prompt-chip.read-off {
@@ -779,7 +722,8 @@
 }
 
 /* Refused. The chip is the control the host objected to, so it is the control
-   that wears it — the sentence saying why sits directly under the box. */
+   that wears it — and the raw cron comes out beside it, because a preset
+   cannot be refused and whatever is in there is now worth seeing as text. */
 .prompt-chip.is-bad {
   border-color: var(--red);
   color: var(--red);
@@ -789,10 +733,47 @@
   color: var(--red);
 }
 
+.dock-cron {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0 var(--sp-2) var(--sp-3);
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-md);
+  padding: 6px 12px;
+}
+
+.dock-cron span {
+  flex: none;
+  color: var(--faint);
+  font-size: var(--fs-caps);
+  font-weight: 600;
+  letter-spacing: var(--track-caps);
+}
+
+.dock-cron input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  font: var(--fs-meta) / 1.4 var(--font-mono);
+}
+
+.dock-cron:focus-within {
+  border-color: var(--dim);
+}
+
+.dock-cron:has(input[aria-invalid="true"]) {
+  border-color: var(--red);
+}
+
 .send-btn {
   margin-left: auto;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex: none;
   border-radius: 50%;
   border: 0;
@@ -807,8 +788,8 @@
 }
 
 .send-btn svg {
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
 }
 
 .send-btn:hover:not(:disabled) {
@@ -819,114 +800,6 @@
   background: var(--raise);
   color: var(--faint);
   cursor: default;
-}
-
-/* What the screen believes it is about to create, in the words the list will
-   use. It reads back rather than previews: same sentence, same vocabulary. */
-/* Not decoration: the box is empty and its one trick — a sentence that sets
-   the chips — is invisible until something is in it. One click shows it. */
-.compose-starters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  margin-top: var(--sp-4);
-}
-
-.compose-starter {
-  border: 1px solid var(--edge);
-  background: none;
-  border-radius: var(--r-pill);
-  padding: 6px 12px;
-  color: var(--dim);
-  font-size: var(--fs-meta);
-  cursor: pointer;
-  text-align: left;
-  transition:
-    border-color 0.12s ease,
-    color 0.12s ease;
-}
-
-.compose-starter:hover {
-  border-color: var(--dim);
-  color: var(--ink);
-}
-
-.compose-read {
-  margin: var(--sp-4) 0 0;
-  color: var(--dim);
-  font-size: var(--fs-meta);
-  line-height: 1.5;
-}
-
-.read-mark {
-  display: inline-block;
-  margin-right: var(--sp-2);
-  color: var(--violet);
-  font-weight: 700;
-  font-size: var(--fs-caps);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.compose-cron {
-  margin-top: var(--sp-4);
-}
-
-/* Folded, because both of these have an answer that is right nearly always: a
-   name taken from the prompt, and one catch-up run. Open it and it is the same
-   modal recipe as everywhere else. */
-.compose-more {
-  margin-top: 20px;
-  border-top: 1px solid var(--edge);
-  padding-top: var(--sp-4);
-}
-
-.compose-more > summary {
-  cursor: pointer;
-  color: var(--dim);
-  font-size: var(--fs-meta);
-  font-weight: 600;
-  list-style: none;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-}
-
-.compose-more > summary::-webkit-details-marker {
-  display: none;
-}
-
-.compose-more > summary::before {
-  content: "";
-  width: 0;
-  height: 0;
-  border-left: 5px solid currentColor;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  transition: transform 0.15s ease;
-}
-
-.compose-more[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-.compose-more > summary:hover {
-  color: var(--ink);
-}
-
-.compose-more-body {
-  padding-bottom: var(--sp-4);
-}
-
-/* The first label in the fold owns the gap under the summary, and .mlab's own
-   20px is measured for a card where a control sits above it. */
-.compose-more-body > .mlab:first-child {
-  margin-top: var(--sp-4);
-}
-
-.compose-error {
-  margin-top: var(--sp-4);
-  font-size: var(--fs-meta);
 }
 
 /* ---- the editor modal ---------------------------------------------------- */

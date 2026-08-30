@@ -8,7 +8,7 @@
  * the user did not ask for and cannot otherwise find out about, and it has to
  * turn a sentence into a schedule, because that is what the prompt promises.
  */
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -249,24 +249,20 @@ describe("finding one in a list of them", () => {
 });
 
 describe("writing one as a prompt", () => {
-  it("swaps the list for the prompt, and back again", async () => {
+  /** The point of docking it: you write a schedule against the ones you have,
+      so they stay on screen while you do. */
+  it("keeps the list on screen while you write", async () => {
     renderView();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /New schedule/ }),
-    );
-    expect(screen.queryByText("Morning triage")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /What should run on a timer/ }),
-    ).toBeInTheDocument();
+    const box = screen.getByLabelText("What should it do?");
+    expect(box).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Schedules" }));
+    await userEvent.type(box, "Do the thing");
     expect(screen.getByText("Morning triage")).toBeInTheDocument();
   });
 
   it("reads the schedule out of the sentence, and names it from the rest", async () => {
     const props = renderView();
-    await userEvent.click(screen.getByRole("button", { name: /New schedule/ }));
 
     await userEvent.type(
       screen.getByLabelText("What should it do?"),
@@ -292,7 +288,6 @@ describe("writing one as a prompt", () => {
       that springs back while you type is worse than one that never helped. */
   it("stops reading the sentence once the chip has been set by hand", async () => {
     renderView();
-    await userEvent.click(screen.getByRole("button", { name: /New schedule/ }));
 
     await userEvent.selectOptions(screen.getByLabelText("When"), "0 * * * *");
     await userEvent.type(
@@ -308,7 +303,6 @@ describe("writing one as a prompt", () => {
       .fn()
       .mockRejectedValue(new Error("99 is outside 0-23 in the hour field"));
     renderView({ onCreate });
-    await userEvent.click(screen.getByRole("button", { name: /New schedule/ }));
 
     await userEvent.type(
       screen.getByLabelText("What should it do?"),
@@ -323,22 +317,34 @@ describe("writing one as a prompt", () => {
       "Do the thing",
     );
     // The cron is the only thing the host refuses, so it comes out from behind
-    // the chip: there is nothing else on this screen to correct.
+    // the chip: there is nothing else in the bar to correct.
     expect(screen.getByLabelText("CRON")).toHaveValue("0 9 * * 1-5");
   });
 
-  /** Escape leaves every other surface in the app that can be left. */
-  it("leaves on Escape", async () => {
+  /** There is no screen to leave any more, so Escape empties the box — a draft
+      you cannot abandon is one you have to select-all to be rid of. */
+  it("empties the box on Escape", async () => {
     renderView();
-    await userEvent.click(screen.getByRole("button", { name: /New schedule/ }));
 
-    await userEvent.type(screen.getByLabelText("What should it do?"), "{Escape}");
-    expect(screen.getByText("Morning triage")).toBeInTheDocument();
+    const box = screen.getByLabelText("What should it do?");
+    await userEvent.type(box, "Do the thing");
+    await userEvent.type(box, "{Escape}");
+    expect(box).toHaveValue("");
+  });
+
+  it("empties the box once the host has taken it", async () => {
+    renderView();
+
+    const box = screen.getByLabelText("What should it do?");
+    await userEvent.type(box, "Do the thing");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create schedule" }),
+    );
+    await waitFor(() => expect(box).toHaveValue(""));
   });
 
   it("will not send an empty prompt", async () => {
     const props = renderView();
-    await userEvent.click(screen.getByRole("button", { name: /New schedule/ }));
 
     const send = screen.getByRole("button", { name: "Create schedule" });
     expect(send).toBeDisabled();
@@ -349,13 +355,14 @@ describe("writing one as a prompt", () => {
   /** A schedules screen cannot demonstrate itself, so it offers three whole
       schedules — and a suggestion is a prompt already written, not a shortcut
       that creates something behind your back. */
-  it("opens a suggestion as a prompt you can still edit", async () => {
+  it("writes a suggestion into the box rather than creating it", async () => {
     const props = renderView({ schedules: [] });
 
     await userEvent.click(
       screen.getByRole("button", { name: /Morning brief/ }),
     );
     expect(props.onCreate).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("What should it do?")).toHaveFocus();
     const written = screen.getByLabelText(
       "What should it do?",
     ) as HTMLTextAreaElement;
@@ -435,6 +442,19 @@ describe("naming one nobody named", () => {
       ),
     ).toBe("Turn this week’s threads");
     expect(suggestName("   ")).toBe("");
+  });
+
+  /** A prompt that does two things is named after the first: the second clause
+      is what the prompt is for, not what the row is called. */
+  it("names it after the first thing it does", () => {
+    expect(
+      suggestName("Summarise overnight mail and flag anything urgent"),
+    ).toBe("Summarise overnight mail");
+    // Nothing real before the conjunction, so there is nothing to cut — the
+    // leading "and" goes the way every other stray connector does.
+    expect(suggestName("and flag anything urgent")).toBe(
+      "Flag anything urgent",
+    );
   });
 
   /** "every" is only a schedule word when a time follows it. */
