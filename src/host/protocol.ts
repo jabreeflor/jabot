@@ -553,6 +553,10 @@ export interface InboxEventView {
   threadId: string;
   threadTitle: string;
   threadState: ThreadOverlayState;
+  /** Whose thread this is, when it is a bot's. Absent for a code thread,
+      which is most of them — an Inbox row is about a *thread*, and only some
+      threads belong to a crew member. */
+  botId?: string;
   kind: string;
   title: string;
   summary: string;
@@ -567,6 +571,8 @@ export interface InboxEventView {
 export interface SleepingThreadView {
   threadId: string;
   title: string;
+  /** As on {@link InboxEventView}: whose thread this is, when it is a bot's. */
+  botId?: string;
   foldPolicy: FoldPolicy;
   foldedAt?: string;
   runState?: RunLedgerState;

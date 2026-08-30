@@ -813,6 +813,11 @@ pub struct InboxEventView {
     pub thread_id: String,
     pub thread_title: String,
     pub thread_state: String,
+    /// Whose thread this is, when it is a bot's. Absent for a code thread,
+    /// which is most of them — an Inbox row is about a *thread*, and only some
+    /// threads belong to a crew member.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
     pub kind: String,
     pub title: String,
     pub summary: String,
@@ -834,6 +839,9 @@ pub struct InboxEventView {
 pub struct SleepingThreadView {
     pub thread_id: String,
     pub title: String,
+    /// As on [`InboxEventView`]: whose thread this is, when it is a bot's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
     pub fold_policy: FoldPolicy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub folded_at: Option<String>,

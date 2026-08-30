@@ -360,3 +360,84 @@ describe("the Inbox and notification permission", () => {
     expect(screen.getByText("Nightly NAS backup")).toBeInTheDocument();
   });
 });
+
+/**
+ * The face on an Inbox row.
+ *
+ * Every host card wore the generic code mark, including cards on a named crew
+ * member's thread, because `inbox/list` did not say whose thread it was. #22
+ * was right to refuse to invent a bot; the fix was to put the id on the wire.
+ */
+describe("the Inbox and whose thread a card is on", () => {
+  /** The stub host above serves no crew, which is the "roster has not loaded"
+      case. These tests need one, because resolving a bot id to a face is the
+      thing under test. */
+  const CREW = {
+    bots: [
+      {
+        botId: "writer",
+        name: "Writer",
+        color: "b-orange",
+        instructions: "",
+        tools: [],
+        harnessId: "claude",
+        isChief: false,
+        memoryDir: "/data/bots/writer",
+        sortOrder: 5,
+        createdAt: "2026-08-20T10:00:00Z",
+        updatedAt: "2026-08-20T10:00:00Z",
+      },
+    ],
+    templates: [],
+    hostTools: [],
+  };
+
+  function withBotCard(botId: string | undefined) {
+    const listed = {
+      ...INBOX,
+      events: [{ ...INBOX.events[0], botId }],
+      sleeping: [],
+    };
+    vi.mocked(connectHost).mockResolvedValue({
+      client: {
+        ...client(),
+        inbox: vi.fn(async () => listed),
+        listCrew: vi.fn(async () => CREW),
+        listTools: vi.fn(async () => ({ tools: [] })),
+        listHarnesses: vi.fn(async () => ({ harnesses: [], issues: [] })),
+      } as unknown as HostClient,
+      hello: HELLO,
+    });
+  }
+
+  it("draws the bot's face on a card from that bot's thread", async () => {
+    // `writer` is in the crew this stub host serves.
+    withBotCard("writer");
+    await openInbox();
+
+    // The avatar is labelled with the bot's name; that label is the only thing
+    // on the row that says who it is.
+    expect(await screen.findByLabelText(/Writer/)).toBeInTheDocument();
+  });
+
+  it("keeps the code mark for a thread with no bot", async () => {
+    withBotCard(undefined);
+    await openInbox();
+    await screen.findByText(INBOX.events[0].title);
+
+    expect(screen.queryByLabelText(/Writer/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The crew loads separately, so a card can arrive naming a bot the roster
+   * does not have yet — or one that has since been removed. A face with the
+   * wrong name on it would be worse than no face.
+   */
+  it("falls back to the code mark for a bot the roster does not have", async () => {
+    withBotCard("nobody-by-that-id");
+    await openInbox();
+    await screen.findByText(INBOX.events[0].title);
+
+    expect(screen.queryByLabelText(/Writer/)).not.toBeInTheDocument();
+  });
+});

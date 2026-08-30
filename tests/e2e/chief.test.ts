@@ -391,9 +391,14 @@ describe("spawn_code_session", () => {
     });
     expect(folded.value.state).toBe("folded");
     expect(folded.value.foldPolicy).toBe("wait_for_inbox");
-    expect((await client.inbox()).sleeping.map((row) => row.threadId)).toContain(
-      thread.threadId,
-    );
+    const inbox = await client.inbox();
+    expect(inbox.sleeping.map((row) => row.threadId)).toContain(thread.threadId);
+    // And the row says whose thread it is, so the Inbox can draw that bot's
+    // face instead of the generic code mark. Chief spawned this one onto the
+    // Code bot, and `inbox/list` carried no bot at all until now.
+    expect(
+      inbox.sleeping.find((row) => row.threadId === thread.threadId)?.botId,
+    ).toBe("code");
     const status = await callTool<CrewStatus>(server, "list_crew_status");
     const code = status.value.crew.find((bot) => bot.name === "Code");
     expect(code?.idle).toBe(false);
