@@ -29,7 +29,7 @@ import type {
   ThreadSummary,
   TranscriptItem,
 } from "../components/types";
-import type { HandoffView, HostClient } from "../host";
+import type { HandoffView, HostClient, ProcessView } from "../host";
 import { streamStatus, useThreadTranscript } from "./transcript";
 
 export function ThreadView({
@@ -47,6 +47,7 @@ export function ThreadView({
   onCancel,
   error,
   handoff,
+  drift,
 }: {
   thread: ThreadSummary;
   harnesses: readonly HarnessCard[];
@@ -68,6 +69,10 @@ export function ThreadView({
   /** Where this thread's work came from, when a bot sent it rather than the
       human (#24). Absent for the ordinary case: the person started it. */
   handoff?: HandoffView;
+  /** Fields that have moved since this thread's ACP session was created, by
+      wire name. Non-empty means the next prompt starts a fresh conversation
+      rather than continuing this one (#21). */
+  drift?: readonly string[];
 }) {
   const line = status ?? threadStatus(thread);
 
@@ -96,8 +101,61 @@ export function ThreadView({
       queued={queued}
       onCancel={onCancel}
       error={error}
+      notice={drift && drift.length > 0 ? <DriftNotice drift={drift} /> : null}
     />
   );
+}
+
+/**
+ * The stored session no longer matches the job that would be spawned.
+ *
+ * The host works this out on every `thread/state` — `resume_readiness` diffs
+ * the receipt against what the thread would start as now — and it is the one
+ * thing on this screen the user cannot possibly infer. Everything looks
+ * normal: the transcript is there, the composer works, and the next message
+ * silently opens a *new* conversation the agent has no memory of, because
+ * resuming a session whose harness or cwd has moved would be continuing
+ * someone else's job.
+ *
+ * Above the composer rather than in the header, because it is about what
+ * happens when you press Enter, not about what this thread is.
+ */
+function DriftNotice({ drift }: { drift: readonly string[] }) {
+  return (
+    <div className="chat-drift" role="status">
+      <b>This thread's setup has changed</b> — {andList(drift.map(driftLabel))}{" "}
+      {drift.length === 1 ? "is" : "are"} not what this conversation was started
+      with. Your next message begins a new one.
+    </div>
+  );
+}
+
+/** "a", "a and b", "a, b and c". A comma-joined list reads as a fragment —
+    "the engine, the folder are not what..." — and this sentence is the whole
+    warning, so it has to be a sentence. */
+function andList(parts: readonly string[]): string {
+  if (parts.length <= 1) return parts[0] ?? "";
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/** The wire names `receipt::drift` uses, in the words the rest of the UI uses.
+    An unknown name is printed as it came rather than dropped: a field the host
+    learns to report before this list does is still worth naming. */
+function driftLabel(field: string): string {
+  switch (field) {
+    case "harnessId":
+      return "the engine";
+    case "model":
+      return "the model";
+    case "cwd":
+      return "the folder";
+    case "tools":
+      return "its tools";
+    case "permissionMode":
+      return "the permission mode";
+    default:
+      return field;
+  }
 }
 
 /**
@@ -168,7 +226,7 @@ export function LiveThreadView({
   // you are reading it, and re-asking on every `session/update` would be a
   // round trip per streamed chunk. The component is keyed on the thread by its
   // caller, so switching threads remounts and asks again.
-  const handoff = useHandoff(client, thread.id);
+  const facts = useThreadFacts(client, thread.id);
 
   return (
     <ThreadView
@@ -187,21 +245,27 @@ export function LiveThreadView({
       queued={stream.queued}
       onCancel={cancel}
       error={error}
-      handoff={handoff}
+      handoff={facts?.handoff}
+      drift={facts?.process?.drift}
     />
   );
 }
 
 /**
- * `thread/state`, for the one field the transcript does not carry.
+ * `thread/state`, for the facts the transcript does not carry.
  *
  * Swallows its failure on purpose. Provenance is a caption on a conversation
  * that is otherwise entirely readable, so a host that cannot answer should
  * cost the caption and nothing else — the same call that would blank the
  * chat over it is the wrong trade.
  */
-function useHandoff(client: HostClient, threadId: string): HandoffView | undefined {
-  const [handoff, setHandoff] = useState<HandoffView | undefined>(undefined);
+function useThreadFacts(
+  client: HostClient,
+  threadId: string,
+): { handoff?: HandoffView; process?: ProcessView } | undefined {
+  const [facts, setFacts] = useState<
+    { handoff?: HandoffView; process?: ProcessView } | undefined
+  >(undefined);
   useEffect(() => {
     let cancelled = false;
     // Method lookup guarded too, the way `useCrew` guards the Doctor: a
@@ -211,7 +275,7 @@ function useHandoff(client: HostClient, threadId: string): HandoffView | undefin
     client
       .threadState({ threadId })
       .then((state) => {
-        if (!cancelled) setHandoff(state.handoff);
+        if (!cancelled) setFacts({ handoff: state.handoff, process: state.process });
       })
       .catch(() => {
         // Deliberately silent: see above.
@@ -220,5 +284,5 @@ function useHandoff(client: HostClient, threadId: string): HandoffView | undefin
       cancelled = true;
     };
   }, [client, threadId]);
-  return handoff;
+  return facts;
 }

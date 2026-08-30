@@ -388,6 +388,24 @@
   color: var(--red);
 }
 
+/* Drift: the stored session no longer matches the job that would be spawned,
+   so the next prompt starts a new conversation (#21). Amber, not red — nothing
+   has failed and nothing is lost; it is a fact about what Enter will do. Sits
+   directly above the composer for that reason. */
+.chat-drift {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-meta);
+  color: var(--dim);
+  line-height: 1.45;
+}
+
+.chat-drift b {
+  color: var(--amber);
+  font-weight: 600;
+}
+
 /* Stop, in the mic's place while a turn is running. */
 .round-btn.stop {
   color: var(--amber);

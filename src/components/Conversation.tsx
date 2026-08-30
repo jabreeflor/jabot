@@ -26,6 +26,7 @@ export function Conversation({
   queued,
   onCancel,
   error,
+  notice,
 }: {
   header: ReactNode;
   items: readonly TranscriptItem[];
@@ -39,6 +40,11 @@ export function Conversation({
   onCancel?: () => void;
   /** The last host error on this thread, shown rather than swallowed. */
   error?: string | null;
+  /** A standing caution about this thread, distinct from `error`: an error is
+      something that just failed, a notice is something true about the next
+      thing you do. Drawn above the composer because that is where the action
+      it is about is taken. */
+  notice?: ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -63,6 +69,7 @@ export function Conversation({
           {error}
         </div>
       )}
+      {notice}
       {waiting.length > 0 && (
         <div className="queued" role="status">
           <span className="queued-count">
