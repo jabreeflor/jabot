@@ -5,7 +5,7 @@
 //! One agent turn that read six files and ran the tests is one thing that
 //! happened, and six stacked cards would read as six turns.
 
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 
 import {
   CaretRightIcon,
@@ -17,6 +17,17 @@ import {
 } from "./Icon";
 import { renderMarkdown } from "./markdown";
 import type { ToolCall, ToolKind, TranscriptItem } from "./types";
+
+/**
+ * How many grouped entries are rendered from the tail to begin with, and how
+ * many more each time the reader reaches the top of what is drawn.
+ *
+ * Windowed from the *end*, growing upward, and never absolutely positioned.
+ * Bubbles and toolblocks have unknown heights, so a virtual list would need a
+ * measurement cache and would get every guess wrong the first time a code
+ * block or a long tool run appeared. Growing a tail window costs a slice.
+ */
+const WINDOW = 80;
 
 export function Transcript({
   items,
@@ -31,9 +42,36 @@ export function Transcript({
   // the grouping cached on `items` and the rows below memoized, appending a
   // chunk re-renders one bubble instead of the whole conversation.
   const groups = useMemo(() => groupToolRuns(items), [items]);
+  const [window, setWindow] = useState(WINDOW);
+
+  // The *grouped* array is sliced, never `items`.
+  //
+  // Be precise about what that buys, because it is less than it looks.
+  // Slicing `items` first would hand `groupToolRuns` a new array on every
+  // render and make it re-walk the window per streamed chunk — the work the
+  // memo above exists to avoid. It would *not* cost the row memoization:
+  // slicing copies the array, not the elements, so `entry.item` and the
+  // individual `calls` stay the same objects either way and both
+  // `memo(TranscriptRow)` and `sameCalls` still bail out.
+  //
+  // So this is a cost argument, not a correctness one, and the identity test
+  // in transcript.test.tsx pins the rows rather than this choice.
+  const visible =
+    groups.length > window ? groups.slice(groups.length - window) : groups;
+  const hidden = groups.length - visible.length;
+
   return (
     <div className="transcript">
-      {groups.map((entry) =>
+      {hidden > 0 && (
+        <button
+          type="button"
+          className="show-earlier"
+          onClick={() => setWindow((size) => size + WINDOW)}
+        >
+          Show earlier — {hidden} more
+        </button>
+      )}
+      {visible.map((entry) =>
         entry.type === "tools" ? (
           <ToolBlock key={entry.key} calls={entry.calls} />
         ) : (

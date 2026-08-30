@@ -564,3 +564,65 @@
 .msg.bot .bubble strong {
   font-weight: 650;
 }
+
+/* Back to the end (#14).
+ *
+ * The transcript used to snap to the bottom on every streamed chunk, so
+ * reading back through history while an agent was talking was impossible. It
+ * holds the reader's position now — and this is the only sign that it is
+ * deliberately not following, plus the way back.
+ */
+.chat-scroll {
+  position: relative;
+}
+
+.jump-latest {
+  /* Sticky at the foot of the scroller, so it stays reachable however far up
+     the reader has gone. It sits *over* the transcript — there is nowhere
+     else for it to be — so it has to read as chrome rather than as a word in
+     somebody's message: opaque, raised, and shadowed off the column. The
+     first screenshot had it flat, and it looked like text inside a bubble. */
+  position: sticky;
+  z-index: 1;
+  bottom: var(--sp-3);
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-3) auto 0;
+  background: var(--raise);
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-pill);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+  padding: var(--sp-2) var(--sp-4);
+  color: var(--ink);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  cursor: pointer;
+}
+
+.jump-latest:hover {
+  background: var(--sunk);
+}
+
+/* The arrow points up by default; here it means "down to the end". */
+.jump-latest svg {
+  width: 13px;
+  height: 13px;
+  transform: rotate(180deg);
+}
+
+/* The top of a windowed transcript. Only drawn when there is history above
+   what is rendered, so an ordinary conversation never sees it. */
+.show-earlier {
+  align-self: center;
+  background: none;
+  border: 0;
+  padding: var(--sp-2) var(--sp-4);
+  color: var(--dim);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  cursor: pointer;
+}
+
+.show-earlier:hover {
+  color: var(--ink);
+}
