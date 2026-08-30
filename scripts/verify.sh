@@ -18,6 +18,7 @@
 #   1. lockfiles      — package-lock.json and Cargo.lock agree with their manifests
 #   2. bundle-config  — what the macOS `bundle` job reads, checked without macOS
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
+#   2c. install script — the release installer's pins, delivery, and refusals
 #   3. tsc            — renderer types
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
@@ -513,6 +514,97 @@ guards() {
 }
 
 # ---------------------------------------------------------------------------
+# 2c. install script
+#
+# scripts/install.sh is what a new user runs before they have anything else of
+# ours on their machine, and it is the only shipped code that no compiler,
+# linter or vitest project reads. Two things can rot in it silently:
+#
+#   * its pins. The bundle identifier, the app name, the minimum macOS and the
+#     repo are copied from tauri.conf.json, and each one is a *check* — an
+#     identifier that no longer matches ours would accept any notarized app in
+#     the world, and an app name that no longer matches the bundle installs
+#     nothing at all. Checked against the config here rather than trusted.
+#   * its delivery. The documented URL is a release asset, so it only exists
+#     because release.yml uploads it; a workflow edit that drops that step
+#     leaves every README and release note pointing at a 404.
+#
+# scripts/tests/install.test.sh is the behaviour: the whole macOS toolchain
+# stubbed, the real script run, and every refusal asserted. ~10s, no network.
+# ---------------------------------------------------------------------------
+install_script() {
+  local ok=0
+  local sh='scripts/install.sh'
+  if [[ ! -x "$sh" ]]; then
+    printf '  %s is missing or not executable\n' "$sh"
+    return 1
+  fi
+
+  node - <<'NODE' || ok=1
+const fs = require('fs');
+const errs = [];
+const bad = (m) => errs.push(m);
+const S = 'scripts/install.sh';
+const T = 'src-tauri/tauri.conf.json';
+const W = '.github/workflows/release.yml';
+
+const conf = JSON.parse(fs.readFileSync(T, 'utf8'));
+const sh = fs.readFileSync(S, 'utf8');
+
+// Only the assignments at the top of the script, not any mention of the name.
+const constOf = (name) => {
+  const m = new RegExp(`^${name}="([^"]*)"`, 'm').exec(sh);
+  return m ? m[1] : null;
+};
+
+const want = {
+  APP_NAME: `${conf.productName}.app`,
+  BUNDLE_ID: conf.identifier,
+  MIN_MACOS: (conf.bundle && conf.bundle.macOS && conf.bundle.macOS.minimumSystemVersion) || '',
+};
+for (const [k, v] of Object.entries(want)) {
+  const got = constOf(k);
+  if (got === null) bad(`${S}: ${k} is not assigned at the top of the script any more; ${T} cannot be checked against it`);
+  else if (got !== v) bad(`${S}: ${k}="${got}" but ${T} says "${v}" — the installer would ${k === 'APP_NAME' ? 'find no app in the disk image' : k === 'BUNDLE_ID' ? 'accept an app that is not ours' : 'let the wrong macOS through'}`);
+}
+
+// The repo the installer downloads from has to be the repo the updater feed
+// comes from, or an install and its updates are two different apps.
+const endpoint = ((conf.plugins || {}).updater || {}).endpoints || [];
+const m = /github\.com\/([^/]+\/[^/]+)\/releases\//.exec(endpoint[0] || '');
+if (!m) bad(`${T}: plugins.updater.endpoints[0] is not a github releases URL; cannot check ${S}'s repo against it`);
+else if (constOf('REPO_DEFAULT') !== m[1]) {
+  bad(`${S}: REPO_DEFAULT="${constOf('REPO_DEFAULT')}" but the updater feed is served from ${m[1]}`);
+}
+
+// The documented one-liner is a release asset. It exists only if the release
+// workflow puts it there.
+const wf = fs.readFileSync(W, 'utf8');
+if (!/gh release upload[^\n]*install\.sh|install\.sh[^\n]*gh release upload/.test(wf.replace(/\\\n/g, ' '))) {
+  bad(`${W}: nothing uploads ${S} to the release any more — releases/latest/download/install.sh would 404`);
+}
+
+// Everything that tells a user where to curl it from has to agree with the repo.
+const url = `https://github.com/${constOf('REPO_DEFAULT')}/releases/latest/download/install.sh`;
+for (const f of ['README.md', 'docs/packaging.md', S]) {
+  const t = fs.readFileSync(f, 'utf8');
+  const found = t.match(/https:\/\/github\.com\/[^\s)"']*install\.sh/g) || [];
+  if (!found.length) bad(`${f}: no install.sh URL — the one-liner users are told to run is not documented here`);
+  for (const u of found) if (u !== url) bad(`${f}: points at ${u}, but the installer installs from ${url}`);
+}
+
+if (errs.length) {
+  for (const e of errs) console.log(`  ${e}`);
+  process.exit(1);
+}
+console.log(`  ${S}: pinned to ${want.BUNDLE_ID}, ${want.APP_NAME}, macOS ${want.MIN_MACOS}+, ${constOf('REPO_DEFAULT')}`);
+NODE
+
+  ./scripts/tests/install.test.sh || ok=1
+  return $ok
+}
+
+# ---------------------------------------------------------------------------
 # The tree this run is about to describe.
 #
 # Empty when this is not a git worktree (a tarball, a vendored copy); every
@@ -524,6 +616,7 @@ run "lockfiles"      lockfiles
 run "bundle-config"  bundle_config
 run "binary set"     binary_set
 run "commit guards"  guards
+run "install script" install_script
 run "typecheck"      npx tsc --noEmit
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check

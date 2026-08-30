@@ -16,6 +16,7 @@ reasoning is in
 | Bundle + updater config | [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json) |
 | Entitlements (and the audit) | [`src-tauri/entitlements.plist`](../src-tauri/entitlements.plist) |
 | Update feed | `https://github.com/jabreeflor/jabot/releases/latest/download/latest.json` |
+| Installer (`curl \| bash`) | [`scripts/install.sh`](../scripts/install.sh), uploaded as a release asset |
 
 ---
 
@@ -125,7 +126,7 @@ That is what the feed verification below is for.
 4. The `Release` workflow builds `universal-apple-darwin`, signs with hardened
    runtime and `entitlements.plist`, notarizes through `notarytool`, staples
    the ticket, and uploads to a **draft** GitHub Release: the `.dmg`, the
-   `.app.tar.gz` + `.sig`, and `latest.json`.
+   `.app.tar.gz` + `.sig`, `latest.json`, and `install.sh`.
 5. Download the `.dmg` and run the verification below.
 6. **Publish the draft.** Publishing is the act of shipping: it is what makes
    `releases/latest/download/latest.json` point here, and every installed copy
@@ -185,6 +186,72 @@ release compiles had finished. `jabot-hostd` and `fake-acp-agent` therefore
 carry `required-features = ["dev-bins"]`, which makes them cargo targets only
 when asked for. `scripts/verify.sh` asks; `tauri build` does not. Anything
 that builds or runs them by hand needs `--features dev-bins` too.
+
+---
+
+## The installer
+
+New users have nothing of ours on their machine yet, so the entry point is one
+line:
+
+```sh
+curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash
+```
+
+`scripts/install.sh` resolves the latest tag, downloads that release's `.dmg`,
+mounts it, and — before it copies anything — asks the same three questions the
+["Verifying notarization" section](#verifying-notarization-succeeded) asks by
+hand: does the signature verify, is the bundle identifier `com.jabot.app`, and
+does `spctl -a -t install` say `source=Notarized Developer ID`. Any one of
+those failing aborts the install with the app still on the disk image. There
+is no flag to skip them, because a flag to skip them is the flag an attacker
+tells the user to pass.
+
+It then `ditto`s the app to a staging path inside the target directory and
+`mv`s it into place, so the moment where neither the old nor the new app
+exists is a rename rather than a multi-second copy. Arguments go after `bash -s
+--`: `--version`, `--to`, `--force`, `--team-id`, `--dry-run`.
+
+**It is served from the release, not from `main`.** The last step of
+`release.yml` uploads `scripts/install.sh` to the draft release, which is what
+makes `releases/latest/download/install.sh` resolve — and it means the
+installer a new user runs is the one that shipped with the release it installs,
+not whatever landed on the default branch this morning. A
+`raw.githubusercontent.com/.../main/scripts/install.sh` URL would give away
+both of those properties; do not publish one.
+
+### Pin the team ID after the first real release
+
+`TEAM_ID_PIN` at the top of `scripts/install.sh` is empty. Without it the
+notarization check proves the app was notarized by *somebody* with a Developer
+ID, and the identifier check is what narrows that to us. Once a release has
+been signed for real, read the team off it and commit it:
+
+```sh
+codesign -dv --verbose=4 /Applications/JaBot.app 2>&1 | grep TeamIdentifier
+```
+
+That value is public — it is in the signature of every copy we ship — so it
+belongs in the script, unlike `APPLE_TEAM_ID` the secret, which exists so that
+notarytool can authenticate as us. Until then, a cautious installer can pass
+`--team-id`.
+
+### Changing the installer
+
+`scripts/verify.sh` has an `install script` stage, so this is covered by the
+normal gate:
+
+- `scripts/tests/install.test.sh` runs the real script on Linux against a
+  stubbed macOS toolchain (`codesign`, `spctl`, `hdiutil`, `ditto`, `curl`,
+  ...) and asserts every refusal above, that nothing is copied before
+  verification, and that the disk image is detached even when a check fails.
+- The four constants the script pins — repo, app name, bundle identifier,
+  minimum macOS — are checked against `tauri.conf.json`, and the workflow is
+  checked for the upload step, so a rename on either side fails the gate rather
+  than the release.
+
+Anything added to the script that macOS-only tooling can reach needs a stub and
+a case, or it is untested: CI has no Mac.
 
 ---
 

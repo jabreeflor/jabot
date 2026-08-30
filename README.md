@@ -2,6 +2,28 @@
 
 Bot-crew messenger UI prototypes. Wraps coding TUIs (Claude Code, Codex, Pi, or bring-your-own harness) in a chat-first interface with a Chief of Staff bot, folding "disappearing" threads, and an Inbox where long-running tasks resurface.
 
+## Install
+
+macOS 13+, Apple Silicon or Intel:
+
+```sh
+curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash
+```
+
+That downloads the latest signed, notarized release, checks Apple's own
+verdict on it (`spctl`) plus our bundle identifier *before* anything is
+copied, and puts `JaBot.app` in `/Applications`. Options go after `bash -s --`
+— `--version v0.2.0` to pin a release, `--to ~/Applications` to install
+somewhere you own, `--force` to quit a running copy, `--dry-run` to see what
+it would do. The script is [`scripts/install.sh`](scripts/install.sh); it is
+uploaded to each release, so that URL always serves the installer that shipped
+with the latest published build.
+
+Prefer doing it by hand? Download the `.dmg` from
+[Releases](https://github.com/jabreeflor/jabot/releases/latest) and drag JaBot
+to Applications. Either way, installed copies update themselves after that —
+the script is a one-time thing.
+
 ## Desktop app (Tauri 2)
 
 The scaffold (#7) lives at the repo root:
