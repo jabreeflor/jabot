@@ -188,4 +188,26 @@ describe("Sidebar", () => {
       screen.getByRole("button", { name: /^jabot-app/ }),
     ).toHaveTextContent("2");
   });
+
+  // The glyph is state, not decoration: the front panel it draws open is the
+  // same fact `aria-expanded` carries, so the two cannot be allowed to drift.
+  // Only the flag is asserted — the shear itself is CSS, which jsdom does not
+  // run, and a test that pinned the transform would be pinning a drawing.
+  it("draws the folder open exactly while the folder is expanded", async () => {
+    renderSidebar();
+
+    const toggle = screen.getByRole("button", { name: /^jabot-app/ });
+    const glyph = () => toggle.querySelector(".folder-glyph");
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(glyph()).toHaveAttribute("data-open", "true");
+    // Two paths, or there is nothing for the panel to move against.
+    expect(glyph()?.querySelector(".folder-front")).toBeInTheDocument();
+    expect(glyph()?.querySelector(".folder-shell")).toBeInTheDocument();
+
+    await userEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(glyph()).toHaveAttribute("data-open", "false");
+  });
 });

@@ -64,7 +64,9 @@ export function FolderList({
                 }
               >
                 <ChevronDownIcon className="chev" />
-                <FolderIcon />
+                {/* The glyph carries the same state as the chevron: an open
+                    folder for an expanded one. */}
+                <FolderIcon open={open} />
                 <span className="name">{folder.name}</span>
                 {/* Only when the host has actually looked: `undefined` is "not
                     asked yet", and a badge for that would be a lie. */}

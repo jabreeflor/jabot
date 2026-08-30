@@ -12,11 +12,22 @@ import type { ReactNode } from "react";
 
 type IconProps = { className?: string };
 
+type FolderIconProps = IconProps & {
+  /** Expanded folders draw an open one. Default closed, for callers with no state. */
+  open?: boolean;
+};
+
 function Stroke({
   className,
   width = 2.4,
+  dataOpen,
   children,
-}: IconProps & { width?: number; children: ReactNode }) {
+}: IconProps & {
+  width?: number;
+  /** State an icon draws rather than announces — styled, and asserted in tests. */
+  dataOpen?: boolean;
+  children: ReactNode;
+}) {
   return (
     <svg
       className={className}
@@ -28,6 +39,7 @@ function Stroke({
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
+      data-open={dataOpen === undefined ? undefined : String(dataOpen)}
     >
       {children}
     </svg>
@@ -97,11 +109,35 @@ export function ClockIcon({ className }: IconProps) {
   );
 }
 
-export function FolderIcon({ className }: IconProps) {
+/**
+ * The folder in the code section, drawn in two parts so that it can open.
+ *
+ * A folder row already carries a chevron, so a folder glyph that never changed
+ * was the row saying "collapsed" once and drawing a box the second time. The
+ * shell and the front panel are separate paths instead: closed, the panel's
+ * sides sit exactly on the shell's and the pair renders as the one outline it
+ * always was; open, the panel shears out and settles, and the glyph is the
+ * thing the row is about rather than a label for it.
+ *
+ * The motion lives in `sidebar.css` (`.folder-glyph`) because it is the same
+ * transition the chevron beside it runs, and reduced motion has to be able to
+ * take both away and still leave two honest states.
+ */
+export function FolderIcon({ className, open = false }: FolderIconProps) {
   return (
-    <Stroke className={className} width={1.8}>
-      <path d="M3.2 7.2V17a2 2 0 0 0 2 2h13.6a2 2 0 0 0 2-2v-7.2a2 2 0 0 0-2-2h-6.9l-1.9-2.3a2 2 0 0 0-1.5-.7H5.2a2 2 0 0 0-2 2.4Z" />
-      <path d="M3.2 9.8h17.6" />
+    <Stroke
+      className={className ? `folder-glyph ${className}` : "folder-glyph"}
+      width={1.8}
+      dataOpen={open}
+    >
+      <path
+        className="folder-shell"
+        d="M3.2 9.8V7.2a2 2 0 0 1 2-2h3.8a2 2 0 0 1 1.5.7l1.9 2.3h6.4a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5.2a2 2 0 0 1-2-2Z"
+      />
+      <path
+        className="folder-front"
+        d="M3.2 9.8h17.6V17a2 2 0 0 1-2 2H5.2a2 2 0 0 1-2-2Z"
+      />
     </Stroke>
   );
 }
