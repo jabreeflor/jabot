@@ -1,5 +1,7 @@
 //! Thread overlay, runs, transcript log, and Inbox projection.
 
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection, OptionalExtension};
 use uuid::Uuid;
 
@@ -643,6 +645,40 @@ pub fn count_unread_inbox(conn: &Connection, thread_id: Option<&str>) -> Result<
         |row| row.get(0),
     )
     .map_err(Into::into)
+}
+
+/// The same count, per bot: what the red dot on a crew blob means.
+///
+/// The predicate is [`count_unread_inbox`]'s, character for character, and
+/// that is the point rather than an accident. A dot on Writer's face and the
+/// number in the sidebar are two readings of one fact, so they have to agree
+/// about which cards count — including the `pr` exception, whose whole reason
+/// is that it is a claim about a pull request rather than about the thread.
+///
+/// Grouped on `threads.bot_id` and not on the derived `bot-<botId>` id.
+/// `standing.rs` steps over tombstones with `MAX_GENERATIONS`, so one bot can
+/// own several generations of standing thread and only the column is stable
+/// across them. Bots with nothing waiting are simply absent from the map,
+/// which is what the caller wants to write as a zero.
+pub fn count_unread_inbox_by_bot(conn: &Connection) -> Result<HashMap<String, i64>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT threads.bot_id, COUNT(*) FROM inbox_events
+         JOIN threads ON threads.id = inbox_events.thread_id
+         WHERE inbox_events.read_at IS NULL AND inbox_events.dismissed_at IS NULL
+           AND threads.bot_id IS NOT NULL
+           AND threads.deleted_at IS NULL
+           AND (threads.state IN ('folded', 'resurfaced') OR inbox_events.kind = 'pr')
+         GROUP BY threads.bot_id",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+    })?;
+    let mut counts = HashMap::new();
+    for row in rows {
+        let (bot_id, count) = row?;
+        counts.insert(bot_id, count);
+    }
+    Ok(counts)
 }
 
 /// An event the host answered on the user's behalf is recorded but never

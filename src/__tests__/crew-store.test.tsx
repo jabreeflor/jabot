@@ -63,6 +63,7 @@ function bot(overrides: Partial<BotView> = {}): BotView {
     isChief: false,
     memoryDir: "/data/bots/writer",
     sortOrder: 5,
+    unread: 0,
     createdAt: "2026-08-20T10:00:00Z",
     updatedAt: "2026-08-20T10:00:00Z",
     ...overrides,
@@ -195,6 +196,7 @@ describe("botRow / templateRow", () => {
       isChief: false,
       templateId: "expense",
       image: null,
+      unread: false,
     });
     // Absent template = a bot nobody copied, not an unset field the editor
     // would then send back as the string "undefined". An absent icon is the
@@ -206,6 +208,32 @@ describe("botRow / templateRow", () => {
       "data:image/png;base64,AAAA",
     );
     expect(templateRow(TEMPLATES[0])).toEqual(TEMPLATES[0]);
+  });
+
+  /**
+   * The dot on a bot's blob (#22, #24).
+   *
+   * `Bot.unread` has been a prop since the prototype and `Avatar` has drawn
+   * the dot for it just as long, but nothing ever set it outside the
+   * fixtures: `BotView` had no such field, so in the shipped app the dot could
+   * not appear however much was waiting.
+   *
+   * A dot rather than the count itself: the blob has room to say "something is
+   * waiting" and the number is read in the Inbox, which is where it can be
+   * acted on.
+   */
+  it("turns the host's per-bot count into the dot", () => {
+    expect(botRow(bot({ unread: 3 })).unread).toBe(true);
+    expect(botRow(bot({ unread: 1 })).unread).toBe(true);
+    expect(botRow(bot({ unread: 0 })).unread).toBe(false);
+  });
+
+  /** An older host does not send the field. No dot is the honest reading, and
+      the one the app has been living with. */
+  it("draws no dot for a host that does not count", () => {
+    const older = bot();
+    delete (older as Partial<BotView>).unread;
+    expect(botRow(older).unread).toBe(false);
   });
 
   it("renders a colour it does not know rather than crashing on it", () => {
@@ -365,6 +393,25 @@ describe("App, once the host has answered with a crew", () => {
     expect(
       within(card("Chief")).queryByText("handoff_to_bot"),
     ).not.toBeInTheDocument();
+  });
+
+  /**
+   * The dot, end to end from the host's count (#22, #24).
+   *
+   * `botRow` turning a number into a boolean is only half of it: nothing drew
+   * a dot before because `crew/list` had no count to turn, so the case worth
+   * pinning is the whole trip — the host says 2, the grid lights that blob and
+   * only that blob.
+   */
+  it("lights the blob of a bot with cards waiting, and no other", async () => {
+    crew = [CHIEF, bot({ unread: 2 })];
+    await openCrew();
+
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    expect(
+      within(card("Writer")).getByTestId("unread-dot"),
+    ).toBeInTheDocument();
+    expect(within(card("Chief")).queryByTestId("unread-dot")).toBeNull();
   });
 
   it("offers the host's harnesses in the editor, not the compiled-in three", async () => {

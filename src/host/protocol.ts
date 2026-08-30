@@ -885,6 +885,11 @@ export interface BotView {
       worker's standing thread runs in. Absent on a host with no data dir. */
   memoryDir?: string;
   sortOrder: number;
+  /** Cards waiting on this bot's standing thread — the red dot on its blob
+      (#22, #24). The same projection `inbox/list` badges the sidebar with,
+      grouped by bot, so the two readings cannot disagree. `crew/create` and
+      `crew/update` answer 0. */
+  unread: number;
   createdAt: string;
   updatedAt: string;
 }

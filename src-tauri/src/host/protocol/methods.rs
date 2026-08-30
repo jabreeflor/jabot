@@ -1638,6 +1638,13 @@ pub struct BotView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_dir: Option<String>,
     pub sort_order: i64,
+    /// Cards waiting on this bot's standing thread — the red dot on its blob
+    /// (#22, #24). The same projection `inbox/list` badges the sidebar with,
+    /// grouped by bot, so the two readings cannot disagree. `crew/create` and
+    /// `crew/update` answer 0: a bot that has just been written has nothing
+    /// waiting, and querying for that would be asking a question with a known
+    /// answer.
+    pub unread: i64,
     pub created_at: String,
     pub updated_at: String,
 }

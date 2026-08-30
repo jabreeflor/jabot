@@ -627,6 +627,14 @@ impl Store {
         overlay::count_unread_inbox(&self.conn, thread_id)
     }
 
+    /// Unread cards per bot — the red dot on a crew blob. Same predicate as
+    /// [`Store::count_unread_inbox`], so the dot and the badge cannot disagree.
+    pub fn count_unread_inbox_by_bot(
+        &self,
+    ) -> Result<std::collections::HashMap<String, i64>, StoreError> {
+        overlay::count_unread_inbox_by_bot(&self.conn)
+    }
+
     pub fn mark_inbox_event_read(&self, id: &str) -> Result<(), StoreError> {
         overlay::mark_inbox_event_read(&self.conn, id)
     }
@@ -1610,6 +1618,54 @@ mod tests {
         assert_eq!(store.count_unread_inbox(None).unwrap(), 1);
         store.mark_inbox_read("t-atomic").unwrap();
         assert_eq!(store.count_unread_inbox(None).unwrap(), 0);
+    }
+
+    /// The red dot on a crew blob (#22, #24).
+    ///
+    /// Grouped by `threads.bot_id`, on the same predicate the sidebar badge
+    /// counts with — a dot that disagreed with the number beside the Inbox
+    /// would be worse than no dot.
+    #[test]
+    fn counts_what_is_waiting_on_each_bot_and_nothing_else() {
+        let (store, _dir) = open_store();
+        for (thread, bot) in [("t-writer", "writer"), ("t-code", "code")] {
+            store
+                .insert_thread(&NewThread {
+                    bot_id: Some(bot.into()),
+                    ..sample_thread(thread)
+                })
+                .unwrap();
+        }
+        // A thread nobody owns: it badges the sidebar and belongs to no blob.
+        store
+            .insert_thread(&NewThread {
+                bot_id: None,
+                ..sample_thread("t-loose")
+            })
+            .unwrap();
+
+        for thread in ["t-writer", "t-loose"] {
+            store.set_thread_state(thread, "folded").unwrap();
+            store
+                .resurface_thread(
+                    thread, "folded", "done", "done", "Finished", "finished", None, None,
+                )
+                .unwrap();
+        }
+
+        let counts = store.count_unread_inbox_by_bot().unwrap();
+        assert_eq!(counts.get("writer").copied(), Some(1));
+        // A bot with nothing waiting is absent rather than zero, and the
+        // ownerless thread's card is nobody's dot — though it is still in the
+        // sidebar's own count, which is the number beside the Inbox.
+        assert_eq!(counts.get("code"), None);
+        assert_eq!(counts.len(), 1);
+        assert_eq!(store.count_unread_inbox(None).unwrap(), 2);
+
+        // Reading it is what clears the dot, and it clears only that bot's.
+        store.mark_inbox_read("t-writer").unwrap();
+        assert!(store.count_unread_inbox_by_bot().unwrap().is_empty());
+        assert_eq!(store.count_unread_inbox(None).unwrap(), 1);
     }
 
     #[test]
