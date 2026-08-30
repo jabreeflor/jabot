@@ -7,7 +7,7 @@
  * This is the one suite that simulates a first run: setup-dom.ts seeds every
  * jsdom as already-onboarded, and `clearOnboarding()` here is the opt-out.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -297,5 +297,117 @@ describe("Onboarding", () => {
       await screen.findByRole("button", { name: /^Inbox —/ }),
     ).toBeInTheDocument();
     expect(screen.getByText("Ada")).toBeInTheDocument();
+  });
+});
+
+/**
+ * The one screen that asks a user to choose an engine was choosing from the
+ * three compiled-in fixtures, not from the host's catalog. A fresh install
+ * never saw a tier-2 preset or its own tier-3 JSON there, and could pick an
+ * engine the host would refuse at thread start.
+ */
+describe("Onboarding, engine catalog", () => {
+  const LIVE = {
+    harnesses: [
+      {
+        id: "claude",
+        label: "Claude Code",
+        blurb: "Anthropic's coding agent",
+        accent: "var(--h-claude)",
+        tier: "shipped",
+        command: "claude-agent-acp",
+        args: [],
+        sessionScope: "thread",
+        reserved: true,
+      },
+      {
+        id: "hermes",
+        label: "Hermes",
+        blurb: "A preset the fixtures have never heard of",
+        accent: "var(--h-hermes)",
+        tier: "preset",
+        command: "hermes",
+        args: ["acp"],
+        sessionScope: "profile",
+        reserved: true,
+      },
+    ],
+    issues: [],
+  };
+
+  const DOCTOR = {
+    reports: [
+      {
+        id: "hermes",
+        label: "Hermes",
+        tier: "preset",
+        status: "cli_missing",
+        ready: false,
+        detail: "hermes is not on PATH",
+        remedy: "Run: npm i -g hermes-acp",
+        args: ["acp"],
+        elapsedMs: 7,
+      },
+    ],
+    issues: [],
+    path: [],
+  };
+
+  function withCatalog(over: Record<string, unknown> = {}) {
+    connected.mockResolvedValue({
+      client: {
+        disconnect: vi.fn(),
+        listHarnesses: vi.fn(async () => LIVE),
+        harnessDoctor: vi.fn(async () => DOCTOR),
+        ...over,
+      } as unknown as HostClient,
+      hello: HELLO,
+    });
+  }
+
+  it("offers the host's catalog, not the compiled-in three", async () => {
+    withCatalog();
+    const user = userEvent.setup();
+    await renderFirstRun();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    // A preset the fixtures do not contain: proof the picker is live.
+    expect(await screen.findByRole("button", { name: /Hermes/ })).toBeInTheDocument();
+    // And a fixture engine the host did not list is gone.
+    expect(screen.queryByRole("button", { name: /^Pi/ })).not.toBeInTheDocument();
+  });
+
+  /** First run is exactly when "you do not have this installed" matters most:
+      it is the moment the choice is made, and the alternative is finding out
+      at the first prompt. */
+  it("says which engines are not installed", async () => {
+    withCatalog();
+    const user = userEvent.setup();
+    await renderFirstRun();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole("button", { name: /Hermes/ })).getByText(
+          "Run: npm i -g hermes-acp",
+        ),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  /** A setup screen that waited on the host would be a blank window, and one
+      that blanked because a catalog read failed would be worse. */
+  it("falls back to the fixtures when the host cannot answer", async () => {
+    withCatalog({
+      listHarnesses: vi.fn(async () => {
+        throw new Error("no catalog");
+      }),
+    });
+    const user = userEvent.setup();
+    await renderFirstRun();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(screen.getByRole("button", { name: /Claude Code/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Codex/ })).toBeInTheDocument();
   });
 });

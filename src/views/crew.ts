@@ -167,6 +167,58 @@ export interface Crew {
   remove: (botId: string) => Promise<void>;
 }
 
+/**
+ * The engine catalog, with the Doctor's answer folded in once it arrives.
+ *
+ * Its own hook because the onboarding gate needs it and nothing else about the
+ * crew: `useCrew` also fetches bots and tools, which a first run has no use
+ * for and which would put two more calls in front of the first screen.
+ *
+ * `null` until the catalog answers, so a caller can keep its fixtures until
+ * there is something real to draw — the same rule `useCrew` follows for bots.
+ */
+export function useHarnessCatalog(client: HostClient | null): HarnessCard[] | null {
+  const [cards, setCards] = useState<HarnessCard[] | null>(null);
+  // Apart from `cards` on purpose; see the note in `useCrew`. The two calls
+  // race, and merging on arrival loses whichever lands first.
+  const [reports, setReports] = useState<readonly HarnessReport[] | null>(null);
+
+  useEffect(() => {
+    if (!client) return;
+    let cancelled = false;
+    if (typeof client.listHarnesses === "function") {
+      client
+        .listHarnesses()
+        .then((list) => {
+          if (!cancelled) setCards(list.harnesses.map(harnessCard));
+        })
+        .catch(() => {
+          // Silent: the caller keeps its fixtures. A first-run screen that
+          // refused to draw because a catalog read failed would be worse than
+          // one drawing the three compiled-in defaults.
+        });
+    }
+    if (typeof client.harnessDoctor === "function") {
+      client
+        .harnessDoctor({})
+        .then((doctor) => {
+          if (!cancelled) setReports(doctor.reports);
+        })
+        .catch(() => {
+          // Silent, for the reason given in `useCrew`.
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
+
+  return useMemo(
+    () => (cards && reports ? withReadiness(cards, reports) : cards),
+    [cards, reports],
+  );
+}
+
 export function useCrew(client: HostClient | null): Crew {
   const [crew, setCrew] = useState<CrewListResult | null>(null);
   const [tools, setTools] = useState<ToolOption[] | null>(null);

@@ -53,7 +53,7 @@ import {
   saveOnboarding,
   type OnboardingProfile,
 } from "./onboarding/state";
-import { useCrew } from "./views/crew";
+import { useCrew, useHarnessCatalog } from "./views/crew";
 import { usePullRequests, type PullRequests } from "./views/pulls";
 import { useGithubAuth, type GithubAuth } from "./views/github";
 import {
@@ -111,6 +111,16 @@ type HostSession = ReturnType<typeof useHost>;
  */
 function App() {
   const host = useHost();
+  // The first harness a user ever picks came from `mock-host.ts` — the three
+  // compiled-in defaults — so a fresh install never saw a tier-2 preset or the
+  // user's own tier-3 JSON on the one screen that asks them to choose, and
+  // could pick an engine the host would refuse at thread start. The connection
+  // is already hoisted above this gate, so the catalog is one call away.
+  //
+  // Falls back to the fixtures exactly as `AppShell` does: `null` means the
+  // host has not answered, and a setup screen that waited on it would be a
+  // blank window.
+  const liveHarnesses = useHarnessCatalog(host.client);
   const [profile, setProfile] = useState<OnboardingProfile | null>(
     loadOnboarding,
   );
@@ -132,7 +142,7 @@ function App() {
     />
   ) : (
     <Onboarding
-      harnesses={HARNESSES}
+      harnesses={liveHarnesses ?? HARNESSES}
       profile={editing ?? undefined}
       hostLine={hostLine(host.hello, host.hostError, host.connecting)}
       hostOffline={host.hostError !== null}
