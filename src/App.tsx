@@ -493,6 +493,19 @@ function AppShell({
     if (fromEditor) closeEditor();
   }
 
+  /** Start the provider grant, and say so in the modal if the host refuses.
+      The flow returns as soon as it is *running*; what comes back after that
+      arrives on the poll `useCrew` arms while anything is `connecting`. */
+  function connectTool(toolId: string) {
+    setEditorError(null);
+    crew.connectTool(toolId).catch((err) => setEditorError(formatError(err)));
+  }
+
+  function disconnectTool(toolId: string) {
+    setEditorError(null);
+    crew.disconnectTool(toolId).catch((err) => setEditorError(formatError(err)));
+  }
+
   function closeEditor() {
     setEditor({ open: false });
     setEditorError(null);
@@ -693,6 +706,11 @@ function AppShell({
           onSave={saveBot}
           onRemove={(botId) => removeBot(botId, true)}
           onCancel={closeEditor}
+          // Only with a host. A preview build has nothing to sign into, and a
+          // Connect button there would offer a flow that cannot start.
+          onConnectTool={client ? connectTool : undefined}
+          onDisconnectTool={client ? disconnectTool : undefined}
+          onOpenUrl={(url) => window.open(url, "_blank", "noopener,noreferrer")}
         />
       )}
 

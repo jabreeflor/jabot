@@ -109,6 +109,22 @@ const TOOLS: ToolListResult = {
   ],
 };
 
+/** What `tools/list` answers while a flow is waiting for the human: the same
+    cards, plus the URL the host publishes onto every card the flow covers. */
+function connectingTools(): ToolListResult {
+  return {
+    tools: TOOLS.tools.map((tool) =>
+      tool.id === "notion"
+        ? {
+            ...tool,
+            status: "connecting" as const,
+            authorizeUrl: "https://accounts.example.com/consent?flow=1",
+          }
+        : tool,
+    ),
+  };
+}
+
 const HARNESSES: HarnessListResult = {
   harnesses: [
     {
@@ -339,6 +355,16 @@ describe("App, once the host has answered with a crew", () => {
       hold it open. Default: the catalog above, probed. */
   let harnessDoctor = vi.fn(async () => DOCTOR);
 
+  /** What `tools/list` answers *right now*. Reassignable, because the whole
+      point of the connect flow is that the host's answer changes between two
+      polls while the human is away in a browser (#18). */
+  let toolAnswer: ToolListResult = TOOLS;
+  let connectTool = vi.fn(async () => ({}));
+  let disconnectTool = vi.fn(async () => ({}));
+  /** Held here rather than dug out of the `connectHost` mock, so the poll test
+      can count calls without unwrapping a promise. */
+  let listTools = vi.fn(async () => toolAnswer);
+
   function client(): HostClient {
     return {
       disconnect: vi.fn(),
@@ -346,7 +372,9 @@ describe("App, once the host has answered with a crew", () => {
       createBot,
       updateBot,
       removeBot,
-      listTools: vi.fn(async () => TOOLS),
+      listTools,
+      connectTool,
+      disconnectTool,
       listHarnesses: vi.fn(async () => HARNESSES),
       harnessDoctor,
       listFolders: vi.fn(async () => ({ folders: [] })),
@@ -357,6 +385,10 @@ describe("App, once the host has answered with a crew", () => {
     crew = [CHIEF, bot()];
     vi.clearAllMocks();
     harnessDoctor = vi.fn(async () => DOCTOR);
+    toolAnswer = TOOLS;
+    connectTool = vi.fn(async () => ({}));
+    disconnectTool = vi.fn(async () => ({}));
+    listTools = vi.fn(async () => toolAnswer);
     vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
   });
 
@@ -429,6 +461,135 @@ describe("App, once the host has answered with a crew", () => {
       "title",
       "Gmail — Connected as jabree@example.com",
     );
+  });
+
+  /**
+   * The half of `tools/connect` that was never built (#18).
+   *
+   * The host has published `authorizeUrl` onto every card of a live flow since
+   * #18, and `FlowState::AwaitingUser` says in so many words "the URL is the
+   * one the UI opens" — and no UI opened it. `connectTool` and `disconnectTool`
+   * had no callers outside the client, `toolOption` threw `authorizeUrl` away,
+   * and `useCrew` fetched the tool list exactly once. So a chip could say
+   * `needs_auth` forever.
+   */
+  it("starts the provider grant from the chip's own row", async () => {
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    // Notion is `needs_auth`, so the row offers the one thing that helps.
+    await userEvent.click(screen.getByRole("button", { name: "Connect Notion" }));
+
+    expect(connectTool).toHaveBeenCalledWith({ toolId: "notion" });
+    // And the chip itself still toggles the allowlist: signing this Mac into
+    // Notion and letting *this bot* use it are two different facts, and one
+    // control doing both would be the bug this split exists to prevent.
+    expect(connectTool).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Disconnect where there is a grant to drop", async () => {
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    // Gmail is connected, so the useful action is the other one — and the
+    // button names the *provider grant*, which is what is actually dropped.
+    expect(
+      screen.queryByRole("button", { name: "Connect Google" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Disconnect google" }),
+    );
+    expect(disconnectTool).toHaveBeenCalledWith({ toolId: "gmail" });
+  });
+
+  /**
+   * The consent screen, and the reason the URL had to survive `toolOption`.
+   * A browser tab is easy to lose; a user who closed it would otherwise be
+   * left watching a dot with nothing to press.
+   */
+  it("opens the authorize URL the host published", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    toolAnswer = connectingTools();
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Open sign-in" }),
+    );
+
+    expect(open).toHaveBeenCalledWith(
+      "https://accounts.example.com/consent?flow=1",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    open.mockRestore();
+  });
+
+  /**
+   * The substitute for a notification, and the thing that actually commits the
+   * grant. #18 settled that there is none — every host → client notification
+   * carries a `threadId` envelope and a connection belongs to no thread — so
+   * the client polls, and the host runs `drain_connect_flows()` only when
+   * something asks it for the tool list. Without this poll, a user who
+   * consented in their browser would sit in front of `connecting` forever.
+   */
+  it("polls while a flow is waiting, and stops once it settles", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      toolAnswer = connectingTools();
+      await openCrew();
+      await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+      await userEvent.click(
+        within(card("Writer")).getByRole("button", { name: "Edit" }),
+      );
+      await screen.findByRole("button", { name: "Open sign-in" });
+
+      // The human consents in the browser; the host commits it on the next
+      // list. Nothing here calls `reload` — the poll has to find it.
+      toolAnswer = TOOLS;
+      await vi.advanceTimersByTimeAsync(2_500);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Connect Notion" }),
+        ).toBeInTheDocument(),
+      );
+
+      // Settled, so the interval is gone: a crew tab left open must not shell
+      // the host every two seconds for the rest of the session.
+      const settled = listTools.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(6_000);
+      expect(listTools.mock.calls.length).toBe(settled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** A tool that is not installed cannot be signed into, so nothing is
+      offered — a Connect button there would start a flow that cannot help. */
+  it("offers no sign-in for a tool that is not on this Mac", async () => {
+    toolAnswer = {
+      tools: [
+        { ...TOOLS.tools[1], id: "terminal", label: "Terminal", status: "missing" },
+      ],
+    };
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    await userEvent.click(
+      within(card("Writer")).getByRole("button", { name: "Edit" }),
+    );
+
+    expect(await screen.findByRole("button", { name: "Terminal" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Connect/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Disconnect/ })).not.toBeInTheDocument();
   });
 
   it("greys out an engine the Doctor could not find, and says how to install it", async () => {
