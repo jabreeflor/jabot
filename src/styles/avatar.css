@@ -144,7 +144,10 @@
   max-width: none;
   height: auto;
   left: -13%;
-  bottom: -7%;
+  /* Keep the whole face inside the portrait. Anchoring this oversized image
+     from the bottom put its top roughly 19% above the frame, which hid the
+     eye housings. A little headroom also absorbs the look animation's scale. */
+  top: 3%;
   user-select: none;
   pointer-events: none;
   filter: drop-shadow(0 calc(var(--s) * 0.04) calc(var(--s) * 0.04) rgba(16, 16, 18, 0.42));
@@ -322,9 +325,10 @@
 }
 
 .av-cluster .mascot-stage .mascot {
-  width: 148%;
-  left: -24%;
-  bottom: -11%;
+  /* These portraits are smaller, so keep the face large without pushing its
+     outer corners beyond the frame. The shared top anchor remains in force. */
+  width: 138%;
+  left: -19%;
 }
 
 .cluster.av-cluster > .s1 {
