@@ -103,6 +103,11 @@
 
   /* motion — rows and cards leave, they do not blink out */
   --t-exit: 0.4s;
+  /* an icon changing state: fast enough to feel like the click, slow enough
+     to be a movement rather than a redraw */
+  --t-icon: 0.22s;
+  /* a flap settling — a little past the mark, then back */
+  --ease-flap: cubic-bezier(0.32, 1.4, 0.6, 1);
 }
 
 *,
