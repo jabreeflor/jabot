@@ -32,6 +32,7 @@ import { GithubSignInModal } from "./components/GithubSignInModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
+import { DevicesView } from "./views/DevicesView";
 import { SettingsView } from "./views/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import {
@@ -66,6 +67,7 @@ import {
 import { allThreads, useFolders, useHostThread } from "./views/folders";
 import { useThreadActions } from "./views/fold";
 import { useInbox, type HostInbox } from "./views/inbox";
+import { useDevices, type Devices } from "./views/devices";
 import { useSettings, type Settings } from "./views/settings";
 import { CrossIcon } from "./components/Icon";
 import { ChatView, LiveChatView } from "./views/ChatView";
@@ -198,6 +200,7 @@ function AppShell({
   const inbox = useInbox(client, registered.reload, crew.bots);
   const schedules = useSchedules(client);
   const settings = useSettings(client);
+  const devices = useDevices(client);
   // Whether GitHub can be asked as anybody (#16). The PR board is the only
   // surface that needs it, and it needs it twice: to decide whether to ask for
   // the user's own pull requests at all, and to know what to offer if not.
@@ -568,6 +571,7 @@ function AppShell({
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
         onOpenSchedules={() => setSelection({ view: "schedules" })}
+        onOpenDevices={client ? () => setSelection({ view: "devices" }) : undefined}
         onOpenSettings={client ? () => setSelection({ view: "settings" }) : undefined}
         onNewChat={(folderId) => setNewChat({ open: true, folderId })}
         onThreadMenu={(thread, position) => setMenu({ thread, position })}
@@ -589,6 +593,7 @@ function AppShell({
           inbox={inbox}
           schedules={schedules}
           settings={settings}
+          devices={devices}
           pulls={pulls}
           github={github}
           onSignIn={() => setSignIn(true)}
@@ -736,6 +741,7 @@ function MainView({
   inbox,
   schedules,
   settings,
+  devices,
   pulls,
   github,
   onSignIn,
@@ -768,6 +774,8 @@ function MainView({
   schedules: Schedules;
   /** App-wide preferences (#26). */
   settings: Settings;
+  /** Everything paired with this Mac (#19, #29). */
+  devices: Devices;
   /** The PR board, host-owned from the first answer (#28). */
   pulls: PullRequests;
   /** Whether GitHub can be asked as anybody, and as whom (#16). */
@@ -828,6 +836,18 @@ function MainView({
           onOpenThread={onOpenInboxThread}
           onAction={onInboxAction}
           notify={inbox.notify}
+        />
+      );
+    case "devices":
+      return (
+        <DevicesView
+          devices={devices.devices}
+          error={devices.error}
+          onReload={devices.reload}
+          // Handed down rather than resolved here so the row can show the
+          // host's own refusal — "the local device cannot be revoked; it is
+          // the host's own console" is the useful sentence.
+          onRevoke={devices.revoke}
         />
       );
     case "settings":

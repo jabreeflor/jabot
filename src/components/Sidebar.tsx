@@ -11,6 +11,7 @@ import { FolderList } from "./FolderList";
 import { initials } from "./format";
 import {
   ClockIcon,
+  DeviceIcon,
   InboxIcon,
   NewChatIcon,
   PlusIcon,
@@ -45,6 +46,7 @@ export function Sidebar({
   onOpenInbox,
   onOpenPullRequests,
   onOpenSchedules,
+  onOpenDevices,
   onOpenSettings,
   onNewChat,
   onThreadMenu,
@@ -74,6 +76,9 @@ export function Sidebar({
   onOpenInbox: () => void;
   onOpenPullRequests: () => void;
   onOpenSchedules: () => void;
+  /** Paired devices (#19, #29). Absent before a host has answered, for the
+      same reason as Settings: a preview build has nothing paired to it. */
+  onOpenDevices?: () => void;
   /** App-wide preferences (#26). Absent before a host has answered: a preview
       build has nothing to set. */
   onOpenSettings?: () => void;
@@ -190,6 +195,23 @@ export function Sidebar({
           </span>
           Schedules
         </button>
+
+        {/* Only with a host, for the same reason as Settings below: what this
+            lists is what the *host* is paired to, and a preview build is
+            paired to nothing. */}
+        {onOpenDevices && (
+          <button
+            type="button"
+            className="nav-row"
+            aria-current={selection.view === "devices"}
+            onClick={onOpenDevices}
+          >
+            <span className="ic">
+              <DeviceIcon />
+            </span>
+            Devices
+          </button>
+        )}
 
         {/* Last in the nav, and only with a host. What it sets is the host's:
             a preview build drawing this would offer to change nothing. */}
