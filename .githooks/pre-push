@@ -160,7 +160,7 @@ fi
 # The note expires after 24h, because the gates are not a pure function of the
 # content: rust-toolchain.toml tracks `stable`, CI installs the newest one on
 # every run, and clippy gains lints between releases. A tree that passed last
-# week can fail today (DEVIATIONS.md D-014). A `fast` note never satisfies a
+# week can fail today (issue #69). A `fast` note never satisfies a
 # `full` push — it never ran the e2e suite.
 # ---------------------------------------------------------------------------
 STAMP_MAX_AGE=86400
