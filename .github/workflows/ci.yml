@@ -25,7 +25,7 @@ jobs:
   # CI. The one thing the script cannot reproduce is the toolchain — CI
   # installs current stable on every run — so the script prints its rustc,
   # clippy and node versions at the top and warns when the local stable looks
-  # a release behind (DEVIATIONS.md D-014).
+  # a release behind (issue #69).
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 25

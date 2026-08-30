@@ -82,10 +82,10 @@ warn() {
 #
 # Two CI failures came from this box being on an older stable than CI, which
 # installs current stable on every run (dtolnay/rust-toolchain@stable). See
-# DEVIATIONS.md D-014. Being older than CI cannot be detected offline with
-# certainty, so: print every version unconditionally, so a discrepancy is
-# visible in any pasted log; fail only on things that are locally provable
-# (below the declared floor, mismatched clippy); warn on everything else.
+# https://github.com/jabreeflor/jabot/issues/69. Being older than CI cannot be
+# detected offline with certainty, so: print every version unconditionally, so a
+# discrepancy is visible in any pasted log; fail only on things that are locally
+# provable (below the declared floor, mismatched clippy); warn on everything else.
 # ---------------------------------------------------------------------------
 
 # `sort -V` is not portable to the BSD userland on macOS; compare the way the
@@ -261,9 +261,9 @@ lockfiles() {
 # is a way packaging has broken or would break silently:
 #
 #   - bundle.targets losing "app" publishes a release with no updater archive.
-#     The build succeeds and logs one warning (DEVIATIONS.md D-005).
+#     The build succeeds and logs one warning (issue #58).
 #   - createUpdaterArtifacts=true hard-errors every unsigned build, CI's
-#     included; it is merged in at release time with --config (D-005).
+#     included; it is merged in at release time with --config (issue #58).
 #   - a missing icon or an unparseable entitlements.plist fails at package or
 #     codesign time, i.e. on macOS, i.e. now only on main.
 #   - an ungated extra binary is auto-discovered by cargo, copied into
