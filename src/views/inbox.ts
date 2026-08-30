@@ -33,6 +33,7 @@ import {
   PERMISSION_RESOLVED,
   type HostClient,
   type InboxEventView,
+  type NotifyStatusResult,
   type PermissionPendingResult,
   type ThreadOverlayState,
 } from "../host";
@@ -71,6 +72,9 @@ export interface HostInbox {
   open: (threadId: string) => Promise<void>;
   /** Whatever the card's own buttons do. Unknown ids are ignored. */
   act: (cardId: string, actionId: string) => Promise<void>;
+  /** What the OS says about banners (#27). `null` until asked, and on any host
+      that will not answer — the Inbox is complete without it. */
+  notify: NotifyStatusResult | null;
 }
 
 /**
@@ -82,6 +86,7 @@ export function useInbox(
   onThreadChanged?: () => void,
 ): HostInbox {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [notify, setNotify] = useState<NotifyStatusResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [generation, setGeneration] = useState(0);
@@ -112,6 +117,29 @@ export function useInbox(
       cancelled = true;
     };
   }, [client, generation]);
+
+  // Asked once, not on every reload and not inside `load`. An OS notification
+  // permission is changed in System Settings, not by anything this app does,
+  // so re-asking on every poll would be a round trip per refresh for an answer
+  // that does not move. Its failure is swallowed for the same reason
+  // `pendingOrNone` swallows its own: the Inbox is complete without it, and
+  // every card is written whether or not a banner was ever allowed.
+  useEffect(() => {
+    if (!client) return;
+    if (typeof client.notifyStatus !== "function") return;
+    let cancelled = false;
+    client
+      .notifyStatus()
+      .then((status) => {
+        if (!cancelled) setNotify(status);
+      })
+      .catch(() => {
+        // Deliberately silent; see above.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   // The Inbox is the one view that has to be right while nobody is looking at
   // it: the badge is drawn from it, and the card the user came back for was
@@ -193,6 +221,7 @@ export function useInbox(
     reload,
     open,
     act,
+    notify,
   };
 }
 
