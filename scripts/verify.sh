@@ -5,12 +5,13 @@
 #   ./scripts/verify.sh                    # everything
 #   ./scripts/verify.sh --fast             # skip the e2e project (no Rust binary build)
 #   ./scripts/verify.sh --check-toolchain  # also ask rustup if stable moved (NETWORK)
+#   ./scripts/verify.sh --check-mac        # also lint notify/mac.rs for macOS (NETWORK)
 #
 # This is the only gate. CI's `verify` job is `npm ci` + this script, and the
 # macOS `bundle` job does not run on pull requests (.github/workflows/ci.yml
 # says why), so anything this misses reaches main. Everything below runs
 # offline, needs no display, no GitHub token and no macOS — except
-# --check-toolchain, which is opt-in for exactly that reason.
+# --check-toolchain and --check-mac, which are opt-in for exactly that reason.
 #
 # Stages, cheapest first so failures surface early:
 #   0. toolchain      — versions printed, MSRV floor enforced, drift from CI warned
@@ -26,6 +27,9 @@
 #   8. build hostd    — the NDJSON stdio host the e2e suite drives
 #   9. vitest e2e     — TypeScript client against the real Rust host
 #  10. vite build     — the renderer bundle actually builds
+#   *. mac notify     — --check-mac only: notify/mac.rs, which is cfg'd out on
+#                      Linux and so is linted by nothing else, cross-checked
+#                      against x86_64-apple-darwin (NETWORK)
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -36,11 +40,13 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 FAST=0
 CHECK_TOOLCHAIN=0
+CHECK_MAC=0
 for arg in "$@"; do
   case "$arg" in
     --fast)            FAST=1 ;;
     --check-toolchain) CHECK_TOOLCHAIN=1 ;;
-    -h|--help)         sed -n '3,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --check-mac)       CHECK_MAC=1 ;;
+    -h|--help)         sed -n '3,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'unknown flag: %s (try --help)\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -529,6 +535,17 @@ run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]
 # type and cfg errors are the class this is for, and codegen would double the
 # run. Costs ~1s when the Rust sources have not moved, ~20s when they have.
 run "default-features check" cargo check "${MANIFEST[@]}" "${LOCKED[@]}"
+
+# The one file the default path cannot see. `notify/mac.rs` is
+# `cfg(target_os = "macos")`, so every Rust stage above compiles straight past
+# it, and CI's macOS `bundle` job does not run on pull requests — which leaves
+# it linted by nothing at all. Opt-in because the scratch crate the check
+# builds has to resolve the macOS half of the dependency graph, and the default
+# path is offline on purpose. Anyone touching src-tauri/src/notify/ should run
+# it; see the script for why the whole crate cannot be cross-checked instead.
+if [[ $CHECK_MAC -eq 1 ]]; then
+  run "mac notify cross-check" ./scripts/check-mac-notify.sh
+fi
 run "rust tests"     cargo test "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}"
 
 if [[ $FAST -eq 0 ]]; then
