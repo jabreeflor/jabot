@@ -136,6 +136,17 @@ impl HostSession {
             )));
         };
         conn.cancel(&session_id)?;
+        // Start the stopwatch. `session/cancel` is a notification, so ACP
+        // gives it no reply and the only acknowledgement is the prompt
+        // response that ends the turn — which a deaf adapter never sends.
+        // `supervisor_tick` reads this to notice, and the `PromptResult` arm
+        // clears it, so a well-behaved adapter never trips the grace.
+        //
+        // `insert` rather than `entry().or_insert`: a second cancel is the
+        // user asking again, and the grace should be measured from the most
+        // recent ask rather than silently already half spent.
+        self.cancel_requested
+            .insert(thread_id.clone(), std::time::Instant::now());
         self.pump_acp();
         Ok(SessionCancelResult {
             thread_id,
@@ -364,6 +375,10 @@ impl HostSession {
                 // printed a URL gets asked about now, from the thread's own
                 // worktree — the authoritative check in `pr-linkage.md` (#28).
                 self.pr_on_turn_end(thread_id);
+                // Whatever ended the turn — a stop reason, a cancel the
+                // adapter honoured, or the adapter simply finishing — there is
+                // no longer anything to be waiting on, so the stopwatch stops.
+                self.cancel_requested.remove(thread_id);
                 // The turn is over, so the session is free: anything the user
                 // said while it was busy goes out now, in the order they said
                 // it (#14 steer-vs-redispatch).

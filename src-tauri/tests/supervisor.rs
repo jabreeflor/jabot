@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 
 use jabot_lib::host::{
     HostSession, JsonRpcRequest, JsonRpcResponse, RequestId, SessionFingerprint, HOST_HELLO,
-    INBOX_LIST, SESSION_PROMPT, THREAD_ARCHIVE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN,
-    THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT,
+    INBOX_LIST, SESSION_CANCEL, SESSION_PROMPT, THREAD_ARCHIVE, THREAD_FOLD, THREAD_OPEN,
+    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT,
 };
 use serde_json::{json, Value};
 
@@ -830,4 +830,140 @@ fn an_adapter_that_cannot_hand_its_session_back_is_never_evicted() {
     // context, and the next prompt would quietly continue in a new session.
     assert_eq!(host.session.live_adapter_count(), 1);
     assert_eq!(host.state("t-keep")["process"]["connected"], true);
+}
+
+/// An adapter that ignores `session/cancel` must not hold the user's next
+/// words hostage.
+///
+/// `session/cancel` is an ACP notification: no reply, and the only
+/// acknowledgement is the prompt response that ends the turn. `hang` never
+/// sends one, so the run stays open and `AcpState` stays `Running` — which is
+/// exactly the shape both branches of `drain_stranded_queues` skip. Before the
+/// grace existed the queued prompt sat there showing "1 message waiting" until
+/// the adapter died, and was only then reported dropped.
+#[test]
+fn a_cancel_the_agent_ignores_still_releases_the_queued_prompts() {
+    let mut host = Host::start();
+    // Short enough to observe, long enough that it is a grace and not zero.
+    host.session.set_cancel_grace(Duration::from_millis(50));
+    host.open_thread("t-deaf-cancel", Some("hang"));
+    host.prompt("t-deaf-cancel");
+    host.settle("t-deaf-cancel", |s| s["latestRun"]["state"] == "running");
+
+    let queued = host.ok(
+        SESSION_PROMPT,
+        json!({
+            "threadId": "t-deaf-cancel",
+            "content": "actually, do the other thing",
+            "mode": "queue"
+        }),
+    );
+    assert_eq!(queued["queued"], true);
+
+    let cancelled = host.ok(SESSION_CANCEL, json!({ "threadId": "t-deaf-cancel" }));
+    assert_eq!(cancelled["cancelled"], true);
+
+    // The agent is deaf, so nothing ends the turn. Pump until the grace has
+    // elapsed and the supervisor has had a tick to notice.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        host.session.pump_acp();
+        let transcript = host.ok(THREAD_TRANSCRIPT, json!({ "threadId": "t-deaf-cancel" }));
+        if transcript.to_string().contains("prompt_dropped") {
+            assert!(
+                transcript
+                    .to_string()
+                    .contains("never acknowledged the stop"),
+                "dropped for the wrong reason: {transcript}"
+            );
+            assert!(
+                transcript["queued"].as_array().unwrap().is_empty(),
+                "the queue was reported dropped but is still held: {transcript}"
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the queued prompt is still held behind an ignored cancel: {transcript}"
+        );
+        thread::sleep(Duration::from_millis(15));
+    }
+
+    // What this must NOT have done is end the run or invent a stop reason.
+    // The host cannot know the turn ended, and saying so would be the
+    // invention that was refused when this was first considered. The `stuck`
+    // backstop in the lifecycle still owns the run itself.
+    let state = host.state("t-deaf-cancel");
+    assert_eq!(
+        state["latestRun"]["state"], "running",
+        "releasing the queue must not end the run: {state}"
+    );
+}
+
+/// The grace is a backstop, not a policy change: an adapter that honours the
+/// cancel promptly must never see a `prompt_dropped`. `cancellable` answers
+/// the pending prompt with `cancelled`, which ends the turn, which drains the
+/// queue the ordinary way.
+#[test]
+fn an_agent_that_honours_the_cancel_still_gets_its_queue_delivered() {
+    let mut host = Host::start();
+    host.session.set_cancel_grace(Duration::from_millis(50));
+    host.open_thread("t-good-cancel", Some("cancellable"));
+    host.prompt("t-good-cancel");
+    host.settle("t-good-cancel", |s| s["latestRun"]["state"] == "running");
+
+    host.ok(
+        SESSION_PROMPT,
+        json!({
+            "threadId": "t-good-cancel",
+            "content": "and then tidy up",
+            "mode": "queue"
+        }),
+    );
+    host.ok(SESSION_CANCEL, json!({ "threadId": "t-good-cancel" }));
+
+    // Give the grace more than enough time to have fired had the cancel gone
+    // unacknowledged. It did not, so nothing here is dropped.
+    let deadline = Instant::now() + Duration::from_millis(600);
+    while Instant::now() < deadline {
+        host.session.pump_acp();
+        thread::sleep(Duration::from_millis(15));
+    }
+    let transcript = host.ok(THREAD_TRANSCRIPT, json!({ "threadId": "t-good-cancel" }));
+    assert!(
+        !transcript
+            .to_string()
+            .contains("never acknowledged the stop"),
+        "an honoured cancel was treated as an ignored one: {transcript}"
+    );
+}
+
+/// Zero is "wait as long as it takes", and it has to keep meaning that: it is
+/// the behaviour this replaced, and a defensible preference for someone who
+/// would rather a prompt sit than be reported dropped.
+#[test]
+fn a_zero_grace_holds_the_queue_the_way_it_always_did() {
+    let mut host = Host::start();
+    host.session.set_cancel_grace(Duration::ZERO);
+    host.open_thread("t-no-grace", Some("hang"));
+    host.prompt("t-no-grace");
+    host.settle("t-no-grace", |s| s["latestRun"]["state"] == "running");
+
+    host.ok(
+        SESSION_PROMPT,
+        json!({ "threadId": "t-no-grace", "content": "held", "mode": "queue" }),
+    );
+    host.ok(SESSION_CANCEL, json!({ "threadId": "t-no-grace" }));
+
+    let deadline = Instant::now() + Duration::from_millis(600);
+    while Instant::now() < deadline {
+        host.session.pump_acp();
+        thread::sleep(Duration::from_millis(15));
+    }
+    let transcript = host.ok(THREAD_TRANSCRIPT, json!({ "threadId": "t-no-grace" }));
+    assert!(
+        !transcript.to_string().contains("prompt_dropped"),
+        "a zero grace dropped the queue anyway: {transcript}"
+    );
+    assert_eq!(transcript["queued"].as_array().unwrap().len(), 1);
 }

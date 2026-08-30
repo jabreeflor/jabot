@@ -32,7 +32,54 @@ impl HostSession {
         }
         self.reap_dead_adapters();
         self.drain_stranded_queues();
+        self.release_unacknowledged_cancels();
         self.evict_idle_adapters();
+    }
+
+    /// Stop holding a user's words behind a cancel the adapter ignored.
+    ///
+    /// `session/cancel` is an ACP *notification*: there is no reply, and the
+    /// only acknowledgement is the prompt response that ends the turn. An
+    /// adapter that ignores it therefore keeps `AcpState::Running` and an open
+    /// run, which makes the thread invisible to both branches of
+    /// [`Self::drain_stranded_queues`] — the first wants an idle adapter with
+    /// no open run, the second wants no adapter at all. So anything the user
+    /// typed after pressing stop sits in `prompt_queue` behind a turn that
+    /// will never end, showing "N messages waiting", until the adapter
+    /// eventually dies and they are reported dropped — possibly hours later.
+    ///
+    /// What this deliberately does **not** do is end the run or synthesize a
+    /// stop reason. The host cannot know the turn ended, and saying it did
+    /// would be exactly the invention that was refused when this was first
+    /// considered. The run stays open, the adapter stays running, and the
+    /// `stuck` backstop in `lifecycle_tick` still owns the run itself.
+    ///
+    /// The only thing corrected here is the lie of omission: the user is told
+    /// their queued prompts are not going to be delivered, at the point that
+    /// becomes true, instead of finding out whenever the adapter happens to
+    /// close.
+    fn release_unacknowledged_cancels(&mut self) {
+        let grace = self.supervisor.cancel_grace;
+        // Zero means "wait as long as it takes", which is a real choice.
+        if grace.is_zero() {
+            return;
+        }
+        let overdue: Vec<String> = self
+            .cancel_requested
+            .iter()
+            .filter(|(_, requested)| requested.elapsed() >= grace)
+            .map(|(thread_id, _)| thread_id.clone())
+            .collect();
+        for thread_id in overdue {
+            // Whatever happens below, this thread has had its grace. Clearing
+            // first means a thread whose queue is already empty stops being
+            // scanned every tick, and a later cancel starts a fresh stopwatch.
+            self.cancel_requested.remove(&thread_id);
+            if self.queue_depth(&thread_id) == 0 {
+                continue;
+            }
+            self.drop_prompt_queue(&thread_id, "the agent never acknowledged the stop");
+        }
     }
 
     /// The machine was asleep for `gap`, and is not any more.

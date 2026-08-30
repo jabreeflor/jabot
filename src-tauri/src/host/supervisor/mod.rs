@@ -58,6 +58,17 @@ const DEFAULT_PROBE_INTERVAL: Duration = Duration::from_millis(1_000);
 /// this module and not in #15.
 const DEFAULT_IDLE_EVICT: Duration = Duration::from_secs(120);
 
+/// How long an adapter gets to act on `session/cancel` before the host stops
+/// holding the user's queued prompts behind the turn it will not end (#14).
+///
+/// Thirty seconds because a cancel that is going to be honoured is honoured
+/// almost immediately — the adapter is being asked to stop, not to finish —
+/// while a tool call already in flight may still need a moment to unwind. This
+/// does NOT end the run or invent a stop reason: the host cannot know a turn
+/// ended, and claiming it did would be the invention D-010 refused. It only
+/// stops silently holding words the user is entitled to know were not sent.
+const DEFAULT_CANCEL_GRACE: Duration = Duration::from_secs(30);
+
 /// Supervisor RAM. Everything durable is in the store; this is what one
 /// process knows about its own lifetime.
 #[derive(Debug)]
@@ -68,6 +79,7 @@ pub struct Supervisor {
     last_probe: Instant,
     probe_interval: Duration,
     idle_evict_after: Duration,
+    cancel_grace: Duration,
     sleeps_observed: u64,
 }
 
@@ -83,6 +95,7 @@ impl Default for Supervisor {
             last_probe: Instant::now() - DEFAULT_PROBE_INTERVAL,
             probe_interval: DEFAULT_PROBE_INTERVAL,
             idle_evict_after: DEFAULT_IDLE_EVICT,
+            cancel_grace: DEFAULT_CANCEL_GRACE,
             sleeps_observed: 0,
         }
     }
@@ -96,6 +109,9 @@ impl Supervisor {
     /// - `JABOT_SUPERVISOR_PROBE_MS` — keep-alive probe interval.
     /// - `JABOT_IDLE_EVICT_MS` — idle grace; `0` turns eviction off.
     /// - `JABOT_SLEEP_GAP_MS` — unaccounted wall time that counts as a sleep.
+    /// - `JABOT_CANCEL_GRACE_MS` — how long an adapter gets to act on a
+    ///   `session/cancel`; `0` turns the release off and restores the old
+    ///   behaviour of waiting forever.
     pub fn from_env() -> Self {
         let read = |key: &str| std::env::var(key).ok();
         let probe_interval = millis(read("JABOT_SUPERVISOR_PROBE_MS").as_deref())
@@ -113,6 +129,11 @@ impl Supervisor {
             // real policy for someone who wants every folded thread warm.
             idle_evict_after: millis(read("JABOT_IDLE_EVICT_MS").as_deref())
                 .unwrap_or(DEFAULT_IDLE_EVICT),
+            // Zero is meaningful here too, and for the same reason as above:
+            // "wait as long as it takes" is a defensible choice for someone
+            // who would rather a queued prompt sit than be reported dropped.
+            cancel_grace: millis(read("JABOT_CANCEL_GRACE_MS").as_deref())
+                .unwrap_or(DEFAULT_CANCEL_GRACE),
             ..Self::default()
         }
     }
@@ -198,6 +219,14 @@ impl HostSession {
     /// is also how every other test keeps its adapter.
     pub fn set_idle_evict_after(&mut self, grace: Duration) {
         self.supervisor.idle_evict_after = grace;
+    }
+
+    /// How long an adapter gets to act on `session/cancel` before the prompts
+    /// the user queued behind it are released. `ZERO` waits forever, which is
+    /// the behaviour this replaced and is still a defensible preference. The
+    /// setting this stands in for is #26's, like the two above.
+    pub fn set_cancel_grace(&mut self, grace: Duration) {
+        self.supervisor.cancel_grace = grace;
     }
 }
 
