@@ -249,3 +249,23 @@ export function CaretRightIcon({ className }: IconProps) {
     </Stroke>
   );
 }
+
+/** Send: the composer's submit, and the one on the schedule prompt (#25). */
+export function ArrowUpIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2.6}>
+      <path d="M12 19.5V5" />
+      <path d="M5.5 11.5L12 5l6.5 6.5" />
+    </Stroke>
+  );
+}
+
+/** Back: out of the schedule prompt and into the list behind it. */
+export function ArrowLeftIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2.4}>
+      <path d="M19 12H5" />
+      <path d="M11.5 5.5L5 12l6.5 6.5" />
+    </Stroke>
+  );
+}

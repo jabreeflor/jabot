@@ -17,16 +17,7 @@ import { useId, useState } from "react";
 import { FieldLabel, Modal } from "./Modal";
 import type { Bot } from "./types";
 import type { CatchUpPolicy } from "../host";
-import type { ScheduleDraft } from "../views/schedules";
-
-/** The four a person writes without looking anything up. Anything else is
-    typed in the same box — this is a shortcut, not the vocabulary. */
-const PRESETS: ReadonlyArray<{ label: string; cron: string }> = [
-  { label: "Every weekday, 9am", cron: "0 9 * * 1-5" },
-  { label: "Every day, 8am", cron: "0 8 * * *" },
-  { label: "Every hour", cron: "0 * * * *" },
-  { label: "Mondays, 9am", cron: "0 9 * * 1" },
-];
+import { PRESETS, type ScheduleDraft } from "../views/schedules";
 
 export interface ScheduleEditorValue extends ScheduleDraft {
   scheduleId: string | null;
