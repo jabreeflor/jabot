@@ -39,6 +39,7 @@ use super::protocol::methods::{
     ResurfaceReason, RunView, SleepingThreadView, ThreadFoldParams, ThreadOpenParams,
     ThreadRefParams, ThreadStateResult,
 };
+use super::schedule::RUN_KIND_SCHEDULE;
 use super::store::{InboxEventRow, NewThread, RunRow, SessionReceiptRow, Store, ThreadRow};
 use super::HostSession;
 use ledger::RunState;
@@ -896,8 +897,46 @@ impl HostSession {
         if state::next_state(from, ThreadAction::Resurface(reason), current_reason).is_err() {
             return Ok(false);
         }
-        let title = resurface::card_title(&row.title, reason);
-        let payload = json!({ "reason": reason.as_str() });
+        // Name the card after the job, when the job is a schedule.
+        //
+        // A fire that lands on a folded thread resurfaces it, and #25's own
+        // `schedule_card` then stands down rather than writing a second row —
+        // one finished job, one card. But the card it stands down in favour of
+        // is built from the *thread*, so a scheduled run came back as "Writer
+        // finished" when what finished was "Morning triage". The user folded a
+        // schedule; the row that brings it back should say so.
+        //
+        // Everything needed is already durable: `runs.trigger_json` is written
+        // at run open and carries the schedule's title and ids. Read back
+        // rather than kept in RAM because this resurface can happen long after
+        // the dispatch — a `stuck` backstop, or a card written on the next
+        // launch entirely.
+        //
+        // A run that is not a schedule, a trigger that will not parse, or no
+        // run at all all fall through to the thread's own name, which is the
+        // right answer for every prompted turn.
+        let scheduled = run_id
+            .and_then(|id| self.store.as_ref()?.get_run(id).ok().flatten())
+            .filter(|run| run.kind == RUN_KIND_SCHEDULE)
+            .and_then(|run| serde_json::from_str::<Value>(run.trigger_json.as_deref()?).ok());
+        let name = scheduled
+            .as_ref()
+            .and_then(|trigger| trigger.get("schedule").and_then(Value::as_str))
+            .unwrap_or(&row.title);
+        let title = resurface::card_title(name, reason);
+        let mut payload = json!({ "reason": reason.as_str() });
+        // The same fields `schedule_card` would have attached had it been the
+        // one to write the row, so a card means the same thing whichever path
+        // produced it.
+        if let Some(trigger) = scheduled.as_ref() {
+            let object = payload.as_object_mut().expect("built as an object above");
+            object.insert("source".into(), Value::String("schedule".into()));
+            for key in ["scheduleId", "schedule", "fireId"] {
+                if let Some(value) = trigger.get(key) {
+                    object.insert(key.into(), value.clone());
+                }
+            }
+        }
         self.store_or_err()?
             .resurface_thread(
                 thread_id,
