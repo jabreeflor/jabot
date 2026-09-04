@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "jabstack": {
+      "source": {
+        "source": "github",
+        "repo": "jabreeflor/jabstack"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "jabstack@jabstack": true
+  }
+}
