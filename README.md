@@ -49,6 +49,7 @@ and it runs on your machine:
 npm install                              # deps, and installs the git hooks
 ./scripts/verify.sh                      # the whole gate, ~1.5 min warm
 ./scripts/checkpoint.sh -m "message"     # verify and commit, atomically
+./scripts/live.sh up                     # the real app in a browser, on any OS
 ```
 
 `git push` re-runs the gate through `.githooks/pre-push` unless you just

@@ -56,8 +56,52 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:e2e` | one slice, while you are working on it |
+| `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
+
+## Running it live, on any machine
+
+`npm run tauri dev` needs macOS. Everything else about the product does not:
+the host is `jabot-hostd` on Linux in CI already, and the renderer is a web
+page. `scripts/live.sh` puts the two together so a change can be *seen*
+working on a Linux box, in a container, or in Claude Code on the web, with no
+agent improvising the setup:
+
+```bash
+./scripts/live.sh setup   # system libs (apt on Linux), npm deps, dev bins, a Chromium — idempotent
+./scripts/live.sh up      # vite + a real jabot-hostd behind it; returns once the host says hello
+./scripts/live.sh shot --out docs/img/<feature>/after.png --click 'text=Inbox'
+./scripts/live.sh smoke   # reset, up, seed, one real agent turn, screenshot — the whole loop
+./scripts/live.sh down
+```
+
+What `up` serves is the product minus the window chrome, not a mock. The
+`jabot-host` Vite plugin (`scripts/dev/host-plugin.ts`) spawns `jabot-hostd`
+with a real SQLite under `.jabot-dev/data` and bridges its NDJSON over Vite's
+own HMR WebSocket; `src/host/devTransport.ts` is the renderer's end of that
+bridge, picked by `defaultTransport()` only when the plugin has announced
+itself (`import.meta.env.JABOT_LIVE_HOST`). Inside JaBot.app, under `tauri
+dev`, in a unit test, in a production bundle: Tauri IPC exactly as before.
+
+The loop is then: edit, HMR reloads the tab, `live.sh shot …` writes the PNG
+under `docs/img/`, look at it, repeat, `verify.sh` before the push. `shot`
+refuses to take a picture until the sidebar's host line reports a live host,
+so a screenshot of "Connecting to host…" cannot be mistaken for evidence.
+
+Driving it without a real harness installed: `fake-acp-agent` (the scriptable
+ACP agent the e2e suite uses) is registered as the `fake-acp` harness whenever
+it is built, and `live.sh seed` puts Chief on it. `live.sh smoke` is that plus
+one turn through the UI, and is the acceptance test for this whole section —
+if it passes, the machine can run the loop.
+
+Two more handles, both for scripts: `GET /__jabot/host` is the host's status
+(what `up` polls), and `POST /__jabot/rpc` forwards one JSON-RPC request
+(`live.sh rpc '{"method":"host/health"}'`), which is how a screenshot script
+seeds folders and threads instead of clicking them into existence.
+
+Claude Code on the web runs `setup` from `.claude/hooks/session-start.sh`
+before the session starts, so a web session begins with the loop ready.
 
 ## What each gate means, and what to do when it fails
 
