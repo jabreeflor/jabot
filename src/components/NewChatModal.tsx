@@ -41,7 +41,6 @@ export function NewChatModal({
   onStart: (draft: NewChatDraft) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  const folderId = useId();
   const checkoutId = useId();
   const baseRefId = useId();
   const [harnessId, setHarnessId] = useState(
@@ -85,7 +84,6 @@ export function NewChatModal({
       />
 
       <WorkspacePicker
-        id={folderId}
         folders={folders}
         value={folder}
         onChange={setFolder}

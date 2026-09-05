@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { FolderIcon } from "./Icon";
 import { FieldLabel } from "./Modal";
-import { Select } from "./Select";
 import type { Folder } from "./types";
 
 export interface Repository {
@@ -18,7 +17,6 @@ export interface WorkspaceActions {
 }
 
 export function WorkspacePicker({
-  id,
   folders,
   value,
   onChange,
@@ -26,7 +24,6 @@ export function WorkspacePicker({
   busy,
   run,
 }: {
-  id: string;
   folders: readonly Folder[];
   value: string;
   onChange: (id: string) => void;
@@ -34,6 +31,7 @@ export function WorkspacePicker({
   busy: boolean;
   run: (action: () => Promise<void>) => Promise<void>;
 }) {
+  const selected = folders.find((folder) => folder.id === value);
   const [showRepos, setShowRepos] = useState(false);
   const [repos, setRepos] = useState<Repository[]>([]);
   const [page, setPage] = useState(0);
@@ -168,24 +166,28 @@ export function WorkspacePicker({
           )}
         </div>
       )}
-      <FieldLabel htmlFor={id}>FOLDER</FieldLabel>
-      <Select
-        id={id}
-        value={value}
-        onChange={onChange}
-        options={[
-          ...folders.map((folder) => ({
-            value: folder.id,
-            label: folder.name,
-          })),
-          { value: "", label: "No folder" },
-        ]}
-      />
-      <p className="workspace-hint">
-        {value
-          ? folders.find((folder) => folder.id === value)?.path
-          : "Start fresh without a project folder."}
-      </p>
+      {selected && (
+        <div
+          className="workspace-selection"
+          role="group"
+          aria-label="Selected workspace"
+        >
+          <FolderIcon open />
+          <div>
+            <strong>{selected.name}</strong>
+            <span>{selected.path}</span>
+          </div>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            aria-label="Remove selected workspace"
+            onClick={() => onChange("")}
+          >
+            Remove
+          </button>
+        </div>
+      )}
     </>
   );
 }

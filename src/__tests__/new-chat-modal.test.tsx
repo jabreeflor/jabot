@@ -3,7 +3,7 @@
  * default to something, report the exact id the host will resolve, and be
  * honest about a harness the machine does not have.
  */
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -112,37 +112,38 @@ describe("NewChatModal", () => {
     ).toBeInTheDocument();
   });
 
-  /** FOLDER is a custom listbox (`Select.tsx`), not a native <select> — the
-      browser's own popup will not take the rounded-menu shape the rest of
-      the modal uses. */
-  it("picks a folder from the custom dropdown", async () => {
-    const props = renderModal();
+  it("does not offer a second folder dropdown", () => {
+    renderModal();
+    expect(screen.queryByLabelText("FOLDER")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "No folder" })).toBeNull();
+    expect(
+      screen.queryByRole("group", { name: "Selected workspace" }),
+    ).toBeNull();
+  });
 
-    await userEvent.click(screen.getByLabelText("FOLDER"));
-    const menu = screen.getByRole("listbox");
+  it("shows the chosen workspace and lets it be removed", async () => {
+    const props = renderModal({ defaultFolderId: "jabot-app" });
+    expect(
+      screen.getByRole("group", { name: "Selected workspace" }),
+    ).toHaveTextContent("~/code/jabot-app");
+    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    await userEvent.type(screen.getByLabelText("BASE BRANCH"), "release/2.0");
     await userEvent.click(
-      within(menu).getByRole("option", { name: "globnet-sync" }),
+      screen.getByRole("button", { name: "Remove selected workspace" }),
     );
+    expect(
+      screen.queryByRole("group", { name: "Selected workspace" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
     );
-
-    expect(props.onStart).toHaveBeenCalledWith(
-      expect.objectContaining({ folderId: "globnet-sync" }),
-    );
-  });
-
-  it("closes just the dropdown on Escape, not the whole card", async () => {
-    const props = renderModal({ defaultFolderId: "jabot-app" });
-
-    await userEvent.click(screen.getByLabelText("FOLDER"));
-    expect(screen.getByRole("listbox")).toBeInTheDocument();
-
-    await userEvent.keyboard("{Escape}");
-
-    expect(screen.queryByRole("listbox")).toBeNull();
-    expect(screen.getByLabelText("FOLDER")).toHaveTextContent("jabot-app");
-    expect(props.onCancel).not.toHaveBeenCalled();
+    expect(props.onStart).toHaveBeenCalledWith({
+      harnessId: "claude",
+      folderId: null,
+      task: "Untitled session",
+    });
   });
 
   it("closes on Escape without starting anything", async () => {
@@ -307,7 +308,9 @@ describe("workspace entry points", () => {
     };
     renderModal({ workspaceActions, defaultFolderId: "jabot-app" });
     await userEvent.click(screen.getByRole("button", { name: /Open folder/ }));
-    expect(screen.getByLabelText("FOLDER")).toHaveTextContent("jabot-app");
+    expect(
+      screen.getByRole("group", { name: "Selected workspace" }),
+    ).toHaveTextContent("jabot-app");
   });
   it("shows clone failures and keeps the repository available for retry", async () => {
     const workspaceActions = {
