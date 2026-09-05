@@ -1,3 +1,4 @@
+import type { PrTarget, PrAction, PrWorkspace } from "./prWorkspace";
 //! Transport-agnostic JSON-RPC client for the JaBot host protocol.
 
 import { invoke } from "@tauri-apps/api/core";
@@ -422,6 +423,14 @@ export class HostClient {
   /** The PR board: every pull request a session on this Mac opened (#28).
       A store read — it never touches the network, so a user with no GitHub
       login still gets their board. */
+  async pullRequestDetail(params: PrTarget): Promise<PrWorkspace> {
+    return this.request<PrWorkspace>("pr/detail", params);
+  }
+
+  async pullRequestAction(params: PrAction): Promise<unknown> {
+    return this.request("pr/action", params);
+  }
+
   async listPullRequests(params: PrListParams = {}): Promise<PrListResult> {
     return this.request<PrListResult>(PR_LIST, params);
   }

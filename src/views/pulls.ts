@@ -405,15 +405,9 @@ function bullets(pr: PrFacts): string[] {
 /**
  * What the row's buttons do.
  *
- * Two, and neither needs a host method: `diff` opens the pull request on
- * GitHub, `reopen` is the thread link the whole table exists to preserve. There
- * is no Merge button — merging from JaBot is a host action nobody has built,
- * and a button that opens GitHub while claiming to merge would be worse than
- * the link that is honest about it (`pr-linkage.md` defers it).
- *
- * A PR with no session behind it — one of the user's own, written elsewhere —
- * gets only the link. There is no thread to reopen, and a button that admitted
- * that after being clicked would be worse than its absence.
+ * These secondary row actions retain the GitHub and coding-session links.
+ * PullRequestsView supplies the primary in-app workspace entry point, where
+ * reviews, comments and merges are handled by the authenticated host.
  */
 function actions(pr: PrFacts): NoticeAction[] {
   const out: NoticeAction[] = [

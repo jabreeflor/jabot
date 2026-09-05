@@ -38,6 +38,7 @@
 pub mod card;
 pub mod detect;
 pub mod github;
+pub mod workspace;
 
 use std::collections::HashMap;
 use std::path::Path;

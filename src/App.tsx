@@ -944,6 +944,7 @@ function MainView({
     case "prs":
       return (
         <PullRequestsView
+          client={client}
           // The fixtures stand in only until the host has answered — `null` is
           // "not asked yet" (a preview build, a unit test), and an empty array
           // is the real and common answer of "no open pull requests".
@@ -960,8 +961,7 @@ function MainView({
             const pr = (pulls.pullRequests ?? state.pullRequests).find(
               (row) => row.id === prId,
             );
-            // The PR itself is on GitHub; JaBot has no in-app diff for it and
-            // `pr-linkage.md` defers one. Opening the page is the honest verb.
+            // Keep the explicit GitHub link alongside the in-app workspace.
             if (pr) window.open(pr.url, "_blank", "noopener,noreferrer");
           }}
         />
