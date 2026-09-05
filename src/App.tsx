@@ -975,9 +975,8 @@ function MainView({
     case "prs":
       return (
         <PullRequestsView
-          // The fixtures stand in only where there is no host to ask — `null`
-          // is "not asked yet" (a preview build, a unit test), and an empty
-          // array is the real and common answer of "no open pull requests".
+          client={client}
+          // Fixtures are only for previews without a host; a live host starts empty.
           pullRequests={pullRequests}
           unavailable={pulls.unavailable}
           error={pulls.error}
@@ -989,8 +988,7 @@ function MainView({
           onAction={(prId, actionId) => {
             if (actionId !== "diff") return;
             const pr = pullRequests.find((row) => row.id === prId);
-            // The PR itself is on GitHub; JaBot has no in-app diff for it and
-            // `pr-linkage.md` defers one. Opening the page is the honest verb.
+            // Keep the explicit GitHub link alongside the in-app workspace.
             if (pr) window.open(pr.url, "_blank", "noopener,noreferrer");
           }}
         />

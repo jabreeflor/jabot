@@ -282,6 +282,11 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: PrRefreshParams = parse_params_or_default(request.params.as_ref())?;
             to_value(session.pr_refresh(params)?)
         }
+        "pr/detail" | "pr/action" => {
+            session.require_hello()?;
+            let params = parse_params(request.params.as_ref())?;
+            super::pr::workspace::dispatch(&request.method, params)
+        }
         PR_MINE => {
             session.require_hello()?;
             let params: PrMineParams = parse_params_or_default(request.params.as_ref())?;
