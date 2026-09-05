@@ -104,6 +104,16 @@ export function BranchIcon({ className }: IconProps) {
   );
 }
 
+/** App preferences in the profile footer. */
+export function GearIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <path d="m9.5 3-.5 2a7.5 7.5 0 0 0-1.5.9l-2-.6L3 9.6l1.5 1.4a7.5 7.5 0 0 0 0 2L3 14.4l2.5 4.3 2-.6A7.5 7.5 0 0 0 9 19l.5 2h5l.5-2a7.5 7.5 0 0 0 1.5-.9l2 .6 2.5-4.3-1.5-1.4a7.5 7.5 0 0 0 0-2L21 9.6l-2.5-4.3-2 .6A7.5 7.5 0 0 0 15 5l-.5-2Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Stroke>
+  );
+}
+
 /**
  * Settings — sliders, not a gear.
  *
