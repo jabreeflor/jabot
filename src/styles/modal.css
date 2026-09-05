@@ -527,3 +527,85 @@
   color: var(--amber);
   font-size: var(--fs-meta);
 }
+
+/* Workspace entry points stay visible above the saved-folder selection. */
+.workspace-sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.workspace-source {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 16px 13px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  border-radius: 13px;
+  cursor: pointer;
+}
+.workspace-source svg {
+  width: 25px;
+  height: 25px;
+  margin-bottom: 6px;
+  color: #c4b5fd;
+}
+.workspace-source strong {
+  font-size: 13px;
+}
+.workspace-source span,
+.workspace-hint,
+.workspace-repo-list span {
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.workspace-source:hover:not(:disabled),
+.workspace-source[aria-expanded="true"] {
+  background: #302d38;
+  border-color: #9887be;
+}
+.workspace-source:focus-visible,
+.workspace-repo-list button:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+.workspace-source:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.workspace-hint {
+  margin: 9px 0 0;
+  overflow-wrap: anywhere;
+}
+.workspace-repos {
+  margin-top: 12px;
+}
+.workspace-repo-list {
+  max-height: 190px;
+  overflow-y: auto;
+  margin: 8px 0;
+}
+.workspace-repo-list button {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 11px;
+  text-align: left;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.workspace-repo-list button:hover:not(:disabled) {
+  background: var(--raise);
+}
+.workspace-repo-list button:disabled {
+  opacity: 0.5;
+}

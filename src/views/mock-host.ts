@@ -83,7 +83,12 @@ export const HARNESSES: readonly HarnessCard[] = [
  */
 export const TOOL_CATALOG: readonly ToolOption[] = [
   { id: "gmail", label: "Gmail", status: "needs_auth", provider: "google" },
-  { id: "calendar", label: "Calendar", status: "needs_auth", provider: "google" },
+  {
+    id: "calendar",
+    label: "Calendar",
+    status: "needs_auth",
+    provider: "google",
+  },
   // The `connecting` state had no fixture at all, so `modal.css`'s
   // `[data-status="connecting"]` rule and the amber "Open sign-in" beside it
   // were unreachable in the shell — nobody could look at the one state that
@@ -792,7 +797,9 @@ function startThread(state: MockState, draft: NewChatDraft): MockState {
     transcripts: {
       ...state.transcripts,
       [id]: [
-        { kind: "user", id: `${id}-0`, text: draft.task },
+        ...(draft.task !== "Untitled session"
+          ? [{ kind: "user" as const, id: `${id}-0`, text: draft.task }]
+          : []),
         {
           kind: "tool",
           id: `${id}-1`,

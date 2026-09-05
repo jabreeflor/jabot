@@ -274,7 +274,7 @@ const PR_FIELDS_FRAGMENT: &str = "fragment PrFields on PullRequest {\n\
 /// A DNS hostname, optionally with a port. Deliberately narrow: this becomes
 /// `gh --hostname`, and anything outside this set is a value we did not mean
 /// to send.
-fn is_hostname(host: &str) -> bool {
+pub(crate) fn is_hostname(host: &str) -> bool {
     !host.is_empty()
         && host.len() <= 253
         && host.split(':').next().is_some_and(|name| {

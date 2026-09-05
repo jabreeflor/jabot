@@ -93,25 +93,26 @@ describe("App", () => {
     expect(screen.getByText(/npm test/)).toBeInTheDocument();
   });
 
-  it("starts a session from a folder and opens it", async () => {
-    await renderApp();
+  it("starts a preview session from a folder and opens it", async () => {
+    connected.mockRejectedValue(new Error("Preview"));
+    render(<App />);
+    await screen.findByRole("heading", { name: "Chief" });
 
     await userEvent.click(
       screen.getByRole("button", { name: "New thread in globnet-sync" }),
     );
     await userEvent.click(screen.getByRole("button", { name: /Codex/ }));
-    await userEvent.type(
-      screen.getByLabelText("WHAT SHOULD IT DO?"),
-      "Rotate the backup keys",
+    expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
 
     expect(
-      screen.getByRole("heading", { name: "Rotate the backup keys" }),
+      screen.getByRole("heading", { name: "Untitled session" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Codex")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Rotate the backup keys/ }),
+      screen.getByRole("button", { name: /Untitled session/ }),
     ).toBeInTheDocument();
   });
 
@@ -205,10 +206,7 @@ describe("App", () => {
   it("leaves an unsent draft behind when I switch conversations", async () => {
     await renderApp();
 
-    await userEvent.type(
-      screen.getByLabelText("Message Chief"),
-      "rm -rf prod",
-    );
+    await userEvent.type(screen.getByLabelText("Message Chief"), "rm -rf prod");
     await userEvent.click(screen.getByRole("button", { name: "Writer" }));
 
     expect(screen.getByLabelText("Message Writer")).toHaveValue("");

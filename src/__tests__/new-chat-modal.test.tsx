@@ -37,9 +37,10 @@ describe("NewChatModal", () => {
         screen.getByRole("button", { name: new RegExp(harness.label) }),
       ).toBeInTheDocument();
     }
-    expect(
-      screen.getByRole("button", { name: /Claude Code/ }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Claude Code/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("describes Pi as a coding agent, not Inflection's chatbot", () => {
@@ -54,10 +55,7 @@ describe("NewChatModal", () => {
     const props = renderModal({ defaultFolderId: "globnet-sync" });
 
     await userEvent.click(screen.getByRole("button", { name: /^Pi/ }));
-    await userEvent.type(
-      screen.getByLabelText("WHAT SHOULD IT DO?"),
-      "Add retry logic",
-    );
+    expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
     );
@@ -65,7 +63,7 @@ describe("NewChatModal", () => {
     expect(props.onStart).toHaveBeenCalledWith({
       harnessId: "pi",
       folderId: "globnet-sync",
-      task: "Add retry logic",
+      task: "Untitled session",
     });
   });
 
@@ -78,9 +76,10 @@ describe("NewChatModal", () => {
       "aria-pressed",
       "true",
     );
-    expect(
-      screen.getByRole("button", { name: /Claude Code/ }),
-    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /Claude Code/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("names an unnamed session rather than starting a blank one", async () => {
@@ -254,5 +253,88 @@ describe("NewChatModal, where the thread will work", () => {
     renderModal({ defaultFolderId: null });
 
     expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
+  });
+});
+
+describe("workspace entry points", () => {
+  const actions = () => ({
+    pickFolder: vi.fn(async () => "globnet-sync"),
+    listRepositories: vi.fn(async () => [
+      { full_name: "team/private-app", description: "Our app", private: true },
+    ]),
+    pickRepository: vi.fn(async () => "jabot-app"),
+    signedIn: true,
+    signIn: vi.fn(),
+  });
+  it("browses a folder and starts without a prompt", async () => {
+    const workspaceActions = actions();
+    const props = renderModal({ workspaceActions });
+    await userEvent.click(screen.getByRole("button", { name: /Open folder/ }));
+    expect(workspaceActions.pickFolder).toHaveBeenCalledOnce();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+    expect(props.onStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        folderId: "globnet-sync",
+        task: "Untitled session",
+      }),
+    );
+  });
+  it("lists authenticated repositories and selects the cloned folder", async () => {
+    const workspaceActions = actions();
+    const props = renderModal({ workspaceActions });
+    await userEvent.click(
+      screen.getByRole("button", { name: /GitHub repository/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /team\/private-app/ }),
+    );
+    expect(workspaceActions.pickRepository).toHaveBeenCalledWith(
+      "team/private-app",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+    expect(props.onStart).toHaveBeenCalledWith(
+      expect.objectContaining({ folderId: "jabot-app" }),
+    );
+  });
+  it("keeps selection after cancelling the native chooser", async () => {
+    const workspaceActions = {
+      ...actions(),
+      pickFolder: vi.fn(async () => null),
+    };
+    renderModal({ workspaceActions, defaultFolderId: "jabot-app" });
+    await userEvent.click(screen.getByRole("button", { name: /Open folder/ }));
+    expect(screen.getByLabelText("FOLDER")).toHaveTextContent("jabot-app");
+  });
+  it("shows clone failures and keeps the repository available for retry", async () => {
+    const workspaceActions = {
+      ...actions(),
+      pickRepository: vi.fn(async () => {
+        throw new Error("Clone failed");
+      }),
+    };
+    renderModal({ workspaceActions });
+    await userEvent.click(
+      screen.getByRole("button", { name: /GitHub repository/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: /team\/private-app/ }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Clone failed");
+    expect(
+      screen.getByRole("button", { name: /team\/private-app/ }),
+    ).toBeEnabled();
+  });
+  it("offers sign-in before requesting repositories", async () => {
+    const workspaceActions = { ...actions(), signedIn: false };
+    renderModal({ workspaceActions });
+    await userEvent.click(
+      screen.getByRole("button", { name: /GitHub repository/ }),
+    );
+    expect(workspaceActions.signIn).toHaveBeenCalledOnce();
+    expect(workspaceActions.listRepositories).not.toHaveBeenCalled();
   });
 });

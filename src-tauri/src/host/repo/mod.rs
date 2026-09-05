@@ -28,6 +28,7 @@ pub(super) mod exec;
 pub mod gh;
 pub mod git;
 pub mod origin;
+pub mod workspace;
 
 use std::path::{Path, PathBuf};
 

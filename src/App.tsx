@@ -16,6 +16,8 @@
 //! Navigation, overlay state, and the leave animation live here because they are
 //! the only state that spans the sidebar and the main pane.
 
+import { invoke } from "@tauri-apps/api/core";
+import type { Repository } from "./components/WorkspacePicker";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 
 import {
@@ -99,9 +101,7 @@ type NewChatState = { open: false } | { open: true; folderId: string | null };
 type EditorState = { open: false } | { open: true; botId: string | null };
 /** Editing only: a *new* schedule is written as a prompt inside the Schedules
     screen (#25), so the modal never opens without a record behind it. */
-type ScheduleEditorState =
-  | { open: false }
-  | { open: true; scheduleId: string };
+type ScheduleEditorState = { open: false } | { open: true; scheduleId: string };
 type MenuState = { thread: ThreadSummary; position: MenuPosition } | null;
 type HostSession = ReturnType<typeof useHost>;
 
@@ -234,11 +234,13 @@ function AppShell({
   // invisible to `hostThreads`, and the shell used to treat them as fixtures:
   // the main pane said "That thread is gone", and fold or archive went to the
   // mock reducer while the real permissions, runs and process sat untouched.
-  const selectedThreadId = selection.view === "thread" ? selection.threadId : null;
+  const selectedThreadId =
+    selection.view === "thread" ? selection.threadId : null;
   const resolved = useHostThread(
     client,
     selectedThreadId,
-    selectedThreadId !== null && hostThreads.some((t) => t.id === selectedThreadId),
+    selectedThreadId !== null &&
+      hostThreads.some((t) => t.id === selectedThreadId),
   );
   /** Is this the host's thread, whether or not a folder claims it? */
   const isHostThread = useCallback(
@@ -409,12 +411,7 @@ function AppShell({
     actionId: string,
   ) {
     const threadId = noticeThreadId(state, conversationId, itemId);
-    if (
-      actionId === "fold" &&
-      threadId &&
-      client &&
-      isHostThread(threadId)
-    ) {
+    if (actionId === "fold" && threadId && client && isHostThread(threadId)) {
       void fold({ threadId });
     }
     dispatch({ type: "answerNotice", conversationId, itemId, actionId });
@@ -423,18 +420,26 @@ function AppShell({
     );
   }
 
-  function startThread(draft: NewChatDraft) {
-    const folder = folders.find((f) => f.id === draft.folderId);
+  async function startThread(draft: NewChatDraft) {
+    const folder = (client ? registered.folders ?? [] : folders).find(
+      (f) => f.id === draft.folderId,
+    );
+    if (draft.folderId && !folder) {
+      setNewChatError("This folder is not available. Choose a folder again.");
+      return;
+    }
     // A registered folder is the host's, and so is the thread started in it:
     // `thread/open` is what stamps the row with its cwd and its repo (#16).
-    if (client && registered.folders && folder) {
+    if (client) {
       setNewChatError(null);
-      client
+      await client
         .openThread({
           title: draft.task,
-          cwd: folder.cwd ?? folder.path,
+          cwd: folder
+            ? (folder.cwd ?? folder.path)
+            : await invoke<string>("scratch_workspace"),
           harnessId: draft.harnessId,
-          folderId: folder.id,
+          folderId: folder?.id,
           // Advanced, and both undefined unless the card was opened and used
           // (#23). A base ref the repo does not have comes back as
           // WORKTREE_FAILED, which the catch below already puts on the card.
@@ -503,7 +508,9 @@ function AppShell({
 
   function disconnectTool(toolId: string) {
     setEditorError(null);
-    crew.disconnectTool(toolId).catch((err) => setEditorError(formatError(err)));
+    crew
+      .disconnectTool(toolId)
+      .catch((err) => setEditorError(formatError(err)));
   }
 
   function closeEditor() {
@@ -584,8 +591,12 @@ function AppShell({
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
         onOpenSchedules={() => setSelection({ view: "schedules" })}
-        onOpenDevices={client ? () => setSelection({ view: "devices" }) : undefined}
-        onOpenSettings={client ? () => setSelection({ view: "settings" }) : undefined}
+        onOpenDevices={
+          client ? () => setSelection({ view: "devices" }) : undefined
+        }
+        onOpenSettings={
+          client ? () => setSelection({ view: "settings" }) : undefined
+        }
         onNewChat={(folderId) => setNewChat({ open: true, folderId })}
         onThreadMenu={(thread, position) => setMenu({ thread, position })}
       />
@@ -646,24 +657,6 @@ function AppShell({
         />
       </main>
 
-      {signIn && (
-        <GithubSignInModal
-          host={github.status?.host ?? "github.com"}
-          // Absent status means the host has not answered yet; assume `gh` is
-          // there rather than showing an install line we have no evidence for.
-          installed={github.status?.installed !== false}
-          installHint={github.status?.remedy}
-          onSignIn={async (token) => {
-            await github.signIn(token);
-            // The board's own poll is up to a minute away, and somebody who
-            // just signed in is looking at it now.
-            pulls.reload();
-          }}
-          onCancel={() => setSignIn(false)}
-          onOpenUrl={(url) => window.open(url, "_blank", "noopener,noreferrer")}
-        />
-      )}
-
       {addFolder && (
         <AddFolderModal
           onRegister={(params: FolderRegisterParams) =>
@@ -687,12 +680,61 @@ function AppShell({
           folders={registered.folders ?? state.folders}
           defaultFolderId={newChat.folderId}
           defaultHarnessId={profile.harnessId ?? undefined}
+          workspaceActions={
+            client
+              ? {
+                  signedIn: github.signedIn,
+                  signIn: () => setSignIn(true),
+                  pickFolder: async () => {
+                    const path = await invoke<string | null>("pick_workspace");
+                    if (!path) return null;
+                    const existing = folders.find(
+                      (folder) => folder.path === path || folder.cwd === path,
+                    );
+                    return (
+                      existing?.id ??
+                      (await registered.register({ path })).folderId
+                    );
+                  },
+                  listRepositories: (page) =>
+                    invoke<Repository[]>("github_repositories", {
+                      host: github.status?.host ?? "github.com",
+                      page,
+                    }),
+                  pickRepository: async (repo) => {
+                    const path = await invoke<string>("clone_repository", {
+                      host: github.status?.host ?? "github.com",
+                      repo,
+                    });
+                    return (await registered.register({ path })).folderId;
+                  },
+                }
+              : undefined
+          }
           error={newChatError}
           onStart={startThread}
           onCancel={() => {
             setNewChat({ open: false });
             setNewChatError(null);
           }}
+        />
+      )}
+
+      {signIn && (
+        <GithubSignInModal
+          host={github.status?.host ?? "github.com"}
+          // Absent status means the host has not answered yet; assume `gh` is
+          // there rather than showing an install line we have no evidence for.
+          installed={github.status?.installed !== false}
+          installHint={github.status?.remedy}
+          onSignIn={async (token) => {
+            await github.signIn(token);
+            // The board's own poll is up to a minute away, and somebody who
+            // just signed in is looking at it now.
+            pulls.reload();
+          }}
+          onCancel={() => setSignIn(false)}
+          onOpenUrl={(url) => window.open(url, "_blank", "noopener,noreferrer")}
         />
       )}
 
@@ -927,7 +969,9 @@ function MainView({
     case "thread": {
       const hostThread =
         hostThreads.find((t) => t.id === selection.threadId) ??
-        (resolvedThread?.id === selection.threadId ? resolvedThread : undefined);
+        (resolvedThread?.id === selection.threadId
+          ? resolvedThread
+          : undefined);
       // A real row gets the real transcript. The fixtures keep the mock
       // reducer, so the shell still renders before a host has answered.
       if (client && hostThread) {

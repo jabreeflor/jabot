@@ -126,6 +126,10 @@ export function useFolders(client: HostClient | null): RegisteredFolders {
     async (params: FolderRegisterParams) => {
       if (!client) throw new Error("No host connection.");
       const folder = await client.registerFolder(params);
+      setFolders((rows) => [
+        ...(rows ?? []).filter((row) => row.id !== folder.folderId),
+        folderRow(folder),
+      ]);
       reload();
       return folder;
     },
