@@ -173,7 +173,15 @@ describe("harness/list", () => {
 
 describe("harness/doctor", () => {
   it("gives every card a reason and shows the PATH it searched", async () => {
-    const { client } = await connected({ persistent: true });
+    const missingDir = mkdtempSync(path.join(tmpdir(), "jabot-missing-harness-"));
+    scratch.push(missingDir);
+    const dataDir = dataDirWith([{
+      id: "missing-agent",
+      label: "Missing test agent",
+      command: path.join(missingDir, "not-installed"),
+      installHint: "Install the test adapter.",
+    }]);
+    const { client } = await connected({ dataDir });
 
     const doctor = await client.harnessDoctor();
 
@@ -182,9 +190,10 @@ describe("harness/doctor", () => {
       expect(entry.detail).not.toBe("");
       expect(entry.ready).toBe(entry.status === "ready");
     }
-    // Nothing vendor-shaped is installed on a CI box, and the answer for that
-    // is "the CLI is missing", not a shrug.
-    expect(report(doctor.reports, "codex").status).toBe("cli_missing");
+    // Probe a known absent binary instead of assuming the developer has no
+    // vendor CLI installed. CLI-vs-adapter diagnosis is covered by unit tests.
+    expect(report(doctor.reports, "missing-agent").status).toBe("adapter_missing");
+    expect(report(doctor.reports, "missing-agent").installHint).toBe("Install the test adapter.");
     expect(report(doctor.reports, "codex").installHint).toBeTruthy();
     expect(doctor.path.length).toBeGreaterThan(0);
   });

@@ -30,6 +30,10 @@ export function Modal({
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
+      const dialogs = document.querySelectorAll(
+        '[role="dialog"][aria-modal="true"]',
+      );
+      if (dialogs[dialogs.length - 1] !== modalRef.current) return;
       if (event.key === "Escape") {
         event.stopPropagation();
         onClose();

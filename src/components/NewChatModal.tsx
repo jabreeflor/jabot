@@ -17,7 +17,7 @@ import { useId, useState } from "react";
 
 import { FieldLabel, Modal } from "./Modal";
 import { HarnessPicker } from "./HarnessPicker";
-import { Select } from "./Select";
+import { WorkspacePicker, type WorkspaceActions } from "./WorkspacePicker";
 import type { Folder, HarnessCard, NewChatDraft } from "./types";
 
 export function NewChatModal({
@@ -26,6 +26,7 @@ export function NewChatModal({
   defaultFolderId = null,
   defaultHarnessId,
   error = null,
+  workspaceActions,
   onStart,
   onCancel,
 }: {
@@ -36,18 +37,30 @@ export function NewChatModal({
   /** Why the last attempt did not start a session. The card stays open holding
       the draft, because a refused spawn is something to fix and retry. */
   error?: string | null;
-  onStart: (draft: NewChatDraft) => void;
+  workspaceActions?: WorkspaceActions;
+  onStart: (draft: NewChatDraft) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  const folderId = useId();
-  const taskId = useId();
   const checkoutId = useId();
   const baseRefId = useId();
   const [harnessId, setHarnessId] = useState(
     defaultHarnessId ?? harnesses[0]?.id ?? "",
   );
   const [folder, setFolder] = useState(defaultFolderId ?? "");
-  const [task, setTask] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  async function run(action: () => Promise<void>) {
+    if (busy) return;
+    setBusy(true);
+    setWorkspaceError(null);
+    try {
+      await action();
+    } catch (err) {
+      setWorkspaceError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
   const [advanced, setAdvanced] = useState(false);
   const [useCheckout, setUseCheckout] = useState(false);
   const [baseRef, setBaseRef] = useState("");
@@ -56,7 +69,12 @@ export function NewChatModal({
   const hasFolder = folder !== "";
 
   return (
-    <Modal title="New Chat" onClose={onCancel}>
+    <Modal
+      title="New Chat"
+      onClose={() => {
+        if (!busy) onCancel();
+      }}
+    >
       <FieldLabel>HARNESS — BRING YOUR OWN</FieldLabel>
       <HarnessPicker
         harnesses={harnesses}
@@ -65,25 +83,23 @@ export function NewChatModal({
         label="Harness"
       />
 
-      <FieldLabel htmlFor={folderId}>FOLDER</FieldLabel>
-      <Select
-        id={folderId}
+      <WorkspacePicker
+        folders={folders}
         value={folder}
         onChange={setFolder}
-        options={[
-          ...folders.map((f) => ({ value: f.id, label: f.name })),
-          { value: "", label: "No folder" },
-        ]}
+        actions={workspaceActions}
+        busy={busy}
+        run={run}
       />
-
-      <FieldLabel htmlFor={taskId}>WHAT SHOULD IT DO?</FieldLabel>
-      <input
-        id={taskId}
-        type="text"
-        value={task}
-        placeholder="e.g. Add dark mode to settings"
-        onChange={(event) => setTask(event.target.value)}
-      />
+      {busy && (
+        <p className="workspace-hint" role="status">
+          Preparing your workspace…
+        </p>
+      )}
+      <p className="workspace-hint">
+        Your selected harness opens a new session. Add your first message when
+        you’re ready.
+      </p>
 
       {hasFolder && (
         <div className="advanced">
@@ -129,31 +145,39 @@ export function NewChatModal({
         </div>
       )}
 
-      {error && (
+      {(workspaceError || error) && (
         <p className="modal-error" role="alert">
-          {error}
+          {workspaceError || error}
         </p>
       )}
 
       <div className="macts">
-        <button type="button" className="btn" onClick={onCancel}>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={onCancel}
+        >
           Cancel
         </button>
         <button
           type="button"
           className="btn primary"
+          disabled={busy || !harnessId}
           onClick={() =>
-            onStart({
-              harnessId,
-              folderId: folder || null,
-              task: task.trim() || "Untitled session",
-              // Omitted rather than sent as `false` / `""`: the ordinary
-              // request on the wire has to stay exactly what it was, and the
-              // host's own default for a base ref is not the empty string.
-              ...(hasFolder && useCheckout ? { useCheckout: true } : {}),
-              ...(hasFolder && !useCheckout && baseRef.trim()
-                ? { baseRef: baseRef.trim() }
-                : {}),
+            void run(async () => {
+              await onStart({
+                harnessId,
+                folderId: folder || null,
+                task: "Untitled session",
+                // Omitted rather than sent as `false` / `""`: the ordinary
+                // request on the wire has to stay exactly what it was, and the
+                // host's own default for a base ref is not the empty string.
+                ...(hasFolder && useCheckout ? { useCheckout: true } : {}),
+                ...(hasFolder && !useCheckout && baseRef.trim()
+                  ? { baseRef: baseRef.trim() }
+                  : {}),
+              });
             })
           }
         >

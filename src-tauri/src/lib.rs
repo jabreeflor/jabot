@@ -140,7 +140,13 @@ pub fn run() {
             notify::install();
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![host_rpc])
+        .invoke_handler(tauri::generate_handler![
+            host_rpc,
+            host::repo::workspace::pick_workspace,
+            host::repo::workspace::github_repositories,
+            host::repo::workspace::clone_repository,
+            host::repo::workspace::scratch_workspace,
+        ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // Hide-to-Dock (macOS only, MVP per #4): closing the last window hides

@@ -16,7 +16,7 @@ mod permission;
 mod pr;
 mod procgroup;
 mod protocol;
-mod repo;
+pub(crate) mod repo;
 mod router;
 mod schedule;
 mod seq;

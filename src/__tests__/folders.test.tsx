@@ -12,7 +12,10 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { invoke } from "@tauri-apps/api/core";
 import App from "../App";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 import { AddFolderModal } from "../components/AddFolderModal";
 import {
   connectHost,
@@ -244,13 +247,60 @@ describe("App, once the host has answered", () => {
     listFolders.mockReset();
     openThread.mockReset();
     updateFolder.mockReset().mockImplementation(async () => folder());
-    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+    vi.mocked(connectHost).mockResolvedValue({
+      client: client(),
+      hello: HELLO,
+    });
   });
 
   async function renderApp() {
     render(<App />);
     await screen.findByText("This Mac · v0.1.0");
   }
+
+  it("opens a real folderless session with the selected harness and no initial message", async () => {
+    listFolders.mockResolvedValue({ folders: [] });
+    vi.mocked(invoke).mockResolvedValue("/scratch/session-1");
+    const thread: ThreadStateResult = {
+      threadId: "t-scratch",
+      title: "Untitled session",
+      cwd: "/scratch/session-1",
+      harnessId: "codex",
+      state: "active",
+      foldPolicy: "default",
+      process: {
+        connected: false,
+        acpState: "unknown",
+        pendingPermissions: 0,
+        resumable: false,
+      },
+      runs: [],
+      unread: 0,
+    };
+    openThread.mockResolvedValue(thread);
+    const host = client();
+    host.threadState = vi.fn(async () => thread);
+    host.prompt = vi.fn();
+    vi.mocked(connectHost).mockResolvedValue({ client: host, hello: HELLO });
+    await renderApp();
+    await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
+    await userEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+    expect(invoke).toHaveBeenCalledWith("scratch_workspace");
+    expect(openThread).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: "/scratch/session-1",
+        harnessId: "codex",
+        title: "Untitled session",
+      }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Untitled session" }),
+    ).toBeInTheDocument();
+    expect(host.prompt).not.toHaveBeenCalled();
+  });
 
   it("draws the registered folders instead of the fixtures", async () => {
     listFolders.mockResolvedValue({
@@ -294,7 +344,9 @@ describe("App, once the host has answered", () => {
     const notes = screen
       .getByRole("button", { name: /^notes/ })
       .closest(".folder-head");
-    expect(within(notes as HTMLElement).getByText("no git")).toBeInTheDocument();
+    expect(
+      within(notes as HTMLElement).getByText("no git"),
+    ).toBeInTheDocument();
   });
 
   it("starts a thread in the folder's own checkout", async () => {
@@ -313,7 +365,7 @@ describe("App, once the host has answered", () => {
                   threadId: "t-new",
                   folderId: registered.folderId,
                   harnessId: "codex",
-                  title: "Rotate the backup keys",
+                  title: "Untitled session",
                   state: "active" as ThreadOverlayState,
                   foldPolicy: "default" as const,
                 },
@@ -326,7 +378,7 @@ describe("App, once the host has answered", () => {
       opened = true;
       return {
         threadId: "t-new",
-        title: "Rotate the backup keys",
+        title: "Untitled session",
         state: "active" as ThreadOverlayState,
         foldPolicy: "default" as const,
         cwd: registered.cwd,
@@ -350,22 +402,21 @@ describe("App, once the host has answered", () => {
       await screen.findByRole("button", { name: "New thread in jabot" }),
     );
     await userEvent.click(screen.getByRole("button", { name: /Codex/ }));
-    await userEvent.type(
-      screen.getByLabelText("WHAT SHOULD IT DO?"),
-      "Rotate the backup keys",
+    expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
 
     // The cwd is the folder's, not the app's, and the folder travels with it —
     // that pair is what the host stamps the row with (setup-porting §19).
     expect(openThread).toHaveBeenCalledWith({
-      title: "Rotate the backup keys",
+      title: "Untitled session",
       cwd: "/Users/j/code/jabot",
       harnessId: "codex",
       folderId: "f-jabot",
     });
     expect(
-      await screen.findByRole("heading", { name: "Rotate the backup keys" }),
+      await screen.findByRole("heading", { name: "Untitled session" }),
     ).toBeInTheDocument();
   });
 
@@ -381,7 +432,7 @@ describe("App, once the host has answered", () => {
     listFolders.mockResolvedValue({ folders: [registered] });
     openThread.mockResolvedValue({
       threadId: "t-new",
-      title: "Rotate the backup keys",
+      title: "Untitled session",
       state: "active" as ThreadOverlayState,
       foldPolicy: "default" as const,
       cwd: registered.cwd,
@@ -401,16 +452,12 @@ describe("App, once the host has answered", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "New thread in jabot" }),
     );
-    await userEvent.type(
-      screen.getByLabelText("WHAT SHOULD IT DO?"),
-      "Rotate the backup keys",
-    );
+    expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
-    await userEvent.type(
-      screen.getByLabelText("BASE BRANCH"),
-      "release/2.0",
+    await userEvent.type(screen.getByLabelText("BASE BRANCH"), "release/2.0");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
 
     expect(openThread).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -438,7 +485,9 @@ describe("App, once the host has answered", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
     await userEvent.type(screen.getByLabelText("BASE BRANCH"), "v9.9.9");
-    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "v9.9.9 is not a commit in this repository",
@@ -460,18 +509,17 @@ describe("App, once the host has answered", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "New thread in jabot" }),
     );
-    await userEvent.type(
-      screen.getByLabelText("WHAT SHOULD IT DO?"),
-      "Rotate the backup keys",
+    expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Harness unavailable: codex-acp",
     );
-    expect(screen.getByLabelText("WHAT SHOULD IT DO?")).toHaveValue(
-      "Rotate the backup keys",
-    );
+    expect(
+      screen.getByRole("dialog", { name: "New Chat" }),
+    ).toBeInTheDocument();
   });
 
   it("says the sidebar is empty rather than looking broken", async () => {
@@ -527,7 +575,10 @@ describe("editing a registered folder", () => {
       ],
     });
     updateFolder.mockReset().mockImplementation(async () => folder());
-    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+    vi.mocked(connectHost).mockResolvedValue({
+      client: client(),
+      hello: HELLO,
+    });
   });
 
   async function openSettings() {
@@ -611,7 +662,9 @@ describe("editing a registered folder", () => {
   it("asks git again without sending any edits", async () => {
     await openSettings();
 
-    await userEvent.click(screen.getByRole("button", { name: "Ask git again" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ask git again" }),
+    );
 
     await waitFor(() =>
       expect(updateFolder).toHaveBeenCalledWith({
@@ -633,7 +686,9 @@ describe("editing a registered folder", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Folder settings for jabot" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Ask git again" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Ask git again" }),
+    );
 
     // The re-probe found a checkout, so the badge the old answer earned goes.
     await waitFor(() => expect(screen.queryByText("no git")).toBeNull());
