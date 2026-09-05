@@ -8,10 +8,12 @@
 //! bot conversations and Chief's notices, which #24 owns.
 //!
 //! Where the two meet, the host wins *once it has answered*. A `null` folder
-//! list is "the host has not said yet" — a preview build, a unit test, a host
-//! still starting — and the shell keeps its fixtures rather than blanking the
-//! sidebar. An empty list is an answer, and an empty sidebar is the right
-//! picture of a fresh install.
+//! list is "the host has not said yet". Where there is no host to ask — a
+//! preview build in a plain browser, a unit test — the shell keeps its
+//! fixtures rather than blanking the sidebar. Inside the app it paints empty
+//! instead: a fixture crew that flashes up and is then replaced by the real
+//! one reads as data the user never entered (`hostedByApp`). An empty list is
+//! an answer, and an empty sidebar is the right picture of a fresh install.
 //!
 //! Navigation, overlay state, and the leave animation live here because they are
 //! the only state that spans the sidebar and the main pane.
@@ -46,6 +48,7 @@ import type {
   HarnessCard,
   HostTarget,
   NewChatDraft,
+  PullRequest,
   Selection,
   ThreadSummary,
   ToolOption,
@@ -81,6 +84,7 @@ import {
   HARNESSES,
   HOST_TOOLS,
   TOOL_CATALOG,
+  hostedByApp,
   initialMockState,
   mockHostReducer,
   needsYouCount,
@@ -189,6 +193,10 @@ function AppShell({
   });
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const { client, hello, hostError, connecting } = hostSession;
+  // Whether the fixtures may stand in for a host answer that has not arrived.
+  // Only where no host exists to ask — see `hostedByApp`. Read once: the
+  // webview does not change underneath a running renderer.
+  const [fixtures] = useState(() => !hostedByApp());
   const registered = useFolders(client);
   const crew = useCrew(client);
   // The Inbox (#22). Reloads the sidebar too: reopening a card's thread puts
@@ -211,9 +219,11 @@ function AppShell({
   // list.
   const pulls = usePullRequests(client, github.signedIn);
   // The host wins once it has answered, per source. A crew of `null` is "not
-  // asked yet" — a preview build or a unit test — and the fixtures stand in;
-  // a real answer always has Chief in it.
-  const bots = crew.bots ?? state.bots;
+  // asked yet": in a preview build or a unit test the fixtures stand in, and
+  // inside the app the pane stays empty until the answer lands — a real answer
+  // always has Chief in it. The catalogs below are compiled-in constants that
+  // mirror the host's seed, not user data, so they stand in everywhere.
+  const bots = crew.bots ?? (fixtures ? state.bots : []);
   const templates = crew.templates ?? BOT_TEMPLATES;
   const toolChips = crew.tools ?? TOOL_CATALOG;
   const hostToolChips = crew.hostTools ?? HOST_TOOLS;
@@ -221,7 +231,18 @@ function AppShell({
   // Registered folders replace the fixtures the moment the host answers; the
   // threads inside them are real rows, so the main pane has to be able to find
   // one that the mock reducer has never heard of.
-  const folders = registered.folders ?? sidebarFolders(state);
+  const folders =
+    registered.folders ?? (fixtures ? sidebarFolders(state) : []);
+  // The PR board's rows, and the badge counted off them. `null` is "not asked
+  // yet", so before this the badge was always the fixture's count, even with a
+  // host answering — the sidebar said "4 open" over a board that said none.
+  const pullRequests =
+    pulls.pullRequests ?? (fixtures ? state.pullRequests : []);
+  const openPrs = pulls.pullRequests
+    ? pulls.pullRequests.filter((pr) => pr.status === "open").length
+    : fixtures
+      ? openPrCount(state)
+      : 0;
   // The row the settings card is open on, resolved against the live list so a
   // reload after a save re-seeds the form from what the host now holds.
   const settingsFolder =
@@ -570,8 +591,8 @@ function AppShell({
         // renderer happens to be holding: `count_unread_inbox` is the badge
         // `resurface.md` specifies, and it is the number the phone already
         // draws. Two devices disagreeing about one host would be two products.
-        inboxCount={inbox.unread ?? needsYouCount(state)}
-        openPrCount={openPrCount(state)}
+        inboxCount={inbox.unread ?? (fixtures ? needsYouCount(state) : 0)}
+        openPrCount={openPrs}
         userName={profile.userName}
         hostLine={hostLine(hello, hostError, connecting)}
         hostOffline={hostError !== null}
@@ -603,11 +624,13 @@ function AppShell({
         <MainView
           client={client}
           state={state}
+          fixtures={fixtures}
           inbox={inbox}
           schedules={schedules}
           settings={settings}
           devices={devices}
           pulls={pulls}
+          pullRequests={pullRequests}
           github={github}
           onSignIn={() => setSignIn(true)}
           onEditSchedule={(scheduleId) =>
@@ -684,7 +707,7 @@ function AppShell({
       {newChat.open && (
         <NewChatModal
           harnesses={harnesses}
-          folders={registered.folders ?? state.folders}
+          folders={registered.folders ?? (fixtures ? state.folders : [])}
           defaultFolderId={newChat.folderId}
           defaultHarnessId={profile.harnessId ?? undefined}
           error={newChatError}
@@ -756,11 +779,13 @@ function AppShell({
 function MainView({
   client,
   state,
+  fixtures,
   inbox,
   schedules,
   settings,
   devices,
   pulls,
+  pullRequests,
   github,
   onSignIn,
   onEditSchedule,
@@ -786,6 +811,9 @@ function MainView({
       live — hydrated from `thread/transcript` and streamed from there (#14). */
   client: HostClient | null;
   state: MockState;
+  /** Whether `state`'s fixtures may stand in where the host has not answered
+      yet. False inside the app, where the pane paints empty instead. */
+  fixtures: boolean;
   /** The Inbox, host-owned from the first answer (#22). */
   inbox: HostInbox;
   /** Recurring jobs, host-owned from the first answer (#25). */
@@ -796,6 +824,9 @@ function MainView({
   devices: Devices;
   /** The PR board, host-owned from the first answer (#28). */
   pulls: PullRequests;
+  /** The board's rows: the host's once it has answered, else the fixtures
+      where those are allowed, else none. */
+  pullRequests: readonly PullRequest[];
   /** Whether GitHub can be asked as anybody, and as whom (#16). */
   github: GithubAuth;
   /** Open the GitHub sign-in dialog. */
@@ -845,10 +876,10 @@ function MainView({
     case "inbox":
       return (
         <InboxView
-          // The fixtures stand in only until the host has answered — `null` is
-          // "not asked yet" (a preview build, a unit test), and an empty array
-          // is the real answer of a morning with nothing waiting.
-          cards={inbox.cards ?? state.inbox}
+          // The fixtures stand in only where there is no host to ask — `null`
+          // is "not asked yet" (a preview build, a unit test), and an empty
+          // array is the real answer of a morning with nothing waiting.
+          cards={inbox.cards ?? (fixtures ? state.inbox : [])}
           error={inbox.error}
           loading={inbox.loading && inbox.cards === null}
           onOpenThread={onOpenInboxThread}
@@ -902,10 +933,10 @@ function MainView({
     case "prs":
       return (
         <PullRequestsView
-          // The fixtures stand in only until the host has answered — `null` is
-          // "not asked yet" (a preview build, a unit test), and an empty array
-          // is the real and common answer of "no open pull requests".
-          pullRequests={pulls.pullRequests ?? state.pullRequests}
+          // The fixtures stand in only where there is no host to ask — `null`
+          // is "not asked yet" (a preview build, a unit test), and an empty
+          // array is the real and common answer of "no open pull requests".
+          pullRequests={pullRequests}
           unavailable={pulls.unavailable}
           error={pulls.error}
           githubStatus={github.status}
@@ -915,9 +946,7 @@ function MainView({
           onOpenThread={(threadId) => onSelect({ view: "thread", threadId })}
           onAction={(prId, actionId) => {
             if (actionId !== "diff") return;
-            const pr = (pulls.pullRequests ?? state.pullRequests).find(
-              (row) => row.id === prId,
-            );
+            const pr = pullRequests.find((row) => row.id === prId);
             // The PR itself is on GitHub; JaBot has no in-app diff for it and
             // `pr-linkage.md` defers one. Opening the page is the honest verb.
             if (pr) window.open(pr.url, "_blank", "noopener,noreferrer");
@@ -943,7 +972,10 @@ function MainView({
         );
       }
       const thread =
-        hostThread ?? state.threads.find((t) => t.id === selection.threadId);
+        hostThread ??
+        (fixtures
+          ? state.threads.find((t) => t.id === selection.threadId)
+          : undefined);
       // A deleted thread is not an error state — the Inbox is where work goes.
       if (!thread) {
         return (
@@ -988,7 +1020,7 @@ function MainView({
           key={bot.id}
           bot={bot}
           host={host}
-          items={state.transcripts[bot.id] ?? []}
+          items={(fixtures && state.transcripts[bot.id]) || []}
           onSend={(text) => onSend(bot.id, text)}
           onAction={(itemId, actionId) => onNotice(bot.id, itemId, actionId)}
         />
