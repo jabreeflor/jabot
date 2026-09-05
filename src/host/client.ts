@@ -2,6 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { createHotTransport, type HotChannel } from "./devTransport";
 import {
   CREW_CREATE,
   CREW_LIST,
@@ -172,13 +173,45 @@ export function createTauriTransport(): HostTransport {
   };
 }
 
+/** What `defaultTransport()` reads off the page to decide how to reach the host. */
+export interface TransportEnvironment {
+  /** Tauri's IPC globals are present: this webview is inside JaBot.app. */
+  tauri: boolean;
+  /** The `jabot-host` Vite plugin is serving this page (`scripts/dev/host-plugin.ts`). */
+  bridge: boolean;
+  /** `import.meta.hot`, when the page came from a dev server. */
+  hot: HotChannel | undefined;
+}
+
+/**
+ * Inside the app, Tauri IPC — always, even under `tauri dev`, whose webview
+ * also has HMR. Outside it, the HMR bridge, but only when the dev server has
+ * said the host is behind it: a bare `vite` or a unit test still gets the
+ * Tauri transport and the "Host unreachable" it has always produced, rather
+ * than a request that waits forever on an event nobody is serving.
+ */
+export function selectTransport(env: TransportEnvironment): HostTransport {
+  if (!env.tauri && env.bridge && env.hot) {
+    return createHotTransport(env.hot);
+  }
+  return createTauriTransport();
+}
+
+export function defaultTransport(): HostTransport {
+  return selectTransport({
+    tauri: typeof window !== "undefined" && "__TAURI_INTERNALS__" in window,
+    bridge: import.meta.env.JABOT_LIVE_HOST === "1",
+    hot: import.meta.hot,
+  });
+}
+
 export class HostClient {
   private nextId = 1;
   private unlisten: (() => void) | null = null;
   private notificationHandlers = new Set<NotificationHandler>();
   private device: DeviceInfo | null = null;
 
-  constructor(private readonly transport: HostTransport = createTauriTransport()) {}
+  constructor(private readonly transport: HostTransport = defaultTransport()) {}
 
   async connect(): Promise<void> {
     if (this.unlisten) return;
