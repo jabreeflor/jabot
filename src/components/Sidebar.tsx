@@ -17,7 +17,7 @@ import {
   PlusIcon,
   PullRequestIcon,
   SearchIcon,
-  SlidersIcon,
+  GearIcon,
 } from "./Icon";
 import type { MenuPosition } from "./ThreadContextMenu";
 import type {
@@ -213,22 +213,6 @@ export function Sidebar({
           </button>
         )}
 
-        {/* Last in the nav, and only with a host. What it sets is the host's:
-            a preview build drawing this would offer to change nothing. */}
-        {onOpenSettings && (
-          <button
-            type="button"
-            className="nav-row"
-            aria-current={selection.view === "settings"}
-            onClick={onOpenSettings}
-          >
-            <span className="ic">
-              <SlidersIcon />
-            </span>
-            Settings
-          </button>
-        )}
-
         <FolderList
           folders={visibleFolders}
           selection={selection}
@@ -256,6 +240,18 @@ export function Sidebar({
           <div className="name">{userName}</div>
           <div className={hostOffline ? "host bad" : "host"}>{hostLine}</div>
         </div>
+        {onOpenSettings && (
+          <button
+            type="button"
+            className="me-settings"
+            aria-label="Settings"
+            title="Settings"
+            aria-current={selection.view === "settings"}
+            onClick={onOpenSettings}
+          >
+            <GearIcon />
+          </button>
+        )}
       </div>
     </aside>
   );
