@@ -4,6 +4,39 @@ Guidance for Claude (and any Claude Code agent) working in this repository.
 See `CONTRIBUTING.md` for the human-facing dev workflow — `./scripts/verify.sh`
 is the one required gate before anything lands on `main`.
 
+## Plugin: jabstack
+
+`.claude/settings.json` enables the [jabstack](https://github.com/jabreeflor/jabstack)
+plugin (marketplace `jabstack`, plugin `jabstack@jabstack`). Claude Code offers to
+install it on session start; accept. It provides `/create-pr-artifact`,
+`/gauntlet-loop` and the `gauntlet-critic` subagent. If the skill is not
+loaded, the plugin is not installed — run `/plugin install jabstack@jabstack`
+rather than working around it.
+
+## Rule: every PR gets a PR artifact
+
+**Every pull request opened against this repo must run `/create-pr-artifact`
+before it is handed to a reviewer.** No exceptions for small, docs-only, or
+config-only changes — the artifact is how a reviewer gets the mechanism in two
+minutes, and it is cheap for a small PR.
+
+The order is:
+
+1. Push the branch and open the PR (draft is fine).
+2. Run `/create-pr-artifact <PR number>`. It builds the explainer artifact,
+   screenshots it, and rewrites the `## Artifact` section of the PR body with
+   the link and screenshots. The PR template already carries that heading;
+   leave it in place so the skill has a section to fill.
+3. Only then mark the PR ready for review or ask for review.
+
+The skill attaches screenshots with `gh pr edit --attach` (gh v2.99.0+). In an
+environment without `gh` (Claude Code on the web), do the same work by hand:
+publish the artifact, save the screenshots under `docs/img/<pr-or-feature>/`,
+commit them, and edit the PR body's `## Artifact` section through the GitHub
+tools so it carries the artifact link and the embedded images.
+
+A PR whose `## Artifact` section is still the template comment is not done.
+
 ## Rule: screenshot evidence is mandatory for visual/UI work
 
 **ALWAYS ALWAYS ALWAYS attach screenshot evidence, committed inside this

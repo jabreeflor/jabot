@@ -169,6 +169,15 @@ downstream will catch what you skipped.
 
 Deleting a branch pushes no content and is not gated.
 
+## Opening a PR: the artifact
+
+Every PR carries an explainer artifact in its `## Artifact` section (the PR
+template has the heading). It is produced by `/create-pr-artifact <n>` from the
+[jabstack](https://github.com/jabreeflor/jabstack) plugin, which
+`.claude/settings.json` enables for this repo — Claude Code offers to install it
+on session start. Run it after the PR exists and before you ask for review; it
+needs `gh` v2.99.0+ for the `--attach` upload. `CLAUDE.md` has the full rule.
+
 ## Before you call something a gap
 
 Every deliberate departure and deferral is recorded as a GitHub issue labelled
