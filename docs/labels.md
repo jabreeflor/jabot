@@ -68,3 +68,48 @@ The 2026-09 triage read every open issue, checked each deferred item against
 comment per issue with the classification, the evidence, and the path forward.
 Labels are meant to be re-evaluated whenever an issue's state changes; the
 comment is the audit trail for why the current labels are what they are.
+
+## 2026-09 triage results
+
+26 open issues; 23 are decision records with nothing left, 2 records still
+owe one item each, and 1 is a feature. Evidence for every row is in the
+`## Triage` comment on the issue.
+
+| issue | disposition | pickup | size | area | what is left |
+| --- | --- | --- | --- | --- | --- |
+| #38 Google OAuth client | implement | needs-human | L | crew, harness | Owner: Google Cloud project, consent screen, CASA verification. Agent-ready slice once a client id exists: default-id wiring in `flow.rs`, narrowing `missing_client_hint`, unverified-app UX, docs. |
+| #66 D-013 permission broker | follow-up | needs-human | M | harness, ui | Remembered "always allow" grants: `permission_decisions` table exists (migration 0001) but nothing writes or consults it. Needs a product call on the settings surface and scope before it is agent-ready. |
+| #73 D-019 notifications | follow-up | needs-human | S | lifecycle | The record's four-item runtime checklist (permission prompt, banner delivery, click routing, replace-not-stack) has never been run on a real signed Mac. Manual QA, not code. |
+| #54 D-001 test harness | decommission | | | app-shell, harness | `jabot-hostd` + Vitest e2e are in `verify.sh` and CI. |
+| #55 D-002 #10 merged not rebuilt | decommission | | | harness | Merge and zombie-process fix on `main`. |
+| #56 D-003 two host defects | decommission | | | app-shell, harness | Both fixes present with regression tests. |
+| #57 D-004 UI port departures | decommission | | | ui, app-shell | All departures still match settled decisions; permission UI shipped in PR #37. |
+| #58 D-005 bundle targets | decommission | | | app-shell | `["app","dmg"]` intact. The updater pubkey placeholder is a documented pre-release gate, not record scope. |
+| #59 D-006 lifecycle core | decommission | | | lifecycle | Deferred items shipped in #21, #27, #83. |
+| #60 D-007 harness catalog | decommission | | | harness, ui | Pooling (#84), picker wiring (#81, #82) shipped. |
+| #61 D-008 OAuth without client id | decommission | | | crew, harness | Only open thread is #38. |
+| #62 D-009 crew store | decommission | | | crew, data | Standing thread (#24), unread (#86), memory dir shipped. |
+| #63 D-010 transcript overlay | decommission | | | harness, ui | #87, #88, #89, #90, #91, #97 closed every deferred item. |
+| #64 D-011 supervisor | decommission | | | lifecycle | Resume/drift UI shipped (#90, #91). App Nap fallback was never promised. |
+| #65 D-012 worktree policy | decommission | | | git | New Chat controls (#92), location UI (#93) shipped. |
+| #67 D-014 Chief's host tools | decommission | | | crew, harness | Provenance surface shipped in #98. |
+| #68 D-015 pairing handshake | decommission | | | remote | Mutual host auth shipped in #99. |
+| #69 D-014 toolchain | decommission | | | app-shell | `verify.sh` stage 0 now detects drift automatically. |
+| #70 D-016 Mobile Inbox | decommission | | | remote | #101, #102, #103 closed every client gap. |
+| #71 D-017 cron | decommission | | | lifecycle | Notifications (#27) and real Inbox (#22) shipped. |
+| #72 D-018 fold path | decommission | | | lifecycle | #97, #106, #107 closed every deferred item. |
+| #74 D-020 PR linkage | decommission | | | git, ui | #110, #111, #112 shipped. |
+| #75 D-021 Inbox on real data | decommission | | | lifecycle | Live `useInbox` wiring confirmed; revoke fix landed. |
+| #76 D-020 audit | decommission | | | git, data | All three fixes present with tests. |
+| #77 D-024 list_crew_status | decommission | | | crew, lifecycle | #114 added `busy` without redefining `idle`. |
+| #78 D-025 GitHub sign-in | decommission | | | git, ui | `github/login`, `pr/mine`, `HarnessIcon.tsx` all on `main`. |
+
+Cross-cutting notes from the triage:
+
+- The decision records were a to-do list in disguise: nearly every "declared
+  but not built" item became one of #81–#114 and shipped. Closing the 23
+  `disposition:decommission` records leaves the tracker showing only real work.
+- #66's "always allow" gap is the one deferred item that was never filed as
+  its own issue. It should become one when the settings surface is decided.
+- #38 is the only feature and the only `size:L`. Its owner-side steps
+  (Cloud project, verification) are weeks long and gate the in-repo slice.
