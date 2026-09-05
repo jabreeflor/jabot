@@ -506,6 +506,7 @@
 }
 
 .me-row .who {
+  flex: 1;
   min-width: 0;
 }
 
@@ -523,4 +524,34 @@
 
 .me-row .host.bad {
   color: var(--red);
+}
+
+.me-settings {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.me-settings svg {
+  width: 19px;
+  height: 19px;
+}
+
+.me-settings:hover,
+.me-settings[aria-current="true"] {
+  background: var(--raise);
+  color: var(--ink);
+}
+
+.me-settings:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }

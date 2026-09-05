@@ -18,10 +18,17 @@
 //! The host does that in SQLite, before it notifies anyone (#5).
 //!
 //! The rows marked *live* have been swapped for real host calls; what stays
-//! here is the fixture the shell renders **before** the host has answered —
-//! a preview build, a unit test, a host still starting — and the guards in
+//! here is the fixture the shell renders where there is **no host to ask** —
+//! a preview build in a plain browser, a unit test — and the guards in
 //! `mock-host.test.ts` are what keep the fixture from drifting away from the
 //! catalogs the host actually serves.
+//!
+//! Inside the real app the fixture is never drawn, not even for the moment
+//! between the window opening and the host answering: `hostedByApp` says
+//! whether a host exists to ask, and the shell paints empty while it waits.
+//! A fake crew and fake threads that flash up and are then replaced by the
+//! real ones read as data the user never entered, which is worse than a
+//! sidebar that fills in a beat later.
 
 import { NEEDS_YOU_KINDS } from "../components/status";
 import type {
@@ -39,6 +46,18 @@ import type {
   ToolOption,
   TranscriptItem,
 } from "../components/types";
+
+/**
+ * Whether this renderer is running inside the app, where a real host answers.
+ *
+ * Tauri 2 injects `__TAURI_INTERNALS__` into every webview it hosts, with or
+ * without `withGlobalTauri`; `@tauri-apps/api`'s own `invoke` goes through it.
+ * A plain browser (`vite dev`, `vite preview`) and jsdom have no such global,
+ * and those are the only two places the fixtures are for.
+ */
+export function hostedByApp(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 /**
  * The tier-1 compiled-in harnesses, and only those — the same three ids

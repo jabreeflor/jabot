@@ -233,6 +233,77 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * Inside the app the fixtures are never drawn, not even for the beat before
+   * the host answers. A fake crew and fake code rows that flash up and are
+   * then swapped for the real ones read as data the user never entered.
+   * Tauri's webview global is what says "inside the app"; jsdom has none, so
+   * the other tests here keep their fixtures.
+   */
+  it("paints empty rather than the fixtures while the app waits on its host", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: {},
+      configurable: true,
+    });
+    let answerCrew: (() => void) | undefined;
+    const client = {
+      disconnect: vi.fn(),
+      listFolders: vi.fn(() => new Promise(() => {})),
+      listCrew: vi.fn(
+        () =>
+          new Promise((resolve) => {
+            answerCrew = () =>
+              resolve({
+                bots: [
+                  {
+                    botId: "chief",
+                    name: "Chief",
+                    color: "b-teal",
+                    instructions: "Route work across the crew.",
+                    tools: [],
+                    harnessId: "claude",
+                    isChief: true,
+                    memoryDir: "/data/bots/chief",
+                    sortOrder: 0,
+                    unread: 0,
+                    createdAt: "2026-08-20T10:00:00Z",
+                    updatedAt: "2026-08-20T10:00:00Z",
+                  },
+                ],
+                templates: [],
+                hostTools: [],
+              });
+          }),
+      ),
+      listTools: vi.fn(async () => ({ tools: [] })),
+      listHarnesses: vi.fn(async () => ({ harnesses: [] })),
+      inbox: vi.fn(() => new Promise(() => {})),
+      listPullRequests: vi.fn(() => new Promise(() => {})),
+    } as unknown as HostClient;
+    connected.mockResolvedValue({ client, hello: HELLO });
+    try {
+      await renderApp();
+
+      // Nothing the fixtures would have drawn: no crew strip, no code rows,
+      // no counts on the Inbox and Pull Requests buttons.
+      expect(screen.queryByRole("button", { name: "Inbox Mgr" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Auth migration/ })).toBeNull();
+      expect(screen.queryByText("jabot-app")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /^Pull Requests/ }),
+      ).not.toHaveAccessibleName(/open/);
+
+      // The host's own answer fills the pane in.
+      answerCrew?.();
+      expect(
+        await screen.findByRole("button", { name: "Chief" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Inbox Mgr" })).toBeNull();
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    }
+  });
+
   it("says the host is unreachable rather than pretending it is there", async () => {
     connected.mockRejectedValue(new Error("no Tauri bridge"));
     render(<App />);
