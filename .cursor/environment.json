@@ -1,0 +1,21 @@
+{
+  "name": "JaBot",
+  "user": "ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "renderer (vite dev)",
+      "command": "npm run dev",
+      "description": "Vite dev server for the React renderer on http://localhost:1420"
+    }
+  ],
+  "ports": [
+    {
+      "name": "renderer",
+      "port": 1420
+    }
+  ]
+}
