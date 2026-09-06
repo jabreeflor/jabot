@@ -527,9 +527,11 @@ describe("App, once the host has answered", () => {
     await renderApp();
 
     expect(await screen.findByText(/No folders yet/)).toBeInTheDocument();
+    // The CODE header carries no ＋ any more, so the empty state is the only
+    // thing the sidebar says about having no folders.
     expect(
-      screen.getByRole("button", { name: "Add folder" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Add folder" }),
+    ).not.toBeInTheDocument();
   });
 
   it("falls back to the fixtures when the host cannot list folders", async () => {
