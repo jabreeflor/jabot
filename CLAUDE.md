@@ -55,10 +55,15 @@ Applies to (non-exhaustive):
 
 ### What "screenshot evidence" means
 
-1. Use the `run` skill (or the project's own app-launch skill if one exists)
-   to actually launch/build the app and get it into the state under test —
-   never fake or hand-draw a screenshot, and never describe a screenshot
-   instead of capturing one.
+1. Launch the real app with `./scripts/live.sh up` and capture with
+   `./scripts/live.sh shot --out docs/img/<feature>/<name>.png [steps…]` —
+   this works on Linux and in Claude Code on the web, against the real Rust
+   host, and refuses to shoot until the host is live. Drive the UI into the
+   state under test with the step flags (`--click`, `--fill`, `--wait-text`,
+   …; see `scripts/dev/shot.mjs`), or seed it with `--rpc`. Never fake or
+   hand-draw a screenshot, and never describe a screenshot instead of
+   capturing one. `./scripts/live.sh smoke` proves the loop works on the
+   machine you are on; run it first if `up` misbehaves.
 2. Capture a real screenshot of the before/after (or just after, when there's
    no meaningful before) state.
 3. Save it into the repo under `docs/img/` (create a task-specific
