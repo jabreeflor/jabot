@@ -78,6 +78,28 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens Devices as a Settings tab, not a CODE row", async () => {
+    await renderApp();
+
+    expect(screen.queryByRole("button", { name: "Devices" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    await userEvent.click(screen.getByRole("tab", { name: "Devices" }));
+    expect(screen.getByRole("tab", { name: "Devices" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.queryByLabelText(/Go quiet after/)).toBeNull();
+  });
+
   it("opens a code thread with its harness and its transcript", async () => {
     await renderApp();
 

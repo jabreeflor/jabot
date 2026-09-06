@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width" />
+  <title>Move Devices into Settings as a tab</title>
+  <style>
+    body {
+      background: #171717;
+      color: #eee;
+      font: 17px/1.6 system-ui;
+      max-width: 960px;
+      margin: 48px auto;
+      padding: 0 24px;
+    }
+    h1 {
+      font-size: 38px;
+      line-height: 1.2;
+    }
+    h2 {
+      font-size: 23px;
+      margin-top: 32px;
+    }
+    p,
+    li {
+      color: #bbb;
+    }
+    code {
+      color: #eee;
+    }
+    img {
+      width: 100%;
+      border: 1px solid #444;
+      border-radius: 12px;
+      margin: 12px 0 28px;
+    }
+    .crop {
+      max-width: 340px;
+    }
+  </style>
+  <h1>Move Devices into Settings as a tab</h1>
+  <p>
+    Pairing is a fact about this Mac — which phones can answer permission
+    prompts, and which one to cut off if a phone is stolen. It used to sit
+    as a CODE row under Schedules, which made revoke look like a daily
+    surface. It now lives on a <strong>Devices</strong> tab inside Settings,
+    next to <strong>General</strong>. The way in is the profile gear, which
+    already appeared only when a host is connected.
+  </p>
+
+  <h2>The CODE rail, after</h2>
+  <p>
+    Schedules, then folders. No Devices row. The gear on the profile footer
+    is still how you open Settings.
+  </p>
+  <img
+    class="crop"
+    src="sidebar.png"
+    alt="Sidebar CODE section with no Devices row, Settings gear in the profile footer"
+  />
+
+  <h2>General</h2>
+  <p>
+    The two knobs that already decided something — idle timeout and the
+    default fold policy — stay on General. Devices is the other tab.
+  </p>
+  <img
+    src="general.png"
+    alt="Settings pane on the General tab, with Devices as a sibling tab"
+  />
+
+  <h2>Devices</h2>
+  <p>
+    The same list as before: the console that cannot be revoked, a live
+    pairing with an in-place Revoke…, and a revoked tombstone that stays on
+    screen so “I revoked it” and “it was never there” do not look the same.
+  </p>
+  <img
+    src="devices.png"
+    alt="Settings pane on the Devices tab showing paired, connected, and revoked devices"
+  />
+
+  <h2>What to look at</h2>
+  <ul>
+    <li>
+      <code>src/components/Sidebar.tsx</code>: drops the Devices nav row.
+    </li>
+    <li>
+      <code>src/views/SettingsView.tsx</code>: adds General / Devices tabs
+      using the shared <code>Tabs</code> component.
+    </li>
+    <li>
+      <code>src/views/DevicesView.tsx</code>: the list, nested without a
+      second heading.
+    </li>
+  </ul>
+
+  <h2>How to verify</h2>
+  <p>
+    With a host connected, click the profile gear. General is selected.
+    Arrow or click to Devices and confirm the paired list is the one that
+    used to be its own pane. Confirm there is no Devices row under
+    Schedules.
+  </p>
+</html>

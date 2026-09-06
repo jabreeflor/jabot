@@ -1,4 +1,5 @@
-//! Settings (#26): the two knobs that already decide something.
+//! Settings (#26, #19, #29): the knobs that already decide something, and
+//! the devices this Mac has admitted.
 //!
 //! Three records parked a preference here before the pane existed — the stuck
 //! backstop's threshold, a remembered permission scope, the cron interval —
@@ -14,10 +15,27 @@
 //! Minutes on screen, milliseconds on the wire. Nobody thinks about a
 //! backstop in milliseconds, and the wire keeps them because that is what
 //! every other duration on the protocol uses.
+//!
+//! Devices sit on a tab rather than a CODE row because pairing is a fact
+//! about this Mac, not about a thread. Revoke is the answer to "my phone was
+//! stolen"; burying it under Schedules made it look like a daily surface.
 
 import { useEffect, useState } from "react";
 
-import type { FoldPolicy, SettingsView as HostSettings } from "../host";
+import { Tabs, tabButtonId, type TabSpec } from "../components/Tabs";
+import type {
+  FoldPolicy,
+  PairedDeviceView,
+  SettingsView as HostSettings,
+} from "../host";
+import { DevicesView } from "./DevicesView";
+
+type SettingsTab = "general" | "devices";
+
+const TABS: readonly TabSpec<SettingsTab>[] = [
+  { id: "general", label: "General" },
+  { id: "devices", label: "Devices" },
+];
 
 /** The two the fold path accepts, with what each actually does. The wording is
     the fold menu's, because they are the same choice — this one is just the
@@ -45,8 +63,80 @@ export function SettingsView({
   settings,
   error,
   onSave,
+  devices,
+  devicesError,
+  onReloadDevices,
+  onRevokeDevice,
 }: {
   /** `null` until the host answers — a preview build has no settings. */
+  settings: HostSettings | null;
+  error?: string | null;
+  onSave: (patch: {
+    idleTimeoutMs?: number;
+    defaultFoldPolicy?: FoldPolicy;
+  }) => Promise<unknown>;
+  /** `null` until the host answers. The console is always in a real list. */
+  devices: readonly PairedDeviceView[] | null;
+  devicesError: string | null;
+  onReloadDevices: () => void;
+  /** Rejects with the host's own sentence, which the row shows verbatim. */
+  onRevokeDevice: (deviceId: string) => Promise<unknown>;
+}) {
+  const [tab, setTab] = useState<SettingsTab>("general");
+
+  return (
+    <div className="view">
+      <div className="page-scroll">
+        <div className="page">
+          <div className="page-top">
+            <h1>Settings</h1>
+            <p>
+              {tab === "devices"
+                ? "Everything paired with this Mac. A device can answer permission prompts and read your Inbox — revoking one cuts it off immediately, including a connection it already has open."
+                : "What JaBot does when you are not watching"}
+            </p>
+          </div>
+
+          <Tabs
+            label="Settings section"
+            panelId="settings-panel"
+            tabs={TABS}
+            value={tab}
+            onChange={setTab}
+          />
+
+          <div
+            id="settings-panel"
+            role="tabpanel"
+            aria-labelledby={tabButtonId("settings-panel", tab)}
+          >
+            {tab === "general" ? (
+              <GeneralSettings
+                settings={settings}
+                error={error}
+                onSave={onSave}
+              />
+            ) : (
+              <DevicesView
+                embedded
+                devices={devices}
+                error={devicesError}
+                onReload={onReloadDevices}
+                onRevoke={onRevokeDevice}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GeneralSettings({
+  settings,
+  error,
+  onSave,
+}: {
   settings: HostSettings | null;
   error?: string | null;
   onSave: (patch: {
@@ -87,108 +177,99 @@ export function SettingsView({
   }
 
   return (
-    <div className="view">
-      <div className="page-scroll">
-        <div className="page">
-          <div className="page-top">
-            <h1>Settings</h1>
-            <p>What JaBot does when you are not watching</p>
-          </div>
-
-          {error && (
-            <div className="page-empty" role="alert">
-              {error}
-            </div>
-          )}
-
-          {!settings && !error && (
-            <div className="page-empty">Asking the host…</div>
-          )}
-
-          {settings && (
-            <>
-              <section className="setting">
-                <h2>Go quiet after</h2>
-                <p className="setting-note">
-                  How long a running thread can say nothing before it comes back
-                  to the Inbox as stuck. The thread keeps working and its
-                  process stays alive — this is a nudge, not a timeout.
-                </p>
-                <div className="setting-row">
-                  <input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    aria-label="Go quiet after, in minutes"
-                    value={minutes}
-                    disabled={settings.idleTimeoutFromEnv}
-                    onChange={(event) => setMinutes(event.target.value)}
-                  />
-                  <span className="unit">minutes</span>
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={saving || settings.idleTimeoutFromEnv}
-                    onClick={() =>
-                      void send({
-                        idleTimeoutMs: Math.round(Number(minutes) * 60_000),
-                      })
-                    }
-                  >
-                    {saving ? "Saving…" : "Save"}
-                  </button>
-                </div>
-                {/* Said out loud rather than silently ignored: a control that
-                    does nothing and does not say so is worse than a disabled
-                    one. Only a test or a developer is ever in this state. */}
-                {settings.idleTimeoutFromEnv && (
-                  <p className="setting-note" role="status">
-                    Set by <code>JABOT_IDLE_TIMEOUT_MS</code> on this host, which
-                    wins over anything saved here.
-                  </p>
-                )}
-              </section>
-
-              <section className="setting">
-                <h2>New threads fold as</h2>
-                <p className="setting-note">
-                  What a thread's fold policy starts as. Every thread can still
-                  be folded either way from its own menu — this is only the
-                  answer it begins with.
-                </p>
-                {POLICIES.map((policy) => (
-                  <label className="checkline" key={policy.id}>
-                    <input
-                      type="radio"
-                      name="fold-policy"
-                      checked={settings.defaultFoldPolicy === policy.id}
-                      disabled={saving}
-                      onChange={() =>
-                        void send({ defaultFoldPolicy: policy.id })
-                      }
-                    />
-                    <span>
-                      {policy.label}
-                      <small>{policy.detail}</small>
-                    </span>
-                  </label>
-                ))}
-              </section>
-
-              {saveError && (
-                <p className="page-note" role="alert">
-                  {saveError}
-                </p>
-              )}
-              {saved && !saveError && (
-                <p className="page-note" role="status">
-                  Saved.
-                </p>
-              )}
-            </>
-          )}
+    <>
+      {error && (
+        <div className="page-empty" role="alert">
+          {error}
         </div>
-      </div>
-    </div>
+      )}
+
+      {!settings && !error && (
+        <div className="page-empty">Asking the host…</div>
+      )}
+
+      {settings && (
+        <>
+          <section className="setting">
+            <h2>Go quiet after</h2>
+            <p className="setting-note">
+              How long a running thread can say nothing before it comes back
+              to the Inbox as stuck. The thread keeps working and its
+              process stays alive — this is a nudge, not a timeout.
+            </p>
+            <div className="setting-row">
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                aria-label="Go quiet after, in minutes"
+                value={minutes}
+                disabled={settings.idleTimeoutFromEnv}
+                onChange={(event) => setMinutes(event.target.value)}
+              />
+              <span className="unit">minutes</span>
+              <button
+                type="button"
+                className="btn"
+                disabled={saving || settings.idleTimeoutFromEnv}
+                onClick={() =>
+                  void send({
+                    idleTimeoutMs: Math.round(Number(minutes) * 60_000),
+                  })
+                }
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </div>
+            {/* Said out loud rather than silently ignored: a control that
+                does nothing and does not say so is worse than a disabled
+                one. Only a test or a developer is ever in this state. */}
+            {settings.idleTimeoutFromEnv && (
+              <p className="setting-note" role="status">
+                Set by <code>JABOT_IDLE_TIMEOUT_MS</code> on this host, which
+                wins over anything saved here.
+              </p>
+            )}
+          </section>
+
+          <section className="setting">
+            <h2>New threads fold as</h2>
+            <p className="setting-note">
+              What a thread's fold policy starts as. Every thread can still
+              be folded either way from its own menu — this is only the
+              answer it begins with.
+            </p>
+            {POLICIES.map((policy) => (
+              <label className="checkline" key={policy.id}>
+                <input
+                  type="radio"
+                  name="fold-policy"
+                  checked={settings.defaultFoldPolicy === policy.id}
+                  disabled={saving}
+                  onChange={() =>
+                    void send({ defaultFoldPolicy: policy.id })
+                  }
+                />
+                <span>
+                  {policy.label}
+                  <small>{policy.detail}</small>
+                </span>
+              </label>
+            ))}
+          </section>
+
+          {saveError && (
+            <p className="page-note" role="alert">
+              {saveError}
+            </p>
+          )}
+          {saved && !saveError && (
+            <p className="page-note" role="status">
+              Saved.
+            </p>
+          )}
+        </>
+      )}
+    </>
   );
 }
