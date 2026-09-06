@@ -421,13 +421,14 @@ describe("App, once the host has answered", () => {
   });
 
   /**
-   * The worktree controls reaching the host (#23).
+   * The tree the thread gets (#23, #92).
    *
-   * `useCheckout` and `baseRef` have been on `thread/open` and honoured by the
-   * Rust host since #23, and no renderer ever set them. This is the trip the
-   * modal's own tests cannot make: draft to wire.
+   * `useCheckout` and `baseRef` are still on `thread/open` and still honoured
+   * by the Rust host, but New Chat stopped offering them: every folder thread
+   * asks for a fresh worktree from the host's own default base ref. This is the
+   * trip the modal's own tests cannot make: draft to wire.
    */
-  it("carries the advanced worktree choices through to thread/open", async () => {
+  it("asks for a fresh worktree and says nothing else about the tree", async () => {
     const registered = folder();
     listFolders.mockResolvedValue({ folders: [registered] });
     openThread.mockResolvedValue({
@@ -452,25 +453,27 @@ describe("App, once the host has answered", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "New thread in jabot" }),
     );
-    expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
-    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
-    await userEvent.type(screen.getByLabelText("BASE BRANCH"), "release/2.0");
+    expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
+    expect(screen.queryByLabelText("BASE BRANCH")).toBeNull();
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
     );
 
     expect(openThread).toHaveBeenCalledWith(
-      expect.objectContaining({
-        folderId: "f-jabot",
-        baseRef: "release/2.0",
+      expect.not.objectContaining({
+        useCheckout: expect.anything(),
+        baseRef: expect.anything(),
       }),
+    );
+    expect(openThread).toHaveBeenCalledWith(
+      expect.objectContaining({ folderId: "f-jabot" }),
     );
   });
 
-  /** A base ref the repository does not have is the host's to refuse, and its
-      sentence is the useful one — "v9.9.9 is not a commit in this repository"
-      rather than "could not start". The card keeps the draft either way. */
-  it("shows the host's refusal of a base ref that does not resolve", async () => {
+  /** A worktree the host cannot make is the host's to refuse, and its sentence
+      is the useful one — "v9.9.9 is not a commit in this repository" rather
+      than "could not start". The card keeps the draft either way. */
+  it("shows the host's refusal when the worktree cannot be made", async () => {
     listFolders.mockResolvedValue({ folders: [folder()] });
     openThread.mockRejectedValue(
       new HostRpcError({
@@ -483,8 +486,6 @@ describe("App, once the host has answered", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "New thread in jabot" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
-    await userEvent.type(screen.getByLabelText("BASE BRANCH"), "v9.9.9");
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
     );
@@ -492,8 +493,10 @@ describe("App, once the host has answered", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "v9.9.9 is not a commit in this repository",
     );
-    // And the card is still holding what was typed, so the fix is one edit.
-    expect(screen.getByLabelText("BASE BRANCH")).toHaveValue("v9.9.9");
+    // And the card is still open holding the draft, so a retry is one click.
+    expect(
+      screen.getByRole("button", { name: "Start session" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps the New Chat card open when the host refuses the spawn", async () => {

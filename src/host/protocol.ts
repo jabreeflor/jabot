@@ -355,9 +355,10 @@ export interface ThreadOpenParams {
   folderId?: string;
   botId?: string;
   foldPolicy?: FoldPolicy;
-  /** Work in the folder's own checkout instead of a fresh worktree (#23). The
-      advanced opt-out, never the default: two threads sharing the user's tree is
-      the collision worktrees exist to prevent. */
+  /** Work in the folder's own checkout instead of a fresh worktree (#23).
+      Never the default: two threads sharing the user's tree is the collision
+      worktrees exist to prevent. New Chat stopped offering it (#92), so this
+      is now only for a caller asking for it on the wire. */
   useCheckout?: boolean;
   /** What the thread's branch starts from — a branch, tag or sha. Default is
       `origin/<default branch>`, never the user's possibly-dirty `HEAD`. */
@@ -1212,8 +1213,8 @@ export const RPC_ERROR = {
       `data.botId` is the bot that was refused. */
   CHIEF_REQUIRED: -32010,
   /** The thread's worktree could not be created (#23), so the thread was not
-      opened at all. New Chat keeps the draft: the way through is a different
-      base ref, or `useCheckout` to work in the folder itself. */
+      opened at all. New Chat keeps the draft and shows the host's own sentence,
+      which is the useful one — the repository is what has to change. */
   WORKTREE_FAILED: -32011,
   /** The thread's working directory is gone — unmounted, moved, or a worktree
       removed under a folded thread (#21). `session/prompt` refuses rather than

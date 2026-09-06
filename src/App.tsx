@@ -461,11 +461,10 @@ function AppShell({
             : await invoke<string>("scratch_workspace"),
           harnessId: draft.harnessId,
           folderId: folder?.id,
-          // Advanced, and both undefined unless the card was opened and used
-          // (#23). A base ref the repo does not have comes back as
-          // WORKTREE_FAILED, which the catch below already puts on the card.
-          useCheckout: draft.useCheckout,
-          baseRef: draft.baseRef,
+          // No `useCheckout` or `baseRef`: the card stopped offering them (#92),
+          // so every folder thread gets a fresh worktree from the host's own
+          // default base ref. A worktree the host cannot make still comes back
+          // as WORKTREE_FAILED, which the catch below puts on the card.
         })
         .then((thread) => {
           registered.reload();
