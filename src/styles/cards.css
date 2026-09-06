@@ -26,8 +26,8 @@
 }
 
 .tab[aria-selected="true"] {
-  background: var(--bub-me);
-  color: var(--bub-me-ink);
+  background: var(--cream);
+  color: var(--cream-ink);
 }
 
 .card-row {

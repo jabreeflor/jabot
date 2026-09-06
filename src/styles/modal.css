@@ -159,8 +159,8 @@
 }
 
 .mselect-list li[aria-selected="true"] {
-  color: var(--bub-me-ink);
-  background: var(--bub-me);
+  color: var(--cream-ink);
+  background: var(--cream);
 }
 
 .modal textarea {
@@ -385,9 +385,9 @@
 }
 
 .toolchip[aria-pressed="true"] {
-  background: var(--bub-me);
-  color: var(--bub-me-ink);
-  border-color: var(--bub-me);
+  background: var(--cream);
+  color: var(--cream-ink);
+  border-color: var(--cream);
 }
 
 /* Connection state (#18) rides beside the label rather than in it: the chip
