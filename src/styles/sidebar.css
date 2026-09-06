@@ -375,10 +375,6 @@
   transition-duration: 0.08s;
 }
 
-.section-header .section-add {
-  margin-left: auto;
-}
-
 .folder-add {
   transition:
     background var(--t-icon) ease,

@@ -14,7 +14,6 @@ import {
   DeviceIcon,
   InboxIcon,
   NewChatIcon,
-  PlusIcon,
   PullRequestIcon,
   SearchIcon,
   GearIcon,
@@ -38,7 +37,6 @@ export function Sidebar({
   hostOffline = false,
   leavingThreadIds,
   foldersEmpty = false,
-  onAddFolder,
   onFolderSettings,
   onSelectBot,
   onSelectThread,
@@ -64,9 +62,6 @@ export function Sidebar({
   /** The host answered, and it has no folders yet — not the same as a host
       that has not answered, which keeps whatever is already on screen. */
   foldersEmpty?: boolean;
-  /** Absent until the host can register one, which is what makes the ＋ in the
-      CODE header appear at all. */
-  onAddFolder?: () => void;
   /** Open a registered folder's settings (#16). Absent before a host has
       answered — a fixture folder has nothing the host could update. */
   onFolderSettings?: (folderId: string) => void;
@@ -114,20 +109,7 @@ export function Sidebar({
         />
 
         <div className="sidebar-divider" />
-        <div className="section-header">
-          CODE
-          {onAddFolder && (
-            <button
-              type="button"
-              className="folder-add section-add"
-              title="Add folder"
-              aria-label="Add folder"
-              onClick={onAddFolder}
-            >
-              <PlusIcon />
-            </button>
-          )}
-        </div>
+        <div className="section-header">CODE</div>
 
         <button
           type="button"

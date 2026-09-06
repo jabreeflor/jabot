@@ -587,7 +587,6 @@ function AppShell({
         bots={bots}
         folders={folders}
         foldersEmpty={registered.folders?.length === 0}
-        onAddFolder={client ? () => setAddFolder(true) : undefined}
         // Only for folders the host actually has. A fixture folder has nothing
         // `folder/update` could be pointed at.
         onFolderSettings={
