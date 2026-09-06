@@ -4,7 +4,7 @@
  * and reports the gestures — a right-click, a folder's ＋ — rather than acting
  * on them itself.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -91,29 +91,22 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
 }
 
 describe("Sidebar", () => {
-  /** The Devices row is host-only, for the same reason Settings is: what it
-      lists is what the *host* is paired to, and a preview build is paired to
-      nothing. Drawing it there would offer a screen with nothing on it. */
-  it("shows Devices only when there is a host to ask", async () => {
-    renderSidebar();
+  /** Pairing is a fact about this Mac, so Devices lives under Settings rather
+      than as a CODE row. A preview build still has no host to ask, which is
+      why the gear itself is host-only — same as before. */
+  it("does not offer Devices as its own row", () => {
+    renderSidebar({ onOpenSettings: vi.fn() });
     expect(screen.queryByRole("button", { name: "Devices" })).toBeNull();
-
-    const onOpenDevices = vi.fn();
-    cleanup();
-    renderSidebar({ onOpenDevices });
-    const row = screen.getByRole("button", { name: "Devices" });
-    expect(row).toHaveAttribute("aria-current", "false");
-    await userEvent.click(row);
-    expect(onOpenDevices).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
   });
 
-  it("marks the Devices row as current when it is the open view", () => {
+  it("marks the Settings gear as current when the pane is open", () => {
     renderSidebar({
-      onOpenDevices: vi.fn(),
-      selection: { view: "devices" } as Selection,
+      onOpenSettings: vi.fn(),
+      selection: { view: "settings" } as Selection,
     });
 
-    expect(screen.getByRole("button", { name: "Devices" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
       "aria-current",
       "true",
     );

@@ -16,8 +16,15 @@
 
 .dev-list {
   list-style: none;
-  margin: var(--sp-5) 0 0;
+  margin: 0;
   padding: 0;
+}
+
+/* Standalone page chrome (tests, and the pane before it moved into Settings)
+   still wants a gap under the heading. Nested under the Settings tabs the
+   tablist already supplies that space. */
+.page.dev-page .dev-list {
+  margin-top: var(--sp-5);
 }
 
 .dev-row {

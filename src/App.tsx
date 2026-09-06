@@ -36,7 +36,6 @@ import { GithubSignInModal } from "./components/GithubSignInModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
-import { DevicesView } from "./views/DevicesView";
 import { hostErrorText } from "./views/errors";
 import { SettingsView } from "./views/SettingsView";
 import { Sidebar } from "./components/Sidebar";
@@ -611,9 +610,6 @@ function AppShell({
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
         onOpenSchedules={() => setSelection({ view: "schedules" })}
-        onOpenDevices={
-          client ? () => setSelection({ view: "devices" }) : undefined
-        }
         onOpenSettings={
           client ? () => setSelection({ view: "settings" }) : undefined
         }
@@ -859,9 +855,8 @@ function MainView({
   inbox: HostInbox;
   /** Recurring jobs, host-owned from the first answer (#25). */
   schedules: Schedules;
-  /** App-wide preferences (#26). */
+  /** App-wide preferences (#26) and paired devices (#19, #29). */
   settings: Settings;
-  /** Everything paired with this Mac (#19, #29). */
   devices: Devices;
   /** The PR board, host-owned from the first answer (#28). */
   pulls: PullRequests;
@@ -928,18 +923,6 @@ function MainView({
           notify={inbox.notify}
         />
       );
-    case "devices":
-      return (
-        <DevicesView
-          devices={devices.devices}
-          error={devices.error}
-          onReload={devices.reload}
-          // Handed down rather than resolved here so the row can show the
-          // host's own refusal — "the local device cannot be revoked; it is
-          // the host's own console" is the useful sentence.
-          onRevoke={devices.revoke}
-        />
-      );
     case "settings":
       return (
         <SettingsView
@@ -949,6 +932,13 @@ function MainView({
           // keeps what was typed and shows the host's own refusal, which is
           // the sentence worth reading.
           onSave={settings.save}
+          devices={devices.devices}
+          devicesError={devices.error}
+          onReloadDevices={devices.reload}
+          // Handed down rather than resolved here so the row can show the
+          // host's own refusal — "the local device cannot be revoked; it is
+          // the host's own console" is the useful sentence.
+          onRevokeDevice={devices.revoke}
         />
       );
     case "schedules":
