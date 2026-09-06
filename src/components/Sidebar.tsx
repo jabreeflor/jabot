@@ -108,7 +108,6 @@ export function Sidebar({
           onOpenCrew={onOpenCrew}
         />
 
-        <div className="sidebar-divider" />
         <div className="section-header">CODE</div>
 
         <button

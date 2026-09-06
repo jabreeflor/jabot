@@ -149,12 +149,6 @@
 
 /* ---- code rows ---- */
 
-.sidebar-divider {
-  height: 1px;
-  background: var(--line);
-  margin: var(--sp-2) 2px var(--sp-1);
-}
-
 .nav-row {
   display: flex;
   align-items: center;
