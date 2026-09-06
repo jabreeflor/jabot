@@ -827,23 +827,15 @@ function startThread(state: MockState, draft: NewChatDraft): MockState {
             kind: "other",
             target: `${draft.harnessId} session in ${folder?.name ?? "~"}`,
             status: "in_progress",
-            // Says which tree the thread will work in, because the card can
-            // now ask for the folder's own checkout (#23). A mock that
-            // reported "worktree" whatever was ticked would be quietly lying
-            // about the one thing the new control decides.
-            note: worktreeNote(draft, folder?.name),
+            // Says which tree the thread will work in. A folder thread is
+            // always a fresh worktree now that the checkout opt-out is gone
+            // (#92); without a folder there is no tree at all.
+            note: draft.folderId ? "worktree from origin/main" : "starting…",
           },
         },
       ],
     },
   };
-}
-
-/** What the bootstrap line says about where the thread will work (#23). */
-function worktreeNote(draft: NewChatDraft, folderName?: string): string {
-  if (!draft.folderId) return "starting…";
-  if (draft.useCheckout) return `in ${folderName ?? "the folder"}`;
-  return `worktree from ${draft.baseRef ?? "origin/main"}`;
 }
 
 /**

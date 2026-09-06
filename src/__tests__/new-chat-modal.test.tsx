@@ -127,15 +127,12 @@ describe("NewChatModal", () => {
     expect(
       screen.getByRole("group", { name: "Selected workspace" }),
     ).toHaveTextContent("~/code/jabot-app");
-    await userEvent.click(screen.getByRole("button", { name: "Advanced" }));
-    await userEvent.type(screen.getByLabelText("BASE BRANCH"), "release/2.0");
     await userEvent.click(
       screen.getByRole("button", { name: "Remove selected workspace" }),
     );
     expect(
       screen.queryByRole("group", { name: "Selected workspace" }),
     ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
     );
@@ -157,33 +154,30 @@ describe("NewChatModal", () => {
 });
 
 /**
- * The worktree controls (#23).
+ * Where the thread will work (#23, #92).
  *
- * `thread/open` has accepted `useCheckout` and `baseRef` since #23 — the Rust
- * host honours both, and `tests/e2e/worktree.test.ts` drives them — and
- * nothing in the renderer ever set either. They were reachable only by writing
- * JSON-RPC by hand.
+ * The card used to carry an Advanced disclosure with a checkout opt-out and a
+ * base branch. Both are gone: a folder thread always gets a fresh worktree from
+ * the host's own default base ref, which is what stops two threads in one repo
+ * standing on each other's uncommitted work.
  *
- * Advanced, and shut by default, because a fresh worktree per thread is what
- * stops two threads in one repo standing on each other's uncommitted work.
+ * `thread/open` still accepts `useCheckout` and `baseRef` — the Rust host
+ * honours both and `tests/e2e/worktree.test.ts` drives them — but nothing the
+ * card sends sets either.
  */
 describe("NewChatModal, where the thread will work", () => {
-  const advanced = () => screen.getByRole("button", { name: "Advanced" });
-  const checkbox = () =>
-    screen.getByRole("checkbox", { name: /Work in my current folder/ });
-
-  it("hides the controls until they are asked for", () => {
+  it("offers no worktree controls with a folder picked", () => {
     renderModal({ defaultFolderId: "jabot-app" });
 
-    expect(advanced()).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
     expect(screen.queryByLabelText("BASE BRANCH")).toBeNull();
   });
 
-  /** The load-bearing one. The overwhelming majority of sessions send the
-      same three fields they always did, and a `useCheckout: false` on the wire
-      would be a different request than the one that has been shipping. */
-  it("sends nothing extra when nobody opens them", async () => {
+  /** The load-bearing one. Every session sends the same three fields, and a
+      `useCheckout: false` or an empty `baseRef` on the wire would be a
+      different request than the one that has been shipping. */
+  it("sends the three fields and nothing about the tree", async () => {
     const props = renderModal({ defaultFolderId: "jabot-app" });
 
     await userEvent.click(
@@ -197,63 +191,13 @@ describe("NewChatModal, where the thread will work", () => {
     });
   });
 
-  it("puts both on the draft when they are set", async () => {
-    const props = renderModal({ defaultFolderId: "jabot-app" });
-
-    await userEvent.click(advanced());
-    await userEvent.type(screen.getByLabelText("BASE BRANCH"), " release/2.0 ");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Start session" }),
-    );
-
-    expect(props.onStart).toHaveBeenCalledWith(
-      expect.objectContaining({ baseRef: "release/2.0" }),
-    );
-  });
-
-  it("sends the opt-out when it is ticked", async () => {
-    const props = renderModal({ defaultFolderId: "jabot-app" });
-
-    await userEvent.click(advanced());
-    await userEvent.click(checkbox());
-    await userEvent.click(
-      screen.getByRole("button", { name: "Start session" }),
-    );
-
-    expect(props.onStart).toHaveBeenCalledWith(
-      expect.objectContaining({ useCheckout: true }),
-    );
-  });
-
-  /**
-   * A thread working in the folder's own checkout starts on whatever is
-   * checked out there. There is nothing to fork from, so offering a base
-   * branch would be offering a setting that does nothing.
-   */
-  it("takes the base branch away while the opt-out is ticked", async () => {
-    const props = renderModal({ defaultFolderId: "jabot-app" });
-
-    await userEvent.click(advanced());
-    await userEvent.type(screen.getByLabelText("BASE BRANCH"), "release/2.0");
-    await userEvent.click(checkbox());
-
-    expect(screen.getByLabelText("BASE BRANCH")).toBeDisabled();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Start session" }),
-    );
-    // And it does not travel: a base ref sent beside `useCheckout` would ask
-    // the host for two different things at once.
-    expect(props.onStart).toHaveBeenCalledWith(
-      expect.not.objectContaining({ baseRef: expect.anything() }),
-    );
-  });
-
   /** "No folder" is a scratch session: no checkout to work in and no branch to
-      fork from, so there is nothing for either control to decide. */
-  it("offers nothing at all without a folder", async () => {
+      fork from, and the card says nothing about either here too. */
+  it("offers nothing about the tree without a folder either", () => {
     renderModal({ defaultFolderId: null });
 
     expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
+    expect(screen.queryByLabelText("BASE BRANCH")).toBeNull();
   });
 });
 

@@ -5,15 +5,16 @@
 //! folder is the repo the thread will work in; "No folder" is a scratch session
 //! with no worktree.
 //!
-//! The two worktree controls (#23) are behind an Advanced disclosure and shut
-//! by default. `thread/open` has accepted `useCheckout` and `baseRef` since
-//! #23 and nothing ever set them, so the opt-out and the base branch were
-//! reachable only by a caller writing JSON-RPC by hand. They are advanced on
-//! purpose and stay that way: a fresh worktree per thread is what stops two
-//! threads in one repo standing on each other's uncommitted work, and the card
-//! should not invite anybody to turn it off casually.
+//! A folder thread always gets its own worktree. The Advanced disclosure that
+//! offered the checkout opt-out and a base branch (#23, #92) is gone: a fresh
+//! worktree per thread is what stops two threads in one repo standing on each
+//! other's uncommitted work, and a card that shows the way out of that is a
+//! card that invites somebody to take it. `thread/open` still accepts
+//! `useCheckout` and `baseRef` — the Rust host honours both and
+//! `tests/e2e/worktree.test.ts` drives them — but nothing the card sends sets
+//! either, so the base ref is the host's default and the tree is always fresh.
 
-import { useId, useState } from "react";
+import { useState } from "react";
 
 import { FieldLabel, Modal } from "./Modal";
 import { HarnessPicker } from "./HarnessPicker";
@@ -41,8 +42,6 @@ export function NewChatModal({
   onStart: (draft: NewChatDraft) => void | Promise<void>;
   onCancel: () => void;
 }) {
-  const checkoutId = useId();
-  const baseRefId = useId();
   const [harnessId, setHarnessId] = useState(
     defaultHarnessId ?? harnesses[0]?.id ?? "",
   );
@@ -61,12 +60,6 @@ export function NewChatModal({
       setBusy(false);
     }
   }
-  const [advanced, setAdvanced] = useState(false);
-  const [useCheckout, setUseCheckout] = useState(false);
-  const [baseRef, setBaseRef] = useState("");
-  // Neither control means anything without a repo: "No folder" is a scratch
-  // session, which has no checkout to work in and no branch to fork from.
-  const hasFolder = folder !== "";
 
   return (
     <Modal
@@ -101,50 +94,6 @@ export function NewChatModal({
         you’re ready.
       </p>
 
-      {hasFolder && (
-        <div className="advanced">
-          <button
-            type="button"
-            className="advanced-toggle"
-            aria-expanded={advanced}
-            onClick={() => setAdvanced((was) => !was)}
-          >
-            Advanced
-          </button>
-          {advanced && (
-            <>
-              <label className="checkline" htmlFor={checkoutId}>
-                <input
-                  id={checkoutId}
-                  type="checkbox"
-                  checked={useCheckout}
-                  onChange={(event) => setUseCheckout(event.target.checked)}
-                />
-                <span>
-                  Work in my current folder — no separate worktree
-                  <small>
-                    Two threads in this repo will then share one checkout, and
-                    one will be editing the other's uncommitted work.
-                  </small>
-                </span>
-              </label>
-
-              <FieldLabel htmlFor={baseRefId}>BASE BRANCH</FieldLabel>
-              <input
-                id={baseRefId}
-                type="text"
-                value={baseRef}
-                placeholder="origin/main"
-                // Nothing to fork from when the thread is working in the
-                // folder's own checkout: it starts on whatever is checked out.
-                disabled={useCheckout}
-                onChange={(event) => setBaseRef(event.target.value)}
-              />
-            </>
-          )}
-        </div>
-      )}
-
       {(workspaceError || error) && (
         <p className="modal-error" role="alert">
           {workspaceError || error}
@@ -170,13 +119,6 @@ export function NewChatModal({
                 harnessId,
                 folderId: folder || null,
                 task: "Untitled session",
-                // Omitted rather than sent as `false` / `""`: the ordinary
-                // request on the wire has to stay exactly what it was, and the
-                // host's own default for a base ref is not the empty string.
-                ...(hasFolder && useCheckout ? { useCheckout: true } : {}),
-                ...(hasFolder && !useCheckout && baseRef.trim()
-                  ? { baseRef: baseRef.trim() }
-                  : {}),
               });
             })
           }
