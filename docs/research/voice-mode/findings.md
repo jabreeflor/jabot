@@ -94,6 +94,14 @@ Do not relitigate these here:
 
 ## Prototype note
 
+The clickable contract is
+[`prototypes/jabot-voice.html`](../../../prototypes/jabot-voice.html).
+It is the first-run ask, the composer mic, the off/denied hint, and
+the Settings row — same tokens as the shell, scripted speech rather
+than a real microphone (the renderer must not own one). Deep links
+are listed at the top of that file; screenshots live in
+[`docs/img/voice-mode/`](../../img/voice-mode/).
+
 `src/components/Composer.tsx` already encodes the affordance: a
 round mic button, `aria-label="Voice"`, swapped for Stop while a
 turn is running. `Icon.tsx` calls it "the composer's decorative mic."

@@ -108,9 +108,17 @@ docs/research/
     pairing-security-mobile.md
   voice-mode/
     brief.md  findings.md  engines.md  onboarding-and-composer.md
+    explainer.html
 ```
 
+The clickable contract for voice-mode is
+[`prototypes/jabot-voice.html`](../../prototypes/jabot-voice.html).
+
 ## Product source of truth
+
+`prototypes/jabot-voice.html` is the dictation contract for
+[voice-mode](voice-mode/brief.md): Chief-pane opt-in, composer mic,
+Settings. It does not replace `jabot-classic.html`.
 
 `prototypes/jabot-classic.html` is the MVP prototype. Concepts it defines:
 Chief of Staff bot, crew of template bots, harness selection at new-chat time

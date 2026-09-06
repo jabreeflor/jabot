@@ -3,6 +3,10 @@
 Questions 1–3 and 5 from [`brief.md`](brief.md). Engines live in
 [`engines.md`](engines.md).
 
+The clickable UI for everything below is
+[`prototypes/jabot-voice.html`](../../../prototypes/jabot-voice.html).
+Build against that page, not against a re-reading of this file.
+
 ## Product {#product}
 
 Voice mode, for JaBot, is **dictation into the composer**.
