@@ -1,0 +1,110 @@
+/*
+ * Cursor's activity mark: a 3×3 square of circles that light up at random.
+ *
+ * Unlit cells are gone, not dim — the grid is implied by where the lights
+ * sit, the way the reference frames only ever show a handful of dots. Live
+ * rows animate; settled ones hold a still constellation so "done" does not
+ * read as "still working".
+ */
+
+.sparkle {
+  --spark-size: 13px;
+  width: var(--spark-size);
+  height: var(--spark-size);
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 1.5px;
+  color: var(--ink);
+}
+
+.sparkle > span {
+  display: block;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+}
+
+.sparkle[data-tone="ok"] {
+  color: var(--ink);
+}
+
+.sparkle[data-tone="quiet"] {
+  color: var(--faint);
+}
+
+.sparkle[data-tone="bad"] {
+  color: var(--danger);
+}
+
+/* Settled constellations — a handful of dots, no motion. Patterns match
+   the kind of frame Cursor's own mark lands on: never a full nine. */
+.sparkle[data-tone="ok"] > span:nth-child(2),
+.sparkle[data-tone="ok"] > span:nth-child(4),
+.sparkle[data-tone="ok"] > span:nth-child(5),
+.sparkle[data-tone="ok"] > span:nth-child(6),
+.sparkle[data-tone="ok"] > span:nth-child(7),
+.sparkle[data-tone="ok"] > span:nth-child(9) {
+  opacity: 0.45;
+}
+
+.sparkle[data-tone="quiet"] > span:nth-child(5) {
+  opacity: 0.35;
+}
+
+.sparkle[data-tone="bad"] > span:nth-child(1),
+.sparkle[data-tone="bad"] > span:nth-child(3),
+.sparkle[data-tone="bad"] > span:nth-child(5),
+.sparkle[data-tone="bad"] > span:nth-child(7),
+.sparkle[data-tone="bad"] > span:nth-child(9) {
+  opacity: 0.7;
+}
+
+.sparkle.live > span {
+  /* Visible if motion is off: the global reduced-motion rule kills the
+     animation, and opacity 0 would leave a blank pip. */
+  opacity: 0.18;
+  animation: sparkle-lit var(--spark-dur, 1.4s) ease-in-out infinite;
+  animation-delay: calc(var(--spark-base, 0ms) + var(--spark-delay, 0s));
+}
+
+/* Prime-ish durations so the nine clocks do not reconverge for a long time. */
+.sparkle.live > span:nth-child(1) { --spark-dur: 1.13s; --spark-delay: 0.04s; }
+.sparkle.live > span:nth-child(2) { --spark-dur: 1.37s; --spark-delay: 0.51s; }
+.sparkle.live > span:nth-child(3) { --spark-dur: 0.97s; --spark-delay: 0.22s; }
+.sparkle.live > span:nth-child(4) { --spark-dur: 1.61s; --spark-delay: 0.73s; }
+.sparkle.live > span:nth-child(5) { --spark-dur: 1.21s; --spark-delay: 0.18s; }
+.sparkle.live > span:nth-child(6) { --spark-dur: 1.79s; --spark-delay: 0.39s; }
+.sparkle.live > span:nth-child(7) { --spark-dur: 1.03s; --spark-delay: 0.66s; }
+.sparkle.live > span:nth-child(8) { --spark-dur: 1.43s; --spark-delay: 0.11s; }
+.sparkle.live > span:nth-child(9) { --spark-dur: 1.67s; --spark-delay: 0.48s; }
+
+/* Duty cycle ~45%: a frame typically lights four to six cells, matching
+   the Cursor stills, rather than a full grid pulsing as one. */
+@keyframes sparkle-lit {
+  0%,
+  18%,
+  100% {
+    opacity: 0;
+  }
+  32%,
+  58% {
+    opacity: 0.95;
+  }
+}
+
+/* The global reduced-motion rule kills the loop. Hold a still handful of
+   dots so a live row does not collapse to an empty square. */
+@media (prefers-reduced-motion: reduce) {
+  .sparkle.live > span {
+    opacity: 0;
+  }
+
+  .sparkle.live > span:nth-child(1),
+  .sparkle.live > span:nth-child(4),
+  .sparkle.live > span:nth-child(5),
+  .sparkle.live > span:nth-child(8) {
+    opacity: 0.85;
+  }
+}

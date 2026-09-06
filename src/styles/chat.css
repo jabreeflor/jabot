@@ -65,7 +65,7 @@
 
 /* The status line is a live reading once a thread is streaming (#14): a stop
    reason, or the agent's own plan position. Same three tones as the sidebar's
-   pip, so "running" means the same colour wherever it is read. */
+   sparkle, so "running" means the same state wherever it is read. */
 .chat-head .status[data-tone="running"] {
   color: var(--amber);
 }

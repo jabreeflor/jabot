@@ -18,12 +18,11 @@ import { useState } from "react";
 
 import {
   ChevronDownIcon,
-  DotIcon,
   FolderIcon,
   SlidersIcon,
   PlusIcon,
-  RingIcon,
 } from "./Icon";
+import { Sparkle } from "./Sparkle";
 import { threadStatus } from "./status";
 import type { FolderWithThreads, Selection, ThreadSummary } from "./types";
 import type { MenuPosition } from "./ThreadContextMenu";
@@ -140,17 +139,15 @@ function ThreadRow({
       type="button"
       className={leaving ? "thread-row leaving" : "thread-row"}
       aria-current={selected}
+      aria-label={`${thread.title}, ${status.label}`}
       onClick={() => onSelect(thread.id)}
       onContextMenu={(event) => {
         event.preventDefault();
         onMenu(thread, { x: event.clientX, y: event.clientY });
       }}
     >
-      <span className={`pip ${status.tone}`} aria-hidden="true">
-        {status.tone === "quiet" ? <RingIcon /> : <DotIcon />}
-      </span>
+      <Sparkle tone={status.tone} title={status.label} seed={thread.id} />
       <span className="title">{thread.title}</span>
-      <span className="state">{status.label}</span>
     </button>
   );
 }

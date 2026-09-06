@@ -427,37 +427,6 @@
   white-space: nowrap;
 }
 
-.thread-row .state {
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 11.5px;
-  flex: none;
-}
-
-.thread-row .pip {
-  flex: none;
-  display: grid;
-  place-items: center;
-  color: var(--faint);
-}
-
-.thread-row .pip svg {
-  width: 9px;
-  height: 9px;
-}
-
-.thread-row .pip.running {
-  color: var(--amber);
-}
-
-.thread-row .pip.ok {
-  color: var(--ok);
-}
-
-.thread-row .pip.bad {
-  color: var(--danger);
-}
-
 /* ---- me ---- */
 
 .me-row {

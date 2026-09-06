@@ -122,12 +122,24 @@ describe("Sidebar", () => {
   it("lists every thread it is given, with what that thread is doing", () => {
     renderSidebar();
 
-    expect(
-      screen.getByRole("button", { name: /Auth migration/ }),
-    ).toHaveTextContent("running");
-    expect(
-      screen.getByRole("button", { name: /Sidebar overflow fix/ }),
-    ).toHaveTextContent("done");
+    const running = screen.getByRole("button", {
+      name: "Auth migration, running",
+    });
+    expect(running.querySelector(".sparkle.live")).not.toBeNull();
+    expect(running.querySelectorAll("[data-testid=sparkle] > span")).toHaveLength(
+      9,
+    );
+    expect(running).not.toHaveTextContent("running");
+
+    const done = screen.getByRole("button", {
+      name: "Sidebar overflow fix, done",
+    });
+    expect(done.querySelector(".sparkle.live")).toBeNull();
+    expect(done.querySelector("[data-testid=sparkle]")).toHaveAttribute(
+      "data-tone",
+      "ok",
+    );
+    expect(done).not.toHaveTextContent("done");
   });
 
   it("shows the crew as faces, with the unread dot where there is news", () => {

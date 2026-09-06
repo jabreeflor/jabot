@@ -307,7 +307,7 @@ export function CrossIcon({ className }: IconProps) {
   );
 }
 
-/** A filled dot: something running, a thread's status pip. */
+/** A filled dot: a passing CI check, a finished tool call. */
 export function DotIcon({ className }: IconProps) {
   return (
     <Stroke className={className}>
