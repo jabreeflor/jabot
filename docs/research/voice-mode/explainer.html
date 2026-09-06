@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JaBot voice mode — research</title>
+  <style>
+    :root {
+      --win: #1c1c1e;
+      --raise: #2a2a2c;
+      --ink: #f2f2f2;
+      --dim: #98989e;
+      --faint: #8e8e93;
+      --ok: #5dbb6e;
+      --h-claude: #d97757;
+      --h-codex: #5dbb6e;
+      --h-pi: #a78bfa;
+      --edge: #303033;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--win);
+      color: var(--ink);
+      font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      padding: 48px 56px 64px;
+      max-width: 920px;
+    }
+    .eyebrow {
+      color: var(--faint);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+    }
+    h1 { font-size: 32px; font-weight: 620; letter-spacing: -0.03em; margin: 8px 0 12px; }
+    h2 { font-size: 13px; letter-spacing: 0.08em; color: var(--faint); margin: 36px 0 12px; }
+    .lede { color: var(--dim); font-size: 17px; max-width: 40em; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .card {
+      background: var(--raise);
+      border: 1px solid var(--edge);
+      border-radius: 14px;
+      padding: 16px 16px 14px;
+    }
+    .card strong { display: block; margin-bottom: 6px; }
+    .card p { margin: 0; color: var(--dim); font-size: 14px; }
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .flow li {
+      background: var(--raise);
+      border: 1px solid var(--edge);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 13px;
+    }
+    .flow .arrow { background: none; border: 0; color: var(--faint); padding: 0; }
+    .engines { display: flex; gap: 10px; margin-top: 8px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .row { display: flex; gap: 12px; }
+    .row .card { flex: 1; }
+    .yes { color: var(--ok); }
+    code { font-size: 13px; color: #d7d7db; }
+  </style>
+</head>
+<body>
+  <div class="eyebrow">RESEARCH · SEPTEMBER 2026</div>
+  <h1>Voice is dictation into the box we already have.</h1>
+  <p class="lede">
+    Not a duplex conversation, not a cloud STT bill, not a fourth setup card.
+    The composer mic becomes real. The three engines never see audio.
+  </p>
+
+  <h2>MERGE INTO THE THREE</h2>
+  <ul class="flow">
+    <li>mic</li>
+    <li class="arrow">→</li>
+    <li><code>voice/start</code></li>
+    <li class="arrow">→</li>
+    <li>host STT</li>
+    <li class="arrow">→</li>
+    <li>composer text</li>
+    <li class="arrow">→</li>
+    <li><code>session/prompt</code></li>
+  </ul>
+  <div class="engines">
+    <span><i class="dot" style="background:var(--h-claude)"></i> Claude</span>
+    <span><i class="dot" style="background:var(--h-codex)"></i> Codex</span>
+    <span><i class="dot" style="background:var(--h-pi)"></i> Pi</span>
+  </div>
+
+  <h2>ONBOARDING STAYS THREE PANES</h2>
+  <div class="grid">
+    <div class="card">
+      <strong>1 · Name</strong>
+      <p>Unchanged. What the crew calls you.</p>
+    </div>
+    <div class="card">
+      <strong>2 · Engine</strong>
+      <p>Unchanged. Default harness for new code threads.</p>
+    </div>
+    <div class="card">
+      <strong>3 · Chief</strong>
+      <p>Still teaches fold / Inbox. New row: Enable dictation / Not now. Skip stays off.</p>
+    </div>
+  </div>
+
+  <h2>ENGINES</h2>
+  <div class="row">
+    <div class="card">
+      <strong>Phase A · Apple Speech</strong>
+      <p>Free, on-device, zero extra bytes. Ships with the first mic wiring.</p>
+    </div>
+    <div class="card">
+      <strong>Phase B · whisper.cpp tiny.en-q5_1</strong>
+      <p>~31 MiB, fetched or copied only after Yes. Same <code>voice/*</code> methods.</p>
+    </div>
+    <div class="card">
+      <strong>Later · spoken replies</strong>
+      <p>System TTS, Chief only, opt-in. Not ElevenLabs. Not duplex.</p>
+    </div>
+  </div>
+
+  <h2>WHAT WE WILL NOT DO</h2>
+  <div class="card">
+    <p>
+      Wake words. Cloud STT as the default. Per-harness voice.
+      Re-onboarding existing installs. Shipping 75–150&nbsp;MiB in every
+      <code>.dmg</code> before anyone said yes. Auto-send on final.
+    </p>
+  </div>
+</body>
+</html>

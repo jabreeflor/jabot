@@ -44,6 +44,24 @@ The umbrella with the full dependency graph is
 | [#28](https://github.com/jabreeflor/jabot/issues/28) | Pull Requests view + thread↔PR linkage + Inbox PR cards | #11, #22, #23 |
 | [#29](https://github.com/jabreeflor/jabot/issues/29) | MVP2 — Mobile Inbox client | #19, #22, #27 |
 
+## Proposed — voice mode (not yet opened)
+
+Researched in [`docs/research/voice-mode/`](research/voice-mode/findings.md).
+Not on the original August 2026 issue list. Open these only after this
+research has landed; do not assign numbers here.
+
+| Working title | Blocked by | Notes |
+|---|---|---|
+| Host `voice/*` API + macOS Speech backend | #8, #11 | Same mac / unsupported split as #27. |
+| Composer mic wiring | voice API | Lights the existing decorative mic. Text only; still `session/prompt`. |
+| Onboarding opt-in + Settings toggle | voice API, onboarding | Park Yes / Not now on Chief (still 3 panes). Do not re-onboard. |
+| Bundled-capable whisper.cpp (`tiny.en-q5_1`) | voice API, #12 | Phase B. Fetch-on-yes or Resources copy; same methods. |
+| Spoken replies (Chief, opt-in) | voice API | Later. `AVSpeechSynthesizer`. Not duplex. |
+
+Voice is **not** a per-harness issue and **not** a mobile issue.
+Claude / Codex / Pi consume the text the composer already sends.
+Mobile voice stays deferred with #29.
+
 ## Thinnest vertical slice
 
 #4 → #7 → #10 + #11 → #14 → #20: one Claude Code thread rendered as chat with
