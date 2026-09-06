@@ -12,10 +12,10 @@ The board also accepts a PR URL to review other contributors' PRs. GitHub remain
 
 Automated coverage: frontend review/comment submission, draft preservation after failure, merge confirmation and gating, removed-line commenting and hunk numbering; backend input validation, stale-head refusal, merge SHA/strategy and review payloads. Writes are mocked in tests.
 
-## Verification results
+## Automatic refresh
 
-- 20 PR frontend tests and 6 PR backend tests passed.
-- TypeScript, production Vite build, Rust formatting, Clippy and default-feature compilation passed.
-- Browser reported no runtime errors in the fixture preview.
-- Broad frontend rerun with `NODE_OPTIONS=--no-experimental-webstorage` passed 476/477 tests; the remaining sidebar/folding timing test passed when its suite was rerun alone (10/10).
-- The full verification script did not pass in this environment: its default Node 26 run hit the existing jsdom/localStorage incompatibility, two commit-guard timing cases failed under load, and three OAuth local-server tests failed. These areas were not changed by this feature. Do not treat this branch as having a clean full verification stamp.
+[Automatic refresh](auto-refresh.png) shows a new comment delivered by the 30-second timer while the review draft remains intact. Visible screens refresh every 30 seconds and on focus/visibility return; hidden screens and active writes pause background reads. Requests are serialized and late responses after navigation are ignored. Errors preserve the last good data and retry. New head commits require explicit review before review, line-comment or merge actions; loading them resets viewed files and line selection while retaining feedback text.
+
+Seven hook tests cover polling, visibility, overlap, writes, changed heads, recovery and navigation. A component test verifies draft/viewed-file preservation and changed-head action gating. All 14 focused refresh/workspace tests pass. The browser preview confirmed an automatic comment update with an intact draft and no runtime errors.
+
+The full repository gate is run with Node 22, RUST_TEST_THREADS=1 and VITEST_MAX_FORKS=2/VITEST_MIN_FORKS=1; see the PR for its final result.

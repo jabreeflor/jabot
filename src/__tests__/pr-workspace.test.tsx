@@ -1,6 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
+import { PR_DETAIL_REFRESH_MS } from "../views/prDetails";
 import { PrWorkspaceView, diffLines } from "../views/PrWorkspaceView";
 import {
   workspacePr,
@@ -111,6 +118,75 @@ describe("PR workspace", () => {
         body: "Why remove this?",
       }),
     );
+  });
+  it("preserves a draft and viewed files on refresh, and gates actions for new commits", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      value: false,
+    });
+    try {
+      const client = mount();
+      await act(async () => {
+        await Promise.resolve();
+      });
+      fireEvent.change(screen.getByLabelText(/Comment or review/), {
+        target: { value: "Keep this feedback" },
+      });
+      fireEvent.change(screen.getByLabelText("Review decision"), {
+        target: { value: "APPROVE" },
+      });
+      fireEvent.click(screen.getByRole("tab", { name: /Files changed/ }));
+      fireEvent.click(screen.getAllByLabelText("Viewed")[0]);
+      const update = {
+        ...workspaceFixture,
+        comments: [
+          ...workspaceFixture.comments,
+          {
+            ...workspaceFixture.comments[0],
+            id: 2,
+            html_url: "https://github.com/comment/2",
+            body: "New comment from teammate",
+          },
+        ],
+      };
+      client.pullRequestDetail.mockResolvedValue(update);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PR_DETAIL_REFRESH_MS);
+      });
+      expect(screen.getAllByLabelText("Viewed")[0]).toBeChecked();
+      fireEvent.click(screen.getByRole("tab", { name: /Conversation/ }));
+      expect(screen.getByText("New comment from teammate")).toBeInTheDocument();
+      expect(screen.getByLabelText(/Comment or review/)).toHaveValue(
+        "Keep this feedback",
+      );
+      client.pullRequestDetail.mockResolvedValue({
+        ...update,
+        pr: { ...update.pr, head: { ...update.pr.head, sha: "new-head" } },
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(PR_DETAIL_REFRESH_MS);
+      });
+      expect(
+        screen.getByRole("button", { name: "Submit review" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Merge pull request…" }),
+      ).toBeDisabled();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Review new commits" }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(screen.getAllByLabelText("Viewed")[0]).not.toBeChecked();
+      fireEvent.click(screen.getByRole("tab", { name: /Conversation/ }));
+      expect(screen.getByLabelText(/Comment or review/)).toHaveValue(
+        "Keep this feedback",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it("tracks both sides across multiple hunks", () => {
     expect(

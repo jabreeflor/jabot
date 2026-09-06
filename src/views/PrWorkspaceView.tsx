@@ -1,19 +1,13 @@
+import { usePrDetails, prWorkspaceError as message } from "./prDetails";
 import { renderMarkdown } from "../components/markdown";
 import { useEffect, useRef, useState } from "react";
 import type { HostClient } from "../host";
 import type { PullRequest } from "../components/types";
-import type { PrAction, PrWorkspace, PrFile } from "../host/prWorkspace";
+import type { PrAction, PrFile } from "../host/prWorkspace";
 import { Tabs, tabButtonId } from "../components/Tabs";
 
 type Section = "conversation" | "files" | "commits" | "checks";
 type LineTarget = { path: string; line: number; side: "LEFT" | "RIGHT" };
-const message = (e: unknown) => {
-  if (e && typeof e === "object" && "data" in e) {
-    const data = e.data as { detail?: string } | undefined;
-    if (data?.detail) return data.detail;
-  }
-  return e instanceof Error ? e.message : String(e);
-};
 
 export function PrWorkspaceView({
   pr,
@@ -26,11 +20,9 @@ export function PrWorkspaceView({
   onBack: () => void;
   onOpenThread: (id: string) => void;
 }) {
-  const [data, setData] = useState<PrWorkspace | null>(null);
   const [section, setSection] = useState<Section>("conversation");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -49,37 +41,24 @@ export function PrWorkspaceView({
   const [fileSearch, setFileSearch] = useState("");
   const [viewed, setViewed] = useState<Set<string>>(new Set());
   const inFlight = useRef(false);
-  const generation = useRef(0);
   const target = {
     repo: pr.repo,
     number: pr.number,
     host: new URL(pr.url).hostname,
   };
-  async function load() {
-    if (!client) return;
-    const request = ++generation.current;
-    setLoading(true);
-    setError(null);
-    try {
-      const next = await client.pullRequestDetail(target);
-      if (request === generation.current) {
-        setData(next);
-      }
-    } catch (e) {
-      if (request === generation.current) setError(message(e));
-    } finally {
-      if (request === generation.current) setLoading(false);
-    }
-  }
+  const {
+    data,
+    loading,
+    refreshing,
+    refreshError,
+    pendingHead,
+    refresh: load,
+  } = usePrDetails(client, target, inFlight);
   useEffect(() => {
     setViewed(new Set());
+    setConfirm(null);
+    setLine(null);
   }, [data?.pr.head.sha]);
-  useEffect(() => {
-    void load();
-    return () => {
-      generation.current++;
-    };
-  }, [client, pr.id]); // keyed by PR in the parent
   async function act(action: PrAction["action"]) {
     if (!client || !data || inFlight.current) return;
     inFlight.current = true;
@@ -139,6 +118,7 @@ export function PrWorkspaceView({
   const checkRuns = data?.checks?.check_runs ?? [];
   const statuses = data?.statuses?.statuses ?? [];
   const blocked =
+    !!pendingHead ||
     !open ||
     detail?.draft ||
     detail?.mergeable !== true ||
@@ -162,11 +142,42 @@ export function PrWorkspaceView({
             <button
               className="btn"
               onClick={() => void load()}
-              disabled={loading || busy || !client}
+              disabled={refreshing || busy || !client}
             >
-              {loading ? "Refreshing…" : "Refresh"}
+              {refreshing ? "Refreshing…" : "Refresh"}
             </button>
           </div>
+          {client && (
+            <p className="pr-muted">
+              Auto-refresh every 30 seconds while visible · refreshes when you
+              return
+            </p>
+          )}
+          {refreshError && (
+            <div className="page-notice" role="status">
+              Could not refresh: {refreshError}.{" "}
+              {data ? "Showing the last loaded version. " : ""}Automatic refresh
+              will retry.
+            </div>
+          )}
+          {pendingHead && (
+            <div className="page-notice" role="status">
+              <span>
+                New commits are available. Review them before submitting a
+                review, line comment, or merge.
+              </span>
+              <button
+                className="btn"
+                disabled={busy || refreshing}
+                onClick={() => {
+                  setSection("files");
+                  void load();
+                }}
+              >
+                Review new commits
+              </button>
+            </div>
+          )}
           <header className="pr-header">
             <h1>
               {detail?.title ?? pr.title} <span>#{pr.number}</span>
@@ -391,6 +402,7 @@ export function PrWorkspaceView({
                               disabled={
                                 busy ||
                                 loading ||
+                                !!pendingHead ||
                                 (review !== "APPROVE" && !body.trim())
                               }
                               onClick={() => void act(review)}
@@ -471,7 +483,12 @@ export function PrWorkspaceView({
                           </button>
                           <button
                             className="btn primary"
-                            disabled={busy || loading || !inlineBody.trim()}
+                            disabled={
+                              busy ||
+                              loading ||
+                              !!pendingHead ||
+                              !inlineBody.trim()
+                            }
                             onClick={() => void act("inline")}
                           >
                             Post line comment
@@ -707,21 +724,24 @@ export function PrWorkspaceView({
 export function diffLines(patch: string) {
   let left = 0,
     right = 0;
-  return patch.replace(/\n$/, "").split("\n").map((text) => {
-    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
-    if (hunk) {
-      left = Number(hunk[1]);
-      right = Number(hunk[2]);
-      return { text, kind: "hunk", left: null, right: null };
-    }
-    if (text.startsWith("\\"))
-      return { text, kind: "hunk", left: null, right: null };
-    if (text.startsWith("+"))
-      return { text, kind: "add", left: null, right: right++ };
-    if (text.startsWith("-"))
-      return { text, kind: "remove", left: left++, right: null };
-    return { text, kind: "context", left: left++, right: right++ };
-  });
+  return patch
+    .replace(/\n$/, "")
+    .split("\n")
+    .map((text) => {
+      const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
+      if (hunk) {
+        left = Number(hunk[1]);
+        right = Number(hunk[2]);
+        return { text, kind: "hunk", left: null, right: null };
+      }
+      if (text.startsWith("\\"))
+        return { text, kind: "hunk", left: null, right: null };
+      if (text.startsWith("+"))
+        return { text, kind: "add", left: null, right: right++ };
+      if (text.startsWith("-"))
+        return { text, kind: "remove", left: left++, right: null };
+      return { text, kind: "context", left: left++, right: right++ };
+    });
 }
 function DiffFile({
   file,
