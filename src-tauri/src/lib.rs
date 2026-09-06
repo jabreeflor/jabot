@@ -78,6 +78,23 @@ fn route_notification_clicks(app: tauri::AppHandle) {
     });
 }
 
+/// Tell the harness catalog where this build's bundled ACP adapters are.
+///
+/// Tauri is the only thing that knows where `Contents/Resources` ended up, and
+/// the harness catalog is what needs it — so the path is handed over once,
+/// here, before the session loads. It has to be before: the first thing a
+/// loaded session does is mirror the catalog into the store.
+///
+/// A build with nothing staged simply resolves nothing. `bundled.rs` looks for
+/// the adapter itself and offers no candidate when it is not there, so this is
+/// never the thing that decides whether the Claude card works.
+fn point_at_bundled_adapters(app: &tauri::AppHandle) {
+    match app.path().resource_dir() {
+        Ok(dir) => host::harness::bundled::set_resource_dir(dir),
+        Err(err) => eprintln!("failed to resolve the resource dir: {err}; bundled adapters will only be found next to the executable"),
+    }
+}
+
 fn load_session(app: &tauri::AppHandle) -> HostSession {
     match app.path().app_data_dir() {
         Ok(dir) => {
@@ -128,6 +145,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
+            point_at_bundled_adapters(app.handle());
             let session = load_session(app.handle());
             let wake = session.adapter_wake();
             app.manage(HostState(Mutex::new(session)));

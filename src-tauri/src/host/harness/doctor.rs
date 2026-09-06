@@ -232,6 +232,19 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
             launch.command,
             launch.args.join(" ")
         )
+    } else if launch.bundled {
+        // `path` here is the Node that runs the adapter, and "Ready —
+        // /opt/homebrew/bin/node" answers a question nobody asked. Name the
+        // adapter this build ships instead, so a user who is wondering why
+        // they never installed anything can see why.
+        format!(
+            "Ready — the adapter bundled with JaBot ({}).",
+            launch
+                .args
+                .first()
+                .map(String::as_str)
+                .unwrap_or(launch.command.as_str())
+        )
     } else {
         format!("Ready — {}", path.display())
     };

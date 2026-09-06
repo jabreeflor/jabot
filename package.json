@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:app": "npm run bundle:adapters && npm run build",
+    "bundle:adapters": "./scripts/bundle-adapters.sh",
     "preview": "vite preview",
     "live": "./scripts/live.sh",
     "live:setup": "./scripts/live.sh setup",

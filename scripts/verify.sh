@@ -256,6 +256,19 @@ lockfiles() {
     ok=1
   fi
   rm -f "$err"
+
+  # The adapters the app ships inside its own bundle have their own manifest
+  # and lock (src-tauri/vendor/adapters). `tauri build` installs from that lock
+  # via scripts/bundle-adapters.sh, so drift there is a macOS-only failure in
+  # the one job that cannot run on a pull request.
+  if npm ci --prefix src-tauri/vendor/adapters --dry-run --no-audit --no-fund >/dev/null 2>&1; then
+    printf '  src-tauri/vendor/adapters/package-lock.json satisfies its package.json\n'
+  else
+    printf '  the bundled adapters lock disagrees with its manifest — `tauri build` would refuse to stage them:\n'
+    npm ci --prefix src-tauri/vendor/adapters --dry-run --no-audit --no-fund 2>&1 | sed 's/^/    /' | head -20
+    ok=1
+  fi
+
   return $ok
 }
 
@@ -361,6 +374,30 @@ if (targets !== 'all' && !(Array.isArray(targets) && targets.includes('dmg'))) {
 if (bundle.createUpdaterArtifacts !== false) {
   bad(`${T}: bundle.createUpdaterArtifacts must stay false (got ${JSON.stringify(bundle.createUpdaterArtifacts)}); `
     + 'it is merged in at release time with --config (D-005)');
+}
+
+// `resources` is how the ACP adapter reaches Contents/Resources, and a glob
+// that matches nothing fails `tauri-build` — which means it fails every cargo
+// command in this script, from the build script, with "failed to run custom
+// build command". Asked here it is one line naming the directory and the
+// command that creates it, four stages before that happens. Only the literal
+// prefix is checked; `bundle-adapters.sh --check` is what says the contents
+// are current.
+const resources = bundle.resources;
+if (resources !== undefined) {
+  const entries = Array.isArray(resources) ? resources : Object.keys(resources || {});
+  if (entries.length === 0) bad(`${T}: bundle.resources is present but empty`);
+  for (const entry of entries) {
+    const literal = String(entry).split(/[*?[]/)[0].replace(/\/[^/]*$/, '');
+    if (!literal) continue;
+    const p = path.join('src-tauri', literal);
+    if (!fs.existsSync(p)) {
+      bad(`${T}: bundle.resources names ${entry}, and ${p} does not exist — `
+        + 'run `npm run bundle:adapters`. It is gitignored and staged from its own lock, so a '
+        + 'fresh clone has to stage it once; `npm run build:app` (the beforeBuildCommand) does it '
+        + 'for every release build.');
+    }
+  }
 }
 
 const icons = bundle.icon || [];
