@@ -1,18 +1,6 @@
-//! A bot's icon: the JaBot mascot in that bot's colour, or the picture the user
-//! gave it. The mascot is one product identity everywhere it appears; colour,
-//! resting angle, glance direction, and animation timing distinguish the crew.
-//!
-//! An uploaded image remains an explicit user override. It replaces the mascot
-//! entirely while keeping the unread dot and state ring, so the newer icon
-//! editor remains intact after the mascot became the default.
-//!
-//! There is no `size` prop, deliberately. The app sizes avatars from CSS
-//! already: the sidebar sets `--blob-size: 54px` on the chief tile, chat.css
-//! sets 28px on the header, cards.css 38px on an Inbox row. A prop would mean
-//! every one of those stylesheets had to be replaced with a threaded number,
-//! and the mascot stage scales to whatever box it lands in.
+//! Bot icons use a solid fill in the bot’s colour, or an uploaded picture.
+//! CSS controls sizing; unread dots and runtime state rings remain shared.
 
-import mascotSpritesheet from "../../assets/mascot-spritesheet.webp";
 import type { BotColor } from "../types";
 import type { AvatarState } from "./state";
 import { isBotImage } from "./image";
@@ -30,11 +18,11 @@ export function Avatar({
   name: string;
   color: BotColor;
   /**
-   * The bot's own picture, as a `data:` URL, or nothing for the mascot.
+   * The bot's own picture, as a `data:` URL, or nothing for the solid colour.
    *
    * Checked rather than trusted: it goes straight into a `src`, and the value
    * has been through the host and back. A row carrying something else draws
-   * the mascot instead of fetching it.
+   * the solid colour instead of fetching it.
    */
   image?: string | null;
   state?: AvatarState;
@@ -75,7 +63,7 @@ export function Avatar({
         // the bot twice wherever `labelled` is on.
         <img className="pic" src={picture} alt="" draggable={false} />
       ) : (
-        <MascotMark />
+        <ColorMark />
       )}
       {unread && <span className="dot" data-testid="unread-dot" />}
       {state !== "idle" && <span className="ring" data-testid="state-ring" />}
@@ -83,33 +71,12 @@ export function Avatar({
   );
 }
 
-/**
- * The product mascot inside the bot's colour well. This is a real frame atlas,
- * not a still image translated around the icon: CSS selects the row that
- * matches the bot's state and advances through its rendered poses.
- */
-function MascotMark() {
-  return (
-    <span className="mascot-stage" aria-hidden="true">
-      <img
-        className="mascot mascot-sheet"
-        src={mascotSpritesheet}
-        alt=""
-        draggable={false}
-      />
-    </span>
-  );
+/** A flat colour tile shared by individual bots and the Crew cluster. */
+function ColorMark() {
+  return <span className="color-mark" aria-hidden="true" />;
 }
 
-/**
- * The crew as a whole — the one avatar that is not a single bot.
- *
- * Three mascot portraits in the three colours today's cluster already uses,
- * so the tile reads as several bots while keeping the product identity.
- *
- * `aria-hidden` on the wrapper: the controls this sits in ("Crew") are already
- * named by their own text.
- */
+/** Three colours identify the crew as a whole. Its control supplies the name. */
 const CREW_COLORS: readonly BotColor[] = ["b-teal", "b-purple", "b-violet"];
 
 export function CrewAvatar({ className }: { className?: string }) {
@@ -125,7 +92,7 @@ export function CrewAvatar({ className }: { className?: string }) {
         // inside one of them and rearranges its parts.
         <i className={`s${i + 1}`} key={color}>
           <span className={`av ${color}`} data-state="idle">
-            <MascotMark />
+            <ColorMark />
           </span>
         </i>
       ))}
