@@ -4,7 +4,10 @@ Evidence for the change that turns the sidebar's crew grid into a list of chat
 rows and gives each row the last thing said in that bot's standing thread.
 
 Every frame is the real `App` in headless Chromium at `deviceScaleFactor: 2`,
-against the production renderer bundle (`npm run build` + `vite preview`).
+against the production renderer bundle (`npm run build` + `vite preview`), and
+all of them were recaptured after `main` was merged in — so they carry the
+solid circular icons, the sparkle thread marks and the collapsing rail that
+landed there while this branch was open.
 
 | file | what it shows |
 | --- | --- |
