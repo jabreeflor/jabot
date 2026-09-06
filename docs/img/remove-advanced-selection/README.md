@@ -9,6 +9,7 @@ with a folder picked — the only state in which the disclosure ever appeared.
 | `before.png` | the card as it was: the ADVANCED disclosure sitting under the workspace |
 | `before-expanded.png` | the disclosure opened: the checkout opt-out and BASE BRANCH |
 | `after.png` | the card now: no disclosure, no opt-out, no base branch |
+| `walkthrough.png` | the PR explainer artifact, rendered full-page (the `## Artifact` section links the live one) |
 
 A folder thread always gets its own worktree from the host's default base ref.
 Two threads sharing one checkout is the collision worktrees exist to prevent,
