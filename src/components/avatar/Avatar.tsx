@@ -1,6 +1,5 @@
-//! Bot icons use a solid fill in the bot’s colour, or an uploaded picture.
-//! CSS controls sizing; unread dots and runtime state rings remain shared.
-
+// Monochrome bot icons share the same size, unread dot, and state ring as uploaded pictures.
+import { BotMark } from "./BotMark";
 import type { BotColor } from "../types";
 import type { AvatarState } from "./state";
 import { isBotImage } from "./image";
@@ -18,11 +17,11 @@ export function Avatar({
   name: string;
   color: BotColor;
   /**
-   * The bot's own picture, as a `data:` URL, or nothing for the solid colour.
+   * The bot's own picture, as a `data:` URL, or nothing for the animated icon.
    *
    * Checked rather than trusted: it goes straight into a `src`, and the value
    * has been through the host and back. A row carrying something else draws
-   * the solid colour instead of fetching it.
+   * the animated icon instead of fetching it.
    */
   image?: string | null;
   state?: AvatarState;
@@ -63,7 +62,7 @@ export function Avatar({
         // the bot twice wherever `labelled` is on.
         <img className="pic" src={picture} alt="" draggable={false} />
       ) : (
-        <ColorMark />
+        <BotMark color={color} />
       )}
       {unread && <span className="dot" data-testid="unread-dot" />}
       {state !== "idle" && <span className="ring" data-testid="state-ring" />}
@@ -71,12 +70,7 @@ export function Avatar({
   );
 }
 
-/** A flat colour tile shared by individual bots and the Crew cluster. */
-function ColorMark() {
-  return <span className="color-mark" aria-hidden="true" />;
-}
-
-/** Three colours identify the crew as a whole. Its control supplies the name. */
+/** Three distinct bot silhouettes for the crew navigation. */
 const CREW_COLORS: readonly BotColor[] = ["b-teal", "b-purple", "b-violet"];
 
 export function CrewAvatar({ className }: { className?: string }) {
@@ -92,7 +86,7 @@ export function CrewAvatar({ className }: { className?: string }) {
         // inside one of them and rearranges its parts.
         <i className={`s${i + 1}`} key={color}>
           <span className={`av ${color}`} data-state="idle">
-            <ColorMark />
+            <BotMark color={color} />
           </span>
         </i>
       ))}

@@ -130,7 +130,7 @@
    around the bot rather than a highlight on it. A hat or a crest overflows the
    box and so paints across the ring, which is the right way round — the mark
    belongs to the bot, not to the selection. */
-.bot-tile[aria-current="true"] .av,
+.bot-tile[aria-current="true"] > .av,
 .bot-tile[aria-current="true"] .cluster {
   border-radius: 50%;
   box-shadow:

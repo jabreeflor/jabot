@@ -10,7 +10,7 @@
 
 import type { ResurfaceReason, ToolConnectionStatus } from "../host";
 
-/** `bots.color` — the mascot's light-well colour and motion signature. */
+/** Legacy `bots.color` appearance IDs; mapped to monochrome icons by avatar/bots.ts. */
 export type BotColor =
   | "b-teal"
   | "b-yellow"

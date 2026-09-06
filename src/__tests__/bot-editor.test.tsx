@@ -160,3 +160,24 @@ describe("BotEditorModal", () => {
     );
   });
 });
+
+
+describe("the animated bot picker", () => {
+  it("loads an existing choice and saves a different icon without changing other fields", async () => {
+    const props = renderEditor({ bot: WRITER });
+    expect(screen.getAllByRole("radio")).toHaveLength(8);
+    expect(screen.getByRole("radio", { name: "Mini" })).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: "Scout" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({ color: "b-yellow", name: WRITER.name, harnessId: WRITER.harnessId }));
+  });
+  it("replaces an uploaded picture when the user selects a built-in bot", async () => {
+    const props = renderEditor({ bot: { ...WRITER, image: "data:image/webp;base64,AAAA" } });
+    expect(document.querySelector(".iconpick .pic")).not.toBeNull();
+    await userEvent.click(screen.getByRole("radio", { name: "Classic" }));
+    expect(document.querySelector(".iconpick .pic")).toBeNull();
+    expect(document.querySelector(".iconpick .bot-mark")).toHaveAttribute("data-character", "classic");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(props.onSave).toHaveBeenCalledWith(expect.objectContaining({ color: "b-teal", image: null }));
+  });
+});
