@@ -1,4 +1,5 @@
 //! The app shell: sidebar, one main view, and the overlays that float over both.
+//! New Chat is a main view — an empty conversation — not a card over the chat.
 //!
 //! Two data sources meet here and they are deliberately separate. The *real*
 //! host connection (#8) supplies who and where the host is, the registered
