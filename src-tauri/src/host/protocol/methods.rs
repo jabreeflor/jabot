@@ -1718,6 +1718,17 @@ pub struct BotView {
     /// waiting, and querying for that would be asking a question with a known
     /// answer.
     pub unread: i64,
+    /// The last thing said in this bot's standing thread, as one line — the
+    /// second line of its sidebar chat row. `None` for a bot nobody has
+    /// talked to yet, which is not the same as an empty string: the row draws
+    /// its persona instead, rather than a blank space where a chat should be.
+    ///
+    /// Written as the transcript is written (`transcript/preview.rs`), so a
+    /// listing never has to reduce a log to answer this. `crew/create` and
+    /// `crew/update` answer `None` for `unread`'s reason: a bot that has just
+    /// been written has said nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }

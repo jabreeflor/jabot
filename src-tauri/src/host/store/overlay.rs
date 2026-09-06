@@ -706,6 +706,60 @@ pub fn count_unread_inbox_by_bot(conn: &Connection) -> Result<HashMap<String, i6
     Ok(counts)
 }
 
+/// The last thing said in a thread, as one line (`transcript/preview.rs`).
+///
+/// Deliberately does not touch `updated_at`. That column is the thread's
+/// place in the sidebar and the tie-break in [`bot_previews`]; a preview is a
+/// re-reading of events the thread has already recorded, not a new one, and a
+/// chunk that reordered the list would make a folder's rows dance while an
+/// agent talks.
+pub fn set_thread_preview(
+    conn: &Connection,
+    thread_id: &str,
+    preview: &str,
+) -> Result<(), StoreError> {
+    conn.execute(
+        "UPDATE threads SET preview = ?2 WHERE id = ?1",
+        params![thread_id, preview],
+    )?;
+    Ok(())
+}
+
+/// Each bot's standing-thread preview: the second line of a sidebar chat row.
+///
+/// **`folder_id IS NULL` is what makes this the standing thread**, and it is a
+/// fact about the product rather than a trick with ids. Decision #6 splits the
+/// crew in two: a folder thread belongs to a checkout and is listed under that
+/// folder, while a bot's one standing conversation has no folder at all
+/// (`crew/standing.rs` passes `folder_id: None`). Clicking a face opens the
+/// standing thread, so the row's preview has to be that thread's — quoting a
+/// code session the bot happens to own would preview a conversation the row
+/// does not open.
+///
+/// Grouped on `threads.bot_id` for [`count_unread_inbox_by_bot`]'s reason: a
+/// bot that has had a standing thread deleted owns several generations of one,
+/// and only the column is stable across them. `updated_at DESC` picks the live
+/// one; bots with nothing said yet are simply absent.
+pub fn bot_previews(conn: &Connection) -> Result<HashMap<String, String>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT bot_id, preview FROM threads
+         WHERE bot_id IS NOT NULL
+           AND folder_id IS NULL
+           AND deleted_at IS NULL
+           AND preview IS NOT NULL AND preview <> ''
+         ORDER BY updated_at DESC",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let mut previews: HashMap<String, String> = HashMap::new();
+    for row in rows {
+        let (bot_id, preview) = row?;
+        previews.entry(bot_id).or_insert(preview);
+    }
+    Ok(previews)
+}
+
 /// An event the host answered on the user's behalf is recorded but never
 /// badged — it is an away-log entry, not something the human still owes.
 pub fn mark_inbox_event_read(conn: &Connection, id: &str) -> Result<(), StoreError> {

@@ -138,12 +138,16 @@ impl HostSession {
             .crew_store()?
             .count_unread_inbox_by_bot()
             .map_err(internal)?;
+        // And one for every chat row's second line, for the same reason (#6:
+        // a face is a conversation, and a conversation says what it is about).
+        let previews = self.crew_store()?.bot_previews().map_err(internal)?;
         let bots = rows
             .into_iter()
             .map(|row| {
                 self.ensure_memory(&row);
                 let waiting = unread.get(&row.id).copied().unwrap_or(0);
-                self.bot_view(row, waiting)
+                let preview = previews.get(&row.id).cloned();
+                self.bot_view(row, waiting, preview)
             })
             .collect();
         Ok(CrewListResult {
@@ -228,7 +232,7 @@ impl HostSession {
         let row = store.insert_bot(&new).map_err(store_error)?;
         self.ensure_memory(&row);
         // Nothing can be waiting on a bot that was just written.
-        Ok(self.bot_view(row, 0))
+        Ok(self.bot_view(row, 0, None))
     }
 
     /// Save the editor. Every field is optional and an omitted one is left
@@ -278,7 +282,7 @@ impl HostSession {
         // saving the record and refreshing the file are one action.
         self.ensure_memory(&row);
         // Nothing can be waiting on a bot that was just written.
-        Ok(self.bot_view(row, 0))
+        Ok(self.bot_view(row, 0, None))
     }
 
     /// Remove a bot from the crew.
@@ -334,9 +338,10 @@ impl HostSession {
         }
     }
 
-    /// `unread` is passed in rather than looked up: this borrows `&self` for
-    /// `memory_dir`, and a query per row would make the grid N+1.
-    fn bot_view(&self, row: BotRow, unread: i64) -> BotView {
+    /// `unread` and `preview` are passed in rather than looked up: this
+    /// borrows `&self` for `memory_dir`, and a query per row would make the
+    /// grid N+1.
+    fn bot_view(&self, row: BotRow, unread: i64, preview: Option<String>) -> BotView {
         // A row whose `tools_json` will not parse is a row nothing wrote —
         // every write here validates it — so an empty allowlist is the safe
         // reading: the bot gets no tools rather than all of them.
@@ -354,6 +359,7 @@ impl HostSession {
             template_id: row.template_id,
             sort_order: row.sort_order,
             unread,
+            preview,
             created_at: row.created_at,
             updated_at: row.updated_at,
         }
@@ -606,6 +612,52 @@ mod tests {
         for bot in &crew {
             if bot["name"] != json!("Writer") {
                 assert_eq!(bot["unread"], json!(0), "{}", bot["name"]);
+            }
+        }
+    }
+
+    /// The second line of a bot's sidebar chat row (`BotStrip.tsx`).
+    ///
+    /// The whole path in one test: chunks land in the transcript, the preview
+    /// is maintained as they land, and `crew/list` reads it back grouped by
+    /// bot. A bot nobody has talked to answers no preview at all — the row
+    /// then shows what the bot is *for*, which is a different sentence from a
+    /// blank one.
+    #[test]
+    fn a_bot_that_has_been_talked_to_comes_back_with_its_last_line() {
+        let (mut session, _dir) = host();
+        let writer = find(&bots(&mut session), "Writer")["botId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let thread = ok(&mut session, CREW_THREAD, json!({ "botId": writer }))["threadId"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        for bot in bots(&mut session) {
+            assert_eq!(bot["preview"], Value::Null, "{}", bot["name"]);
+        }
+
+        // As an adapter streams it: one message, several chunks.
+        for piece in ["Digest is", " parked until", " you read it."] {
+            session.observe_preview(
+                &thread,
+                &json!({
+                    "sessionUpdate": "agent_message_chunk",
+                    "content": { "type": "text", "text": piece },
+                }),
+            );
+        }
+
+        let crew = bots(&mut session);
+        assert_eq!(
+            find(&crew, "Writer")["preview"],
+            json!("Digest is parked until you read it.")
+        );
+        for bot in &crew {
+            if bot["name"] != json!("Writer") {
+                assert_eq!(bot["preview"], Value::Null, "{}", bot["name"]);
             }
         }
     }

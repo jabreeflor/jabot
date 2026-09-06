@@ -94,6 +94,7 @@ import {
   nextThreadId,
   noticeThreadId,
   openPrCount,
+  sidebarBots,
   sidebarFolders,
   type MockState,
 } from "./views/mock-host";
@@ -224,7 +225,7 @@ function AppShell({
   // inside the app the pane stays empty until the answer lands — a real answer
   // always has Chief in it. The catalogs below are compiled-in constants that
   // mirror the host's seed, not user data, so they stand in everywhere.
-  const bots = crew.bots ?? (fixtures ? state.bots : []);
+  const bots = crew.bots ?? (fixtures ? sidebarBots(state) : []);
   const templates = crew.templates ?? BOT_TEMPLATES;
   const toolChips = crew.tools ?? TOOL_CATALOG;
   const hostToolChips = crew.hostTools ?? HOST_TOOLS;

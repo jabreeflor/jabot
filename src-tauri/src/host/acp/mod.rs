@@ -546,6 +546,10 @@ impl HostSession {
         match event {
             Inbound::Update(acp) => {
                 let seq = self.persist_transcript_event(thread_id, "session/update", &acp);
+                // Before the stream, because a preview is a property of the
+                // log rather than of any client: a window that is not looking
+                // at this thread reads it back from `crew/list`.
+                self.observe_preview(thread_id, &acp);
                 self.notify_session_update_at(thread_id, acp.clone(), seq);
                 // After the stream, so a client sees the chunk that ended the
                 // turn before it sees the Inbox card the turn produced.

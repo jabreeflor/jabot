@@ -182,7 +182,13 @@ describe("App", () => {
       "Fold the migration{Enter}",
     );
 
-    expect(screen.getByText("Fold the migration")).toBeInTheDocument();
+    // Twice, and both are the point: the bubble in the chat, and the sidebar
+    // row's second line, which is Chief's conversation saying what it is now
+    // about.
+    expect(screen.getAllByText("Fold the migration")).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: /^Chief/ }),
+    ).toHaveTextContent("Fold the migration");
     expect(screen.getByLabelText("Message Chief")).toHaveValue("");
   });
 
@@ -207,11 +213,11 @@ describe("App", () => {
     await renderApp();
 
     await userEvent.type(screen.getByLabelText("Message Chief"), "rm -rf prod");
-    await userEvent.click(screen.getByRole("button", { name: "Writer" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Writer/ }));
 
     expect(screen.getByLabelText("Message Writer")).toHaveValue("");
 
-    await userEvent.click(screen.getByRole("button", { name: "Chief" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Chief/ }));
     expect(screen.getByLabelText("Message Chief")).toHaveValue("");
   });
 
@@ -226,10 +232,10 @@ describe("App", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    // Once as a crew card, once as a face in the sidebar strip.
+    // Once as a crew card, once as a chat row in the sidebar.
     expect(screen.getAllByText("Expense Manager")).toHaveLength(2);
     expect(
-      screen.getByRole("button", { name: "Expense Manager" }),
+      screen.getByRole("button", { name: /^Expense Manager/ }),
     ).toBeInTheDocument();
   });
 
@@ -296,7 +302,7 @@ describe("App", () => {
       // The host's own answer fills the pane in.
       answerCrew?.();
       expect(
-        await screen.findByRole("button", { name: "Chief" }),
+        await screen.findByRole("button", { name: /^Chief/ }),
       ).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Inbox Mgr" })).toBeNull();
     } finally {

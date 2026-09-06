@@ -17,6 +17,7 @@ import {
   mockHostReducer,
   needsYouCount,
   nextThreadId,
+  sidebarBots,
   sidebarFolders,
   type MockState,
 } from "../views/mock-host";
@@ -34,6 +35,41 @@ describe("sidebarFolders", () => {
     expect(nas?.state).toBe("folded");
     expect(threadIds(state, "globnet-sync")).not.toContain("nas");
     expect(threadIds(state, "globnet-sync")).toContain("retry");
+  });
+});
+
+describe("sidebarBots", () => {
+  it("previews each bot with the last thing said in its chat", () => {
+    const state = initialMockState();
+    const writer = sidebarBots(state).find((bot) => bot.id === "writer");
+
+    expect(writer?.preview).toBe(
+      "Weekly digest draft is 1,240 words in your voice. It is parked until you read it.",
+    );
+  });
+
+  /** Derived, never stored beside the transcript: the preview and the chat
+      cannot disagree about what was last said, in the fixtures either. */
+  it("follows the conversation as it moves", () => {
+    const before = initialMockState();
+    const after = mockHostReducer(before, {
+      type: "sendMessage",
+      conversationId: "writer",
+      text: "Ship it.",
+    });
+
+    expect(
+      sidebarBots(after).find((bot) => bot.id === "writer")?.preview,
+    ).toBe("Ship it.");
+  });
+
+  it("leaves a bot nobody has talked to without one", () => {
+    const state = initialMockState();
+    const quiet = { ...state, transcripts: {} };
+
+    for (const bot of sidebarBots(quiet)) {
+      expect(bot.preview).toBeUndefined();
+    }
   });
 });
 

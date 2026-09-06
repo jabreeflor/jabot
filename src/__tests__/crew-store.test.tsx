@@ -12,7 +12,7 @@
  * changed row while `listCrew` kept answering the old one would let a broken
  * reload pass.
  */
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,7 +31,9 @@ import {
   type HarnessListResult,
   type HelloResult,
   type HostClient,
+  type JsonRpcNotification,
   type ToolListResult,
+  SESSION_UPDATE,
 } from "../host";
 import { botRow, templateRow, withReadiness } from "../views/crew";
 
@@ -213,6 +215,7 @@ describe("botRow / templateRow", () => {
       templateId: "expense",
       image: null,
       unread: false,
+      preview: undefined,
     });
     // Absent template = a bot nobody copied, not an unset field the editor
     // would then send back as the string "undefined". An absent icon is the
@@ -250,6 +253,19 @@ describe("botRow / templateRow", () => {
     const older = bot();
     delete (older as Partial<BotView>).unread;
     expect(botRow(older).unread).toBe(false);
+  });
+
+  /**
+   * The chat row's second line (`BotStrip.tsx`). Carried through as-is, and
+   * `undefined` stays `undefined`: a bot nobody has talked to shows what it is
+   * *for*, and an empty string would draw a blank line that reads as a chat
+   * with nothing in it.
+   */
+  it("carries the standing thread's last line, and its absence", () => {
+    expect(botRow(bot({ preview: "Digest is parked for you." })).preview).toBe(
+      "Digest is parked for you.",
+    );
+    expect(botRow(bot()).preview).toBeUndefined();
   });
 
   it("renders a colour it does not know rather than crashing on it", () => {
@@ -364,10 +380,23 @@ describe("App, once the host has answered with a crew", () => {
   /** Held here rather than dug out of the `connectHost` mock, so the poll test
       can count calls without unwrapping a promise. */
   let listTools = vi.fn(async () => toolAnswer);
+  /** The host's notification channel. Every hook that wants one subscribes,
+      so this is a list and not a slot: keeping only the last handler would
+      silently test whichever hook happened to mount last. */
+  let listeners: ((notification: JsonRpcNotification) => void)[] = [];
+  const notify = (notification: JsonRpcNotification) => {
+    for (const listener of [...listeners]) listener(notification);
+  };
 
   function client(): HostClient {
     return {
       disconnect: vi.fn(),
+      onNotification: (handler: (n: JsonRpcNotification) => void) => {
+        listeners.push(handler);
+        return () => {
+          listeners = listeners.filter((entry) => entry !== handler);
+        };
+      },
       listCrew,
       createBot,
       updateBot,
@@ -389,6 +418,7 @@ describe("App, once the host has answered with a crew", () => {
     connectTool = vi.fn(async () => ({}));
     disconnectTool = vi.fn(async () => ({}));
     listTools = vi.fn(async () => toolAnswer);
+    listeners = [];
     vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
   });
 
@@ -444,6 +474,71 @@ describe("App, once the host has answered with a crew", () => {
       within(card("Writer")).getByTestId("unread-dot"),
     ).toBeInTheDocument();
     expect(within(card("Chief")).queryByTestId("unread-dot")).toBeNull();
+  });
+
+  /**
+   * A chat row's second line comes from `crew/list`, so it is only as fresh as
+   * the last listing. Without a re-list on the end of a turn the rail would go
+   * on quoting whatever was said before the app started — including for the
+   * conversation open in the pane beside it.
+   */
+  it("re-lists the crew when a turn ends, so a row stops quoting old news", async () => {
+    crew = [CHIEF, bot({ preview: "Old news." })];
+    render(<App />);
+    await screen.findByText("This Mac · v0.1.0");
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Writer/ })).toHaveTextContent(
+        "Old news.",
+      ),
+    );
+
+    crew = [CHIEF, bot({ preview: "New news." })];
+    act(() =>
+      notify({
+        jsonrpc: "2.0",
+        method: SESSION_UPDATE,
+        params: {
+          threadId: "bot-writer",
+          seq: 1,
+          acp: { sessionUpdate: "state_update", sessionState: "idle" },
+        },
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Writer/ })).toHaveTextContent(
+        "New news.",
+      ),
+    );
+  });
+
+  /** Every chunk of every turn is not a reason to re-list the crew: a row
+      that streamed a sentence a word at a time in the corner of your eye
+      would be worse than one that arrives finished. */
+  it("does not re-list on the chunks a turn is made of", async () => {
+    await openCrew();
+    await waitFor(() => expect(card("Writer")).toBeInTheDocument());
+    const listings = listCrew.mock.calls.length;
+
+    for (const text of ["Half", " a", " sentence."]) {
+      act(() =>
+        notify({
+          jsonrpc: "2.0",
+          method: SESSION_UPDATE,
+          params: {
+            threadId: "bot-writer",
+            seq: 1,
+            acp: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text },
+            },
+          },
+        }),
+      );
+    }
+
+    expect(listCrew.mock.calls.length).toBe(listings);
   });
 
   it("offers the host's harnesses in the editor, not the compiled-in three", async () => {
