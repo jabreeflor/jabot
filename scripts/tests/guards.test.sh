@@ -283,10 +283,15 @@ case_quiet_for_waits_out_a_writer() {
   local d; d=$(new_repo quietbusy)
   export STUB_LOG="$SANDBOX/quietbusy.log" STUB_EXIT=0
   printf 'work\n' > "$d/src/work.txt"
-  ( sleep 0.4; printf 'still typing\n' > "$d/src/work.txt" ) &
-  local writer=$!
-  run_checkpoint "$d" --quiet-for 1 -m "should not exist"
-  wait "$writer" 2>/dev/null
+  # Inject the write at the quiet wait, after checkpoint's first tree hash.
+  # A wall-clock delay can fire before that hash on a busy machine and then
+  # test a still tree instead of the concurrent writer it intended to test.
+  OUT=$(cd "$d" && (
+    sleep() { printf 'still typing\n' > src/work.txt; }
+    export -f sleep
+    ./scripts/checkpoint.sh --quiet-for 1 -m "should not exist"
+  ) 2>&1)
+  RC=$?
   assert_eq 5 "$RC" "a tree still being written must exit 5" || { fail "$OUT"; return; }
   assert_eq 0 "$(log_lines "$STUB_LOG")" "the gate must not run on a moving tree" || return
   pass
