@@ -104,6 +104,21 @@ export function BranchIcon({ className }: IconProps) {
   );
 }
 
+/**
+ * Show or hide the left rail. A window split the way the shell is split: a
+ * narrow column on the left, the main pane on the right. The control that
+ * wears it already says "Hide sidebar" / "Show sidebar", so the glyph is
+ * decorative — same contract as every other icon here.
+ */
+export function SidebarIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M9 4v16" />
+    </Stroke>
+  );
+}
+
 /** App preferences in the profile footer. */
 export function GearIcon({ className }: IconProps) {
   return (
