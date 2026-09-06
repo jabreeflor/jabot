@@ -113,6 +113,8 @@ pub const CLIENT_METHODS: &[&str] = &[
     PR_LIST,
     PR_REFRESH,
     PR_MINE,
+    "pr/detail",
+    "pr/action",
 ];
 
 /// A new Inbox card exists on a thread that did **not** resurface.

@@ -131,6 +131,15 @@ fn serve(
     dcr: &Arc<AtomicBool>,
     corrupt: &Arc<AtomicBool>,
 ) {
+    // Accepted sockets inherit nonblocking mode on macOS. The fixture parses
+    // complete HTTP requests, so wait for bytes instead of dropping a request
+    // when its headers or body arrive after accept.
+    stream
+        .set_nonblocking(false)
+        .expect("blocking request socket");
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .expect("request read timeout");
     let mut reader = BufReader::new(match stream.try_clone() {
         Ok(clone) => clone,
         Err(_) => return,

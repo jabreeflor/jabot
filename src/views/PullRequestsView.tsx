@@ -15,6 +15,8 @@
 //! Signed out, the board is exactly what it was, and the strip above it says
 //! what signing in would add rather than blocking the view behind a login.
 
+import { PrWorkspaceView } from "./PrWorkspaceView";
+import type { HostClient } from "../host";
 import { useState } from "react";
 
 import {
@@ -34,6 +36,7 @@ type PrTab = "open" | "merged" | "drafts";
 
 export function PullRequestsView({
   pullRequests,
+  client,
   now,
   unavailable,
   error,
@@ -44,6 +47,7 @@ export function PullRequestsView({
   onOpenThread,
   onAction,
 }: {
+  client?: HostClient | null;
   pullRequests: readonly PullRequest[];
   now?: Date;
   /** Why the last poll did not reach GitHub, if it did not (#28). Drawn as a
@@ -65,6 +69,43 @@ export function PullRequestsView({
   onOpenThread: (threadId: string) => void;
   onAction?: (prId: string, actionId: string) => void;
 }) {
+  const [selected, setSelected] = useState<PullRequest | null>(null);
+  const [search, setSearch] = useState("");
+  const [prUrl, setPrUrl] = useState("");
+  const [urlError, setUrlError] = useState("");
+  function openUrl() {
+    try {
+      const url = new URL(prUrl);
+      const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/.exec(url.pathname);
+      if (
+        url.protocol !== "https:" ||
+        !match ||
+        url.username ||
+        url.password ||
+        url.port ||
+        Number(match[3]) < 1
+      )
+        throw new Error();
+      setUrlError("");
+      setSelected({
+        id: url.href,
+        provider: "github",
+        repo: `${match[1]}/${match[2]}`,
+        number: Number(match[3]),
+        url: url.href,
+        title: `${match[1]}/${match[2]}`,
+        status: "open",
+        checkState: null,
+        updatedAt: new Date().toISOString(),
+        additions: 0,
+        deletions: 0,
+      });
+    } catch {
+      setUrlError(
+        "Enter a GitHub PR URL, such as https://github.com/owner/repo/pull/42.",
+      );
+    }
+  }
   const [tab, setTab] = useState<PrTab>("open");
   const [openId, setOpenId] = useState<string | null>(
     pullRequests.find((pr) => pr.detail)?.id ?? null,
@@ -110,7 +151,30 @@ export function PullRequestsView({
           ]
         : [{ title: "DRAFTS", rows: drafts }];
 
-  const visible = sections.filter((section) => section.rows.length > 0);
+  if (selected)
+    return (
+      <PrWorkspaceView
+        key={selected.id}
+        pr={selected}
+        client={client ?? null}
+        onBack={() => {
+          setSelected(null);
+          onRefresh?.();
+        }}
+        onOpenThread={onOpenThread}
+      />
+    );
+
+  const visible = sections
+    .map((section) => ({
+      ...section,
+      rows: section.rows.filter((pr) =>
+        `${pr.title} ${pr.repo} #${pr.number}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+      ),
+    }))
+    .filter((section) => section.rows.length > 0);
 
   return (
     <div className="view">
@@ -148,6 +212,37 @@ export function PullRequestsView({
             </div>
           )}
 
+          <div className="pr-toolbar">
+            <input
+              aria-label="Search pull requests"
+              placeholder="Search title, repository, or number…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {onRefresh && (
+              <button className="btn" onClick={onRefresh}>
+                Refresh
+              </button>
+            )}
+          </div>
+          <form
+            className="pr-toolbar"
+            onSubmit={(e) => {
+              e.preventDefault();
+              openUrl();
+            }}
+          >
+            <input
+              aria-label="Pull request URL"
+              placeholder="Open any PR by URL, including review requests…"
+              value={prUrl}
+              onChange={(e) => setPrUrl(e.target.value)}
+            />
+            <button className="btn" type="submit" disabled={!prUrl.trim()}>
+              Open PR
+            </button>
+          </form>
+          {urlError && <p role="alert">{urlError}</p>}
           <Tabs
             label="Pull request filter"
             panelId="prs-panel"
@@ -174,6 +269,7 @@ export function PullRequestsView({
                     now={now}
                     open={openId === pr.id}
                     onToggle={() => setOpenId(openId === pr.id ? null : pr.id)}
+                    onReview={() => setSelected(pr)}
                     onOpenThread={onOpenThread}
                     onAction={onAction}
                   />
@@ -241,6 +337,7 @@ function PrRow({
   now,
   open,
   onToggle,
+  onReview,
   onOpenThread,
   onAction,
 }: {
@@ -248,6 +345,7 @@ function PrRow({
   now?: Date;
   open: boolean;
   onToggle: () => void;
+  onReview: () => void;
   onOpenThread: (threadId: string) => void;
   onAction?: (prId: string, actionId: string) => void;
 }) {
@@ -289,6 +387,9 @@ function PrRow({
           <span className={`tagpill ${tag.tone}`}>{tag.label}</span>
         </button>
 
+        <button className="btn pr-open" onClick={onReview}>
+          Open pull request →
+        </button>
         {open && pr.detail && (
           <div className="card-detail">
             <div className="path">
