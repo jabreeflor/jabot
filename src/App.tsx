@@ -37,6 +37,7 @@ import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
 import { DevicesView } from "./views/DevicesView";
+import { hostErrorText } from "./views/errors";
 import { SettingsView } from "./views/SettingsView";
 import { Sidebar } from "./components/Sidebar";
 import {
@@ -1129,7 +1130,9 @@ function hostLine(
 
 function formatError(err: unknown): string {
   if (err instanceof HostRpcError) {
-    return `${err.message} (${err.code})`;
+    // The install hint rides along on an unavailable harness, which is the one
+    // refusal New Chat can hand back that the user can do something about.
+    return `${hostErrorText(err)} (${err.code})`;
   }
   return String(err);
 }

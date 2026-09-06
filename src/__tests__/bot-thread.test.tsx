@@ -22,8 +22,10 @@ import {
   type CrewRefParams,
   type HelloResult,
   type HostClient,
+  HostRpcError,
   type JsonRpcNotification,
   type PromptParams,
+  RPC_ERROR,
 } from "../host";
 import { SESSION_UPDATE } from "../host";
 import type { Bot, HostTarget } from "../components/types";
@@ -235,6 +237,35 @@ describe("a bot's standing chat, live", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Harness unavailable: claude",
+    );
+  });
+
+  /**
+   * And what to do about it. A missing adapter is the one refusal here that
+   * the user can fix in a minute, and the fix was already in the error: the
+   * catalog's install hint rides in `data.installHint` and nothing read it, so
+   * the chat said `Harness unavailable: claude-agent-acp` and stopped — naming
+   * a binary and no way to get it.
+   */
+  it("shows the install hint the host attached to a missing harness", async () => {
+    draw(
+      stub({
+        botThread: vi.fn(async () => {
+          throw new HostRpcError({
+            code: RPC_ERROR.HARNESS_UNAVAILABLE,
+            message: "Harness unavailable: claude-agent-acp",
+            data: {
+              command: "claude-agent-acp",
+              installHint:
+                "Install Claude Code, then `npm i -g @zed-industries/claude-code-acp`.",
+            },
+          });
+        }),
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Harness unavailable: claude-agent-acp — Install Claude Code, then `npm i -g @zed-industries/claude-code-acp`.",
     );
   });
 });

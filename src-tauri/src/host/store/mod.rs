@@ -267,6 +267,15 @@ impl Store {
         overlay::list_folder_threads(&self.conn, folder_id)
     }
 
+    /// Re-pin a thread's adapter command — see [`overlay::set_thread_runtime`].
+    pub fn set_thread_runtime(
+        &self,
+        id: &str,
+        runtime_json: &str,
+    ) -> Result<ThreadRow, StoreError> {
+        overlay::set_thread_runtime(&self.conn, id, runtime_json)
+    }
+
     pub fn set_thread_state(&self, id: &str, state: &str) -> Result<ThreadRow, StoreError> {
         overlay::set_thread_state(&self.conn, id, state)
     }
@@ -1510,6 +1519,46 @@ mod tests {
                 [],
             )
             .unwrap_err();
+    }
+
+    /// The supervisor re-pins a thread whose recorded adapter is not on this
+    /// machine, so `thread/state`, `supervisor/status` and the next boot all
+    /// name the binary that actually spawns rather than the one that does not.
+    #[test]
+    fn a_threads_runtime_can_be_repinned_and_is_still_validated() {
+        let (store, _dir) = open_store();
+        store.insert_thread(&sample_thread("t-repin")).unwrap();
+
+        let repinned = store
+            .set_thread_runtime(
+                "t-repin",
+                &json!({ "command": "claude-code-acp", "args": [] }).to_string(),
+            )
+            .unwrap();
+        assert!(repinned.runtime_json.contains("claude-code-acp"));
+        assert_eq!(
+            store.get_thread("t-repin").unwrap().unwrap().runtime_json,
+            repinned.runtime_json
+        );
+
+        // The same floor as an insert: a re-pin is not a way around the rule
+        // that credentials live in the keychain, not in a thread row.
+        let secret = store
+            .set_thread_runtime(
+                "t-repin",
+                &json!({
+                    "command": "claude-code-acp",
+                    "env": { "ANTHROPIC_API_KEY": "sk-ant-secret" }
+                })
+                .to_string(),
+            )
+            .unwrap_err();
+        assert!(secret.to_string().contains("ANTHROPIC_API_KEY"));
+
+        assert!(matches!(
+            store.set_thread_runtime("t-gone", &sample_runtime()),
+            Err(StoreError::NotFound(_))
+        ));
     }
 
     #[test]

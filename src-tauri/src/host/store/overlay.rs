@@ -197,6 +197,31 @@ pub fn set_thread_branch(
     get_thread(conn, id)?.ok_or_else(|| StoreError::NotFound(id.to_string()))
 }
 
+/// Re-pin a thread's adapter command.
+///
+/// `runtime_json` is a snapshot of what resolved on this machine at
+/// `thread/open` — a cache, not a preference — so the supervisor rewrites it
+/// when the recorded command has gone and another candidate for the same
+/// harness card is here. Persisted rather than resolved per prompt so
+/// everything that reads the row (`thread/state`, `supervisor/status`, the next
+/// boot) agrees about what actually spawns.
+pub fn set_thread_runtime(
+    conn: &Connection,
+    id: &str,
+    runtime_json: &str,
+) -> Result<ThreadRow, StoreError> {
+    validate_runtime_json(runtime_json)?;
+    let changed = conn.execute(
+        "UPDATE threads SET runtime_json = ?2, updated_at = ?3
+         WHERE id = ?1 AND deleted_at IS NULL",
+        params![id, runtime_json, now_utc()],
+    )?;
+    if changed == 0 {
+        return Err(StoreError::NotFound(id.to_string()));
+    }
+    get_thread(conn, id)?.ok_or_else(|| StoreError::NotFound(id.to_string()))
+}
+
 pub fn set_thread_acp_session(
     conn: &Connection,
     id: &str,
