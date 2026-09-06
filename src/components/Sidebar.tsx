@@ -114,6 +114,7 @@ export function Sidebar({
         <button
           type="button"
           className="nav-row"
+          aria-current={selection.view === "new-chat"}
           onClick={() => onNewChat(null)}
         >
           <span className="ic">

@@ -21,7 +21,7 @@ export const DEFAULT_USER_NAME = "You";
 export type OnboardingProfile = {
   version: number;
   userName: string;
-  /** `null` is "no opinion" — NewChatModal treats "" as a real, unmatchable
+  /** `null` is "no opinion" — New Chat treats "" as a real, unmatchable
       id, so the empty string must never reach `defaultHarnessId`. */
   harnessId: string | null;
   /** Provenance for a future "finish setup" affordance; nothing reads it yet. */

@@ -101,7 +101,8 @@ describe("App", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "New thread in globnet-sync" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
+    await userEvent.click(screen.getByRole("option", { name: /Codex/ }));
     expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),

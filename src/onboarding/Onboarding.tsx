@@ -5,7 +5,7 @@
 //! connection opens while the user reads pane 1 instead of after they finish.
 //!
 //! The flow asks two things and teaches one: your name (which replaces the
-//! old hardcoded USER_NAME), your default engine (which fills NewChatModal's
+//! old hardcoded USER_NAME), your default engine (which fills New Chat's
 //! `defaultHarnessId`), then hands you to Chief — the seat the shell opens on.
 //!
 //! Escape and "Skip setup" are the same handler, and both persist whatever the

@@ -240,6 +240,7 @@ describe("App, once the host has answered", () => {
       // thread reopened after a quit draws that card from here, not from the
       // transcript.
       pendingPermissions: vi.fn(async () => ({ requests: [] })),
+      prompt: vi.fn(),
     } as unknown as HostClient;
   }
 
@@ -284,7 +285,8 @@ describe("App, once the host has answered", () => {
     vi.mocked(connectHost).mockResolvedValue({ client: host, hello: HELLO });
     await renderApp();
     await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
-    await userEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
+    await userEvent.click(screen.getByRole("option", { name: /Codex/ }));
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
     );
@@ -401,7 +403,8 @@ describe("App, once the host has answered", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "New thread in jabot" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
+    await userEvent.click(screen.getByRole("option", { name: /Codex/ }));
     expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
@@ -521,7 +524,7 @@ describe("App, once the host has answered", () => {
       "Harness unavailable: codex-acp",
     );
     expect(
-      screen.getByRole("dialog", { name: "New Chat" }),
+      screen.getByRole("region", { name: "New Chat" }),
     ).toBeInTheDocument();
   });
 

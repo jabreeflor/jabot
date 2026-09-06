@@ -611,6 +611,169 @@
   transform: rotate(180deg);
 }
 
+/* New Chat: an empty conversation, not a card on top of one.
+ *
+ * Context chips sit above a large composer the way a thread's header sits
+ * above its input; the pills below are the workspace entry points that used
+ * to be two fat cards inside a modal. */
+.newchat {
+  justify-content: center;
+  padding: 10vh 24px 18vh;
+}
+
+.newchat-stage {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.newchat-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  margin-bottom: 10px;
+  position: relative;
+  z-index: 2;
+}
+
+.newchat-box {
+  background: var(--raise2);
+  border: 1px solid var(--edge);
+  border-radius: 22px;
+  padding: 4px 4px 8px;
+}
+
+.newchat-box:focus-within {
+  border-color: var(--dim);
+}
+
+.newchat-box textarea {
+  display: block;
+  width: 100%;
+  min-height: 76px;
+  resize: none;
+  background: none;
+  border: 0;
+  outline: 0;
+  padding: 14px 16px 6px;
+  font: var(--fs-chat) / var(--lh-chat) var(--font-ui);
+  color: var(--ink);
+}
+
+.newchat-box textarea:focus-visible {
+  outline: none;
+}
+
+.newchat-box textarea::placeholder {
+  color: var(--faint);
+}
+
+.newchat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px 8px 6px;
+}
+
+.newchat-toolbar-grow {
+  flex: 1;
+}
+
+.newchat-toolbar .round-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.round-btn.send-hero {
+  background: var(--ink);
+  color: var(--chat);
+}
+
+.round-btn.send-hero:hover {
+  color: var(--chat);
+  opacity: 0.88;
+}
+
+.round-btn.send-hero:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.newchat-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.newchat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--r-pill);
+  padding: 8px 14px;
+  color: var(--ink);
+  font: 13px / 1 var(--font-ui);
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.newchat-pill svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.newchat-pill:hover:not(:disabled) {
+  background: var(--raise);
+}
+
+.newchat-pill.accent {
+  background: rgba(93, 187, 110, 0.14);
+  border-color: transparent;
+  color: #8ee09a;
+}
+
+.newchat-pill.accent:hover:not(:disabled) {
+  background: rgba(93, 187, 110, 0.22);
+}
+
+.newchat-pill:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.newchat-pill:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.newchat .workspace-hint {
+  margin-top: 10px;
+}
+
+.newchat .modal-error {
+  margin-top: 12px;
+}
+
+.newchat .workspace-repos {
+  margin-top: 12px;
+}
+
+.newchat .workspace-repos input {
+  width: 100%;
+  background: var(--raise);
+  border: 1px solid var(--edge-strong);
+  border-radius: 11px;
+  padding: 10px 13px;
+  font-size: var(--fs-ui);
+  color: var(--ink);
+  outline: 0;
+}
+
 /* The top of a windowed transcript. Only drawn when there is history above
    what is rendered, so an ordinary conversation never sees it. */
 .show-earlier {
