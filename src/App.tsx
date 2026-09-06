@@ -39,7 +39,7 @@ import { NewChatModal } from "./components/NewChatModal";
 import { DevicesView } from "./views/DevicesView";
 import { hostErrorText } from "./views/errors";
 import { SettingsView } from "./views/SettingsView";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, loadSidebarOpen, saveSidebarOpen } from "./components/Sidebar";
 import {
   ThreadContextMenu,
   type MenuPosition,
@@ -193,6 +193,7 @@ function AppShell({
     open: false,
   });
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
   const { client, hello, hostError, connecting } = hostSession;
   // Whether the fixtures may stand in for a host answer that has not arrived.
   // Only where no host exists to ask — see `hostedByApp`. Read once: the
@@ -289,6 +290,32 @@ function AppShell({
     const pending = timers.current;
     return () => pending.forEach((id) => window.clearTimeout(id));
   }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((open) => {
+      const next = !open;
+      saveSidebarOpen(next);
+      return next;
+    });
+  }, []);
+
+  // ⌘B / Ctrl+B is the same chord the rest of the desktop uses for this
+  // split. A modal already owns the keyboard (Escape, Tab trap), so the
+  // chord is silent while one is up — hiding the rail under a dialog is
+  // not a gesture anyone can see the result of.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.key !== "b" && event.key !== "B") return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      event.preventDefault();
+      toggleSidebar();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [toggleSidebar]);
 
   // Clicking a native notification opens the thread it named (#27). The Tauri
   // layer has already brought the window back by the time this arrives, so the
@@ -593,6 +620,8 @@ function AppShell({
           client && registered.folders ? setFolderSettings : undefined
         }
         selection={selection}
+        open={sidebarOpen}
+        onToggle={toggleSidebar}
         // The host's own count, not a second classification of the rows this
         // renderer happens to be holding: `count_unread_inbox` is the badge
         // `resurface.md` specifies, and it is the number the phone already

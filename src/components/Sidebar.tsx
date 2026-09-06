@@ -3,6 +3,11 @@
 //! Search filters the code half only. Six faces are found by looking; a dozen
 //! thread titles across four repos are not, and hiding a bot you were about to
 //! click would be worse than useless.
+//!
+//! The rail can close. A closed sidebar is a strip wide enough for the traffic
+//! lights and the toggle that opens it again — not gone, because overlay
+//! chrome still has to sit on something, and because a control that vanished
+//! with the thing it reveals is a trap.
 
 import { useState } from "react";
 
@@ -17,6 +22,7 @@ import {
   PullRequestIcon,
   SearchIcon,
   GearIcon,
+  SidebarIcon,
 } from "./Icon";
 import type { MenuPosition } from "./ThreadContextMenu";
 import type {
@@ -48,6 +54,8 @@ export function Sidebar({
   onOpenSettings,
   onNewChat,
   onThreadMenu,
+  open = true,
+  onToggle,
 }: {
   bots: readonly Bot[];
   folders: readonly FolderWithThreads[];
@@ -80,26 +88,47 @@ export function Sidebar({
   /** null = ask which folder; a folder id = start there. */
   onNewChat: (folderId: string | null) => void;
   onThreadMenu: (thread: ThreadSummary, position: MenuPosition) => void;
+  /** Whether the rail is showing its list. Default open: a closed sidebar
+      on first launch would hide the only way to pick a conversation. */
+  open?: boolean;
+  /** Hide or show the list. Absent in a story that is not the shell — the
+      fixture tests still render a rail, they just do not fold it. */
+  onToggle?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const visibleFolders = filterFolders(folders, query);
 
   return (
-    <aside className="sidebar">
+    <aside className={open ? "sidebar" : "sidebar is-collapsed"}>
       <div className="sidebar-search">
-        <div className="field">
-          <SearchIcon />
-          <input
-            type="search"
-            value={query}
-            placeholder="Search"
-            aria-label="Search threads"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </div>
+        {onToggle && (
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-expanded={open}
+            aria-label={open ? "Hide sidebar" : "Show sidebar"}
+            title={open ? "Hide sidebar" : "Show sidebar"}
+            onClick={onToggle}
+          >
+            <SidebarIcon />
+          </button>
+        )}
+        {open && (
+          <div className="field">
+            <SearchIcon />
+            <input
+              type="search"
+              value={query}
+              placeholder="Search"
+              aria-label="Search threads"
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+        )}
       </div>
 
-      <div className="sidebar-list">
+      {open && (
+        <div className="sidebar-list">
         <div className="section-header">BOT CHATS</div>
         <BotStrip
           bots={bots}
@@ -211,9 +240,11 @@ export function Sidebar({
             No folders yet. Add one to start a code thread in it.
           </div>
         )}
-      </div>
+        </div>
+      )}
 
-      <div className="me-row">
+      {open && (
+        <div className="me-row">
         <div className="me-face" aria-hidden="true">
           {initials(userName)}
         </div>
@@ -233,7 +264,8 @@ export function Sidebar({
             <GearIcon />
           </button>
         )}
-      </div>
+        </div>
+      )}
     </aside>
   );
 }
@@ -258,4 +290,28 @@ function filterFolders(
     if (threads.length > 0) matches.push({ ...folder, threads });
   }
   return matches;
+}
+
+/**
+ * The shell's memory of whether the rail is open. Only an explicit "0" hides
+ * it: a missing key, private mode, or garbage must not launch someone into a
+ * window with no navigation.
+ */
+export const SIDEBAR_OPEN_KEY = "jabot.sidebarOpen";
+
+export function loadSidebarOpen(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export function saveSidebarOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(SIDEBAR_OPEN_KEY, open ? "1" : "0");
+  } catch {
+    // Quota / private mode: the session still toggles; the next launch will
+    // open, which is the same default as a first run.
+  }
 }

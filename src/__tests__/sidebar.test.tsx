@@ -1,14 +1,19 @@
 /**
  * The sidebar is the navigation model: faces above, folder threads below. What
  * matters is that it lists what it is given, says what each thread is doing,
- * and reports the gestures — a right-click, a folder's ＋ — rather than acting
- * on them itself.
+ * and reports the gestures — a right-click, a folder's ＋, the rail toggle —
+ * rather than acting on them itself.
  */
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { Sidebar } from "../components/Sidebar";
+import {
+  Sidebar,
+  loadSidebarOpen,
+  saveSidebarOpen,
+  SIDEBAR_OPEN_KEY,
+} from "../components/Sidebar";
 import type {
   Bot,
   FolderWithThreads,
@@ -84,6 +89,7 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
     onOpenSchedules: vi.fn(),
     onNewChat: vi.fn(),
     onThreadMenu: vi.fn(),
+    onToggle: vi.fn(),
     ...over,
   };
   render(<Sidebar {...props} />);
@@ -237,5 +243,44 @@ describe("Sidebar", () => {
 
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(glyph()).toHaveAttribute("data-open", "false");
+  });
+
+  it("hides the list when closed and keeps the toggle that opens it", () => {
+    const onToggle = vi.fn();
+    renderSidebar({ open: false, onToggle });
+
+    expect(
+      screen.getByRole("button", { name: "Show sidebar" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Search threads")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Auth migration/ })).toBeNull();
+    expect(screen.queryByText("Jabree Flor")).toBeNull();
+  });
+
+  it("reports a click on the toggle rather than folding itself", async () => {
+    const props = renderSidebar();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    expect(props.onToggle).toHaveBeenCalled();
+    // Still open: the shell owns the state, the same way a right-click is
+    // reported rather than acted on.
+    expect(
+      screen.getByRole("button", { name: /Auth migration/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("only an explicit 0 hides the rail on the next launch", () => {
+    expect(loadSidebarOpen()).toBe(true);
+
+    saveSidebarOpen(false);
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_KEY)).toBe("0");
+    expect(loadSidebarOpen()).toBe(false);
+
+    saveSidebarOpen(true);
+    expect(loadSidebarOpen()).toBe(true);
+
+    window.localStorage.setItem(SIDEBAR_OPEN_KEY, "garbage");
+    expect(loadSidebarOpen()).toBe(true);
   });
 });

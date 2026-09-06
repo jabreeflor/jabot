@@ -8,7 +8,7 @@
  * this port's; what is asserted here is that the shell reports the host's
  * answer, including when there isn't one.
  */
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -311,5 +311,56 @@ describe("App", () => {
     expect(await screen.findByText(/no Tauri bridge/)).toBeInTheDocument();
     // The rest of the shell still renders — the views do not depend on it yet.
     expect(screen.getByRole("heading", { name: "Chief" })).toBeInTheDocument();
+  });
+
+  it("hides the rail and keeps the chat", async () => {
+    await renderApp();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+
+    expect(screen.queryByRole("button", { name: /Auth migration/ })).toBeNull();
+    expect(screen.queryByLabelText("Search threads")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Chief" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Message Chief")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+    expect(
+      screen.getByRole("button", { name: /Auth migration/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("remembers a closed rail across a remount", async () => {
+    await renderApp();
+    await userEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    cleanup();
+    // The host line lives in the me-row, which is gone while the rail is
+    // shut, so this remount cannot wait on it the way `renderApp` does.
+    render(<App />);
+    expect(
+      await screen.findByRole("button", { name: "Show sidebar" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Auth migration/ })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Chief" })).toBeInTheDocument();
+  });
+
+  it("toggles the rail with Ctrl+B, except while a dialog is up", async () => {
+    await renderApp();
+
+    await userEvent.keyboard("{Control>}b{/Control}");
+    expect(
+      screen.getByRole("button", { name: "Show sidebar" }),
+    ).toBeInTheDocument();
+
+    await userEvent.keyboard("{Control>}b{/Control}");
+    expect(
+      screen.getByRole("button", { name: "Hide sidebar" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await userEvent.keyboard("{Control>}b{/Control}");
+    expect(
+      screen.getByRole("button", { name: "Hide sidebar" }),
+    ).toBeInTheDocument();
   });
 });

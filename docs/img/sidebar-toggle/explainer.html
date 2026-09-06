@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>A sidebar you can put away</title>
+<style>
+  body { background: #171717; color: #eee; font: 17px/1.6 system-ui; max-width: 920px; margin: 48px auto; padding: 0 24px; }
+  h1 { font-size: 38px; line-height: 1.2; }
+  h2 { font-size: 23px; margin-top: 32px; }
+  p, li { color: #bbb; }
+  code { color: #eee; }
+  img { width: 100%; border: 1px solid #444; border-radius: 12px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .pair img { width: 100%; }
+  .icon { width: 96px; border-radius: 16px; }
+</style>
+<h1>A sidebar you can put away</h1>
+<p>The left rail is the navigation model, and it used to be stuck open. A split-window button next to Search hides the list; the same button on a 78px strip brings it back. The chat, the Inbox, whatever you were reading, stays.</p>
+<img src="toggle.png" alt="The sidebar toggle: a rounded window with a left partition, on a raised square" class="icon">
+<h2>Open, and closed</h2>
+<div class="pair">
+  <img src="open.png" alt="Full sidebar with the toggle to the left of Search, crew strip and code rows below">
+  <img src="closed.png" alt="Collapsed rail: only the toggle remains, chat fills the rest of the window">
+</div>
+<h2>How it works</h2>
+<p>The shell owns the state. The sidebar reports the click, the same way it reports a right-click rather than folding a thread itself. <code>jabot.sidebarOpen</code> in localStorage remembers the choice; only an explicit <code>0</code> hides the rail on the next launch, so a corrupt store cannot trap someone without navigation.</p>
+<p>Closed keeps a strip as wide as the overlay traffic lights. A rail that vanished would dump the lights onto the chat, and a toggle that vanished with the thing it reveals is a trap. The list and the me-row unmount rather than hiding, so Tab cannot wander into them.</p>
+<p>Ctrl/⌘B is the same chord the rest of the desktop uses for this split. A modal already owns the keyboard, so the chord is silent while one is up.</p>
+<h2>What to look at</h2>
+<ul>
+  <li><code>src/components/Icon.tsx</code>: the split-window glyph.</li>
+  <li><code>src/components/Sidebar.tsx</code>: the toggle, the collapsed rail, the localStorage helpers.</li>
+  <li><code>src/App.tsx</code>: shell state and the keyboard chord.</li>
+  <li><code>src/styles/sidebar.css</code>: the raised square, and the 78px closed width.</li>
+</ul>
+<h2>How to verify</h2>
+<p>Run <code>./scripts/verify.sh</code>. In the app, click the toggle next to Search; the list should go and the chat should stay. Click it again, or press Ctrl/⌘B. Open New Chat and press the chord — the rail should not move until the dialog is gone.</p>
+<p>Screenshot evidence is the real <code>App</code> in Chromium at deviceScaleFactor 2 against the Vite preview. Browser verification clicked hide/show, typed into the composer while closed, opened Inbox, confirmed the pane survived the collapse, opened New Chat, and confirmed the chord is silent under the dialog.</p>
+</html>
