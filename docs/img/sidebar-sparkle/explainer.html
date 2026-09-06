@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Replace sidebar status pips with a Cursor-style sparkle</title>
+<style>
+  body { background: #171717; color: #eee; font: 17px/1.6 system-ui; max-width: 920px; margin: 48px auto; padding: 0 24px; }
+  h1 { font-size: 38px; line-height: 1.2; }
+  h2 { font-size: 23px; margin-top: 32px; }
+  p, li { color: #bbb; }
+  code { color: #eee; }
+  img { width: 100%; border: 1px solid #444; border-radius: 12px; }
+  .frames { display: flex; gap: 12px; }
+  .frames img { width: 80px; height: 80px; object-fit: contain; background: #1c1c1e; image-rendering: pixelated; }
+</style>
+<h1>A 3×3 sparkle instead of a coloured pip</h1>
+<p>Thread rows used an amber or green dot and a printed word — <code>running</code>, <code>done</code>. Those are now Cursor's activity mark: nine cells in a square, circles lighting up on their own clocks.</p>
+<h2>How it works</h2>
+<p>A live thread twinkles. Cells fade in and out on prime-ish durations so a frame typically shows a handful of dots, not a full grid pulsing as one. Two live rows do not share a clock — each thread id offsets the loop.</p>
+<p>A settled thread sits still on a constellation. Done is the same mark, not moving, so it cannot be read as still working. Failed keeps a danger-coloured still pattern. Idle is a faint centre dot.</p>
+<p>The word is gone from the row. It remains the accessible name (<code>Auth migration, running</code>) and the sparkle's tooltip.</p>
+<img src="folder.png" alt="jabot-app folder with two thread rows, each led by a 3x3 sparkle instead of a coloured pip and status word">
+<h2>Live vs settled</h2>
+<p>Auth migration is held open on the fake ACP agent's hang mode. Sidebar overflow fix has finished. Same folder, two clocks.</p>
+<img src="auth-migration-running.png" alt="Auth migration row: 3x3 cells at mixed brightness">
+<img src="sidebar-overflow-fix-done.png" alt="Sidebar overflow fix row: a still six-dot constellation">
+<h2>The loop, three frames apart</h2>
+<p>The same live mark, a few hundred milliseconds between shots. Different cells are lit in each — that is the animation, not a static icon that happens to look like one.</p>
+<div class="frames">
+  <img src="live-a.png" alt="live sparkle frame a">
+  <img src="live-b.png" alt="live sparkle frame b">
+  <img src="live-c.png" alt="live sparkle frame c">
+</div>
+<h2>What to look at</h2>
+<ul>
+  <li><code>src/components/Sparkle.tsx</code> — nine cells, live when the tone is running.</li>
+  <li><code>src/styles/sparkle.css</code> — the clocks and the settled constellations.</li>
+  <li><code>src/components/FolderList.tsx</code> — pip and label removed; accessible name carries the word.</li>
+</ul>
+<h2>How to verify</h2>
+<p>Run <code>./scripts/verify.sh</code>. Then <code>./scripts/live.sh up</code>, seed a hanging thread and a finished one, and look at the folder. The live row twinkles. The finished row does not. Neither row prints <code>running</code> or <code>done</code>.</p>
+<p>Screenshot evidence is the real App against a live <code>jabot-hostd</code>, Chromium at deviceScaleFactor 2.</p>
+<img src="after.png" alt="Full app: Chief selected, jabot-app folder listing both threads with sparkle marks">
+</html>

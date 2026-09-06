@@ -46,7 +46,7 @@
 .sparkle[data-tone="ok"] > span:nth-child(6),
 .sparkle[data-tone="ok"] > span:nth-child(7),
 .sparkle[data-tone="ok"] > span:nth-child(9) {
-  opacity: 0.45;
+  opacity: 0.7;
 }
 
 .sparkle[data-tone="quiet"] > span:nth-child(5) {
