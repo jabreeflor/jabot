@@ -15,7 +15,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { SettingsView } from "../views/SettingsView";
-import type { SettingsView as HostSettings } from "../host";
+import type { PairedDeviceView, SettingsView as HostSettings } from "../host";
 
 const SETTINGS: HostSettings = {
   idleTimeoutMs: 600_000,
@@ -27,6 +27,10 @@ function draw(over: Partial<Parameters<typeof SettingsView>[0]> = {}) {
   const props = {
     settings: SETTINGS,
     onSave: vi.fn(async () => SETTINGS),
+    devices: null,
+    devicesError: null,
+    onReloadDevices: vi.fn(),
+    onRevokeDevice: vi.fn(async () => undefined),
     ...over,
   };
   render(<SettingsView {...props} />);
@@ -96,13 +100,24 @@ describe("SettingsView", () => {
 
   it("takes the host's answer as the new state, not what was typed", async () => {
     // The host stored 90s and said so; the field has to show what was stored.
+    const devices = {
+      devices: null,
+      devicesError: null,
+      onReloadDevices: vi.fn(),
+      onRevokeDevice: vi.fn(async () => undefined),
+    };
     const { rerender } = render(
-      <SettingsView settings={SETTINGS} onSave={vi.fn(async () => SETTINGS)} />,
+      <SettingsView
+        settings={SETTINGS}
+        onSave={vi.fn(async () => SETTINGS)}
+        {...devices}
+      />,
     );
     rerender(
       <SettingsView
         settings={{ ...SETTINGS, idleTimeoutMs: 90_000 }}
         onSave={vi.fn(async () => SETTINGS)}
+        {...devices}
       />,
     );
 
@@ -138,5 +153,50 @@ describe("SettingsView", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("store is unavailable");
     expect(screen.queryByText("Asking the host…")).toBeNull();
+  });
+
+  /**
+   * Pairing used to be a CODE row under Schedules. It is a fact about this
+   * Mac, so it lives here — a tab, not a second heading, because the pane is
+   * still Settings.
+   */
+  it("keeps Devices as a tab, and leaves General selected", () => {
+    draw();
+
+    expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: "Devices" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    expect(minutes()).toBeInTheDocument();
+    expect(screen.queryByText("This Mac")).toBeNull();
+  });
+
+  it("shows the paired list when Devices is selected", async () => {
+    const phone: PairedDeviceView = {
+      deviceId: "dev-phone",
+      name: "Jabree's iPhone",
+      role: "approver",
+      fingerprint: "ZZZZyyyyXXXXwwwwVVVVuuuuTTTT",
+      pairedVia: "qr",
+      sas: "1174-6602",
+      createdAt: "2026-08-12T18:20:00Z",
+      lastSeenAt: "2026-08-29T21:40:00Z",
+      local: false,
+      connected: false,
+    };
+    draw({ devices: [phone] });
+
+    await userEvent.click(screen.getByRole("tab", { name: "Devices" }));
+
+    expect(screen.getByRole("tab", { name: "Devices" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByText("Jabree's iPhone")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Go quiet after/)).toBeNull();
   });
 });

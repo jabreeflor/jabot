@@ -374,5 +374,4 @@ export type Selection =
   | { view: "inbox" }
   | { view: "prs" }
   | { view: "schedules" }
-  | { view: "devices" }
   | { view: "settings" };

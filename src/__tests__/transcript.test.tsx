@@ -72,7 +72,7 @@ describe("Transcript", () => {
     expect(container.querySelector(".fail")?.textContent).toContain("failed");
   });
 
-  it("puts my words in a cream bubble and the bot's in a graphite one", () => {
+  it("puts my words in a bubble and the bot's on the page", () => {
     const { container } = render(
       <Transcript
         items={[

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Bot as prose, me as a bubble</title>
+<style>
+  body { background: #171717; color: #eee; font: 17px/1.6 system-ui; max-width: 980px; margin: 48px auto; padding: 0 24px; }
+  h1 { font-size: 38px; line-height: 1.2; }
+  h2 { font-size: 23px; margin-top: 32px; }
+  p, li { color: #bbb; }
+  code { color: #eee; }
+  img { width: 100%; border: 1px solid #444; border-radius: 12px; }
+  .pair { display: grid; gap: 16px; }
+  figcaption { color: #8e8e93; font-size: 14px; margin: 8px 0 0; }
+</style>
+<h1>Bot as prose, me as a bubble</h1>
+<p>The agent no longer speaks from a balloon. Inbound text sits on the chat ground in light ink. Your own messages stay a graphite bubble on the right. Primary chrome — tabs, <code>.btn.primary</code>, pressed tool chips — stays cream.</p>
+<h2>Before and after</h2>
+<div class="pair">
+  <figure>
+    <img src="before.png" alt="Chief chat before: graphite inbound bubble, cream own bubble">
+    <figcaption>Before — both sides in bubbles; cream on the right, graphite on the left.</figcaption>
+  </figure>
+  <figure>
+    <img src="after.png" alt="Chief chat after: bot as plain text, graphite own bubble">
+    <figcaption>After — the bot is prose on the page; only your words are in a bubble.</figcaption>
+  </figure>
+</div>
+<h2>How it works</h2>
+<p><code>.msg.bot .bubble</code> drops the fill, radius, and 72% cap so the reply is just type on <code>--chat</code>. <code>.msg.me .bubble</code> keeps <code>--bub-me</code> graphite. A <code>--cream</code> token holds the old high-contrast fill for tabs and buttons, which used to borrow the own-bubble colour.</p>
+<h2>What to look at</h2>
+<ul>
+  <li><code>src/styles/chat.css</code> — bot reply is unfilled; me is still a bubble.</li>
+  <li><code>src/styles/tokens.css</code> — <code>--bub-me</code> for own messages, <code>--cream</code> for chrome.</li>
+  <li><code>src/styles/shell.css</code>, <code>cards.css</code>, <code>modal.css</code>, <code>schedules.css</code> — primary chrome uses <code>--cream</code>.</li>
+</ul>
+<h2>How to verify</h2>
+<p>Run the unit tests and open Chief in a Vite preview. The inbound turn should have no fill behind it; your reply should still be a graphite bubble; <code>Disappear until done</code> should still be a cream button.</p>
+</html>

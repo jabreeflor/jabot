@@ -25,3 +25,6 @@ dist-ssr
 
 # Rust
 src-tauri/target
+
+# The live loop's dev host: SQLite, logs, pid (scripts/live.sh)
+.jabot-dev

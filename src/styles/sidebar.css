@@ -6,7 +6,11 @@
  * because a code thread only means something relative to its checkout. Both
  * are lists now, so the contrast is carried by what a row holds rather than by
  * its axis: a bot row is two lines around a face, a thread row is one line
- * behind a status pip.
+ * behind its status mark.
+ *
+ * Closed, the rail keeps a strip the traffic lights can sit on and the
+ * toggle that opens it again. The list is unmounted, not hidden, so Tab
+ * cannot wander into a column that is not on screen.
  */
 
 .sidebar {
@@ -20,6 +24,9 @@
 }
 
 .sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   padding: var(--sp-4) 14px var(--sp-4);
 }
 
@@ -30,7 +37,9 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  width: auto;
   padding: var(--sp-3) var(--sp-4);
   color: var(--faint);
   font-size: var(--fs-ui);
@@ -58,10 +67,59 @@
   outline-offset: 2px;
 }
 
-.sidebar-search svg {
+.sidebar-search .field svg {
   flex: none;
   width: 14px;
   height: 14px;
+}
+
+/*
+ * The split-window glyph. Always a raised square so it reads as a control
+ * even before hover — a ghost button next to the search field would look
+ * like part of the field. Collapsed, it is the only thing on the rail.
+ */
+.sidebar-toggle {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--raise);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.sidebar-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar-toggle:hover {
+  background: #333336;
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/*
+ * Closed is not gone. Overlay traffic lights still need a dark strip to sit
+ * on, and the toggle that brings the list back has to stay where the hand
+ * already is. Width matches --traffic-lights-w so the lights never spill
+ * onto the chat.
+ */
+.sidebar.is-collapsed {
+  width: var(--traffic-lights-w);
+  overflow: hidden;
+}
+
+.sidebar.is-collapsed .sidebar-search {
+  justify-content: center;
+  padding: var(--sp-4) var(--sp-3);
 }
 
 .sidebar-list {
@@ -120,11 +178,9 @@
   --blob-size: 42px;
 }
 
-/* The ring is round even though an avatar's box is square: the drawing inside
-   it is a creature on a circular body, and a square halo would read as a tile
-   around the bot rather than a highlight on it. A hat or a crest overflows the
-   box and so paints across the ring, which is the right way round — the mark
-   belongs to the bot, not to the selection. */
+/* The ring is round even though an avatar's box is square: what the box holds
+   is a circle, and a square halo would read as a tile around the bot rather
+   than a highlight on it. */
 .bot-row[aria-current="true"] .av,
 .bot-row[aria-current="true"] .cluster {
   border-radius: 50%;
@@ -175,12 +231,6 @@
 }
 
 /* ---- code rows ---- */
-
-.sidebar-divider {
-  height: 1px;
-  background: var(--line);
-  margin: var(--sp-2) 2px var(--sp-1);
-}
 
 .nav-row {
   display: flex;
@@ -356,22 +406,6 @@
   font-weight: 400;
 }
 
-/* A folder that is not a repo. Quiet, because it is a fact about the folder,
-   not a problem with it. */
-.folder-badge {
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  flex: none;
-}
-
-.folder-toggle .folder-badge + .count {
-  margin-left: var(--sp-3);
-}
-
 .folder-add {
   width: 20px;
   height: 20px;
@@ -468,37 +502,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.thread-row .state {
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 11.5px;
-  flex: none;
-}
-
-.thread-row .pip {
-  flex: none;
-  display: grid;
-  place-items: center;
-  color: var(--faint);
-}
-
-.thread-row .pip svg {
-  width: 9px;
-  height: 9px;
-}
-
-.thread-row .pip.running {
-  color: var(--amber);
-}
-
-.thread-row .pip.ok {
-  color: var(--ok);
-}
-
-.thread-row .pip.bad {
-  color: var(--danger);
 }
 
 /* ---- me ---- */

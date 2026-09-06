@@ -36,10 +36,9 @@ import { GithubSignInModal } from "./components/GithubSignInModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
-import { DevicesView } from "./views/DevicesView";
 import { hostErrorText } from "./views/errors";
 import { SettingsView } from "./views/SettingsView";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, loadSidebarOpen, saveSidebarOpen } from "./components/Sidebar";
 import {
   ThreadContextMenu,
   type MenuPosition,
@@ -194,6 +193,7 @@ function AppShell({
     open: false,
   });
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
   const { client, hello, hostError, connecting } = hostSession;
   // Whether the fixtures may stand in for a host answer that has not arrived.
   // Only where no host exists to ask — see `hostedByApp`. Read once: the
@@ -290,6 +290,32 @@ function AppShell({
     const pending = timers.current;
     return () => pending.forEach((id) => window.clearTimeout(id));
   }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((open) => {
+      const next = !open;
+      saveSidebarOpen(next);
+      return next;
+    });
+  }, []);
+
+  // ⌘B / Ctrl+B is the same chord the rest of the desktop uses for this
+  // split. A modal already owns the keyboard (Escape, Tab trap), so the
+  // chord is silent while one is up — hiding the rail under a dialog is
+  // not a gesture anyone can see the result of.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.key !== "b" && event.key !== "B") return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      event.preventDefault();
+      toggleSidebar();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [toggleSidebar]);
 
   // Clicking a native notification opens the thread it named (#27). The Tauri
   // layer has already brought the window back by the time this arrives, so the
@@ -594,6 +620,8 @@ function AppShell({
           client && registered.folders ? setFolderSettings : undefined
         }
         selection={selection}
+        open={sidebarOpen}
+        onToggle={toggleSidebar}
         // The host's own count, not a second classification of the rows this
         // renderer happens to be holding: `count_unread_inbox` is the badge
         // `resurface.md` specifies, and it is the number the phone already
@@ -612,9 +640,6 @@ function AppShell({
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
         onOpenSchedules={() => setSelection({ view: "schedules" })}
-        onOpenDevices={
-          client ? () => setSelection({ view: "devices" }) : undefined
-        }
         onOpenSettings={
           client ? () => setSelection({ view: "settings" }) : undefined
         }
@@ -860,9 +885,8 @@ function MainView({
   inbox: HostInbox;
   /** Recurring jobs, host-owned from the first answer (#25). */
   schedules: Schedules;
-  /** App-wide preferences (#26). */
+  /** App-wide preferences (#26) and paired devices (#19, #29). */
   settings: Settings;
-  /** Everything paired with this Mac (#19, #29). */
   devices: Devices;
   /** The PR board, host-owned from the first answer (#28). */
   pulls: PullRequests;
@@ -929,18 +953,6 @@ function MainView({
           notify={inbox.notify}
         />
       );
-    case "devices":
-      return (
-        <DevicesView
-          devices={devices.devices}
-          error={devices.error}
-          onReload={devices.reload}
-          // Handed down rather than resolved here so the row can show the
-          // host's own refusal — "the local device cannot be revoked; it is
-          // the host's own console" is the useful sentence.
-          onRevoke={devices.revoke}
-        />
-      );
     case "settings":
       return (
         <SettingsView
@@ -950,6 +962,13 @@ function MainView({
           // keeps what was typed and shows the host's own refusal, which is
           // the sentence worth reading.
           onSave={settings.save}
+          devices={devices.devices}
+          devicesError={devices.error}
+          onReloadDevices={devices.reload}
+          // Handed down rather than resolved here so the row can show the
+          // host's own refusal — "the local device cannot be revoked; it is
+          // the host's own console" is the useful sentence.
+          onRevokeDevice={devices.revoke}
         />
       );
     case "schedules":
@@ -975,9 +994,8 @@ function MainView({
     case "prs":
       return (
         <PullRequestsView
-          // The fixtures stand in only where there is no host to ask — `null`
-          // is "not asked yet" (a preview build, a unit test), and an empty
-          // array is the real and common answer of "no open pull requests".
+          client={client}
+          // Fixtures are only for previews without a host; a live host starts empty.
           pullRequests={pullRequests}
           unavailable={pulls.unavailable}
           error={pulls.error}
@@ -989,8 +1007,7 @@ function MainView({
           onAction={(prId, actionId) => {
             if (actionId !== "diff") return;
             const pr = pullRequests.find((row) => row.id === prId);
-            // The PR itself is on GitHub; JaBot has no in-app diff for it and
-            // `pr-linkage.md` defers one. Opening the page is the honest verb.
+            // Keep the explicit GitHub link alongside the in-app workspace.
             if (pr) window.open(pr.url, "_blank", "noopener,noreferrer");
           }}
         />

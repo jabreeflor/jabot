@@ -13,6 +13,7 @@
 @import "./styles/codeav.css";
 @import "./styles/avatar.css";
 @import "./styles/sidebar.css";
+@import "./styles/sparkle.css";
 @import "./styles/chat.css";
 @import "./styles/cards.css";
 @import "./styles/crew.css";
@@ -21,3 +22,5 @@
 @import "./styles/modal.css";
 @import "./styles/menu.css";
 @import "./styles/onboarding.css";
+
+@import "./styles/pulls.css";
