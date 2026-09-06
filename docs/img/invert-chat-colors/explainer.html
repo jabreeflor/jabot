@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Inbound cream, own graphite</title>
+<style>
+  body { background: #171717; color: #eee; font: 17px/1.6 system-ui; max-width: 980px; margin: 48px auto; padding: 0 24px; }
+  h1 { font-size: 38px; line-height: 1.2; }
+  h2 { font-size: 23px; margin-top: 32px; }
+  p, li { color: #bbb; }
+  code { color: #eee; }
+  img { width: 100%; border: 1px solid #444; border-radius: 12px; }
+  .pair { display: grid; gap: 16px; }
+  figcaption { color: #8e8e93; font-size: 14px; margin: 8px 0 0; }
+</style>
+<h1>Inbound cream, own graphite</h1>
+<p>Chat bubbles swap sides of the cream/graphite pair. Inbound (left) is cream with dark ink. Your own messages (right) are graphite with light ink. The rest of the shell — primary buttons, selected tabs, pressed tool chips — stays cream.</p>
+<h2>Before and after</h2>
+<div class="pair">
+  <figure>
+    <img src="before.png" alt="Chief chat before the invert: graphite inbound bubble, cream own bubble">
+    <figcaption>Before — cream on the right, graphite on the left.</figcaption>
+  </figure>
+  <figure>
+    <img src="after.png" alt="Chief chat after the invert: cream inbound bubble, graphite own bubble">
+    <figcaption>After — cream inbound, graphite mine.</figcaption>
+  </figure>
+</div>
+<h2>How it works</h2>
+<p><code>--bub-bot</code> is now the cream inbound fill; <code>--bub-me</code> is graphite. A new <code>--cream</code> token keeps primary chrome on the old high-contrast fill so tabs and <code>.btn.primary</code> do not go dark with the own-bubble. Inside an inbound bubble, fenced and inline code keep light ink on the sunk ground so markdown stays readable on cream.</p>
+<h2>What to look at</h2>
+<ul>
+  <li><code>src/styles/tokens.css</code> — bubble tokens and the cream chrome fill.</li>
+  <li><code>src/styles/chat.css</code> — inbound ink on <code>.bubble</code>, light ink on code inside a bot bubble.</li>
+  <li><code>src/styles/shell.css</code>, <code>cards.css</code>, <code>modal.css</code>, <code>schedules.css</code> — primary chrome now uses <code>--cream</code>.</li>
+</ul>
+<h2>How to verify</h2>
+<p>Run <code>./scripts/verify.sh --fast</code>. In a browser preview of the Vite app, open Chief: the left bubble is cream, the right bubble is graphite, and <code>Disappear until done</code> is still a cream button.</p>
+</html>

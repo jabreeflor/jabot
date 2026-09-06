@@ -1,8 +1,7 @@
 /*
- * Transcript and composer — the iMessage grammar the prototype set:
- * cream bubble right for me, graphite bubble left for the bot, both with a
- * squared-off tail corner; monospace toolblocks sunk below the chat ground so
- * machine output never competes with speech.
+ * Transcript and composer — cream bubble left for inbound, graphite bubble
+ * right for me, both with a squared-off tail corner; monospace toolblocks
+ * sunk below the chat ground so machine output never competes with speech.
  */
 
 .chat-head {
@@ -169,6 +168,7 @@
   line-height: var(--lh-chat);
   white-space: pre-line;
   background: var(--bub-bot);
+  color: var(--bub-bot-ink);
   align-self: flex-start;
   border-bottom-left-radius: var(--r-tail);
 }
@@ -537,6 +537,7 @@
 .msg.bot .bubble code {
   font: 0.92em / var(--lh-mono) var(--font-mono);
   background: var(--sunk);
+  color: var(--ink);
   border-radius: 5px;
   padding: 1px 5px;
   white-space: pre-wrap;
@@ -545,6 +546,7 @@
 .msg.bot .bubble pre {
   margin-bottom: 0;
   background: var(--sunk);
+  color: var(--ink);
   border: 1px solid var(--sunk-edge);
   border-radius: var(--r-md);
   padding: var(--sp-3) var(--sp-4);
