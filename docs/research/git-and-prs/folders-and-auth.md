@@ -25,7 +25,9 @@ is a worktree of that repo ([worktrees.md](worktrees.md)).
 
 1. User picks a directory (or drops a path).
 2. Host runs `git rev-parse --show-toplevel` (fail → still allow as a
-   non-git folder: threads work, PR view empty, badge "not a git repo").
+   non-git folder: threads work, PR view empty). The sidebar row says nothing
+   about it — the fact lives in folder settings, which already states what git
+   answered.
 3. Store:
 
    ```text
