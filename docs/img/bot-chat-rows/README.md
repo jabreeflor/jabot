@@ -12,6 +12,7 @@ against the production renderer bundle (`npm run build` + `vite preview`).
 | `after.png` | the same crew as rows: face, name, and the chat's own last line. Chief keeps the larger face and stays first; the Crew row is last |
 | `window.png` | the whole window. Chief's row quotes exactly the last message in the chat open beside it — the sidebar and the transcript cannot disagree, because both read the same events |
 | `host.png` | the same rows over a **stubbed `host_rpc`**, i.e. `BotView.preview` off the wire rather than a fixture. Scheduler has been talked to by nobody, so its row falls back to the persona in italics |
+| `artifact-top.png`, `artifact-path.png` | the PR artifact this repo requires, captured from the published page — the before/after pair, and the five stages a sentence travels from adapter stdio to a sidebar row |
 
 `before.png` and `after.png` are the same fixtures at the same width; the only
 difference is whether the change is applied. In `before.png` the previews are
