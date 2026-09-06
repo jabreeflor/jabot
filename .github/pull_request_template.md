@@ -9,8 +9,9 @@
 
 ## Artifact
 
-<!-- Required on every PR: run /create-pr-artifact (from the jabstack plugin) and let it fill this
-     section with the explainer link and screenshots. Do not delete this heading. -->
+<!-- Required on every PR: run /create-pr-artifact (from vendored plugins/jabstack)
+     and let it fill this section with the explainer link and screenshots.
+     Do not delete this heading. -->
 
 ## Verification
 

@@ -217,10 +217,12 @@ Deleting a branch pushes no content and is not gated.
 
 Every PR carries an explainer artifact in its `## Artifact` section (the PR
 template has the heading). It is produced by `/create-pr-artifact <n>` from the
-[jabstack](https://github.com/jabreeflor/jabstack) plugin, which
-`.claude/settings.json` enables for this repo — Claude Code offers to install it
-on session start. Run it after the PR exists and before you ask for review; it
-needs `gh` v2.99.0+ for the `--attach` upload. `CLAUDE.md` has the full rule.
+vendored [jabstack](https://github.com/jabreeflor/jabstack) plugin at
+`plugins/jabstack/`. Cursor and Codex load it from this repo
+(`.cursor-plugin/marketplace.json` and `.agents/plugins/marketplace.json`);
+Claude Code still uses the GitHub marketplace pin in `.claude/settings.json`.
+Run the skill after the PR exists and before you ask for review; it needs
+`gh` v2.99.0+ for the `--attach` upload. `CLAUDE.md` has the full rule.
 
 ## Before you call something a gap
 

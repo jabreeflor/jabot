@@ -1,0 +1,17 @@
+{
+  "name": "jabot",
+  "owner": {
+    "name": "Jabree Flor"
+  },
+  "metadata": {
+    "description": "JaBot workspace plugins, including a vendored jabstack.",
+    "pluginRoot": "plugins"
+  },
+  "plugins": [
+    {
+      "name": "jabstack",
+      "source": "jabstack",
+      "description": "gauntlet-loop, create-pr-artifact, and the gauntlet-critic subagent."
+    }
+  ]
+}
