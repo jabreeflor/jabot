@@ -7,7 +7,7 @@
 
 import type { InboxKind, PullRequest, ThreadSummary } from "./types";
 
-/** Drives the pip colour: amber wants you, green is finished, red went wrong. */
+/** Drives the sparkle: `running` twinkles, the rest sit still. */
 export type StatusTone = "running" | "ok" | "bad" | "quiet";
 
 export interface ThreadStatus {
