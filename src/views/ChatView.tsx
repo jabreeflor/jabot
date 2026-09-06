@@ -16,6 +16,7 @@ import { Conversation } from "../components/Conversation";
 import { HostPicker } from "../components/HostPicker";
 import type { Bot, HostTarget, TranscriptItem } from "../components/types";
 import type { HostClient } from "../host";
+import { hostErrorText } from "./errors";
 import { useThreadTranscript } from "./transcript";
 
 export function ChatView({
@@ -120,7 +121,7 @@ export function LiveChatView({
         // conversation to fall back to, and an empty chat that silently
         // discards what you type is the failure this view existed to fix.
         if (!cancelled) {
-          setOpenError(err instanceof Error ? err.message : String(err));
+          setOpenError(hostErrorText(err));
         }
       });
     return () => {

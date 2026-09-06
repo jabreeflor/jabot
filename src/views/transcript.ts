@@ -35,6 +35,7 @@ import type {
   TranscriptEventView,
 } from "../host";
 import { PERMISSION_ASK, PERMISSION_RESOLVED, SESSION_UPDATE } from "../host";
+import { hostErrorText } from "./errors";
 import type { StatusTone, ThreadStatus } from "../components/status";
 import type {
   NoticeAction,
@@ -1128,5 +1129,5 @@ function applyLive(stream: ThreadStream, event: LiveEvent): ThreadStream {
 }
 
 function message(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return hostErrorText(err);
 }

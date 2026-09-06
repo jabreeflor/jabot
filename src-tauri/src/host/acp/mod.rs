@@ -434,7 +434,12 @@ impl HostSession {
             self.thread_keys.insert(params.thread_id.clone(), key);
             return Ok(());
         }
-        let runtime = self.resolve_runtime(params)?;
+        let mut runtime = self.resolve_runtime(params)?;
+        if matches!(runtime.probe(), ProbeResult::Missing { .. }) {
+            if let Some(recovered) = self.reresolve_runtime(&params.thread_id, &runtime) {
+                runtime = recovered;
+            }
+        }
         match runtime.probe() {
             ProbeResult::Missing { command, hint } => {
                 return Err(RpcError::HarnessUnavailable {
@@ -456,6 +461,39 @@ impl HostSession {
         self.connections.insert(key.clone(), conn);
         self.thread_keys.insert(params.thread_id.clone(), key);
         Ok(())
+    }
+
+    /// Ask the catalog again when a thread's recorded command is not here.
+    ///
+    /// `runtime_json` is a *cache* of what resolved at `thread/open`, and when
+    /// nothing resolved then it is a guess at the card's first name. Nothing
+    /// re-resolved it, so a Claude thread opened before the adapter was
+    /// installed kept spawning `claude-agent-acp` — while the card's own
+    /// install hint installs `claude-code-acp`, the other candidate. The user
+    /// did what the app asked and got the identical error for ever.
+    ///
+    /// The new command is written back to the row: a per-prompt re-resolve
+    /// would leave `thread/state` and the next boot still naming the binary
+    /// that is not there. A failed write is not fatal — this run can still go
+    /// on the adapter that is actually here, and the next prompt retries.
+    fn reresolve_runtime(
+        &self,
+        thread_id: &str,
+        current: &HarnessRuntime,
+    ) -> Option<HarnessRuntime> {
+        let spec = self.recover_runtime(&current.id, &current.command, &current.args)?;
+        let recovered = HarnessRuntime::from_spec(current.id.clone(), &spec).ok()?;
+        if let Some(store) = &self.store {
+            match serde_json::to_string(&spec) {
+                Ok(runtime_json) => {
+                    if let Err(err) = store.set_thread_runtime(thread_id, &runtime_json) {
+                        eprintln!("could not re-pin the runtime for {thread_id}: {err}");
+                    }
+                }
+                Err(err) => eprintln!("could not encode the runtime for {thread_id}: {err}"),
+            }
+        }
+        Some(recovered)
     }
 
     fn resolve_runtime(&self, params: &PromptParams) -> Result<HarnessRuntime, RpcError> {

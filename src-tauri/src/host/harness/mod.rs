@@ -23,7 +23,7 @@ use super::protocol::methods::{
     HarnessStatus, HarnessTier, RuntimeSpec,
 };
 use super::HostSession;
-use catalog::HarnessDescriptor;
+use catalog::{HarnessDescriptor, Launch};
 use doctor::{Diagnosis, SystemProbe};
 
 /// The ACP major version the host speaks (`initialize` in `acp/connection.rs`).
@@ -152,6 +152,26 @@ impl HostSession {
     pub(crate) fn catalog_runtime_spec(&self, harness_id: &str) -> Option<RuntimeSpec> {
         let (descriptors, _) = self.harness_catalog_with_issues();
         resolved_runtime_spec(&descriptors, harness_id)
+    }
+
+    /// A second chance for a thread whose snapshotted command is not here.
+    ///
+    /// `thread/open` snapshots the candidate that resolved *then*, and when
+    /// none did it snapshots the card's first name as a guess
+    /// ([`resolved_runtime_spec`]). Either way the snapshot can be wrong by the
+    /// time the thread runs, and until now nothing re-resolved it.
+    pub(crate) fn recover_runtime(
+        &self,
+        harness_id: &str,
+        command: &str,
+        args: &[String],
+    ) -> Option<RuntimeSpec> {
+        let (descriptors, _) = self.harness_catalog_with_issues();
+        let descriptor = descriptors.iter().find(|d| d.id == harness_id)?;
+        let launch = recovered_launch(descriptor, command, args, |candidate| {
+            resolve_command(candidate).is_some()
+        })?;
+        Some(descriptor.runtime_spec(launch))
     }
 
     /// The picker's list. Cheap on purpose — no probing, so opening New Chat
@@ -323,6 +343,38 @@ fn report(descriptor: &HarnessDescriptor, diagnosis: Diagnosis) -> HarnessReport
     }
 }
 
+/// The candidate to fall forward to when a thread's recorded command is gone.
+///
+/// A card lists candidates (`catalog.rs`), and the Claude card's install hint
+/// names `@zed-industries/claude-code-acp` — whose binary is the *second* of
+/// them. A thread opened before anything was installed recorded the first,
+/// `claude-agent-acp`, so a user who did exactly what the app told them kept
+/// getting `Harness unavailable: claude-agent-acp`, for ever, with the working
+/// adapter sitting on their PATH.
+///
+/// Only a snapshot that is one of this card's own candidates is recovered,
+/// args and all. A runtime a client passed to `thread/open` is the caller's
+/// choice rather than a cached resolution, and swapping that for a different
+/// binary would be the host quietly running something else.
+pub fn recovered_launch<'a>(
+    descriptor: &'a HarnessDescriptor,
+    command: &str,
+    args: &[String],
+    resolves: impl Fn(&str) -> bool,
+) -> Option<&'a Launch> {
+    descriptor
+        .launches
+        .iter()
+        .any(|launch| launch.command == command && launch.args == args)
+        .then(|| {
+            descriptor
+                .launches
+                .iter()
+                .find(|launch| launch.command != command && resolves(&launch.command))
+        })
+        .flatten()
+}
+
 /// What `thread/open` should snapshot for a catalog id: the first launch that
 /// actually resolves on this machine, with the catalog's env floor.
 pub fn resolved_runtime_spec(
@@ -371,6 +423,68 @@ mod tests {
         response
             .result
             .unwrap_or_else(|| panic!("{method} failed: {:?}", response.error))
+    }
+
+    fn claude_card() -> HarnessDescriptor {
+        catalog::compiled_in()
+            .into_iter()
+            .find(|d| d.id == "claude")
+            .expect("the Claude card is compiled in")
+    }
+
+    /// The bug this exists for. A thread opened before any adapter was
+    /// installed recorded `claude-agent-acp`, the card's first name; the card's
+    /// install hint then installs `claude-code-acp`, its second. Without this
+    /// the thread spawns the name it recorded for ever and the user is told the
+    /// adapter is unavailable while it sits on their PATH.
+    #[test]
+    fn a_pinned_command_falls_forward_to_the_candidate_that_is_installed() {
+        let claude = claude_card();
+        let launch = recovered_launch(&claude, "claude-agent-acp", &[], |candidate| {
+            candidate == "claude-code-acp"
+        })
+        .expect("the other candidate is here");
+        assert_eq!(launch.command, "claude-code-acp");
+    }
+
+    /// Nothing to fall forward to is still an error — the caller reports
+    /// `HarnessUnavailable` with the install hint rather than spawning a
+    /// command it has not resolved.
+    #[test]
+    fn nothing_installed_recovers_nothing() {
+        let claude = claude_card();
+        assert!(recovered_launch(&claude, "claude-agent-acp", &[], |_| false).is_none());
+    }
+
+    /// A runtime the client chose is not a cached resolution. `thread/open`
+    /// takes an explicit `runtime`, and a host that swapped it for a catalog
+    /// binary would be running something the caller never asked for.
+    #[test]
+    fn a_command_the_card_does_not_list_is_left_alone() {
+        let claude = claude_card();
+        assert!(recovered_launch(&claude, "my-own-claude", &[], |_| true).is_none());
+    }
+
+    /// Same command, different args: the args are half of what a launch *is*
+    /// (`npx -y pi-acp` is not `pi-acp`), so a snapshot that matches only the
+    /// binary is a caller's runtime too.
+    #[test]
+    fn args_are_part_of_matching_a_candidate() {
+        let pi = catalog::compiled_in()
+            .into_iter()
+            .find(|d| d.id == "pi")
+            .expect("the Pi card is compiled in");
+        assert!(
+            recovered_launch(&pi, "npx", &["pi-acp".into()], |_| true).is_none(),
+            "the card's npx launch is `npx -y pi-acp`"
+        );
+        assert!(recovered_launch(
+            &pi,
+            "npx",
+            &["-y".into(), "pi-acp".into()],
+            |candidate| candidate == "pi-acp"
+        )
+        .is_some());
     }
 
     #[test]
