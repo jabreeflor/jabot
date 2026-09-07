@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upgrade project tooling to Node.js 26 Current</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .pins { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:18px; }
+    .pins div { padding:12px 10px; background:#0f141a; border-radius:9px; font-size:13px; font-weight:650; text-align:center; }
+    .gate { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .gate div { padding:14px; background:#0f141a; border-radius:9px; }
+    .gate strong { display:block; margin-bottom:6px; }
+    .fail { color:var(--bad); }
+    .pass { color:var(--ok); }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    @media (max-width:700px) { .flow,.gate,.pins { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #216 walkthrough</div>
+    <h1>Upgrade project tooling to Node.js 26 Current</h1>
+    <p>CI, release, and local pins now track Node.js 26 (Current as of 2026-09-07, e.g. v26.8.1) instead of LTS 22. TypeScript, Vite, Vitest, Tauri, and the bundled ACP adapter all run on Current; the one real break was jsdom losing <code>localStorage</code> to Node’s experimental Web Storage stub.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>GitHub Actions used <code>node-version: 22</code> in CI and release.</li>
+            <li>No <code>.nvmrc</code>, <code>.node-version</code>, or <code>engines</code> field.</li>
+            <li>Docs and <code>live.sh</code> said “CI uses node 22”.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li>CI <code>verify</code>, CI <code>bundle</code>, and release all use <code>26</code>.</li>
+            <li>Local pin is the same major: <code>.nvmrc</code>, <code>.node-version</code>, <code>engines.node: "&gt;=26"</code>.</li>
+            <li><code>verify.sh</code> already reads the CI pin and warns if your major differs.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="pins">
+        <div>ci.yml</div>
+        <div>release.yml</div>
+        <div>.nvmrc / .node-version</div>
+        <div>package engines</div>
+      </div>
+      <div class="gate">
+        <div>
+          <strong class="fail">The one Current break</strong>
+          Node 25+ installs a stub <code>globalThis.localStorage</code>. jsdom then skips its Storage, and every unit test that calls <code>window.localStorage.clear()</code> crashes.
+        </div>
+        <div>
+          <strong class="pass">The fix</strong>
+          Vitest workers get <code>--no-experimental-webstorage</code> via root <code>poolOptions</code>. jsdom owns Storage again. App build, adapters, and e2e did not need a fallback to LTS 24.
+        </div>
+      </div>
+      <p>Lockfile churn is the root <code>engines</code> field only. No dependency versions or resolved URLs changed. <code>npm ci</code> still installs the existing tree (npm 11.19.0 on Node 26.8.1).</p>
+    </section>
+
+    <section id="review">
+      <h2>What to look at</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>.github/workflows/ci.yml</code> / <code>release.yml</code></td><td>The runtime pin. Both jobs that call <code>setup-node</code> now request major 26.</td></tr>
+          <tr><td><code>.nvmrc</code> / <code>.node-version</code></td><td>Local nvm / asdf / fnm pin, same major as CI.</td></tr>
+          <tr><td><code>package.json</code> <code>engines</code></td><td>Discoverable floor of <code>&gt;=26</code>. Lockfile records the same field; nothing else in the lock moved.</td></tr>
+          <tr><td><code>vitest.config.ts</code></td><td>Root <code>poolOptions.*.execArgv</code> so every <code>npx vitest</code> worker (npm test, a11y, verify.sh) disables Node’s Web Storage stub.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>nvm use</code> (or install 26) so <code>node -v</code> is v26.x. <code>verify.sh</code> prints the versions at the top.</li>
+        <li><code>npm ci</code> — installs the existing lock without rewriting it.</li>
+        <li><code>npm test</code> — 553 unit tests. Without the Vitest flag this suite dies on <code>localStorage.clear</code>.</li>
+        <li><code>./scripts/verify.sh</code> — the full gate. This PR’s tree passed it on Node v26.8.1 / npm 11.19.0.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

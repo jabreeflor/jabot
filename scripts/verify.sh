@@ -5,15 +5,16 @@
 #   ./scripts/verify.sh                    # everything
 #   ./scripts/verify.sh --fast             # skip the e2e project (no Rust binary build)
 #   ./scripts/verify.sh --check-toolchain  # also ask rustup if stable moved (NETWORK)
-#   ./scripts/verify.sh --check-mac        # also lint notify/mac.rs for macOS (NETWORK)
-#                                    # native-sensitive PRs run this in CI; see
-#                                    # docs/macos-acceptance.md (#235)
+#   ./scripts/verify.sh --check-mac        # also lint notify/mac.rs for macOS (NETWORK; CI runs this itself)
+#                                    # packaged-app matrix/isolation is a default
+#                                    # stage; see docs/macos-acceptance.md (#235)
 #
 # This is the only gate. CI's `verify` job is `npm ci` + this script, and the
 # macOS `bundle` job does not run on pull requests (.github/workflows/ci.yml
 # says why), so anything this misses reaches main. Everything below runs
 # offline, needs no display, no GitHub token and no macOS — except
 # --check-toolchain and --check-mac, which are opt-in for exactly that reason.
+# CI still runs the notify cross-check on relevant PRs (see docs/macos-lint.md).
 #
 # Stages, cheapest first so failures surface early:
 #   0. toolchain      — versions printed, MSRV floor enforced, drift from CI warned
@@ -22,6 +23,7 @@
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   2c. install script — the release installer's pins, delivery, and refusals
 #   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
+#   2e. macos lint    — planner/path tests for the before-merge macOS jobs
 #   3. tsc            — renderer types
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
@@ -32,8 +34,8 @@
 #   9. vitest e2e     — TypeScript client against the real Rust host
 #  10. vite build     — the renderer bundle actually builds
 #   *. mac notify     — --check-mac only: notify/mac.rs, which is cfg'd out on
-#                      Linux and so is linted by nothing else, cross-checked
-#                      against x86_64-apple-darwin (NETWORK)
+#                      Linux. CI runs the same script automatically on relevant
+#                      PRs; locally it stays opt-in (NETWORK)
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -671,6 +673,20 @@ macos_acceptance() {
 }
 
 # ---------------------------------------------------------------------------
+# 2e. macos lint planner
+#
+# CI decides whether to run the Linux notify cross-check or the native macOS
+# Clippy job from a path list (scripts/macos-lint-needed.sh). That classifier
+# is the only thing that turns the paid runner on, so a match that silently
+# stops matching is a coverage hole that still looks green. The suite is
+# offline: path lists, refusals, and (when the Apple target is installed) a
+# proof that an injected notify/mac.rs lint fails the existing check.
+# ---------------------------------------------------------------------------
+macos_lint_tests() {
+  ./scripts/tests/macos-lint.test.sh
+}
+
+# ---------------------------------------------------------------------------
 # The tree this run is about to describe.
 #
 # Empty when this is not a git worktree (a tarball, a vendored copy); every
@@ -684,6 +700,7 @@ run "binary set"     binary_set
 run "commit guards"  guards
 run "install script" install_script
 run "macos acceptance" macos_acceptance
+run "macos lint tests" macos_lint_tests
 run "typecheck"      npx tsc --noEmit
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
@@ -698,11 +715,12 @@ run "default-features check" cargo check "${MANIFEST[@]}" "${LOCKED[@]}"
 
 # The one file the default path cannot see. `notify/mac.rs` is
 # `cfg(target_os = "macos")`, so every Rust stage above compiles straight past
-# it, and CI's macOS `bundle` job does not run on pull requests — which leaves
-# it linted by nothing at all. Opt-in because the scratch crate the check
-# builds has to resolve the macOS half of the dependency graph, and the default
-# path is offline on purpose. Anyone touching src-tauri/src/notify/ should run
-# it; see the script for why the whole crate cannot be cross-checked instead.
+# it. CI's `mac notify cross-check` job runs this same script on relevant PRs
+# (docs/macos-lint.md). Locally it stays opt-in because the scratch crate has
+# to resolve the macOS half of the dependency graph, and the default path is
+# offline on purpose. Anyone touching src-tauri/src/notify/ should still run
+# it before they push; see the script for why the whole crate cannot be
+# cross-checked instead.
 if [[ $CHECK_MAC -eq 1 ]]; then
   run "mac notify cross-check" ./scripts/check-mac-notify.sh
 fi

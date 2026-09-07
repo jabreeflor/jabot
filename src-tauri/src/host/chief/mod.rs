@@ -608,15 +608,49 @@ mod tests {
     };
     use crate::host::repo::git::testing;
 
+    /// Absolute path that is never a file. Not a catalog launch name, so
+    /// `recover_runtime` will not swap it for a real `claude-agent-acp` that
+    /// happens to be on the machine.
+    const ABSENT_AGENT: &str = "/jabot-test/no-such-agent";
+    const ABSENT_HARNESS: &str = "jabot-test-absent";
+
     /// A host with a real data directory: bots need memory directories, and a
     /// standing thread's `cwd` is one of them.
+    ///
+    /// Every seeded bot is pinned to a custom harness whose command cannot
+    /// resolve. `deliver()` would otherwise snapshot whatever the catalog
+    /// finds for `claude` — a real agent on a developer machine, a missing
+    /// binary on CI — and the handoff assertion would depend on PATH.
+    /// Process `PATH` is left alone: it is shared by every parallel test.
     fn host() -> (HostSession, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
-        let mut session = HostSession::load(&dir.path().join("data"));
+        let data = dir.path().join("data");
+        std::fs::create_dir_all(data.join("custom_harnesses")).unwrap();
+        std::fs::write(
+            data.join("custom_harnesses/jabot-test-absent.json"),
+            json!({
+                "id": ABSENT_HARNESS,
+                "label": "Test Absent Agent",
+                "command": ABSENT_AGENT,
+                "args": [],
+                "installHint": "jabot test fixture: this command must not exist"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let mut session = HostSession::load(&data);
         session
             .handle_request(JsonRpcRequest::new(RequestId::Number(1), HOST_HELLO, None))
             .result
             .expect("hello");
+        let crew = ok(&mut session, CREW_LIST, json!({}));
+        for bot in crew["bots"].as_array().expect("bots") {
+            ok(
+                &mut session,
+                CREW_UPDATE,
+                json!({ "botId": bot["botId"], "harnessId": ABSENT_HARNESS }),
+            );
+        }
         (session, dir)
     }
 
@@ -798,13 +832,16 @@ mod tests {
         assert_eq!(handoff["fromBotName"], "Chief");
         assert_eq!(handoff["fromThreadId"], standing::thread_id_for("chief"));
 
-        // No `claude` on a test machine, so nothing could be dispatched — and
-        // that is exactly the case the row exists for. The handoff happened;
-        // `dispatched` says nobody heard it, and `detail` says why.
+        // Runtime is the pinned missing command, not "whatever Claude the
+        // catalog finds on this machine". The handoff happened; `dispatched`
+        // says nobody heard it, and `detail` names that fixture.
         assert_eq!(handoff["dispatched"], false);
+        let detail = handoff["detail"]
+            .as_str()
+            .expect("a failed dispatch has to say why");
         assert!(
-            handoff["detail"].as_str().is_some_and(|d| !d.is_empty()),
-            "a failed dispatch has to say why: {handoff}"
+            detail.contains(ABSENT_AGENT) || detail.contains("Harness unavailable"),
+            "dispatch must fail on the pinned missing runtime, not a surprise: {handoff}"
         );
     }
 
@@ -999,7 +1036,7 @@ mod tests {
         ok(
             &mut session,
             CREW_CREATE,
-            json!({ "name": "Idle Specialist", "harnessId": "claude" }),
+            json!({ "name": "Idle Specialist", "harnessId": ABSENT_HARNESS }),
         );
         chief_at_work(&mut session);
         call(

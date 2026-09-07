@@ -525,7 +525,8 @@ impl HostSession {
         // completion path (`acp::handle_inbound`) ends the turn on its own.
         if reported == AcpState::Idle {
             if let Some(stop) = acp.get("stopReason").and_then(Value::as_str) {
-                self.lifecycle_on_turn_end(thread_id, Some(stop));
+                let error = acp.get("error").and_then(Value::as_str);
+                self.lifecycle_on_turn_end(thread_id, Some(stop), error);
             }
         }
     }
@@ -536,7 +537,12 @@ impl HostSession {
     /// Idempotent, because a v2 adapter reports the same ending twice — once as
     /// `state_update` with a stop reason and once as the prompt response.
     /// Whichever lands first closes the run; the other finds none open.
-    pub(crate) fn lifecycle_on_turn_end(&mut self, thread_id: &str, stop_reason: Option<&str>) {
+    pub(crate) fn lifecycle_on_turn_end(
+        &mut self,
+        thread_id: &str,
+        stop_reason: Option<&str>,
+        error: Option<&str>,
+    ) {
         let outcome = resurface::classify_stop(stop_reason);
         {
             let entry = self.lifecycle.entry(thread_id);
@@ -549,8 +555,10 @@ impl HostSession {
             resurface::StopOutcome::Cancelled => RunState::Cancelled,
         };
         let error = (target == RunState::Failed).then(|| {
-            stop_reason
-                .map(|r| format!("stopped: {r}"))
+            error
+                .filter(|detail| !detail.is_empty())
+                .map(str::to_string)
+                .or_else(|| stop_reason.map(|r| format!("stopped: {r}")))
                 .unwrap_or_else(|| "adapter returned no stop reason".into())
         });
         let run_id = self.close_run(thread_id, target, error.as_deref());

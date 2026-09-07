@@ -77,7 +77,18 @@ mod tests {
     #[test]
     fn end_turn_is_the_only_success() {
         assert_eq!(classify_stop(Some("end_turn")), StopOutcome::Done);
-        for reason in ["max_tokens", "max_turn_requests", "refusal", "_weird"] {
+        for reason in [
+            "max_tokens",
+            "max_turn_requests",
+            "refusal",
+            "_weird",
+            "empty_response",
+            "not_signed_in",
+            "cli_unavailable",
+            "unsupported_model",
+            "adapter_launch",
+            "adapter_exit",
+        ] {
             assert_eq!(classify_stop(Some(reason)), StopOutcome::Failed, "{reason}");
         }
         // A v1 adapter that returns without a stop reason has told us nothing

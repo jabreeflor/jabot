@@ -32,6 +32,7 @@ The scaffold (#7) lives at the repo root:
 - **Renderer:** `src/` — React 19 + TypeScript + Vite
 
 ```bash
+# Node 26 (Current). `.nvmrc` / `.node-version` match CI.
 npm install
 npm run tauri dev    # macOS dev (requires Tauri prerequisites)
 npm run build        # frontend-only build (CI / Linux)
@@ -46,6 +47,7 @@ the macOS bundle job no longer runs on pull requests. One command is the gate,
 and it runs on your machine:
 
 ```bash
+# Node 26 (Current) — `.nvmrc` matches CI and release
 npm install                              # deps, and installs the git hooks
 ./scripts/verify.sh                      # the whole gate, ~1.5 min warm
 ./scripts/checkpoint.sh -m "message"     # verify and commit, atomically
@@ -58,7 +60,10 @@ that gate can read. **[CONTRIBUTING.md](CONTRIBUTING.md)** has the
 whole local workflow: what every gate proves, what to do when each one fails,
 and the escape hatches. Native `JaBot.app` launch, Dock, Keychain, and
 updater-archive checks are [docs/macos-acceptance.md](docs/macos-acceptance.md)
-(#235) — Playwright WebKit is not that gate.
+(#235) — Playwright WebKit is not that gate. macOS-only Rust (`notify/mac.rs`,
+Keychain, the updater / hide-to-Dock branches) is linted on the PR by scoped
+jobs, not by `verify.sh` and not by a per-PR bundle — see
+[`docs/macos-lint.md`](docs/macos-lint.md).
 
 ## Prototypes
 

@@ -282,6 +282,69 @@ describe("Onboarding", () => {
     expect(stored.userName).toBe("Grace Hopper");
   });
 
+  it("re-enters setup from Settings with the record intact and the draft seeded", async () => {
+    const user = userEvent.setup();
+    await renderFirstRun();
+    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await walkToShell(user);
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Run setup again" }));
+
+    expect(
+      screen.getByRole("heading", { name: /What should the crew call you/ }),
+    ).toBeInTheDocument();
+    expect(window.localStorage.getItem(ONBOARDING_KEY)).not.toBeNull();
+    expect(screen.getByLabelText("YOUR NAME")).toHaveValue("Ada");
+  });
+
+  it("aborting a Settings re-run keeps the stored name instead of resetting it", async () => {
+    const user = userEvent.setup();
+    await renderFirstRun();
+    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await walkToShell(user);
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Run setup again" }));
+    await user.keyboard("{Escape}");
+
+    expect(screen.getByRole("button", { name: /^Inbox —/ })).toBeInTheDocument();
+    expect(screen.getByText("Ada")).toBeInTheDocument();
+    const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_KEY)!);
+    expect(stored.userName).toBe("Ada");
+  });
+
+  it("leaving setup from Settings does not write host settings", async () => {
+    const saveSettings = vi.fn(async () => ({
+      idleTimeoutMs: 600_000,
+      defaultFoldPolicy: "default",
+      idleTimeoutFromEnv: false,
+    }));
+    connected.mockResolvedValue({
+      client: {
+        disconnect: vi.fn(),
+        settings: vi.fn(async () => ({
+          idleTimeoutMs: 600_000,
+          defaultFoldPolicy: "default",
+          idleTimeoutFromEnv: false,
+        })),
+        saveSettings,
+      } as unknown as HostClient,
+      hello: HELLO,
+    });
+    const user = userEvent.setup();
+    await renderFirstRun();
+    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await walkToShell(user);
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "Run setup again" }));
+    await user.click(screen.getByRole("button", { name: "Skip setup" }));
+
+    expect(saveSettings).not.toHaveBeenCalled();
+    expect(screen.getByText("Ada")).toBeInTheDocument();
+  });
+
   it("does not run setup twice after Skip", async () => {
     const user = userEvent.setup();
     await renderFirstRun();

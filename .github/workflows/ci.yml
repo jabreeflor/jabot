@@ -36,7 +36,8 @@ jobs:
           components: rustfmt, clippy
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
+          node-version: 26
           cache: npm
       - uses: Swatinem/rust-cache@v2
         with:
@@ -63,11 +64,11 @@ jobs:
   # ~86% of the spend while `verify` was doing ~100% of the catching. It now
   # runs on merges to main, on release tags, and on demand.
   #
-  # What that gives up is real but small: `verify` compiles the same crate and
-  # runs every test, so the only thing left to bundling is the packaging step
-  # itself — icons, plist, signing, the universal lipo. Breaking that is caught
-  # on the merge to main, before any tag is cut, rather than on the pull
-  # request.
+  # What that gives up is the packaging step itself — icons, plist, signing,
+  # the universal lipo. `verify` compiles the portable crate; cfg(macos) Rust
+  # that Linux Clippy cannot see is linted on the PR by the scoped jobs below
+  # (docs/macos-lint.md), not by bundling. Breaking packaging is caught on
+  # the merge to main, before any tag is cut, rather than on the pull request.
   #
   # The config that step reads is validated without macOS, by the
   # `bundle-config` gate in scripts/verify.sh: tauri.conf.json parses, every
@@ -89,7 +90,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
+          node-version: 26
           cache: npm
       - uses: Swatinem/rust-cache@v2
         with:
@@ -101,3 +103,92 @@ jobs:
       # --config and are checked there (#235).
       - name: Package identity
         run: ./scripts/macos-acceptance.sh package
+
+  # Before-merge lint for cfg(target_os = "macos") Rust. The default verify
+  # job is Linux and compiles straight past those modules; the bundle job
+  # above is post-merge and is a packaging step, not a Clippy gate.
+  #
+  # Cost: a cheap Linux planner always runs on PRs. The notify cross-check
+  # is Linux + an Apple std, not a Mac runner. Native `macos clippy` is the
+  # 10x runner and starts only when the planner says lib.rs, secrets.rs,
+  # Cargo, toolchain, or the check itself changed — Clippy `--lib` only,
+  # rust-cache, no `tauri build`. Path lists live in
+  # scripts/macos-lint-needed.sh. Clippy warnings are errors (-D warnings).
+  macos-lint-plan:
+    name: macos lint plan
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      notify: ${{ steps.plan.outputs.notify }}
+      native: ${{ steps.plan.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch the PR base
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+      - id: plan
+        name: Classify changed paths
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ./scripts/macos-lint-needed.sh --force-all --github-output
+          else
+            ./scripts/macos-lint-needed.sh \
+              --base "${{ github.event.pull_request.base.sha }}" \
+              --head HEAD \
+              --github-output
+          fi
+      - name: Summarize
+        run: |
+          {
+            echo "### macOS lint plan"
+            echo
+            echo "| check | run | why |"
+            echo "| --- | --- | --- |"
+            echo "| mac notify cross-check (Linux) | ${{ steps.plan.outputs.notify }} | \`scripts/check-mac-notify.sh\` — existing scratch crate, \`-D warnings\` |"
+            echo "| macos clippy (native) | ${{ steps.plan.outputs.native }} | \`scripts/check-macos-clippy.sh --lib\` — Apple toolchain only |"
+            echo
+            echo "A \`0\` means the job is skipped so we do not start a runner."
+            echo "See \`docs/macos-lint.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  mac-notify-cross-check:
+    name: mac notify cross-check
+    needs: macos-lint-plan
+    if: needs.macos-lint-plan.outputs.notify == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          prefix-key: mac-notify-cross-check
+      - name: Lint notify/ for x86_64-apple-darwin
+        run: ./scripts/check-mac-notify.sh
+      - name: Prove an injected notify lint fails this check
+        run: ./scripts/tests/macos-lint.test.sh notify_injected
+
+  macos-clippy:
+    name: macos clippy
+    needs: macos-lint-plan
+    if: needs.macos-lint-plan.outputs.native == '1'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          prefix-key: macos-clippy
+      - name: Clippy the jabot lib (-D warnings)
+        run: ./scripts/check-macos-clippy.sh

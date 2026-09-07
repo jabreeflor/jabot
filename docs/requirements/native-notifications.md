@@ -37,3 +37,9 @@ and visible.
    write (see requirement 8 of
    [data-layer-persistence.md](data-layer-persistence.md) — the write
    happens first, regardless of notification outcome).
+
+`mac.rs` is `cfg(macos)` and is not seen by the default Linux Clippy. The
+before-merge lint is the existing scratch-crate cross-check
+(`scripts/check-mac-notify.sh`), run automatically on relevant PRs; see
+[macos-lint.md](../macos-lint.md). Delivery on a signed Mac is still the
+runtime checklist on decision [#73](https://github.com/jabreeflor/jabot/issues/73).
