@@ -5,11 +5,13 @@
 //! One agent turn that read six files and ran the tests is one thing that
 //! happened, and six stacked cards would read as six turns.
 
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 
+import { copyText } from "./copyText";
 import {
   CaretRightIcon,
   CheckIcon,
+  CopyIcon,
   CrossIcon,
   DotIcon,
   RingIcon,
@@ -128,7 +130,64 @@ function AgentBubble({ item }: { item: Extract<TranscriptItem, { kind: "agent" }
       <div className="bubble" data-streaming={item.streaming || undefined}>
         {nodes}
       </div>
+      {item.text.length > 0 && (
+        <div className="msg-actions" role="group" aria-label="Message actions">
+          <CopyResponseButton text={item.text} />
+        </div>
+      )}
     </div>
+  );
+}
+
+const COPY_IDLE = "Copy response";
+const COPY_OK = "Copied";
+const COPY_FAIL = "Couldn't copy to the clipboard";
+const COPY_FEEDBACK_MS = 2000;
+
+/**
+ * Copy this reply's source text — markdown, fences, line breaks — not the
+ * rendered bubble and not the chrome around it. Confirmation lives on the
+ * control so a success or a refusal is the same place the click was.
+ */
+function CopyResponseButton({ text }: { text: string }) {
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+
+  useEffect(() => {
+    if (status === "idle") return;
+    const id = window.setTimeout(() => setStatus("idle"), COPY_FEEDBACK_MS);
+    return () => window.clearTimeout(id);
+  }, [status]);
+
+  const tooltip =
+    status === "copied" ? COPY_OK : status === "failed" ? COPY_FAIL : COPY_IDLE;
+
+  function onCopy() {
+    void copyText(text).then(
+      () => setStatus("copied"),
+      () => setStatus("failed"),
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="msg-action"
+        aria-label={COPY_IDLE}
+        data-tooltip={tooltip}
+        data-state={status === "idle" ? undefined : status}
+        onClick={onCopy}
+      >
+        {status === "copied" ? <CheckIcon /> : <CopyIcon />}
+      </button>
+      <span
+        className="msg-action-status"
+        role={status === "failed" ? "alert" : "status"}
+        aria-live={status === "failed" ? "assertive" : "polite"}
+      >
+        {status === "idle" ? "" : tooltip}
+      </span>
+    </>
   );
 }
 

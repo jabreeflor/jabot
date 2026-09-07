@@ -361,6 +361,19 @@ export function CaretRightIcon({ className }: IconProps) {
   );
 }
 
+/**
+ * Overlapping squares: copy. The glyph is the two rectangles, not a
+ * clipboard, so it stays legible at the 15px the message action row draws.
+ */
+export function CopyIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <rect x="9" y="9" width="10" height="10" rx="2" />
+      <rect x="5" y="5" width="10" height="10" rx="2" />
+    </Stroke>
+  );
+}
+
 /** Send: the composer's submit, and the one on the schedule prompt (#25). */
 export function ArrowUpIcon({ className }: IconProps) {
   return (
