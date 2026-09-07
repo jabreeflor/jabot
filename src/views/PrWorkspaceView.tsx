@@ -4,10 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import type { HostClient } from "../host";
 import type { PullRequest } from "../components/types";
 import type { PrAction, PrFile } from "../host/prWorkspace";
+import { Select, type SelectOption } from "../components/Select";
 import { Tabs, tabButtonId } from "../components/Tabs";
 
 type Section = "conversation" | "files" | "commits" | "checks";
 type LineTarget = { path: string; line: number; side: "LEFT" | "RIGHT" };
+
+const MERGE_METHODS = [
+  { value: "squash", label: "Squash and merge" },
+  { value: "merge", label: "Create a merge commit" },
+  { value: "rebase", label: "Rebase and merge" },
+] as const satisfies readonly SelectOption[];
 
 export function PrWorkspaceView({
   pr,
@@ -570,7 +577,7 @@ export function PrWorkspaceView({
                 )}
               </main>
               <aside className="pr-aside">
-                <section className="pr-box pr-compose">
+                <section className="pr-box pr-compose pr-merge-box">
                   <h3>
                     {data.pr.merged
                       ? "Successfully merged"
@@ -599,18 +606,15 @@ export function PrWorkspaceView({
                           : "Convert to draft"}
                       </button>
                       <label htmlFor="merge-method">Merge method</label>
-                      <select
+                      <Select
                         id="merge-method"
                         value={strategy}
-                        onChange={(e) =>
-                          setStrategy(e.target.value as typeof strategy)
+                        options={MERGE_METHODS}
+                        onChange={(value) =>
+                          setStrategy(value as typeof strategy)
                         }
                         disabled={busy}
-                      >
-                        <option value="squash">Squash and merge</option>
-                        <option value="merge">Create a merge commit</option>
-                        <option value="rebase">Rebase and merge</option>
-                      </select>
+                      />
                       <button
                         className="btn primary"
                         disabled={blocked || busy || loading}

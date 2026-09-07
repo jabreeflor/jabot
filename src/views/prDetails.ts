@@ -3,6 +3,54 @@ import type { HostClient } from "../host";
 import type { PrTarget, PrWorkspace } from "../host/prWorkspace";
 
 export const PR_DETAIL_REFRESH_MS = 30_000;
+export const PR_DETAIL_CACHE_MAX = 5;
+
+/**
+ * Detail reads are expensive GitHub requests, while navigating back to the PR
+ * board destroys the workspace component. Keep the last good answer per host
+ * client so reopening a PR can paint immediately and revalidate in the
+ * background. The WeakMap gives the cache the same lifetime as the connection.
+ */
+const detailCache = new WeakMap<HostClient, Map<string, PrWorkspace>>();
+
+function cacheKey({ repo, number, host }: PrTarget): string {
+  return `${host}:${repo}#${number}`;
+}
+
+function cachedDetail(
+  client: HostClient | null,
+  target: PrTarget,
+): PrWorkspace | null {
+  if (!client) return null;
+  const clientCache = detailCache.get(client);
+  const key = cacheKey(target);
+  const detail = clientCache?.get(key) ?? null;
+  if (detail && clientCache) {
+    clientCache.delete(key);
+    clientCache.set(key, detail);
+  }
+  return detail;
+}
+
+function rememberDetail(
+  client: HostClient,
+  target: PrTarget,
+  detail: PrWorkspace,
+): void {
+  let clientCache = detailCache.get(client);
+  if (!clientCache) {
+    clientCache = new Map();
+    detailCache.set(client, clientCache);
+  }
+  const key = cacheKey(target);
+  clientCache.delete(key);
+  clientCache.set(key, detail);
+  while (clientCache.size > PR_DETAIL_CACHE_MAX) {
+    const oldest = clientCache.keys().next().value;
+    if (oldest === undefined) break;
+    clientCache.delete(oldest);
+  }
+}
 
 export function prWorkspaceError(error: unknown): string {
   if (error && typeof error === "object" && "data" in error) {
@@ -18,7 +66,10 @@ export function usePrDetails(
   { repo, number, host }: PrTarget,
   writing: { readonly current: boolean },
 ) {
-  const [data, setData] = useState<PrWorkspace | null>(null);
+  const target = { repo, number, host };
+  const [data, setData] = useState<PrWorkspace | null>(() =>
+    cachedDetail(client, target),
+  );
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
@@ -29,14 +80,15 @@ export function usePrDetails(
   }, []);
 
   useEffect(() => {
-    setData(null);
+    const cached = cachedDetail(client, target);
+    setData(cached);
     setPendingHead(null);
     setRefreshError(null);
     setLoading(false);
     setRefreshing(false);
     if (!client) return;
     let active = true;
-    let current: PrWorkspace | null = null;
+    let current = cached;
     let running: Promise<void> | null = null;
 
     async function read(background = false): Promise<void> {
@@ -50,8 +102,13 @@ export function usePrDetails(
         if (active) await read();
         return;
       }
-      if (!background) setLoading(true);
-      setRefreshing(true);
+      // Automatic revalidation is intentionally invisible: current data stays
+      // interactive and the explicit Refresh control does not flash or disable
+      // itself for timer, focus, or cache-warming reads.
+      if (!background) {
+        setLoading(true);
+        setRefreshing(true);
+      }
       running = (async () => {
         try {
           const next = await Promise.resolve().then(() =>
@@ -70,6 +127,7 @@ export function usePrDetails(
             return;
           }
           current = next;
+          rememberDetail(client!, target, next);
           setData(next);
           setPendingHead(null);
         } catch (error) {
@@ -79,8 +137,10 @@ export function usePrDetails(
         } finally {
           running = null;
           if (active) {
-            setLoading(false);
-            setRefreshing(false);
+            if (!background) {
+              setLoading(false);
+              setRefreshing(false);
+            }
           }
         }
       })();
@@ -91,7 +151,7 @@ export function usePrDetails(
       void read(true);
     };
     runner.current = () => read();
-    void read();
+    void read(cached !== null);
     const timer = window.setInterval(tick, PR_DETAIL_REFRESH_MS);
     window.addEventListener("focus", tick);
     document.addEventListener("visibilitychange", tick);

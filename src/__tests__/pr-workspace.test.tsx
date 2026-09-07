@@ -98,6 +98,33 @@ describe("PR workspace", () => {
       }),
     );
   });
+  it("uses the custom merge-method listbox with click and keyboard selection", async () => {
+    const client = mount();
+    const user = userEvent.setup();
+    const picker = await screen.findByRole("button", { name: "Merge method" });
+
+    expect(screen.queryByRole("combobox", { name: "Merge method" })).toBeNull();
+    await user.click(picker);
+    await user.click(
+      screen.getByRole("option", { name: "Create a merge commit" }),
+    );
+    expect(picker).toHaveTextContent("Create a merge commit");
+
+    await user.click(picker);
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(picker).toHaveTextContent("Rebase and merge");
+    expect(picker).toHaveFocus();
+
+    await user.tab();
+    expect(
+      screen.getByRole("button", { name: "Merge pull request…" }),
+    ).toHaveFocus();
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: "Confirm merge" }));
+    expect(client.pullRequestAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "merge", method: "rebase" }),
+    );
+  });
   it("blocks merge for a draft or unknown mergeability", async () => {
     mount({
       ...workspaceFixture,
