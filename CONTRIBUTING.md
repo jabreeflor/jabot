@@ -64,7 +64,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh --check-mac` | **whenever you touch `src-tauri/src/notify/`** — the only thing that lints `notify/mac.rs` (below) |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
-| `npm test` / `npm run test:e2e` | one slice, while you are working on it |
+| `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
@@ -124,7 +124,7 @@ one run tells you everything that is wrong.
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
 | `typecheck` | `tsc --noEmit`, strict, no `any` | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. |
-| `unit tests` | 200+ vitest cases in jsdom: React components and the host client | `npx vitest --project unit` to iterate |
+| `unit tests` | 200+ vitest cases in jsdom: React components, host client, and axe on the primary views | `npx vitest --project unit` to iterate; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | `rust clippy` | `-D warnings` over all targets, `dev-bins` included | fix, or justify a narrow `#[allow]` in the code. Do not suggest APIs newer than the `msrv` in `src-tauri/clippy.toml`. |
 | `default-features check` | the crate still compiles *without* `dev-bins`, i.e. what `tauri build` actually compiles | usually a `cfg` or an import that only exists under the dev binaries |
@@ -137,6 +137,23 @@ one run tells you everything that is wrong.
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
 caused a real failure at least once.
+
+## Accessibility tests
+
+Axe-core runs inside the unit project (`src/__tests__/a11y.test.tsx`) against
+the primary views: sidebar, chat thread, Settings, PR board, and New Chat /
+harness picker. Critical and serious violations fail the run. Moderate and
+minor findings do not, and color-contrast is off because jsdom cannot paint.
+
+```bash
+npm run test:a11y
+# same slice:
+npx vitest run --project unit src/__tests__/a11y.test.tsx
+```
+
+`npm test` and `./scripts/verify.sh` already include them — there is no extra
+CI job. To add a view, render it the way the existing unit test does and call
+`expectNoSeriousA11yViolations(container)` from `tests/support/a11y.ts`.
 
 ## Committing: `scripts/checkpoint.sh`
 

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add automated accessibility tests for primary views</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .views { display:grid; grid-template-columns:repeat(5,1fr); gap:10px; margin-top:18px; }
+    .views div { padding:12px 10px; background:#0f141a; border-radius:9px; font-size:13px; font-weight:650; text-align:center; }
+    .gate { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .gate div { padding:14px; background:#0f141a; border-radius:9px; }
+    .gate strong { display:block; margin-bottom:6px; }
+    .fail { color:var(--bad); }
+    .pass { color:var(--ok); }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    @media (max-width:700px) { .flow,.gate,.views { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #205 walkthrough</div>
+    <h1>Add automated accessibility tests for primary views</h1>
+    <p>Axe-core now runs inside the existing Vitest unit project. A new critical or serious violation on the sidebar, chat thread, Settings, PR board, or New Chat / harness picker fails the same gate CI already runs.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>Views had role and label tests, but no axe scan.</li>
+            <li>A nameless control could land on <code>main</code> if nobody wrote a getByRole assertion for it.</li>
+            <li>Nothing in CI failed on a new serious violation.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li>Each primary view renders with the fixtures the unit tests already trust.</li>
+            <li><code>axe.run</code> scores the DOM; only critical/serious findings throw.</li>
+            <li><code>verify.sh</code> already runs the unit project, so CI picks this up for free.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="views">
+        <div>Sidebar</div>
+        <div>Chat thread</div>
+        <div>Settings</div>
+        <div>PR board</div>
+        <div>New Chat picker</div>
+      </div>
+      <div class="gate">
+        <div>
+          <strong class="fail">Fails the run</strong>
+          Critical and serious WCAG 2.0/2.1 A/AA findings. The helper’s first test is a nameless button, so a silent no-op cannot pass.
+        </div>
+        <div>
+          <strong class="pass">Does not fail</strong>
+          Moderate and minor findings, and color-contrast — jsdom cannot paint, so contrast checks here would be noise, not proof.
+        </div>
+      </div>
+      <p>The one product fix the gate required: an open <code>Select</code> listbox had no accessible name. It is now labelled from its trigger via <code>aria-labelledby</code>, and the trigger points at the list with <code>aria-controls</code>.</p>
+    </section>
+
+    <section id="review">
+      <h2>What to look at</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>tests/support/a11y.ts</code></td><td>Runs axe-core and throws a readable report for critical/serious violations only.</td></tr>
+          <tr><td><code>src/__tests__/a11y.test.tsx</code></td><td>The five primary views, plus a meta-test that a nameless button fails the gate.</td></tr>
+          <tr><td><code>src/components/Select.tsx</code></td><td>Names the open listbox from the trigger so the harness picker is not an anonymous ARIA input.</td></tr>
+          <tr><td><code>CONTRIBUTING.md</code></td><td>How to run the slice locally: <code>npm run test:a11y</code>.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li>Run <code>npm run test:a11y</code> — six tests, including the nameless-button failure and the five views.</li>
+        <li>Open the harness picker in that suite and confirm the listbox is named from <code>Harness: …</code>.</li>
+        <li><code>./scripts/verify.sh</code> already includes them via <code>npx vitest run --project unit</code>. This PR’s push ran that gate green.</li>
+        <li>To add a view later: render it the way its unit test does, then call <code>expectNoSeriousA11yViolations(container)</code>.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

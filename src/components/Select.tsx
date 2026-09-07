@@ -53,6 +53,8 @@ export function Select({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const listId = useId();
+  const generatedId = useId();
+  const triggerId = id ?? generatedId;
   const selected = options.find((option) => option.value === value);
 
   // Opening always lands on the current value, not wherever the last close
@@ -124,13 +126,14 @@ export function Select({
     >
       <button
         type="button"
-        id={id}
+        id={triggerId}
         className={
           variant === "chip" ? "mselect-trigger ctx-chip" : "mselect-trigger"
         }
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
         disabled={disabled}
         onClick={() => setOpen((was) => !was)}
         ref={triggerRef}
@@ -145,6 +148,9 @@ export function Select({
           role="listbox"
           id={listId}
           tabIndex={-1}
+          // Named from the trigger so an open listbox is not an anonymous
+          // ARIA input — axe treats that as serious, and so does a reader.
+          aria-labelledby={triggerId}
           aria-activedescendant={
             options[active] ? `${listId}-${active}` : undefined
           }
