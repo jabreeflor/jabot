@@ -6,17 +6,18 @@
 //! and one readiness story that applies to all of them, because the interesting
 //! failures (logged out, daemon down, adapter missing) are not tier-specific.
 //!
-//! The host never installs anything. A card can say how to install a harness
+//! Catalog cards never install anything. A card can say how to install a harness
 //! and link to instructions; it cannot run an installer, from any tier. What
 //! it can do is *find* an adapter the build already shipped — `bundled.rs`,
 //! staged by `scripts/bundle-adapters.sh` and copied into JaBot.app by
 //! `bundle.resources` — so that installing JaBot is one install rather than
-//! two. That is still not the host installing anything at run time.
+//! two. Onboarding separately offers explicit, pinned adapter installs (`install.rs`).
 
 pub mod bundled;
 pub mod catalog;
 pub mod custom;
 pub mod doctor;
+pub mod install;
 pub mod path;
 
 use std::collections::BTreeMap;

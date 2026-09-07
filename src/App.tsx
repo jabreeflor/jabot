@@ -152,6 +152,7 @@ function App() {
     />
   ) : (
     <Onboarding
+      client={host.client}
       harnesses={liveHarnesses ?? HARNESSES}
       profile={editing ?? undefined}
       hostLine={hostLine(host.hello, host.hostError, host.connecting)}
