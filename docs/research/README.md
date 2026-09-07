@@ -89,7 +89,7 @@ docs/research/
   README.md                          ← you are here
   harness-integration/
     brief.md  findings.md  acp.md  adapter-design.md
-    claude-code.md  codex.md  pi.md  aider.md  buzz.md
+    claude-code.md  codex.md  pi.md  gemini.md  aider.md  buzz.md
   setup-porting/
     brief.md  findings.md  openclaw.md  hermes.md  buzz.md
   session-lifecycle/

@@ -350,6 +350,15 @@ mod tests {
             }
             self.output.clone()
         }
+        fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
+            self.output(command, args)
+        }
+        fn env(&self, _: &str) -> Option<String> {
+            None
+        }
+        fn home_file(&self, _: &str) -> Option<String> {
+            None
+        }
     }
 
     impl AiderFacts for Fake {

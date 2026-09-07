@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 use super::super::procgroup;
 use super::super::protocol::methods::HarnessStatus;
 use super::aider::AiderFacts;
-use super::catalog::{HarnessDescriptor, Launch, Readiness};
+use super::catalog::{HarnessDescriptor, InspectKind, Launch, Readiness};
+use super::gemini;
 
 /// A readiness command gets this long before it is killed. Long enough for a
 /// CLI that checks a token over the network, short enough that five of them in
@@ -45,6 +46,14 @@ pub trait ProbeHost: Sync {
     /// (Aider's `--version`, for example). Failed / timed-out runs stay
     /// [`ProbeRun`].
     fn output(&self, command: &str, args: &[String]) -> Result<String, ProbeRun>;
+    /// Captured stdout+stderr of a short probe. Used when the exit code is
+    /// not the diagnosis (`gemini --help` lists flags; `gemini --version`
+    /// names the build).
+    fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun>;
+    fn env(&self, key: &str) -> Option<String>;
+    /// A file under `$HOME`, using `/` separators. `None` if missing or empty
+    /// is still `Some` — the caller decides whether blank counts.
+    fn home_file(&self, relative: &str) -> Option<String>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,6 +257,27 @@ fn diagnose_with(
                 }
             }
         }
+        Readiness::Inspect {
+            kind: InspectKind::Gemini,
+        } => {
+            let inspected = gemini::inspect(probe, launch);
+            if inspected.status != HarnessStatus::Ready {
+                return finish(
+                    inspected.status,
+                    inspected.detail,
+                    inspected.remedy,
+                    Some(inspected.launch),
+                    Some(path),
+                );
+            }
+            return finish(
+                HarnessStatus::Ready,
+                inspected.detail,
+                None,
+                Some(inspected.launch),
+                Some(path),
+            );
+        }
     }
 
     let detail = if launch.downloads_on_first_run {
@@ -289,18 +319,34 @@ impl SystemProbe {
     /// The deadline is a parameter so the kill path can be tested without
     /// waiting out the real one.
     fn run_until(&self, command: &str, args: &[String], timeout: Duration) -> ProbeRun {
+        match self.run_until_output(command, args, timeout, false) {
+            Ok(_) => ProbeRun::Exit(0),
+            Err(run) => run,
+        }
+    }
+
+    fn run_until_output(
+        &self,
+        command: &str,
+        args: &[String],
+        timeout: Duration,
+        capture: bool,
+    ) -> Result<String, ProbeRun> {
         // Resolve first so the child is exec'd from the same augmented PATH
         // the probe searched, and inherit that PATH so a CLI that shells out
         // to `node` finds the same one the terminal would.
         let Some(path) = self.resolve(command) else {
-            return ProbeRun::Failed(format!("{command} is not on PATH"));
+            return Err(ProbeRun::Failed(format!("{command} is not on PATH")));
         };
         let mut cmd = Command::new(path);
         cmd.args(args)
             .env("PATH", super::path::joined())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stdin(Stdio::null());
+        if capture {
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        } else {
+            cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        }
         // A probe is the one command most likely to hang — that is why the
         // user opened the Doctor — and every one of these CLIs is a wrapper
         // that forks work of its own. Killing the pid alone would leave that
@@ -308,20 +354,45 @@ impl SystemProbe {
         procgroup::own_group(&mut cmd);
         let mut child = match cmd.spawn() {
             Ok(child) => child,
-            Err(err) => return ProbeRun::Failed(err.to_string()),
+            Err(err) => return Err(ProbeRun::Failed(err.to_string())),
         };
         let deadline = Instant::now() + timeout;
         loop {
             match child.try_wait() {
-                Ok(Some(status)) => return ProbeRun::Exit(status.code().unwrap_or(-1)),
+                Ok(Some(status)) => {
+                    let output = if capture {
+                        let mut buf = String::new();
+                        if let Some(mut stdout) = child.stdout.take() {
+                            let _ = std::io::Read::read_to_string(&mut stdout, &mut buf);
+                        }
+                        if let Some(mut stderr) = child.stderr.take() {
+                            let _ = std::io::Read::read_to_string(&mut stderr, &mut buf);
+                        }
+                        buf
+                    } else {
+                        String::new()
+                    };
+                    return if status.success() || capture {
+                        // Help/version still count when the CLI prints to
+                        // stderr and exits 0 *or* when it exits non-zero
+                        // after writing the text we needed.
+                        if capture {
+                            Ok(output)
+                        } else {
+                            Ok(String::new())
+                        }
+                    } else {
+                        Err(ProbeRun::Exit(status.code().unwrap_or(-1)))
+                    };
+                }
                 Ok(None) if Instant::now() < deadline => {
                     std::thread::sleep(Duration::from_millis(25));
                 }
                 Ok(None) => {
                     procgroup::terminate(&mut child);
-                    return ProbeRun::TimedOut;
+                    return Err(ProbeRun::TimedOut);
                 }
-                Err(err) => return ProbeRun::Failed(err.to_string()),
+                Err(err) => return Err(ProbeRun::Failed(err.to_string())),
             }
         }
     }
@@ -395,6 +466,20 @@ impl ProbeHost for SystemProbe {
         self.output_until(command, args, PROBE_TIMEOUT)
     }
 
+    fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
+        self.run_until_output(command, args, PROBE_TIMEOUT, true)
+    }
+
+    fn env(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok().filter(|value| !value.is_empty())
+    }
+
+    fn home_file(&self, relative: &str) -> Option<String> {
+        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        let path = relative.split('/').fold(home, |dir, part| dir.join(part));
+        std::fs::read_to_string(path).ok()
+    }
+
     fn listening(&self, addr: &str) -> bool {
         let Ok(mut resolved) = addr.to_socket_addrs() else {
             return false;
@@ -417,6 +502,9 @@ mod tests {
         installed: HashMap<String, PathBuf>,
         exits: HashMap<String, ProbeRun>,
         outputs: HashMap<String, String>,
+        stdout: HashMap<String, String>,
+        env: HashMap<String, String>,
+        files: HashMap<String, String>,
         open_ports: Vec<String>,
         delay: Duration,
         calls: Mutex<Vec<String>>,
@@ -439,7 +527,20 @@ mod tests {
         }
 
         fn printing(mut self, command: &str, text: impl Into<String>) -> Self {
-            self.outputs.insert(command.to_string(), text.into());
+            let text = text.into();
+            self.outputs.insert(command.to_string(), text.clone());
+            self.stdout.insert(command.to_string(), text);
+            self
+        }
+
+        fn with_env(mut self, key: &str, value: &str) -> Self {
+            self.env.insert(key.to_string(), value.to_string());
+            self
+        }
+
+        fn with_file(mut self, relative: &str, contents: &str) -> Self {
+            self.files
+                .insert(relative.to_string(), contents.to_string());
             self
         }
     }
@@ -481,6 +582,25 @@ mod tests {
                 ProbeRun::Exit(0) => Ok(self.outputs.get(command).cloned().unwrap_or_default()),
                 other => Err(other),
             }
+        }
+
+        fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
+            match self.run(command, args) {
+                ProbeRun::Exit(0) | ProbeRun::Exit(_) => self
+                    .stdout
+                    .get(command)
+                    .cloned()
+                    .ok_or_else(|| ProbeRun::Failed(format!("{command} printed nothing"))),
+                other => Err(other),
+            }
+        }
+
+        fn env(&self, key: &str) -> Option<String> {
+            self.env.get(key).cloned()
+        }
+
+        fn home_file(&self, relative: &str) -> Option<String> {
+            self.files.get(relative).cloned()
         }
     }
 
@@ -657,6 +777,92 @@ mod tests {
         let report = diagnose(&descriptor("pi"), &machine);
         assert_eq!(report.status, HarnessStatus::Ready);
         assert!(report.detail.contains("first use"), "{}", report.detail);
+    }
+
+    fn gemini_ready() -> FakeMachine {
+        FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp --debug")
+            .with_env("GEMINI_API_KEY", "test-key")
+    }
+
+    #[test]
+    fn gemini_without_the_cli_blames_the_product() {
+        let report = diagnose(&descriptor("gemini"), &FakeMachine::default());
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+        assert!(report.detail.contains("gemini"), "{}", report.detail);
+        assert!(report.remedy.is_some());
+    }
+
+    #[test]
+    fn gemini_without_acp_flags_is_outdated() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --prompt --yolo")
+            .with_env("GEMINI_API_KEY", "test-key");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::AdapterOutdated);
+        assert!(report.remedy.unwrap().contains("--acp"));
+    }
+
+    #[test]
+    fn gemini_without_auth_says_logged_out() {
+        let machine = FakeMachine::with(&["gemini"]).printing("gemini", "Usage: gemini --acp");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("GEMINI_API_KEY"));
+    }
+
+    #[test]
+    fn gemini_account_profile_counts_as_signed_in() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_file(
+                ".gemini/settings.json",
+                r#"{"security":{"auth":{"selectedType":"oauth-personal"}}}"#,
+            );
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert_eq!(report.launch.unwrap().args, ["--acp"]);
+    }
+
+    #[test]
+    fn gemini_vertex_without_a_project_is_invalid_config() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_file(
+                ".gemini/settings.json",
+                r#"{"security":{"auth":{"selectedType":"vertex-ai"}}}"#,
+            );
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("GOOGLE_CLOUD_PROJECT"));
+    }
+
+    #[test]
+    fn gemini_empty_model_name_is_invalid_config() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_env("GEMINI_API_KEY", "test-key")
+            .with_file(".gemini/settings.json", r#"{"model":{"name":""}}"#);
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("model.name"));
+    }
+
+    #[test]
+    fn gemini_falls_back_to_the_experimental_flag() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "  --experimental-acp  Start ACP mode")
+            .with_env("GEMINI_API_KEY", "test-key");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert_eq!(report.launch.unwrap().args, ["--experimental-acp"]);
+    }
+
+    #[test]
+    fn a_ready_gemini_uses_the_documented_acp_flag() {
+        let report = diagnose(&descriptor("gemini"), &gemini_ready());
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert!(report.detail.contains("--acp"), "{}", report.detail);
     }
 
     /// The Doctor is the thing a user opens *because* a CLI is hanging, so the

@@ -103,13 +103,17 @@ impl Loopback {
 /// `Some` once a request on the callback path has been answered; `None` for
 /// anything else on the socket.
 fn handle(mut stream: TcpStream, expected_state: &str) -> Option<Result<String, LoopbackError>> {
+    // Accepted sockets inherit nonblocking mode on macOS (and can under load
+    // on Linux). A WouldBlock here used to drop the request, so a CSRF
+    // mismatch that the client had already written came back as an empty
+    // read while the waiter timed out.
+    stream.set_nonblocking(false).ok()?;
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
     let mut line = String::new();
-    if BufReader::new(stream.try_clone().ok()?)
-        .read_line(&mut line)
-        .is_err()
-    {
-        return None;
+    match BufReader::new(stream.try_clone().ok()?).read_line(&mut line) {
+        Ok(0) | Err(_) => return None,
+        Ok(_) => {}
     }
     let target = line.split_whitespace().nth(1)?;
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
@@ -221,9 +225,16 @@ fn percent_decode(value: &str) -> String {
 mod tests {
     use super::*;
     use std::io::Read;
+    use std::net::Shutdown;
 
     /// Drive the listener the way a browser does: a real GET on a real socket.
     fn call(redirect_uri: &str, query: &str) -> String {
+        call_after(redirect_uri, query, Duration::ZERO)
+    }
+
+    /// Same as [`call`], but pause after connect so accept can run before
+    /// the request bytes arrive — the load flake `handle` used to drop.
+    fn call_after(redirect_uri: &str, query: &str, pause: Duration) -> String {
         let authority = redirect_uri
             .trim_start_matches("http://")
             .split('/')
@@ -232,10 +243,20 @@ mod tests {
             .to_string();
         let mut stream = TcpStream::connect(authority).expect("connect to the loopback listener");
         stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("client read timeout");
+        stream
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .expect("client write timeout");
+        if !pause.is_zero() {
+            std::thread::sleep(pause);
+        }
+        stream
             .write_all(
                 format!("GET /callback?{query} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes(),
             )
             .unwrap();
+        let _ = stream.shutdown(Shutdown::Write);
         let mut response = String::new();
         let _ = stream.read_to_string(&mut response);
         response
@@ -286,7 +307,13 @@ mod tests {
     #[test]
     fn a_mismatched_state_is_refused() {
         let (redirect_uri, _cancel, handle) = spawn_wait("state-abc");
-        let response = call(&redirect_uri, "code=auth-code-1&state=state-forged");
+        // Pause after connect: under load the waiter accepts before the GET
+        // line is written. The socket must block-with-timeout, not drop.
+        let response = call_after(
+            &redirect_uri,
+            "code=auth-code-1&state=state-forged",
+            Duration::from_millis(80),
+        );
         assert!(response.starts_with("HTTP/1.1 400"), "{response}");
         assert!(matches!(
             handle.join().unwrap(),

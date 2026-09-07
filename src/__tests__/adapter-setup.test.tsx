@@ -133,4 +133,29 @@ describe("onboarding adapter setup", () => {
     await waitFor(() => expect(client.harnessDoctor).toHaveBeenCalledTimes(2));
     await screen.findByText("Codex adapter is missing.");
   });
+  it("offers Gemini CLI install with a separate sign-in note", async () => {
+    const client = {
+      harnessDoctor: vi.fn().mockResolvedValue({
+        reports: [{
+          id: "gemini",
+          ready: false,
+          status: "cli_missing",
+          detail: "Gemini CLI is not installed.",
+          remedy: "Install Gemini CLI.",
+        }],
+      }),
+      installHarness: vi.fn().mockResolvedValue({ running: false, error: null }),
+    };
+    render(
+      <AdapterSetup
+        client={client as unknown as HostClient}
+        harnessId="gemini"
+        onContinue={() => {}}
+      />,
+    );
+    expect(
+      await screen.findByText(/Install Gemini CLI into ~\/.local/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Install adapter" })).toBeEnabled();
+  });
 });

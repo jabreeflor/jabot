@@ -17,7 +17,7 @@ export function AdapterSetup({
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [installing, setInstalling] = useState(false);
-  const supported = ["claude", "codex", "pi"].includes(harnessId);
+  const supported = ["claude", "codex", "pi", "gemini"].includes(harnessId);
   useEffect(() => {
     let active = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -93,8 +93,9 @@ export function AdapterSetup({
       {!ready && report?.remedy && <p>{report.remedy}</p>}
       {!ready && supported && (
         <p>
-          Install the ACP adapter into ~/.local. Your engine CLI and account
-          sign-in are separate.
+          {harnessId === "gemini"
+            ? "Install Gemini CLI into ~/.local. Sign-in is separate — run gemini once, or export GEMINI_API_KEY."
+            : "Install the ACP adapter into ~/.local. Your engine CLI and account sign-in are separate."}
         </p>
       )}
       <div className="setup-foot">

@@ -10,12 +10,28 @@
  *
  * Closed, the rail keeps a strip the traffic lights can sit on and the
  * toggle that opens it again. The list is unmounted, not hidden, so Tab
- * cannot wander into a column that is not on screen.
+ * cannot wander into a column that is not on screen. A peek is the same
+ * list, mounted over the chat, without changing the pin.
  */
+
+.sidebar-slot {
+  flex: none;
+  position: relative;
+  width: var(--sidebar-w);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-slot.is-collapsed {
+  width: var(--traffic-lights-w);
+  z-index: 40;
+}
 
 .sidebar {
   width: var(--sidebar-w);
-  flex: none;
+  flex: 1;
+  min-height: 0;
   background: var(--side);
   border-right: 1px solid var(--line);
   display: flex;
@@ -113,8 +129,18 @@
  * onto the chat.
  */
 .sidebar.is-collapsed {
+  position: absolute;
+  inset: 0 auto 0 0;
   width: var(--traffic-lights-w);
   overflow: hidden;
+  transition:
+    width var(--t-sidebar) var(--ease-sidebar),
+    box-shadow var(--t-sidebar) ease;
+}
+
+.sidebar.is-collapsed.is-peeking {
+  width: var(--sidebar-w);
+  box-shadow: 16px 0 40px color-mix(in srgb, #000 36%, transparent);
 }
 
 .sidebar.is-collapsed .sidebar-search {
@@ -178,11 +204,11 @@
   --blob-size: 42px;
 }
 
-/* The ring is round even though an avatar's box is square: what the box holds
-   is a circle, and a square halo would read as a tile around the bot rather
-   than a highlight on it. */
-.bot-row[aria-current="true"] .av,
-.bot-row[aria-current="true"] .cluster {
+/* Highlight the selected avatar once, without outlining each Crew member.
+   Direct children only: a cluster holds three nested `.av`s, and a descendant
+   selector would ring every silhouette instead of the tile. */
+.bot-row[aria-current="true"] > .av,
+.bot-row[aria-current="true"] > .cluster {
   border-radius: 50%;
   box-shadow:
     0 0 0 2px var(--side),

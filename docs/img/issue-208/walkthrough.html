@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Add a Settings option to rerun onboarding</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; background: #101417; color: #edf2f5; font: 18px/1.6 system-ui, sans-serif; }
+    main { max-width: 1080px; margin: 0 auto; padding: 64px 48px 96px; }
+    .pill { display: inline-block; color: #11201b; background: #9ad8bc; border-radius: 30px; padding: 6px 15px; font-size: 14px; font-weight: 600; }
+    h1 { font-size: 46px; line-height: 1.15; margin: 18px 0 12px; }
+    .lede { font-size: 20px; color: #bfccd3; max-width: 42em; }
+    h2 { font-size: 26px; color: #61d6bd; margin: 0 0 12px; }
+    section { margin: 36px 0; padding: 24px 28px; background: #1d2428; border: 1px solid #34454c; border-radius: 18px; }
+    p, li { color: #bfccd3; }
+    code { color: #a2c9f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+    .flow { font-size: 22px; color: #f0f5f8; letter-spacing: 0.01em; }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 10px 12px 10px 0; vertical-align: top; color: #bfccd3; }
+    td:first-child { color: #edf2f5; white-space: nowrap; padding-right: 20px; }
+    .keep { color: #9ad8bc; }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="pill">JaBot · issue 208 · PR 211</span>
+    <h1>Add a Settings option to rerun onboarding</h1>
+    <p class="lede">A person who already finished setup can replay the same first-run cards from Settings. The stored profile stays put until they finish, so Escape or Skip cannot trap them in setup or wipe their name.</p>
+
+    <section id="flow">
+      <h2>How it works</h2>
+      <p>Crew already had this re-entry. Settings now calls the same <code>onRunSetup</code> path:</p>
+      <p class="flow">Settings → Run setup again → seed the draft from the stored profile → same 3 panes → Enter JaBot, Skip, or Escape</p>
+      <p>The gate never deletes <code>jabot.onboarding.v1</code> when the takeover opens. <code>onFinish</code> overwrites it. Quitting mid-re-run leaves the old record. Host settings, bots, and threads are not written unless the user changes them on those panes.</p>
+    </section>
+
+    <section id="preserve">
+      <h2>What is preserved</h2>
+      <table>
+        <tr><td class="keep">Kept</td><td>Onboarding record until finish; host knobs; bots; threads; devices.</td></tr>
+        <tr><td>Changed only if the user says so</td><td>Display name and default engine, when they Continue through those panes or Skip with a new draft.</td></tr>
+        <tr><td>Exit</td><td>Escape and Skip setup persist the current draft (or the name already stored) and return to the shell.</td></tr>
+      </table>
+    </section>
+
+    <section id="files">
+      <h2>What to look at</h2>
+      <table>
+        <tr><td><code>src/views/SettingsView.tsx</code></td><td>General grows a Setup section with <strong>Run setup again</strong>. It paints without waiting on the host.</td></tr>
+        <tr><td><code>src/App.tsx</code></td><td>Hands Settings the existing <code>onRunSetup</code>. Storage is not wiped first.</td></tr>
+        <tr><td><code>src/onboarding/Onboarding.tsx</code></td><td>Unchanged: seeded draft, Escape = Skip, same three panes.</td></tr>
+        <tr><td><code>src/__tests__/onboarding.test.tsx</code></td><td>Settings re-entry, Escape abort, and no <code>settings/set</code> on leave.</td></tr>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <p>Open Settings → General. Scroll to Setup. Choose <strong>Run setup again</strong>. Confirm the name field is seeded. Press Escape. Confirm the sidebar still shows the same name and the shell is usable.</p>
+      <p><code>./scripts/verify.sh</code></p>
+      <p>Live evidence in this folder: <code>settings-setup.png</code>, <code>setup-from-settings.png</code>, <code>setup-escape.png</code>.</p>
+    </section>
+  </main>
+</body>
+</html>

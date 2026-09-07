@@ -7,7 +7,7 @@
 
 The layer that turns "a bot" into a real subprocess speaking the Agent
 Client Protocol (ACP) over stdio: spawning, connection setup, wake/idle
-signaling, and a catalog of known harnesses (Claude Code, Codex, Pi,
+signaling, and a catalog of known harnesses (Claude Code, Codex, Pi, Gemini CLI,
 Hermes, Aider, OpenClaw, custom JSON) with a "Doctor" that checks whether each
 is actually installed and usable. Aider is a scripting-CLI wrapper, not a
 native ACP agent — see [aider.md](../research/harness-integration/aider.md).
@@ -46,7 +46,7 @@ host-owned "thin LLM + MCP" runtime. This module is that one runtime.
    design in
    [`docs/decisions/issues-4-6.md`](../decisions/issues-4-6.md#buzz-style-harness-catalog):
    - **Tier 1 — compiled-in**: shipped cards with reserved ids
-     (`claude`, `codex`, `pi`), including auth probes.
+     (`claude`, `codex`, `pi`, `gemini`), including auth probes.
    - **Tier 2 — presets**: PATH-probed, not user-editable (Hermes,
      Aider, OpenClaw, Cursor, …), resolved via `path.rs`.
    - **Tier 3 — user JSON**: user-supplied custom harness definitions

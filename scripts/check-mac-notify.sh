@@ -8,11 +8,10 @@
 # WHY THIS EXISTS
 #
 # `src-tauri/src/notify/mod.rs` gates `mod mac;` behind
-# `#[cfg(target_os = "macos")]`, so nothing in ./scripts/verify.sh — the repo's
-# only gate, which runs on Linux — ever compiles or lints that file. CI's
-# `bundle` job is the only thing that would, and it does not run on pull
-# requests. So `mac.rs` can rot silently until somebody builds on a Mac, which
-# is the worst possible moment to find out.
+# `#[cfg(target_os = "macos")]`, so nothing in the default ./scripts/verify.sh
+# path — offline, Linux — ever compiles or lints that file. CI's `bundle` job
+# is packaging, post-merge, and not a Clippy gate. This script is the lint;
+# CI's `mac notify cross-check` job runs it on relevant PRs (docs/macos-lint.md).
 #
 # WHY A SCRATCH CRATE AND NOT `cargo clippy --target x86_64-apple-darwin`
 #
@@ -25,13 +24,17 @@
 # NETWORK. The scratch crate resolves and downloads the macOS-only half of the
 # dependency graph, which a Linux build has never fetched. That is why this is
 # its own script and an opt-in `--check-mac` stage rather than part of the
-# default offline path.
+# default offline path. CI's `mac notify cross-check` job runs it automatically
+# when scripts/macos-lint-needed.sh says the PR touches notify/, this script,
+# or a shared Cargo/toolchain file. Local `./scripts/verify.sh` stays offline.
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT=$(pwd)
 MANIFEST="$ROOT/src-tauri/Cargo.toml"
-NOTIFY="$ROOT/src-tauri/src/notify"
+# Tests point this at a copy so they can inject a lint without touching the
+# worktree. CI and `--check-mac` leave it at the real module.
+NOTIFY="${JABOT_NOTIFY_DIR:-$ROOT/src-tauri/src/notify}"
 TARGET=x86_64-apple-darwin
 
 fail() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
@@ -127,7 +130,7 @@ pub mod host {
 pub mod notify;
 RS
 
-printf 'cross-checking %s against %s\n' "src-tauri/src/notify/" "$TARGET"
+printf 'cross-checking %s against %s\n' "${NOTIFY#$ROOT/}" "$TARGET"
 cargo clippy \
   --manifest-path "$SCRATCH/Cargo.toml" \
   --target "$TARGET" \
