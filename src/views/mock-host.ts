@@ -60,7 +60,7 @@ export function hostedByApp(): boolean {
 }
 
 /**
- * The tier-1 compiled-in harnesses, and only those — the same three ids
+ * The tier-1 compiled-in harnesses, and only those — the same shipped ids
  * `seed.rs` writes into `harnesses`, because `threads.harness_id` is a foreign
  * key onto that table.
  *
@@ -91,6 +91,12 @@ export const HARNESSES: readonly HarnessCard[] = [
     label: "Pi",
     blurb: "Mario Zechner's coding agent",
     accent: "var(--h-pi)",
+  },
+  {
+    id: "gemini",
+    label: "Gemini CLI",
+    blurb: "Google's Gemini CLI over its documented ACP mode",
+    accent: "var(--h-gemini)",
   },
 ];
 

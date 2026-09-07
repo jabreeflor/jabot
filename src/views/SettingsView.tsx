@@ -229,7 +229,8 @@ function GeneralSettings({
                   ? ids.filter((id) => id !== harness.id) : [...ids, harness.id] });
               }} />
             <span><b>{harness.label}</b><small>{harness.available === false
-              ? harness.installHint ?? "Not installed" : harness.blurb}</small></span>
+              ? harness.installHint ?? "Not installed" : harness.blurb}
+              {harness.capabilityNotes ? ` ${harness.capabilityNotes}` : ""}</small></span>
           </label>
         ))}
       </section>

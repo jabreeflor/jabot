@@ -41,6 +41,20 @@ function draw(over: Partial<Parameters<typeof SettingsView>[0]> = {}) {
 const minutes = () => screen.getByLabelText(/Go quiet after/);
 
 describe("SettingsView", () => {
+  it("declares Gemini capabilities next to the enable toggle", () => {
+    draw({
+      harnesses: [{
+        id: "gemini",
+        label: "Gemini CLI",
+        accent: "var(--h-gemini)",
+        blurb: "Google's Gemini CLI over its documented ACP mode",
+        capabilityNotes: "Streams, tools, permissions, cancel, and session/load.",
+      }],
+    });
+    expect(screen.getByRole("checkbox", { name: /Gemini CLI/ })).toBeChecked();
+    expect(screen.getByText(/session\/load/)).toBeVisible();
+  });
+
   it("enables a missing adapter while retaining other disabled harnesses and install guidance", async () => {
     const props = draw({
       settings: { ...SETTINGS, disabledHarnessIds: ["pi", "custom"] },

@@ -124,6 +124,7 @@ with Buzz's three tiers and OpenClaw/Hermes as first-class presets:
 |---|---|---|---|---|
 | Claude | `claude-agent-acp` (fallback `claude-code-acp`) | — | existing Claude login | `claude auth status` |
 | Codex | `codex-acp` | — | existing `codex login` | `codex login status` |
+| Gemini | `gemini` | `--acp` (fallback `--experimental-acp`) | `~/.gemini` profile / `GEMINI_API_KEY` | help flags + account-profile inspect; see [gemini.md](../harness-integration/gemini.md) |
 | Pi | `omp acp` or `npx -y pi-acp` | verify at implement time | `pi` on PATH | handshake |
 | Hermes | `hermes` | `acp` (or `-p <profile> acp`) | `HERMES_ACP_SKIP_CONFIGURED_MCP=1` | `hermes acp --check`; terminal `--setup` |
 | OpenClaw | `openclaw` | `acp` | Gateway must be running; token/url | `openclaw gateway status` — PATH-only is a false ready |
