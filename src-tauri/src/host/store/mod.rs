@@ -46,7 +46,7 @@ pub use pr::{
 pub use schedule::{
     CATCH_UP_ONCE, CATCH_UP_SKIP, FIRE_DELIVERED, FIRE_DISPATCHED, FIRE_FAILED, FIRE_SKIPPED,
 };
-pub use secrets::{Secrets, SecretsBackend};
+pub use secrets::{keychain_service, Secrets, SecretsBackend, KEYCHAIN_SERVICE};
 pub use settings::{
     is_fold_policy, DEFAULT_FOLD_POLICY, KEY_DEFAULT_FOLD_POLICY, KEY_IDLE_TIMEOUT_MS,
 };

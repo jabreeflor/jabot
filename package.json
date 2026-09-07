@@ -25,6 +25,8 @@
     "verify:fast": "./scripts/verify.sh --fast",
     "checkpoint": "./scripts/checkpoint.sh",
     "test:guards": "./scripts/tests/guards.test.sh",
+    "test:macos-acceptance": "./scripts/tests/macos-acceptance.test.sh",
+    "macos-acceptance": "./scripts/macos-acceptance.sh",
     "hooks:install": "./scripts/install-hooks.sh",
     "hooks:check": "./scripts/install-hooks.sh --check",
     "prepare": "./scripts/install-hooks.sh --quiet || true"

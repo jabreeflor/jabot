@@ -149,6 +149,29 @@ jobs:
       # in a job that holds all eight secrets. `--clobber` makes a re-pushed
       # tag idempotent; the release is still a draft here, which `gh release
       # upload` finds by tag like any other.
+      - name: Updater archives (not a signed install)
+        run: |
+          set -euo pipefail
+          # Presence of the archive + sig the updater plugin consumes.
+          # Installing that archive into a real JaBot.app is the manual
+          # release-checklist cell — docs/macos-acceptance.md (#235).
+          dir=""
+          for candidate in \
+            src-tauri/target/universal-apple-darwin/release/bundle \
+            src-tauri/target/release/bundle
+          do
+            if [ -d "$candidate" ]; then
+              dir="$candidate"
+              break
+            fi
+          done
+          if [ -z "$dir" ]; then
+            echo "::error::no bundle output directory — cannot check updater archives"
+            exit 1
+          fi
+          ./scripts/macos-acceptance.sh updater-artifacts "$dir"
+          ./scripts/macos-acceptance.sh release-checklist
+
       - name: Attach the installer to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

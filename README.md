@@ -56,7 +56,9 @@ npm install                              # deps, and installs the git hooks
 verified those exact bytes, and refuses a push whose commits are not the files
 that gate can read. **[CONTRIBUTING.md](CONTRIBUTING.md)** has the
 whole local workflow: what every gate proves, what to do when each one fails,
-and the escape hatches.
+and the escape hatches. Native `JaBot.app` launch, Dock, Keychain, and
+updater-archive checks are [docs/macos-acceptance.md](docs/macos-acceptance.md)
+(#235) — Playwright WebKit is not that gate.
 
 ## Prototypes
 

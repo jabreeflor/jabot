@@ -115,6 +115,15 @@ pub fn claude_launch_with(
     ))
 }
 
+/// The staged Claude adapter, if this process can see it.
+///
+/// Packaged-app acceptance (#235) records this path as evidence that the
+/// bundle's `Contents/Resources` copy resolved, without requiring `node` or
+/// `claude` — those gate a *launch*, not whether the file shipped.
+pub fn staged_claude_entry() -> Option<PathBuf> {
+    entry(CLAUDE_ENTRY)
+}
+
 /// The staged adapter's entry script, or `None` when this build has none.
 fn entry(relative: &str) -> Option<PathBuf> {
     let resource_dir = RESOURCE_DIR

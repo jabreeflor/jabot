@@ -6,6 +6,8 @@
 #   ./scripts/verify.sh --fast             # skip the e2e project (no Rust binary build)
 #   ./scripts/verify.sh --check-toolchain  # also ask rustup if stable moved (NETWORK)
 #   ./scripts/verify.sh --check-mac        # also lint notify/mac.rs for macOS (NETWORK)
+#                                    # native-sensitive PRs run this in CI; see
+#                                    # docs/macos-acceptance.md (#235)
 #
 # This is the only gate. CI's `verify` job is `npm ci` + this script, and the
 # macOS `bundle` job does not run on pull requests (.github/workflows/ci.yml
@@ -19,6 +21,7 @@
 #   2. bundle-config  — what the macOS `bundle` job reads, checked without macOS
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   2c. install script — the release installer's pins, delivery, and refusals
+#   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
 #   3. tsc            — renderer types
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
@@ -642,6 +645,32 @@ NODE
 }
 
 # ---------------------------------------------------------------------------
+# 2d. macos packaged-app acceptance (#235)
+#
+# Browser Playwright is the renderer + jabot-hostd. This stage is the native
+# boundary: Tauri IPC, Dock, Keychain, packaged adapters, updater archives.
+# The default path cannot launch JaBot.app (no macOS, no display), so what
+# runs here is the part that *can* rot silently on Linux: the matrix still
+# names every cell, isolation still refuses production app data and the
+# production Keychain service, `package` still distinguishes a .app from an
+# updater archive, and the workflows still trigger the targeted native check
+# and the release artifact check. scripts/tests/macos-acceptance.test.sh is
+# the behaviour (~2s). Launching the .app is `macos-acceptance.sh run` on a
+# Mac; D-019 is why that is not this stage.
+# ---------------------------------------------------------------------------
+macos_acceptance() {
+  local ok=0
+  local sh='scripts/macos-acceptance.sh'
+  if [[ ! -x "$sh" ]]; then
+    printf '  %s is missing or not executable\n' "$sh"
+    return 1
+  fi
+  "$sh" check || ok=1
+  ./scripts/tests/macos-acceptance.test.sh || ok=1
+  return $ok
+}
+
+# ---------------------------------------------------------------------------
 # The tree this run is about to describe.
 #
 # Empty when this is not a git worktree (a tarball, a vendored copy); every
@@ -654,6 +683,7 @@ run "bundle-config"  bundle_config
 run "binary set"     binary_set
 run "commit guards"  guards
 run "install script" install_script
+run "macos acceptance" macos_acceptance
 run "typecheck"      npx tsc --noEmit
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check

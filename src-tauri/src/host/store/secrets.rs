@@ -27,8 +27,26 @@ use super::{map_secret_ref, map_tool_connection, now_utc, secret_account};
 /// `put` would otherwise fail — never as a way to keep tokens on disk.
 const BACKEND_ENV: &str = "JABOT_SECRETS_BACKEND";
 
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const KEYCHAIN_SERVICE: &str = "com.jabot.app";
+
+/// Override the Keychain service name. Used by packaged-app acceptance (#235)
+/// so a test run never reads or writes the user's production items.
+///
+/// Empty / unset keeps [`KEYCHAIN_SERVICE`]. Acceptance requires a name under
+/// `com.jabot.app.acceptance.` — see `crate::acceptance`.
+const SERVICE_ENV: &str = "JABOT_KEYCHAIN_SERVICE";
+
+/// The Keychain service this process will read and write.
+///
+/// Production is [`KEYCHAIN_SERVICE`]. A non-empty `JABOT_KEYCHAIN_SERVICE`
+/// wins so an isolated acceptance run can use a throwaway service (and a
+/// throwaway keychain) instead of `login.keychain`'s `com.jabot.app` items.
+pub fn keychain_service() -> String {
+    match std::env::var(SERVICE_ENV) {
+        Ok(value) if !value.is_empty() => value,
+        _ => KEYCHAIN_SERVICE.to_string(),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretsBackend {
@@ -138,7 +156,7 @@ impl Secrets {
 
 #[cfg(target_os = "macos")]
 fn os_put(account: &str, secret: &str) -> Result<(), StoreError> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, account)
+    let entry = keyring::Entry::new(&keychain_service(), account)
         .map_err(|e| StoreError::invalid(e.to_string()))?;
     entry
         .set_password(secret)
@@ -147,7 +165,7 @@ fn os_put(account: &str, secret: &str) -> Result<(), StoreError> {
 
 #[cfg(target_os = "macos")]
 fn os_get(account: &str) -> Result<String, StoreError> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, account)
+    let entry = keyring::Entry::new(&keychain_service(), account)
         .map_err(|e| StoreError::invalid(e.to_string()))?;
     match entry.get_password() {
         Ok(secret) => Ok(secret),
@@ -158,7 +176,7 @@ fn os_get(account: &str) -> Result<String, StoreError> {
 
 #[cfg(target_os = "macos")]
 fn os_delete(account: &str) -> Result<(), StoreError> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, account)
+    let entry = keyring::Entry::new(&keychain_service(), account)
         .map_err(|e| StoreError::invalid(e.to_string()))?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
@@ -321,4 +339,32 @@ pub fn delete_tool_connection(
         )?;
     }
     Ok(row)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keychain_service_defaults_to_the_bundle_id() {
+        // The function reads the process environment. Tests share a process, so
+        // this only asserts the documented default when the override is unset.
+        // The override itself is what packaged acceptance sets; a missing
+        // default here would write production items under a blank service.
+        if std::env::var(SERVICE_ENV).is_err() {
+            assert_eq!(keychain_service(), KEYCHAIN_SERVICE);
+        }
+    }
+
+    #[test]
+    fn keychain_service_override_is_not_the_production_name() {
+        // Guard the constant, not the env: if someone "simplifies" the
+        // production service into something acceptance could collide with,
+        // isolation stops being isolation.
+        assert_eq!(KEYCHAIN_SERVICE, "com.jabot.app");
+        assert!(
+            !KEYCHAIN_SERVICE.contains("acceptance"),
+            "production Keychain service must stay distinct from the acceptance prefix"
+        );
+    }
 }

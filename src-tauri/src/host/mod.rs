@@ -105,8 +105,8 @@ pub use repo::{gh::GhAuth, git::RepoProbe, origin::Origin};
 pub use schedule::{CatchUp, CronError, CronSpec, RUN_KIND_SCHEDULE, STALE_AFTER};
 #[allow(unused_imports)]
 pub use store::{
-    schema_head, InboxEventRow, NewFolder, NewThread, RunRow, ScheduleFireRow, ScheduleRow,
-    Secrets, Store, StoreError, ThreadRepo, ThreadRow,
+    keychain_service, schema_head, InboxEventRow, NewFolder, NewThread, RunRow, ScheduleFireRow,
+    ScheduleRow, Secrets, Store, StoreError, ThreadRepo, ThreadRow, KEYCHAIN_SERVICE,
 };
 #[allow(unused_imports)]
 pub use supervisor::{ResumeReadiness, Supervisor, DEFAULT_SLEEP_GAP};

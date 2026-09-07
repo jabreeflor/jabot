@@ -28,3 +28,6 @@ src-tauri/target
 
 # The live loop's dev host: SQLite, logs, pid (scripts/live.sh)
 .jabot-dev
+
+# Isolated packaged-app acceptance evidence copied out of /tmp on CI (#235)
+.macos-acceptance-evidence
