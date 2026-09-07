@@ -378,15 +378,22 @@ describe("Sidebar", () => {
     }
     render(<Harness />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide sidebar" }), {
+      clientX: 24,
+      clientY: 24,
+    });
     expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
 
-    fireEvent.pointerMove(window, { clientX: 120, clientY: 80 });
+    // Same neighbourhood as the click, plus a leave/enter the layout shift
+    // synthesizes: still held, so the list stays gone.
+    fireEvent.pointerMove(window, { clientX: 28, clientY: 26 });
+    fireEvent.pointerEnter(screen.getByRole("button", { name: "Show sidebar" }), {
+      clientX: 28,
+      clientY: 26,
+    });
     expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
 
-    const toggle = screen.getByRole("button", { name: "Show sidebar" });
-    fireEvent.pointerLeave(toggle);
-    fireEvent.pointerMove(window, { clientX: 120, clientY: 80 });
+    fireEvent.pointerMove(window, { clientX: 200, clientY: 80 });
     expect(screen.getByRole("button", { name: /Chief/ })).toBeInTheDocument();
   });
 

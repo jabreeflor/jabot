@@ -124,7 +124,10 @@ export function Sidebar({
   const [query, setQuery] = useState("");
   const visibleFolders = filterFolders(folders, query);
   const railRef = useRef<HTMLElement>(null);
-  const suppressPeek = useRef(false);
+  // After a hide click the pointer is still on the toggle. Peeking from
+  // that, or from the leave/enter the layout shift synthesizes, would
+  // undo the click. Hold until the pointer actually moves.
+  const holdPeekAt = useRef<{ x: number; y: number } | null>(null);
   const [armed, setArmed] = useState(false);
   const [peeked, setPeeked] = useState(false);
   // Peek is a flyout, not a pin. `open` is what localStorage and ⌘B own;
@@ -135,14 +138,24 @@ export function Sidebar({
     if (!open) return;
     setPeeked(false);
     setArmed(false);
-    suppressPeek.current = false;
+    holdPeekAt.current = null;
   }, [open]);
+
+  function releasedFromHold(event: { clientX: number; clientY: number }): boolean {
+    const hold = holdPeekAt.current;
+    if (!hold) return true;
+    if (Math.hypot(event.clientX - hold.x, event.clientY - hold.y) < 12) {
+      return false;
+    }
+    holdPeekAt.current = null;
+    return true;
+  }
 
   useEffect(() => {
     if (open || !armed) return;
 
     function onPointerMove(event: PointerEvent) {
-      if (suppressPeek.current) return;
+      if (!releasedFromHold(event)) return;
       const rail = railRef.current;
       if (!rail) return;
       setPeeked(pointerInSidebarRegion(event, rail, peekWidthPx(rail)));
@@ -156,17 +169,15 @@ export function Sidebar({
     if (!open) setArmed(true);
   }
 
-  function handleToggle() {
+  function handleToggle(event: { clientX: number; clientY: number }) {
     if (open) {
-      // The click that hides the rail leaves the pointer on the button.
-      // Peeking from that would undo the click; wait until it moves.
-      suppressPeek.current = true;
+      holdPeekAt.current = { x: event.clientX, y: event.clientY };
       setArmed(true);
       setPeeked(false);
     } else {
       setPeeked(false);
       setArmed(false);
-      suppressPeek.current = false;
+      holdPeekAt.current = null;
     }
     onToggle?.();
   }
@@ -202,13 +213,10 @@ export function Sidebar({
             title={open ? "Hide sidebar" : "Show sidebar"}
             onClick={handleToggle}
             onFocus={armFromAffordance}
-            onPointerEnter={() => {
-              if (open || suppressPeek.current) return;
+            onPointerEnter={(event) => {
+              if (open || !releasedFromHold(event)) return;
               setArmed(true);
               setPeeked(true);
-            }}
-            onPointerLeave={() => {
-              suppressPeek.current = false;
             }}
           >
             <SidebarIcon />
