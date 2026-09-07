@@ -159,7 +159,14 @@ pub fn dismiss_draft(
     let changed = conn.execute(
         "UPDATE bot_drafts SET status = ?2, revision = revision + 1, updated_at = ?3
           WHERE id = ?1 AND revision = ?4 AND status IN (?5, ?6)",
-        params![id, DRAFT_DISMISSED, now, revision, DRAFT_PENDING, DRAFT_STALE],
+        params![
+            id,
+            DRAFT_DISMISSED,
+            now,
+            revision,
+            DRAFT_PENDING,
+            DRAFT_STALE
+        ],
     )?;
     if changed == 0 {
         let current = get_draft(conn, id)?.ok_or_else(|| StoreError::NotFound(id.into()))?;
@@ -173,7 +180,12 @@ pub fn dismiss_draft(
     get_draft(conn, id)?.ok_or_else(|| StoreError::NotFound(id.into()))
 }
 
-fn apply_patch(tx: &Connection, id: &str, revision: i64, patch: &BotDraftPatch) -> Result<(), StoreError> {
+fn apply_patch(
+    tx: &Connection,
+    id: &str,
+    revision: i64,
+    patch: &BotDraftPatch,
+) -> Result<(), StoreError> {
     if patch.name.is_none()
         && patch.instructions.is_none()
         && patch.tools_json.is_none()

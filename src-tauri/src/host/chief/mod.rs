@@ -1158,7 +1158,7 @@ mod tests {
         let worker = ok(
             &mut session,
             CREW_CREATE,
-            json!({ "name": "Writer", "instructions": "Draft.", "tools": [] }),
+            json!({ "name": "Writer", "instructions": "Draft.", "tools": [], "harnessId": "claude" }),
         );
         let worker_id = worker["botId"].as_str().unwrap();
         ok(&mut session, CREW_THREAD, json!({ "botId": worker_id }));

@@ -15,8 +15,8 @@ use super::super::protocol::methods::{
 use super::super::store::{
     BotDraftPatch, BotDraftRow, NewBotDraft, DRAFT_PENDING, DRAFT_SAVED, DRAFT_STALE,
 };
-use super::{checked_tools_json, HOST_TOOLS};
 use super::super::HostSession;
+use super::{checked_tools_json, HOST_TOOLS};
 
 pub const MAX_NAME: usize = 80;
 pub const MAX_INSTRUCTIONS: usize = 32_768;
@@ -63,7 +63,11 @@ impl HostSession {
     }
 
     pub fn crew_draft_get(&self, params: CrewDraftGetParams) -> Result<BotDraftView, RpcError> {
-        let row = if let Some(id) = params.draft_id.as_deref().map(str::trim).filter(|s| !s.is_empty())
+        let row = if let Some(id) = params
+            .draft_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
         {
             self.crew_store()?
                 .get_bot_draft(id)
@@ -75,7 +79,9 @@ impl HostSession {
                 .as_deref()
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .ok_or_else(|| RpcError::InvalidParams("draftId or requestKey is required".into()))?;
+                .ok_or_else(|| {
+                    RpcError::InvalidParams("draftId or requestKey is required".into())
+                })?;
             let source = params
                 .source_bot_id
                 .as_deref()
@@ -100,7 +106,9 @@ impl HostSession {
         let current = store
             .get_bot_draft(&params.draft_id)
             .map_err(internal)?
-            .ok_or_else(|| RpcError::InvalidParams(format!("no such draft: {}", params.draft_id)))?;
+            .ok_or_else(|| {
+                RpcError::InvalidParams(format!("no such draft: {}", params.draft_id))
+            })?;
         let current = self.refresh_stale(current)?;
         if current.status == DRAFT_SAVED {
             let bot_id = current
@@ -205,7 +213,11 @@ impl HostSession {
     }
 
     /// MCP `draft_bot`. Identity comes from the authenticated thread.
-    pub(crate) fn tool_draft_bot(&mut self, thread_id: &str, args: &Value) -> Result<Value, String> {
+    pub(crate) fn tool_draft_bot(
+        &mut self,
+        thread_id: &str,
+        args: &Value,
+    ) -> Result<Value, String> {
         let parsed: DraftBotArgs = parse_args(args)?;
         let source_bot = self
             .thread_bot(thread_id)
@@ -273,7 +285,11 @@ impl HostSession {
         let source_bot = self
             .thread_bot(thread_id)
             .ok_or_else(|| "this thread has no bot".to_string())?;
-        let row = if let Some(id) = parsed.draft_id.as_deref().map(str::trim).filter(|s| !s.is_empty())
+        let row = if let Some(id) = parsed
+            .draft_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
         {
             self.crew_store()
                 .map_err(|e| e.to_string())?
@@ -358,8 +374,7 @@ impl HostSession {
         match store.get_bot(&row.source_bot_id).map_err(internal)? {
             None => Ok(Some("the proposing bot is gone".into())),
             Some(bot) => {
-                let tools: Vec<String> =
-                    serde_json::from_str(&bot.tools_json).unwrap_or_default();
+                let tools: Vec<String> = serde_json::from_str(&bot.tools_json).unwrap_or_default();
                 if tools.iter().any(|id| id == "draft_bot") {
                     Ok(None)
                 } else {
@@ -581,13 +596,13 @@ fn _forbidden_are_real() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::host::crew::standing;
     use crate::host::protocol::error::{DRAFT_CONFLICT, INVALID_PARAMS};
     use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
     use crate::host::protocol::{
-        CREW_CREATE, CREW_DRAFT_DISMISS, CREW_DRAFT_GET, CREW_DRAFT_SAVE, CREW_DRAFTS, CREW_LIST,
+        CREW_CREATE, CREW_DRAFTS, CREW_DRAFT_DISMISS, CREW_DRAFT_GET, CREW_DRAFT_SAVE, CREW_LIST,
         CREW_THREAD, CREW_UPDATE, HOST_HELLO,
     };
-    use crate::host::crew::standing;
     use serde_json::{json, Value};
 
     fn host() -> (HostSession, tempfile::TempDir) {
@@ -692,7 +707,10 @@ mod tests {
                 }),
             )
             .expect_err("conflict");
-        assert!(refused.contains("already has a different draft"), "{refused}");
+        assert!(
+            refused.contains("already has a different draft"),
+            "{refused}"
+        );
     }
 
     #[test]
@@ -700,11 +718,7 @@ mod tests {
         let (mut session, _dir) = host();
         let proposed = propose(&mut session, "k-save", "Researcher");
         let draft_id = proposed["draftId"].as_str().unwrap().to_string();
-        let got = ok(
-            &mut session,
-            CREW_DRAFT_GET,
-            json!({ "draftId": draft_id }),
-        );
+        let got = ok(&mut session, CREW_DRAFT_GET, json!({ "draftId": draft_id }));
         let saved = ok(
             &mut session,
             CREW_DRAFT_SAVE,
@@ -756,11 +770,7 @@ mod tests {
         let (mut session, _dir) = host();
         let proposed = propose(&mut session, "k-d", "Researcher");
         let draft_id = proposed["draftId"].as_str().unwrap().to_string();
-        let got = ok(
-            &mut session,
-            CREW_DRAFT_GET,
-            json!({ "draftId": draft_id }),
-        );
+        let got = ok(&mut session, CREW_DRAFT_GET, json!({ "draftId": draft_id }));
         ok(
             &mut session,
             CREW_DRAFT_DISMISS,
@@ -807,7 +817,10 @@ mod tests {
                 }),
             )
             .expect_err("closed schema");
-        assert!(unknown.contains("unexpected") || unknown.contains("unknown"), "{unknown}");
+        assert!(
+            unknown.contains("unexpected") || unknown.contains("unknown"),
+            "{unknown}"
+        );
     }
 
     #[test]
@@ -847,11 +860,7 @@ mod tests {
                 "tools": ["handoff_to_bot", "list_crew_status"]
             }),
         );
-        let got = ok(
-            &mut session,
-            CREW_DRAFT_GET,
-            json!({ "draftId": draft_id }),
-        );
+        let got = ok(&mut session, CREW_DRAFT_GET, json!({ "draftId": draft_id }));
         assert_eq!(got["status"], "stale");
         assert!(got["staleReason"].as_str().unwrap().contains("draft_bot"));
     }
@@ -860,7 +869,11 @@ mod tests {
     fn get_bot_draft_is_scoped_to_the_proposer() {
         let (mut session, _dir) = host();
         let proposed = propose(&mut session, "k-scope", "Researcher");
-        let recruiter = ok(&mut session, CREW_THREAD, json!({ "botId": "bot-recruiter" }));
+        let recruiter = ok(
+            &mut session,
+            CREW_THREAD,
+            json!({ "botId": "bot-recruiter" }),
+        );
         let _ = recruiter;
         let refused = session
             .tool_get_bot_draft(

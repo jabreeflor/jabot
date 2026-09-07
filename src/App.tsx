@@ -641,7 +641,7 @@ function AppShell({
           const current =
             hostThreads.find((thread) => thread.id === sourceThreadId) ??
             (resolved?.id === sourceThreadId ? resolved : undefined);
-          if (current?.folded) return;
+          if (current?.state === "folded") return;
           reviewDraft(draftId);
           return;
         }

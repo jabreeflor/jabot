@@ -17,9 +17,9 @@
 
 use serde_json::{json, Value};
 
-use super::connection::prompt_blocks;
 use super::super::chief::tools as host_tools;
 use super::super::HostSession;
+use super::connection::prompt_blocks;
 
 /// Increment when the packaged operating instructions change shape.
 pub const APP_CONTEXT_VERSION: u32 = 1;
@@ -33,7 +33,11 @@ impl HostSession {
     /// definition, not a snapshot from enqueue. Failures fall back to the
     /// user's blocks plus whatever context could be built — a missing store
     /// must not drop the user's message.
-    pub(crate) fn compose_prompt_for_dispatch(&self, thread_id: &str, user_content: &Value) -> Value {
+    pub(crate) fn compose_prompt_for_dispatch(
+        &self,
+        thread_id: &str,
+        user_content: &Value,
+    ) -> Value {
         let user_blocks = match prompt_blocks(user_content) {
             Ok(Value::Array(blocks)) => blocks,
             Ok(other) => vec![other],
@@ -86,7 +90,11 @@ impl HostSession {
         out.push_str(&format!("id: {}\n", thread_id));
         match &thread {
             Some(row) => {
-                let kind = thread_kind(row.bot_id.as_deref(), row.folder_id.as_deref(), row.worktree_path.as_deref());
+                let kind = thread_kind(
+                    row.bot_id.as_deref(),
+                    row.folder_id.as_deref(),
+                    row.worktree_path.as_deref(),
+                );
                 out.push_str(&format!("kind: {kind}\n"));
                 match &row.bot_id {
                     Some(id) => out.push_str(&format!("botId: {id}\n")),
@@ -112,7 +120,9 @@ impl HostSession {
                 }
             }
             None => {
-                out.push_str("kind: unknown\nbotId: none\ncwd: unknown\nfolder: none\nharness: unknown\n");
+                out.push_str(
+                    "kind: unknown\nbotId: none\ncwd: unknown\nfolder: none\nharness: unknown\n",
+                );
             }
         }
 
@@ -154,7 +164,11 @@ impl HostSession {
     }
 }
 
-fn thread_kind(bot_id: Option<&str>, folder_id: Option<&str>, worktree: Option<&str>) -> &'static str {
+fn thread_kind(
+    bot_id: Option<&str>,
+    folder_id: Option<&str>,
+    worktree: Option<&str>,
+) -> &'static str {
     if worktree.is_some() {
         "folder/worktree coding session"
     } else if folder_id.is_some() && bot_id.is_none() {
@@ -243,7 +257,10 @@ mod tests {
         let context = blocks[0]["text"].as_str().unwrap();
         assert!(context.contains("Jabot context v1"), "{context}");
         assert!(context.contains("current bot"), "{context}");
-        assert!(context.contains("none. This thread has no crew bot"), "{context}");
+        assert!(
+            context.contains("none. This thread has no crew bot"),
+            "{context}"
+        );
         assert_eq!(blocks[1], json!({ "type": "text", "text": "hello" }));
     }
 
@@ -341,7 +358,10 @@ mod tests {
         let write = session.compose_prompt_for_dispatch(&writer_thread, &json!("go"));
         let research_text = research[0]["text"].as_str().unwrap();
         let write_text = write[0]["text"].as_str().unwrap();
-        assert!(research_text.contains("SECRET_RESEARCHER"), "{research_text}");
+        assert!(
+            research_text.contains("SECRET_RESEARCHER"),
+            "{research_text}"
+        );
         assert!(!research_text.contains("SECRET_WRITER"), "{research_text}");
         assert!(write_text.contains("SECRET_WRITER"), "{write_text}");
         assert!(!write_text.contains("SECRET_RESEARCHER"), "{write_text}");

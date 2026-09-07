@@ -215,8 +215,8 @@ fn grant_untouched(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::migrate;
+    use super::*;
     use rusqlite::Connection;
 
     fn open_conn() -> (tempfile::TempDir, Connection) {
@@ -229,20 +229,16 @@ mod tests {
     }
 
     fn tools(conn: &Connection, id: &str) -> String {
-        conn.query_row(
-            "SELECT tools_json FROM bots WHERE id = ?1",
-            [id],
-            |row| row.get(0),
-        )
+        conn.query_row("SELECT tools_json FROM bots WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
         .unwrap()
     }
 
     fn instructions(conn: &Connection, id: &str) -> String {
-        conn.query_row(
-            "SELECT instructions FROM bots WHERE id = ?1",
-            [id],
-            |row| row.get(0),
-        )
+        conn.query_row("SELECT instructions FROM bots WHERE id = ?1", [id], |row| {
+            row.get(0)
+        })
         .unwrap()
     }
 
