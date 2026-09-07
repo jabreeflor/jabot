@@ -129,7 +129,9 @@ export function GithubSignInModal({
           type="button"
           className="btn primary"
           disabled={!token.trim() || busy}
-          onClick={submit}
+          onClick={() => {
+            void submit();
+          }}
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>

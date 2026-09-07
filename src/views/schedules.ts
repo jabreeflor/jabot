@@ -50,9 +50,12 @@ export interface Schedules {
       record or throws the host's error — the editor has to be able to say
       *why*, and "that cron has no hour 99 in it" is a fixable thing to say. */
   save: (scheduleId: string | null, draft: ScheduleDraft) => Promise<ScheduleView>;
+  /** Toggle without throwing: refusals land on `error` so a fire-and-forget
+      click still has an error strategy. */
   setEnabled: (scheduleId: string, enabled: boolean) => Promise<void>;
   remove: (scheduleId: string) => Promise<void>;
-  /** Run now. Its own occurrence — it does not consume the next due time. */
+  /** Run now. Its own occurrence — it does not consume the next due time.
+      Same error strategy as `setEnabled`. */
   runNow: (scheduleId: string) => Promise<void>;
 }
 
@@ -100,9 +103,18 @@ export function useSchedules(client: HostClient | null): Schedules {
 
   const setEnabled = useCallback(
     async (scheduleId: string, enabled: boolean) => {
-      if (!client) throw new Error("No host connection.");
-      await client.updateSchedule({ scheduleId, enabled });
-      reload();
+      if (!client) {
+        setError("No host connection.");
+        return;
+      }
+      try {
+        await client.updateSchedule({ scheduleId, enabled });
+        setError(null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        reload();
+      }
     },
     [client, reload],
   );
@@ -118,9 +130,18 @@ export function useSchedules(client: HostClient | null): Schedules {
 
   const runNow = useCallback(
     async (scheduleId: string) => {
-      if (!client) throw new Error("No host connection.");
-      await client.runSchedule({ scheduleId });
-      reload();
+      if (!client) {
+        setError("No host connection.");
+        return;
+      }
+      try {
+        await client.runSchedule({ scheduleId });
+        setError(null);
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        reload();
+      }
     },
     [client, reload],
   );
