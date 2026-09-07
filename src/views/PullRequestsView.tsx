@@ -71,41 +71,6 @@ export function PullRequestsView({
 }) {
   const [selected, setSelected] = useState<PullRequest | null>(null);
   const [search, setSearch] = useState("");
-  const [prUrl, setPrUrl] = useState("");
-  const [urlError, setUrlError] = useState("");
-  function openUrl() {
-    try {
-      const url = new URL(prUrl);
-      const match = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/.exec(url.pathname);
-      if (
-        url.protocol !== "https:" ||
-        !match ||
-        url.username ||
-        url.password ||
-        url.port ||
-        Number(match[3]) < 1
-      )
-        throw new Error();
-      setUrlError("");
-      setSelected({
-        id: url.href,
-        provider: "github",
-        repo: `${match[1]}/${match[2]}`,
-        number: Number(match[3]),
-        url: url.href,
-        title: `${match[1]}/${match[2]}`,
-        status: "open",
-        checkState: null,
-        updatedAt: new Date().toISOString(),
-        additions: 0,
-        deletions: 0,
-      });
-    } catch {
-      setUrlError(
-        "Enter a GitHub PR URL, such as https://github.com/owner/repo/pull/42.",
-      );
-    }
-  }
   const [tab, setTab] = useState<PrTab>("open");
   const [openId, setOpenId] = useState<string | null>(
     pullRequests.find((pr) => pr.detail)?.id ?? null,
@@ -214,6 +179,7 @@ export function PullRequestsView({
 
           <div className="pr-toolbar">
             <input
+              type="search"
               aria-label="Search pull requests"
               placeholder="Search title, repository, or number…"
               value={search}
@@ -225,24 +191,6 @@ export function PullRequestsView({
               </button>
             )}
           </div>
-          <form
-            className="pr-toolbar"
-            onSubmit={(e) => {
-              e.preventDefault();
-              openUrl();
-            }}
-          >
-            <input
-              aria-label="Pull request URL"
-              placeholder="Open any PR by URL, including review requests…"
-              value={prUrl}
-              onChange={(e) => setPrUrl(e.target.value)}
-            />
-            <button className="btn" type="submit" disabled={!prUrl.trim()}>
-              Open PR
-            </button>
-          </form>
-          {urlError && <p role="alert">{urlError}</p>}
           <Tabs
             label="Pull request filter"
             panelId="prs-panel"
