@@ -48,7 +48,10 @@ import type {
 // is deliberately device-neutral: its own module docs say two devices
 // disagreeing about what needs you would be two products. Importing it is what
 // keeps that true — a second copy here is exactly the drift it warns about.
-import { projectInbox, type MobileCard as ProjectedCard } from "../mobile/inbox";
+import {
+  projectInbox,
+  type MobileCard as ProjectedCard,
+} from "../mobile/inbox";
 
 /** Open the card's thread. The view raises it through `onOpenThread`. */
 export const CARD_REOPEN = "reopen";
@@ -219,7 +222,9 @@ export function useInbox(
 
   const cards = useMemo(
     () =>
-      snapshot ? snapshot.cards.map((card) => cardRow(card, snapshot, bots ?? null)) : null,
+      snapshot
+        ? snapshot.cards.map((card) => cardRow(card, snapshot, bots ?? null))
+        : null,
     [snapshot, bots],
   );
 
@@ -321,7 +326,10 @@ function cardRow(
  * holding only a reference has to draw *something* in between. A face with the
  * wrong name on it would be worse than no face.
  */
-function cardSource(botId: string | undefined, bots: readonly Bot[] | null): CardSource {
+function cardSource(
+  botId: string | undefined,
+  bots: readonly Bot[] | null,
+): CardSource {
   if (!botId) return { type: "code" };
   const bot = bots?.find((candidate) => candidate.id === botId);
   if (!bot) return { type: "code" };
@@ -346,18 +354,18 @@ function detail(
       // the same title, and this is the line that tells them apart.
       path: card.ask.detail ?? card.title,
       bullets: card.ask.stale
-        ? ["The session that asked this is gone — answering records your decision, but the agent will never hear it."]
+        ? [
+            "The session that asked this is gone — answering records your decision, but the agent will never hear it.",
+          ]
         : [],
       actions: [
         // The agent's own options, in the agent's order. The host never
         // invents one and neither does this (#20).
-        ...card.ask.options.map(
-          (option, index): NoticeAction => ({
-            id: `${ASK_PREFIX}${option.optionId}`,
-            label: option.name,
-            primary: index === 0,
-          }),
-        ),
+        ...card.ask.options.map((option, index): NoticeAction => ({
+          id: `${ASK_PREFIX}${option.optionId}`,
+          label: option.name,
+          primary: index === 0,
+        })),
         { id: CARD_REOPEN, label: "Open thread" },
       ],
     };

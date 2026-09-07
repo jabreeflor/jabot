@@ -83,11 +83,7 @@ export function ScheduleEditorModal({
       </select>
 
       <FieldLabel htmlFor={cronId}>WHEN</FieldLabel>
-      <div
-        className="sched-presets"
-        role="group"
-        aria-label="Schedule presets"
-      >
+      <div className="sched-presets" role="group" aria-label="Schedule presets">
         {PRESETS.map((preset) => (
           <button
             key={preset.cron}

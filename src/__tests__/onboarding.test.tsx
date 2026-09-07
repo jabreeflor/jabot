@@ -7,7 +7,13 @@
  * This is the one suite that simulates a first run: setup-dom.ts seeds every
  * jsdom as already-onboarded, and `clearOnboarding()` here is the opt-out.
  */
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -90,10 +96,7 @@ describe("Onboarding", () => {
     const user = userEvent.setup();
     await renderFirstRun();
 
-    await user.type(
-      screen.getByLabelText("YOUR NAME"),
-      "Ada Lovelace{Enter}",
-    );
+    await user.type(screen.getByLabelText("YOUR NAME"), "Ada Lovelace{Enter}");
     await user.click(screen.getByRole("button", { name: /Codex/ }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Enter JaBot" }));
@@ -113,9 +116,10 @@ describe("Onboarding", () => {
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
     // The first card is pre-selected before any click.
-    expect(
-      screen.getByRole("button", { name: /Claude Code/ }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Claude Code/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     await user.click(screen.getByRole("button", { name: /Codex/ }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Enter JaBot" }));
@@ -147,7 +151,9 @@ describe("Onboarding", () => {
     await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
     await user.keyboard("{Escape}");
 
-    expect(screen.getByRole("button", { name: /^Inbox —/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Inbox —/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Ada")).toBeInTheDocument();
   });
 
@@ -157,7 +163,9 @@ describe("Onboarding", () => {
 
     await user.click(screen.getByRole("button", { name: "Skip setup" }));
 
-    expect(screen.getByRole("button", { name: /^Inbox —/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Inbox —/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText("You")).toBeInTheDocument();
   });
 
@@ -256,7 +264,9 @@ describe("Onboarding", () => {
     await user.click(screen.getByRole("button", { name: "Run setup again" }));
     await user.keyboard("{Escape}");
 
-    expect(screen.getByRole("button", { name: /^Inbox —/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Inbox —/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Ada")).toBeInTheDocument();
     const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_KEY)!);
     expect(stored.userName).toBe("Ada");
@@ -308,7 +318,9 @@ describe("Onboarding", () => {
     await user.click(screen.getByRole("button", { name: "Run setup again" }));
     await user.keyboard("{Escape}");
 
-    expect(screen.getByRole("button", { name: /^Inbox —/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Inbox —/ }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Ada")).toBeInTheDocument();
     const stored = JSON.parse(window.localStorage.getItem(ONBOARDING_KEY)!);
     expect(stored.userName).toBe("Ada");
@@ -436,9 +448,13 @@ describe("Onboarding, engine catalog", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     // A preset the fixtures do not contain: proof the picker is live.
-    expect(await screen.findByRole("button", { name: /Hermes/ })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: /Hermes/ }),
+    ).toBeInTheDocument();
     // And a fixture engine the host did not list is gone.
-    expect(screen.queryByRole("button", { name: /^Pi/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Pi/ }),
+    ).not.toBeInTheDocument();
   });
 
   /** First run is exactly when "you do not have this installed" matters most:
@@ -471,7 +487,9 @@ describe("Onboarding, engine catalog", () => {
     await renderFirstRun();
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByRole("button", { name: /Claude Code/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Claude Code/ }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Codex/ })).toBeInTheDocument();
   });
 });

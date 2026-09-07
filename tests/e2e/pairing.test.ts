@@ -42,7 +42,11 @@ const dataDirs: string[] = [];
 const HOST_ENV = { JABOT_SECRETS_BACKEND: "memory" };
 
 async function connected(options: HostdOptions = {}) {
-  const host = new HostdProcess({ persistent: true, env: HOST_ENV, ...options });
+  const host = new HostdProcess({
+    persistent: true,
+    env: HOST_ENV,
+    ...options,
+  });
   running.push(host);
   const client = new HostClient(host);
   await client.connect();
@@ -111,7 +115,13 @@ describe("pairing a second device", () => {
     const { hello } = await connected();
     // The drift guard: a method the TS client can call has to be one the Rust
     // host admits to, or the two halves of the protocol have already parted.
-    for (const method of [PAIRING_START, PAIRING_CLAIM, PAIRING_CONFIRM, DEVICE_LIST, DEVICE_REVOKE]) {
+    for (const method of [
+      PAIRING_START,
+      PAIRING_CLAIM,
+      PAIRING_CONFIRM,
+      DEVICE_LIST,
+      DEVICE_REVOKE,
+    ]) {
       expect(hello.methods).toContain(method);
     }
   });
@@ -162,7 +172,9 @@ describe("pairing a second device", () => {
     // The console that spawned the host is device #1 and is not revocable.
     const local = listed.devices.find((d) => d.local);
     expect(local?.deviceId).toBe(hello.device.deviceId);
-    const refused = await host.call(DEVICE_REVOKE, { deviceId: local?.deviceId });
+    const refused = await host.call(DEVICE_REVOKE, {
+      deviceId: local?.deviceId,
+    });
     expect(refused.error?.code).toBe(RPC_ERROR.INVALID_PARAMS);
 
     // Now the phone connects, with the proof its pairing derived.
@@ -183,7 +195,9 @@ describe("pairing a second device", () => {
     // told so. Checked with the device's own derivation — the host agreeing
     // with itself would assert nothing.
     const hostAuth = phoneHello.result?.hostAuth;
-    expect(phone.verifyHostAuth(qr.hostId, derived.token, hostAuth, 1)).toBe(true);
+    expect(phone.verifyHostAuth(qr.hostId, derived.token, hostAuth, 1)).toBe(
+      true,
+    );
 
     // Scope, enforced on the host for the connection that is now a phone.
     const asPhone = await host.call(PAIRING_START, {});
@@ -235,13 +249,23 @@ describe("pairing a second device", () => {
       ...proof,
       mac: `${proof.mac.slice(0, -1)}${last === "0" ? "1" : "0"}`,
     };
-    expect(phone.verifyHostAuth(qr.hostId, derived.token, flipped, 1)).toBe(false);
-    expect(phone.verifyHostAuth(qr.hostId, "not-the-token", proof, 1)).toBe(false);
-    expect(phone.verifyHostAuth(qr.hostId, derived.token, proof, 2)).toBe(false);
-    expect(phone.verifyHostAuth(qr.hostId, derived.token, undefined, 1)).toBe(false);
+    expect(phone.verifyHostAuth(qr.hostId, derived.token, flipped, 1)).toBe(
+      false,
+    );
+    expect(phone.verifyHostAuth(qr.hostId, "not-the-token", proof, 1)).toBe(
+      false,
+    );
+    expect(phone.verifyHostAuth(qr.hostId, derived.token, proof, 2)).toBe(
+      false,
+    );
+    expect(phone.verifyHostAuth(qr.hostId, derived.token, undefined, 1)).toBe(
+      false,
+    );
     // A different host id is a different transcript, which is the property a
     // phone is actually checking: same Mac as last time, not merely some Mac.
-    expect(phone.verifyHostAuth("some-other-host", derived.token, proof, 1)).toBe(false);
+    expect(
+      phone.verifyHostAuth("some-other-host", derived.token, proof, 1),
+    ).toBe(false);
   });
 
   /** The console has no token, so there is nothing it could prove with and
@@ -366,11 +390,15 @@ describe("pairing a second device", () => {
     expect(afterRestart).toMatchObject({ role: "approver", sas: derived.sas });
     expect(afterRestart?.revokedAt).toBeUndefined();
 
-    const revoked = await second.client.revokeDevice({ deviceId: phone.deviceId });
+    const revoked = await second.client.revokeDevice({
+      deviceId: phone.deviceId,
+    });
     expect(revoked).toMatchObject({ deviceId: phone.deviceId, revoked: true });
     expect(revoked.revokedAt).toBeTruthy();
     // Revoking twice is not an error; the caller's intent already holds.
-    expect((await second.client.revokeDevice({ deviceId: phone.deviceId })).revoked).toBe(false);
+    expect(
+      (await second.client.revokeDevice({ deviceId: phone.deviceId })).revoked,
+    ).toBe(false);
     await second.host.stop();
 
     // And a third host, launched cold, still refuses it. This is the half of

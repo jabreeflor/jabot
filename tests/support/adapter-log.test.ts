@@ -7,8 +7,12 @@ describe("adapter permission-reply log records", () => {
     'permission_reply={"jsonrpc":"2.0","id":1,"result":{"outcome":{"outcome":"selected","optionId":"allow_once"}}}\n';
 
   it("ignores a prefix whose JSON has not flushed yet", () => {
-    expect(permissionReplyFromLog("permission_reply={\"jsonrpc\"")).toBeUndefined();
-    expect(logHasPermissionReply("permission_reply=", "allow_once")).toBe(false);
+    expect(
+      permissionReplyFromLog('permission_reply={"jsonrpc"'),
+    ).toBeUndefined();
+    expect(logHasPermissionReply("permission_reply=", "allow_once")).toBe(
+      false,
+    );
   });
 
   it("reads the option id from a complete record", () => {

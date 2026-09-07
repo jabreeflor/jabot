@@ -176,7 +176,9 @@ describe("InboxView", () => {
  * them is worth a word.
  */
 describe("InboxView, notification permission", () => {
-  const status = (over: Partial<NotifyStatusResult> = {}): NotifyStatusResult => ({
+  const status = (
+    over: Partial<NotifyStatusResult> = {},
+  ): NotifyStatusResult => ({
     supported: true,
     authorization: "denied",
     kinds: ["needs_you"],
@@ -198,9 +200,13 @@ describe("InboxView, notification permission", () => {
       Notification Center to permit, so pointing at System Settings would send
       the user somewhere that cannot help them. */
   it("stays quiet where there is nothing to permit", () => {
-    renderInbox({ notify: status({ supported: false, authorization: "unsupported" }) });
+    renderInbox({
+      notify: status({ supported: false, authorization: "unsupported" }),
+    });
 
-    expect(screen.queryByText(/Notifications are turned off/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Notifications are turned off/),
+    ).not.toBeInTheDocument();
   });
 
   /** Nobody has been asked yet — the first banner asks. Saying "notifications
@@ -208,19 +214,25 @@ describe("InboxView, notification permission", () => {
   it("stays quiet before anyone has been asked", () => {
     renderInbox({ notify: status({ authorization: "notDetermined" }) });
 
-    expect(screen.queryByText(/Notifications are turned off/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Notifications are turned off/),
+    ).not.toBeInTheDocument();
   });
 
   it("stays quiet when banners are allowed", () => {
     renderInbox({ notify: status({ authorization: "granted" }) });
 
-    expect(screen.queryByText(/Notifications are turned off/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Notifications are turned off/),
+    ).not.toBeInTheDocument();
   });
 
   /** A host that will not answer is not a host that said "denied". */
   it("stays quiet when the host never answered", () => {
     renderInbox({ notify: null });
 
-    expect(screen.queryByText(/Notifications are turned off/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Notifications are turned off/),
+    ).not.toBeInTheDocument();
   });
 });

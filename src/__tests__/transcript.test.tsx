@@ -110,7 +110,10 @@ describe("Transcript", () => {
     expect(onAction).toHaveBeenCalledWith("n1", "fold");
 
     rerender(
-      <Transcript items={[{ ...notice, resolved: true }]} onAction={onAction} />,
+      <Transcript
+        items={[{ ...notice, resolved: true }]}
+        onAction={onAction}
+      />,
     );
     expect(
       screen.getByRole("button", { name: "Keep watching" }),
@@ -168,7 +171,9 @@ describe("markdown in an agent's reply", () => {
   it("draws a bulleted run as a list", () => {
     const bubble = bot("Plan:\n- read the file\n- fix the bug\n- run tests");
 
-    const items = [...bubble.querySelectorAll("ul li")].map((li) => li.textContent);
+    const items = [...bubble.querySelectorAll("ul li")].map(
+      (li) => li.textContent,
+    );
     expect(items).toEqual(["read the file", "fix the bug", "run tests"]);
   });
 
@@ -230,7 +235,9 @@ describe("markdown in an agent's reply", () => {
     };
     const tool: TranscriptItem = { kind: "tool", id: "t1", call };
     const { container, rerender } = render(
-      <Transcript items={[tool, { kind: "agent", id: "a1", text: "```sh\nnpm" }]} />,
+      <Transcript
+        items={[tool, { kind: "agent", id: "a1", text: "```sh\nnpm" }]}
+      />,
     );
     const before = container.querySelector(".toolblock");
 

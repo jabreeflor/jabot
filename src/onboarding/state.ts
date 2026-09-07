@@ -115,7 +115,8 @@ export function loadOnboarding(): OnboardingProfile | null {
     userName,
     harnessId,
     skipped: record.skipped === true,
-    completedAt: typeof record.completedAt === "string" ? record.completedAt : "",
+    completedAt:
+      typeof record.completedAt === "string" ? record.completedAt : "",
   };
 }
 

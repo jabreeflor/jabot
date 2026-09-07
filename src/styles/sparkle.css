@@ -70,15 +70,42 @@
 }
 
 /* Prime-ish durations so the nine clocks do not reconverge for a long time. */
-.sparkle.live > span:nth-child(1) { --spark-dur: 1.13s; --spark-delay: 0.04s; }
-.sparkle.live > span:nth-child(2) { --spark-dur: 1.37s; --spark-delay: 0.51s; }
-.sparkle.live > span:nth-child(3) { --spark-dur: 0.97s; --spark-delay: 0.22s; }
-.sparkle.live > span:nth-child(4) { --spark-dur: 1.61s; --spark-delay: 0.73s; }
-.sparkle.live > span:nth-child(5) { --spark-dur: 1.21s; --spark-delay: 0.18s; }
-.sparkle.live > span:nth-child(6) { --spark-dur: 1.79s; --spark-delay: 0.39s; }
-.sparkle.live > span:nth-child(7) { --spark-dur: 1.03s; --spark-delay: 0.66s; }
-.sparkle.live > span:nth-child(8) { --spark-dur: 1.43s; --spark-delay: 0.11s; }
-.sparkle.live > span:nth-child(9) { --spark-dur: 1.67s; --spark-delay: 0.48s; }
+.sparkle.live > span:nth-child(1) {
+  --spark-dur: 1.13s;
+  --spark-delay: 0.04s;
+}
+.sparkle.live > span:nth-child(2) {
+  --spark-dur: 1.37s;
+  --spark-delay: 0.51s;
+}
+.sparkle.live > span:nth-child(3) {
+  --spark-dur: 0.97s;
+  --spark-delay: 0.22s;
+}
+.sparkle.live > span:nth-child(4) {
+  --spark-dur: 1.61s;
+  --spark-delay: 0.73s;
+}
+.sparkle.live > span:nth-child(5) {
+  --spark-dur: 1.21s;
+  --spark-delay: 0.18s;
+}
+.sparkle.live > span:nth-child(6) {
+  --spark-dur: 1.79s;
+  --spark-delay: 0.39s;
+}
+.sparkle.live > span:nth-child(7) {
+  --spark-dur: 1.03s;
+  --spark-delay: 0.66s;
+}
+.sparkle.live > span:nth-child(8) {
+  --spark-dur: 1.43s;
+  --spark-delay: 0.11s;
+}
+.sparkle.live > span:nth-child(9) {
+  --spark-dur: 1.67s;
+  --spark-delay: 0.48s;
+}
 
 /* Duty cycle ~45%: a frame typically lights four to six cells, matching
    the Cursor stills, rather than a full grid pulsing as one. */

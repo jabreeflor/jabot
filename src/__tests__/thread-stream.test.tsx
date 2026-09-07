@@ -47,7 +47,10 @@ import type {
   TranscriptItem,
 } from "../components/types";
 
-function feed(payloads: unknown[], from: ThreadStream = EMPTY_STREAM): ThreadStream {
+function feed(
+  payloads: unknown[],
+  from: ThreadStream = EMPTY_STREAM,
+): ThreadStream {
   return payloads.reduce<ThreadStream>(
     (stream, payload) => applyAcpEvent(stream, payload),
     from,
@@ -63,9 +66,21 @@ const text = (value: string) => ({
 
 describe("ACP → transcript", () => {
   it("shows an actionable diagnostic and failure status for an empty reply", () => {
-    const stream = feed([{ sessionUpdate: "state_update", sessionState: "idle", stopReason: "empty_response" }]);
-    expect(last(stream.items)).toMatchObject({ kind: "sys", text: expect.stringContaining("ended without a reply") });
-    expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({ label: "failed: no reply", tone: "bad" });
+    const stream = feed([
+      {
+        sessionUpdate: "state_update",
+        sessionState: "idle",
+        stopReason: "empty_response",
+      },
+    ]);
+    expect(last(stream.items)).toMatchObject({
+      kind: "sys",
+      text: expect.stringContaining("ended without a reply"),
+    });
+    expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({
+      label: "failed: no reply",
+      tone: "bad",
+    });
     expect(stream.busy).toBe(false);
   });
 
@@ -81,7 +96,9 @@ describe("ACP → transcript", () => {
     ]);
     expect(last(stream.items)).toMatchObject({
       kind: "sys",
-      text: expect.stringMatching(/not signed in[\s\S]*Adapter log:[\s\S]*not logged in/),
+      text: expect.stringMatching(
+        /not signed in[\s\S]*Adapter log:[\s\S]*not logged in/,
+      ),
     });
     expect(last(stream.items)).toMatchObject({
       kind: "sys",
@@ -119,9 +136,21 @@ describe("ACP → transcript", () => {
     ["unsupported_model", "failed: model", "model configuration"],
     ["adapter_launch", "failed: adapter launch", "adapter failed to start"],
   ] as const)("labels %s as a failed turn", (reason, label, copy) => {
-    const stream = feed([{ sessionUpdate: "state_update", sessionState: "idle", stopReason: reason }]);
-    expect(last(stream.items)).toMatchObject({ kind: "sys", text: expect.stringContaining(copy) });
-    expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({ label, tone: "bad" });
+    const stream = feed([
+      {
+        sessionUpdate: "state_update",
+        sessionState: "idle",
+        stopReason: reason,
+      },
+    ]);
+    expect(last(stream.items)).toMatchObject({
+      kind: "sys",
+      text: expect.stringContaining(copy),
+    });
+    expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({
+      label,
+      tone: "bad",
+    });
   });
 
   it("streams agent chunks into one bubble", () => {
@@ -135,7 +164,10 @@ describe("ACP → transcript", () => {
 
   it("keeps every untouched item the same object while a chunk streams", () => {
     const before = feed([
-      { sessionUpdate: "user_message_chunk", content: { type: "text", text: "go" } },
+      {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "go" },
+      },
       {
         sessionUpdate: "tool_call",
         toolCallId: "c1",
@@ -317,7 +349,9 @@ describe("ACP → transcript", () => {
       sessionState: "idle",
       stopReason: "end_turn",
     });
-    expect(streamStatus(ended, { label: "idle", tone: "quiet" }).label).toBe("done");
+    expect(streamStatus(ended, { label: "idle", tone: "quiet" }).label).toBe(
+      "done",
+    );
 
     const again = applyAcpEvent(ended, text("actually, one more thing"));
     expect(again.busy).toBe(true);
@@ -391,7 +425,9 @@ describe("ACP → transcript", () => {
     });
     expect(last(stream.items)).toMatchObject({
       kind: "sys",
-      text: expect.stringContaining("and also fix the tests") as unknown as string,
+      text: expect.stringContaining(
+        "and also fix the tests",
+      ) as unknown as string,
     });
   });
 });
@@ -405,7 +441,15 @@ describe("hydrate", () => {
    */
   it("replays rows and then ignores the live copies of the same events", () => {
     const events = [
-      { seq: 1, method: SESSION_UPDATE, createdAt: "", payload: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "go" } } },
+      {
+        seq: 1,
+        method: SESSION_UPDATE,
+        createdAt: "",
+        payload: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "go" },
+        },
+      },
       { seq: 2, method: SESSION_UPDATE, createdAt: "", payload: text("on it") },
     ];
     const hydrated = hydrate({
@@ -436,8 +480,18 @@ describe("hydrate", () => {
       threadId: "t1",
       headSeq: 900,
       events: [
-        { seq: 899, method: SESSION_UPDATE, createdAt: "", payload: text("tail") },
-        { seq: 900, method: SESSION_UPDATE, createdAt: "", payload: text(" end") },
+        {
+          seq: 899,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: text("tail"),
+        },
+        {
+          seq: 900,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: text(" end"),
+        },
       ],
       truncated: true,
       queued: [{ position: 1, content: "and then deploy", queuedAt: "" }],
@@ -453,7 +507,12 @@ describe("hydrate", () => {
    */
   it("seeds the turn in flight from the run the replay arrives with", () => {
     const events = [
-      { seq: 1, method: SESSION_UPDATE, createdAt: "", payload: text("half a sen") },
+      {
+        seq: 1,
+        method: SESSION_UPDATE,
+        createdAt: "",
+        payload: text("half a sen"),
+      },
     ];
     const mid = hydrate({
       threadId: "t1",
@@ -464,7 +523,9 @@ describe("hydrate", () => {
       runState: "running",
     });
     expect(mid.busy).toBe(true);
-    expect(streamStatus(mid, { label: "idle", tone: "quiet" }).label).toBe("running");
+    expect(streamStatus(mid, { label: "idle", tone: "quiet" }).label).toBe(
+      "running",
+    );
     expect(mid.items[0]).toMatchObject({ kind: "agent", streaming: true });
   });
 
@@ -477,8 +538,21 @@ describe("hydrate", () => {
       threadId: "t1",
       headSeq: 2,
       events: [
-        { seq: 1, method: SESSION_UPDATE, createdAt: "", payload: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "go" } } },
-        { seq: 2, method: SESSION_UPDATE, createdAt: "", payload: text("half a sen") },
+        {
+          seq: 1,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: "go" },
+          },
+        },
+        {
+          seq: 2,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: text("half a sen"),
+        },
       ],
       truncated: false,
       queued: [],
@@ -697,7 +771,9 @@ describe("LiveThreadView", () => {
     expect(await screen.findByText("start the migration")).toBeInTheDocument();
 
     host.emit(text("Rewriting the middleware"), 2);
-    expect(await screen.findByText("Rewriting the middleware")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Rewriting the middleware"),
+    ).toBeInTheDocument();
 
     host.emit(
       {
@@ -742,9 +818,7 @@ describe("LiveThreadView", () => {
     });
 
     await userEvent.type(box, "and roll it back if the tests fail{Enter}");
-    expect(
-      await screen.findByText("1 message waiting"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("1 message waiting")).toBeInTheDocument();
     expect(
       screen.getByText("and roll it back if the tests fail"),
     ).toBeInTheDocument();
@@ -758,7 +832,11 @@ describe("LiveThreadView", () => {
     // has already been delivered, and its "Send now" button goes on cancelling
     // turns that have nothing to do with it.
     host.emit(
-      { sessionUpdate: "state_update", sessionState: "idle", stopReason: "cancelled" },
+      {
+        sessionUpdate: "state_update",
+        sessionState: "idle",
+        stopReason: "cancelled",
+      },
       2,
     );
     host.emit(
@@ -808,7 +886,12 @@ describe("LiveThreadView", () => {
             stopReason: "end_turn",
           },
         },
-        { seq: 3, method: SESSION_UPDATE, createdAt: "", payload: text("on the guard now") },
+        {
+          seq: 3,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: text("on the guard now"),
+        },
       ],
     });
     render(
@@ -847,7 +930,11 @@ describe("LiveThreadView", () => {
     expect(host.cancel).toHaveBeenCalledWith({ threadId: THREAD.id });
 
     host.emit(
-      { sessionUpdate: "state_update", sessionState: "idle", stopReason: "cancelled" },
+      {
+        sessionUpdate: "state_update",
+        sessionState: "idle",
+        stopReason: "cancelled",
+      },
       2,
     );
     await waitFor(() =>
@@ -871,7 +958,9 @@ const OPTIONS = [
   { optionId: "reject_once", name: "Deny", kind: "reject_once" },
 ];
 
-const askedBefore = (overrides: Partial<PendingPermissionView> = {}): PendingPermissionView => ({
+const askedBefore = (
+  overrides: Partial<PendingPermissionView> = {},
+): PendingPermissionView => ({
   requestId: "req-1",
   threadId: THREAD.id,
   title: "Run ls",
@@ -1072,7 +1161,10 @@ describe("LiveThreadView provenance", () => {
       else — the conversation is entirely readable without it. */
   it("still renders the chat when the host cannot answer", async () => {
     const host = stubHost();
-    const client = { ...host.client, threadState: undefined } as unknown as HostClient;
+    const client = {
+      ...host.client,
+      threadState: undefined,
+    } as unknown as HostClient;
     render(
       <LiveThreadView
         client={client}
@@ -1234,7 +1326,10 @@ describe("LiveThreadView, where the work is happening", () => {
       chip and nothing else. */
   it("costs nothing on a host that cannot answer thread/state", async () => {
     const host = stubHost();
-    const client = { ...host.client, threadState: undefined } as unknown as HostClient;
+    const client = {
+      ...host.client,
+      threadState: undefined,
+    } as unknown as HostClient;
     render(
       <LiveThreadView
         client={client}
@@ -1316,7 +1411,9 @@ describe("LiveThreadView resume", () => {
   it("resumes the thread it is showing, once", async () => {
     const { resumeThread } = draw(detached);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Resume" }),
+    );
 
     await waitFor(() =>
       expect(resumeThread).toHaveBeenCalledWith({ threadId: THREAD.id }),
@@ -1335,20 +1432,24 @@ describe("LiveThreadView resume", () => {
       } as ThreadResumeResult["state"],
     });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Resume" }),
+    );
 
-    expect(await screen.findByText(/Conversation restored/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Conversation restored/),
+    ).toBeInTheDocument();
     await waitFor(() => expect(button()).toBeNull());
   });
 
   it("says the agent replayed its history when that is what happened", async () => {
     draw(detached, { outcome: "loaded" });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Resume" }),
+    );
 
-    expect(
-      await screen.findByText(/replayed its history/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/replayed its history/)).toBeInTheDocument();
   });
 
   /**
@@ -1364,7 +1465,9 @@ describe("LiveThreadView resume", () => {
       drift: ["harnessId", "cwd"],
     });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Resume" }),
+    );
 
     const notice = await screen.findByText(/no longer matches/);
     // Its own sentence, and capitalised: it follows the host's, and
@@ -1388,7 +1491,9 @@ describe("LiveThreadView resume", () => {
       detail: "/Users/j/code/jabot is not there any more.",
     });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Resume" }),
+    );
 
     const notice = await screen.findByText(/not there any more/);
     expect(notice).toHaveAttribute("data-tone", "bad");
@@ -1406,7 +1511,9 @@ describe("LiveThreadView resume", () => {
       drift: ["cwd"],
     });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Resume" }),
+    );
 
     expect(await screen.findByText(/no longer matches/)).toHaveTextContent(
       "this thread. The folder has moved.",
@@ -1416,7 +1523,9 @@ describe("LiveThreadView resume", () => {
   it("falls back to naming the outcome when the host sent no sentence", async () => {
     draw(detached, { resumed: false, outcome: "unsupported" });
 
-    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Resume" }),
+    );
 
     expect(
       await screen.findByText("Could not resume: unsupported."),
@@ -1440,7 +1549,9 @@ describe("LiveThreadView resume", () => {
       />,
     );
 
-    await userEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Resume" }),
+    );
 
     expect(await screen.findByText("start the migration")).toBeInTheDocument();
     expect(document.querySelector(".chat-resume")).toBeNull();

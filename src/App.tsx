@@ -48,7 +48,11 @@ import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatView } from "./components/NewChatView";
 import { hostErrorText } from "./views/errors";
 import { SettingsView } from "./views/SettingsView";
-import { Sidebar, loadSidebarOpen, saveSidebarOpen } from "./components/Sidebar";
+import {
+  Sidebar,
+  loadSidebarOpen,
+  saveSidebarOpen,
+} from "./components/Sidebar";
 import {
   ThreadContextMenu,
   type MenuPosition,
@@ -243,13 +247,13 @@ function AppShell({
   const toolChips = crew.tools ?? TOOL_CATALOG;
   const hostToolChips = crew.hostTools ?? HOST_TOOLS;
   const harnesses = crew.harnesses ?? HARNESSES;
-  const enabledHarnesses = harnesses.filter((harness) =>
-    !settings.settings?.disabledHarnessIds?.includes(harness.id));
+  const enabledHarnesses = harnesses.filter(
+    (harness) => !settings.settings?.disabledHarnessIds?.includes(harness.id),
+  );
   // Registered folders replace the fixtures the moment the host answers; the
   // threads inside them are real rows, so the main pane has to be able to find
   // one that the mock reducer has never heard of.
-  const folders =
-    registered.folders ?? (fixtures ? sidebarFolders(state) : []);
+  const folders = registered.folders ?? (fixtures ? sidebarFolders(state) : []);
   // The PR board's rows, and the badge counted off them. `null` is "not asked
   // yet", so before this the badge was always the fixture's count, even with a
   // host answering — the sidebar said "4 open" over a board that said none.
@@ -489,7 +493,7 @@ function AppShell({
   }
 
   async function startThread(draft: NewChatDraft) {
-    const folder = (client ? registered.folders ?? [] : folders).find(
+    const folder = (client ? (registered.folders ?? []) : folders).find(
       (f) => f.id === draft.folderId,
     );
     if (draft.folderId && !folder) {
@@ -792,7 +796,9 @@ function AppShell({
                     signedIn: github.signedIn,
                     signIn: () => setSignIn(true),
                     pickFolder: async () => {
-                      const path = await invoke<string | null>("pick_workspace");
+                      const path = await invoke<string | null>(
+                        "pick_workspace",
+                      );
                       if (!path) return null;
                       const existing = folders.find(
                         (folder) => folder.path === path || folder.cwd === path,
@@ -821,45 +827,32 @@ function AppShell({
             onStart={startThread}
           />
         ) : (
-        <MainView
-          client={client}
-          state={state}
-          fixtures={fixtures}
-          inbox={inbox}
-          schedules={schedules}
-          settings={settings}
-          devices={devices}
-          pulls={pulls}
-          pullRequests={pullRequests}
-          github={github}
-          onSignIn={() => setSignIn(true)}
-          onEditSchedule={(scheduleId) =>
-            setScheduleEditor({ open: true, scheduleId })
-          }
-          bots={bots}
-          tools={[...toolChips, ...hostToolChips]}
-          harnesses={harnesses}
-          hostThreads={hostThreads}
-          resolvedThread={resolved}
-          selection={selection}
-          host={host}
-          onSelect={setSelection}
-          onFoldThread={foldThread}
-          onSend={(conversationId, text) =>
-            dispatch({ type: "sendMessage", conversationId, text })
-          }
-          onNotice={answerNotice}
-          onOpenInboxThread={openInboxThread}
-          onInboxAction={(cardId, actionId) => {
-            // A host card's buttons reach the host: Archive is `thread/archive`
-            // and an `ask:` button is `permission/reply`. The reducer only ever
-            // knew how to hide a fixture.
-            if (inbox.cards) {
-              void inbox.act(cardId, actionId);
-              return;
+          <MainView
+            client={client}
+            state={state}
+            fixtures={fixtures}
+            inbox={inbox}
+            schedules={schedules}
+            settings={settings}
+            devices={devices}
+            pulls={pulls}
+            pullRequests={pullRequests}
+            github={github}
+            onSignIn={() => setSignIn(true)}
+            onEditSchedule={(scheduleId) =>
+              setScheduleEditor({ open: true, scheduleId })
             }
-            if (actionId === "archive") {
-              dispatch({ type: "dismissInboxCard", cardId });
+            bots={bots}
+            tools={[...toolChips, ...hostToolChips]}
+            harnesses={harnesses}
+            hostThreads={hostThreads}
+            resolvedThread={resolved}
+            selection={selection}
+            host={host}
+            onSelect={setSelection}
+            onFoldThread={foldThread}
+            onSend={(conversationId, text) =>
+              dispatch({ type: "sendMessage", conversationId, text })
             }
           }}
           onEditBot={(botId) => setEditor({ open: true, botId })}

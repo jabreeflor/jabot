@@ -49,7 +49,10 @@ export interface Schedules {
   /** Create when `scheduleId` is null, else patch. Resolves with the saved
       record or throws the host's error — the editor has to be able to say
       *why*, and "that cron has no hour 99 in it" is a fixable thing to say. */
-  save: (scheduleId: string | null, draft: ScheduleDraft) => Promise<ScheduleView>;
+  save: (
+    scheduleId: string | null,
+    draft: ScheduleDraft,
+  ) => Promise<ScheduleView>;
   /** Toggle without throwing: refusals land on `error` so a fire-and-forget
       click still has an error strategy. */
   setEnabled: (scheduleId: string, enabled: boolean) => Promise<void>;
@@ -308,7 +311,9 @@ export function parseWhen(text: string): string | null {
   const said = text.toLowerCase();
   const clock = readClock(said);
   const day = DAY_WORDS.find(([pattern]) => pattern.test(said))?.[1] ?? null;
-  const recurs = /\bevery\b|\beach\b|\bdaily\b|\bhourly\b|\bweekly\b/.test(said);
+  const recurs = /\bevery\b|\beach\b|\bdaily\b|\bhourly\b|\bweekly\b/.test(
+    said,
+  );
 
   if (/\b(every hour|hourly|each hour)\b/.test(said)) {
     return `${clock?.minute ?? 0} * * * *`;
@@ -367,8 +372,27 @@ const WHEN_WORDS = [
 
 /** A word that cannot be the last one in a title. */
 const DANGLING = new Set([
-  "and", "or", "the", "a", "an", "to", "of", "for", "with", "on", "in", "at",
-  "by", "from", "into", "that", "this", "my", "your", "its", "then",
+  "and",
+  "or",
+  "the",
+  "a",
+  "an",
+  "to",
+  "of",
+  "for",
+  "with",
+  "on",
+  "in",
+  "at",
+  "by",
+  "from",
+  "into",
+  "that",
+  "this",
+  "my",
+  "your",
+  "its",
+  "then",
 ]);
 
 /** A name for a schedule nobody named: what it does, with the when taken out.
@@ -386,11 +410,15 @@ export function suggestName(prompt: string): string {
   if (!said) return "";
 
   const words = said.split(/\s+/).slice(0, 6);
-  while (words.length > 1 && DANGLING.has(words[words.length - 1].toLowerCase())) {
+  while (
+    words.length > 1 &&
+    DANGLING.has(words[words.length - 1].toLowerCase())
+  ) {
     words.pop();
   }
   const name = words.join(" ");
-  const clipped = name.length > 42 ? `${name.slice(0, 42).trimEnd()}\u2026` : name;
+  const clipped =
+    name.length > 42 ? `${name.slice(0, 42).trimEnd()}\u2026` : name;
   return clipped.charAt(0).toUpperCase() + clipped.slice(1);
 }
 

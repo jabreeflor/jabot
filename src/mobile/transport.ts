@@ -13,10 +13,7 @@
 //! close. The reach ladder in `remote-and-mobile/protocol-and-reach.md` is a
 //! choice of `LineChannel`, not a choice of protocol.
 
-import type {
-  HostTransport,
-  NotificationHandler,
-} from "../host/client";
+import type { HostTransport, NotificationHandler } from "../host/client";
 import type {
   JsonRpcNotification,
   JsonRpcRequest,
@@ -41,7 +38,11 @@ export interface LineTransport extends HostTransport {
 /** Rejecting a request because the connection went, not because the host said no. */
 export class HostConnectionClosed extends Error {
   constructor(cause?: Error) {
-    super(cause ? `host connection closed: ${cause.message}` : "host connection closed");
+    super(
+      cause
+        ? `host connection closed: ${cause.message}`
+        : "host connection closed",
+    );
     this.name = "HostConnectionClosed";
   }
 }

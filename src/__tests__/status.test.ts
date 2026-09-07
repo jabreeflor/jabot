@@ -42,9 +42,9 @@ function pr(over: Partial<PullRequest> = {}): PullRequest {
 
 describe("threadStatus", () => {
   it("says sleeping for a folded thread even while its run continues", () => {
-    expect(threadStatus(thread({ state: "folded", runState: "running" }))).toEqual(
-      { label: "sleeping", tone: "quiet" },
-    );
+    expect(
+      threadStatus(thread({ state: "folded", runState: "running" })),
+    ).toEqual({ label: "sleeping", tone: "quiet" });
   });
 
   it("reports the latest run for a visible thread", () => {
@@ -70,7 +70,8 @@ describe("threadStatus", () => {
 
   it("shows the outcome of a resurfaced thread, not the word resurfaced", () => {
     expect(
-      threadStatus(thread({ state: "resurfaced", runState: "succeeded" })).label,
+      threadStatus(thread({ state: "resurfaced", runState: "succeeded" }))
+        .label,
     ).toBe("done");
   });
 });

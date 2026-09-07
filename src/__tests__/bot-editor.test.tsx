@@ -31,7 +31,9 @@ const CHIEF: Bot = {
   isChief: true,
 };
 
-function renderEditor(over: Partial<Parameters<typeof BotEditorModal>[0]> = {}) {
+function renderEditor(
+  over: Partial<Parameters<typeof BotEditorModal>[0]> = {},
+) {
   const props = {
     bot: null,
     templates: BOT_TEMPLATES,
@@ -59,9 +61,10 @@ describe("BotEditorModal", () => {
       "aria-pressed",
       "false",
     );
-    expect(
-      screen.getByRole("button", { name: /Claude Code/ }),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /Claude Code/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   /**

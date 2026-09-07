@@ -71,9 +71,9 @@ describe("mapping a host row onto the card", () => {
    */
   it("says the most actionable true thing", () => {
     expect(prRow(wire({ status: "merged" })).summary).toBe("merged");
-    expect(
-      prRow(wire({ reviewState: "changes_requested" })).summary,
-    ).toBe("changes requested");
+    expect(prRow(wire({ reviewState: "changes_requested" })).summary).toBe(
+      "changes requested",
+    );
     expect(
       prRow(
         wire({

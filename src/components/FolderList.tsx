@@ -16,12 +16,7 @@
 
 import { useState } from "react";
 
-import {
-  ChevronDownIcon,
-  FolderIcon,
-  SlidersIcon,
-  PlusIcon,
-} from "./Icon";
+import { ChevronDownIcon, FolderIcon, SlidersIcon, PlusIcon } from "./Icon";
 import { Sparkle } from "./Sparkle";
 import { threadStatus } from "./status";
 import type { FolderWithThreads, Selection, ThreadSummary } from "./types";
@@ -65,7 +60,9 @@ export function FolderList({
                 // The registered directory, and the repo it turned out to be —
                 // the two things a folder row cannot show but a user picking
                 // between two checkouts of the same project needs.
-                title={folder.repo ? `${folder.path} · ${folder.repo}` : folder.path}
+                title={
+                  folder.repo ? `${folder.path} · ${folder.repo}` : folder.path
+                }
                 onClick={() =>
                   setCollapsed((current) =>
                     open
@@ -79,7 +76,9 @@ export function FolderList({
                     folder for an expanded one. */}
                 <FolderIcon open={open} />
                 <span className="name">{folder.name}</span>
-                {!open && <span className="count">{folder.threads.length}</span>}
+                {!open && (
+                  <span className="count">{folder.threads.length}</span>
+                )}
               </button>
               {onFolderSettings && (
                 <button

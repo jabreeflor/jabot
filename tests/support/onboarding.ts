@@ -4,7 +4,10 @@
 //! includes `tests`, so a rename in src/onboarding/state.ts fails `tsc
 //! --noEmit` instead of silently un-seeding every suite.
 
-import { ONBOARDING_KEY, type OnboardingProfile } from "../../src/onboarding/state";
+import {
+  ONBOARDING_KEY,
+  type OnboardingProfile,
+} from "../../src/onboarding/state";
 
 /**
  * Mark this jsdom as already onboarded. `userName` defaults to the value

@@ -171,7 +171,9 @@ describe("PullRequestsView", () => {
   it("reopens the session that opened the PR", async () => {
     const props = renderPrs();
 
-    await userEvent.click(screen.getByRole("button", { name: "Reopen thread" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Reopen thread" }),
+    );
 
     expect(props.onOpenThread).toHaveBeenCalledWith("auth");
   });
@@ -258,7 +260,9 @@ describe("PullRequestsView, closed pull requests", () => {
     renderPrs({ pullRequests: PRS.filter((pr) => pr.status !== "closed") });
 
     expect(
-      screen.queryByText("CLOSED WITHOUT MERGING", { selector: ".page-section" }),
+      screen.queryByText("CLOSED WITHOUT MERGING", {
+        selector: ".page-section",
+      }),
     ).not.toBeInTheDocument();
   });
 
@@ -268,6 +272,8 @@ describe("PullRequestsView, closed pull requests", () => {
     renderPrs();
     await userEvent.click(screen.getByRole("tab", { name: "Drafts" }));
 
-    expect(screen.queryByText("Cache the harness probe")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Cache the harness probe"),
+    ).not.toBeInTheDocument();
   });
 });

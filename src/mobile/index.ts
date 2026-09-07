@@ -5,17 +5,20 @@
 //! [`MobileSession`]; [`createLineTransport`] is how a device attaches
 //! whatever duplex it has to the same frames the desktop uses.
 
-export { askDetail, askTitle, allowOption, parseAskOptions, rejectOption } from "./ask";
+export {
+  askDetail,
+  askTitle,
+  allowOption,
+  parseAskOptions,
+  rejectOption,
+} from "./ask";
 export {
   createDeviceCredentials,
   frameHash,
   helloProof,
   verifyHostProof,
 } from "./credentials";
-export type {
-  DeviceCredentialsOptions,
-  HelloProofInput,
-} from "./credentials";
+export type { DeviceCredentialsOptions, HelloProofInput } from "./credentials";
 export type { AskOption } from "./ask";
 export {
   askCard,

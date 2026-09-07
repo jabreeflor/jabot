@@ -15,11 +15,7 @@ import {
   saveSidebarOpen,
   SIDEBAR_OPEN_KEY,
 } from "../components/Sidebar";
-import type {
-  Bot,
-  FolderWithThreads,
-  Selection,
-} from "../components/types";
+import type { Bot, FolderWithThreads, Selection } from "../components/types";
 
 const BOTS: Bot[] = [
   {
@@ -105,7 +101,9 @@ describe("Sidebar", () => {
   it("does not offer Devices as its own row", () => {
     renderSidebar({ onOpenSettings: vi.fn() });
     expect(screen.queryByRole("button", { name: "Devices" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Settings" }),
+    ).toBeInTheDocument();
   });
 
   it("marks the Settings gear as current when the pane is open", () => {
@@ -140,9 +138,9 @@ describe("Sidebar", () => {
       name: "Auth migration, running",
     });
     expect(running.querySelector(".sparkle.live")).not.toBeNull();
-    expect(running.querySelectorAll("[data-testid=sparkle] > span")).toHaveLength(
-      9,
-    );
+    expect(
+      running.querySelectorAll("[data-testid=sparkle] > span"),
+    ).toHaveLength(9);
     expect(running).not.toHaveTextContent("running");
 
     const done = screen.getByRole("button", {
@@ -218,7 +216,9 @@ describe("Sidebar", () => {
   it("hides the badge when nothing wants you", () => {
     renderSidebar({ inboxCount: 0 });
 
-    expect(screen.queryByRole("button", { name: /waiting/ })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /waiting/ }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Inbox" })).toBeInTheDocument();
   });
 
@@ -408,10 +408,13 @@ describe("Sidebar", () => {
     // Same neighbourhood as the click, plus a leave/enter the layout shift
     // synthesizes: still held, so the list stays gone.
     fireEvent.pointerMove(window, { clientX: 28, clientY: 26 });
-    fireEvent.pointerEnter(screen.getByRole("button", { name: "Show sidebar" }), {
-      clientX: 28,
-      clientY: 26,
-    });
+    fireEvent.pointerEnter(
+      screen.getByRole("button", { name: "Show sidebar" }),
+      {
+        clientX: 28,
+        clientY: 26,
+      },
+    );
     expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
 
     fireEvent.pointerMove(window, { clientX: 200, clientY: 80 });

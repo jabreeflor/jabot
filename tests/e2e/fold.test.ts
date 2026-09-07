@@ -52,7 +52,8 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((host) => host.dispose()));
 });
 
-const kinds = (inbox: InboxListResult) => inbox.events.map((event) => event.kind);
+const kinds = (inbox: InboxListResult) =>
+  inbox.events.map((event) => event.kind);
 
 /** Poll `thread/state` until the host has settled where the test expects. */
 async function settle(
@@ -66,7 +67,9 @@ async function settle(
     const state = await client.threadState({ threadId });
     if (predicate(state)) return state;
     if (Date.now() > deadline) {
-      throw new Error(`${threadId} never settled; last state: ${JSON.stringify(state)}`);
+      throw new Error(
+        `${threadId} never settled; last state: ${JSON.stringify(state)}`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
@@ -83,7 +86,10 @@ async function settle(
 async function liveThread(client: HostClient, threadId: string) {
   const dir = mkdtempSync(path.join(tmpdir(), "jabot-fold-"));
   const gate = path.join(dir, `${threadId}.gate`);
-  const folder = await client.registerFolder({ path: dir, name: "globnet-sync" });
+  const folder = await client.registerFolder({
+    path: dir,
+    name: "globnet-sync",
+  });
   await client.openThread({
     threadId,
     title: "Auth migration",
@@ -105,7 +111,11 @@ async function liveThread(client: HostClient, threadId: string) {
 }
 
 /** The sidebar's own question: is this row in the folder it belongs to? */
-async function inSidebar(client: HostClient, folderId: string, threadId: string) {
+async function inSidebar(
+  client: HostClient,
+  folderId: string,
+  threadId: string,
+) {
   const { folders } = await client.listFolders();
   const folder = folders.find((row) => row.folderId === folderId);
   return (folder?.threads ?? []).some((thread) => thread.threadId === threadId);
@@ -186,7 +196,11 @@ describe("folding a live session", () => {
     await fold(client, "t-live-fail");
 
     openGate(gate, "max_tokens");
-    const state = await settle(client, "t-live-fail", (s) => s.state === "resurfaced");
+    const state = await settle(
+      client,
+      "t-live-fail",
+      (s) => s.state === "resurfaced",
+    );
 
     // Failed and stuck are different asks of the human — a failure wants a
     // retry, silence wants patience — so a turn that really ended must never
@@ -209,7 +223,11 @@ describe("folding a live session", () => {
     const { gate } = await liveThread(client, "t-live-quiet");
     await fold(client, "t-live-quiet");
 
-    const stuck = await settle(client, "t-live-quiet", (s) => s.state === "resurfaced");
+    const stuck = await settle(
+      client,
+      "t-live-quiet",
+      (s) => s.state === "resurfaced",
+    );
     expect(stuck.resurfacedReason).toBe("stuck");
     // Stuck keeps everything alive: the run is still open and so is the
     // adapter, so waiting is a real option and the work is not thrown away.
@@ -247,7 +265,11 @@ describe("Wait for Inbox on a live session", () => {
     // destructive tool, however quiet the user asked for it to be.
     openGate(gate, "read,delete");
 
-    const state = await settle(client, "t-live-policy", (s) => s.state === "resurfaced");
+    const state = await settle(
+      client,
+      "t-live-policy",
+      (s) => s.state === "resurfaced",
+    );
     expect(state.resurfacedReason).toBe("needs_you");
     expect(state.process.pendingPermissions).toBe(1);
     expect(state.latestRun?.state).toBe("needs_you");
@@ -279,7 +301,9 @@ describe("Wait for Inbox on a live session", () => {
     expect(state.state).toBe("active");
     expect(state.foldPolicy).toBe("wait_for_inbox");
     expect(
-      (await client.inbox()).events.some((event) => event.kind === "judgment_call"),
+      (await client.inbox()).events.some(
+        (event) => event.kind === "judgment_call",
+      ),
     ).toBe(false);
   });
 });

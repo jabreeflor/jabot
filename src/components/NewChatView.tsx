@@ -31,12 +31,7 @@ import {
 } from "./Icon";
 import { Select, type SelectOption } from "./Select";
 import { WorkspacePicker, type WorkspaceActions } from "./WorkspacePicker";
-import type {
-  Folder,
-  HarnessCard,
-  HostTarget,
-  NewChatDraft,
-} from "./types";
+import type { Folder, HarnessCard, HostTarget, NewChatDraft } from "./types";
 
 const UNTITLED = "Untitled session";
 
@@ -77,7 +72,8 @@ export function NewChatView({
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
   const harnessId = harnesses.some((harness) => harness.id === chosenHarnessId)
-    ? chosenHarnessId : harnesses[0]?.id ?? "";
+    ? chosenHarnessId
+    : (harnesses[0]?.id ?? "");
   const selectedHarness = harnesses.find((harness) => harness.id === harnessId);
   const selectedFolder = folders.find((row) => row.id === folder);
 
@@ -187,7 +183,9 @@ export function NewChatView({
           </button>
         </div>
 
-        {!harnessId && <p role="status">Enable a harness in Settings to start a chat.</p>}
+        {!harnessId && (
+          <p role="status">Enable a harness in Settings to start a chat.</p>
+        )}
         <form className="newchat-box" onSubmit={submit}>
           <textarea
             value={text}

@@ -48,10 +48,17 @@ describe("createHotTransport", () => {
 
     const answer = transport.request(request(7));
     expect(sent).toEqual([
-      { event: HOST_BRIDGE_EVENT, data: { jsonrpc: JSONRPC_VERSION, id: "t1:1", method: HOST_HELLO } },
+      {
+        event: HOST_BRIDGE_EVENT,
+        data: { jsonrpc: JSONRPC_VERSION, id: "t1:1", method: HOST_HELLO },
+      },
     ]);
 
-    emit(HOST_BRIDGE_EVENT, { jsonrpc: JSONRPC_VERSION, id: "t1:1", result: { ok: true } });
+    emit(HOST_BRIDGE_EVENT, {
+      jsonrpc: JSONRPC_VERSION,
+      id: "t1:1",
+      result: { ok: true },
+    });
     await expect(answer).resolves.toEqual({
       jsonrpc: JSONRPC_VERSION,
       id: 7,
@@ -67,10 +74,18 @@ describe("createHotTransport", () => {
     const fromA = a.request(request(1));
     const fromB = b.request(request(1));
 
-    emit(HOST_BRIDGE_EVENT, { jsonrpc: JSONRPC_VERSION, id: "b:1", result: "for b" });
+    emit(HOST_BRIDGE_EVENT, {
+      jsonrpc: JSONRPC_VERSION,
+      id: "b:1",
+      result: "for b",
+    });
     await expect(fromB).resolves.toMatchObject({ id: 1, result: "for b" });
 
-    emit(HOST_BRIDGE_EVENT, { jsonrpc: JSONRPC_VERSION, id: "a:1", result: "for a" });
+    emit(HOST_BRIDGE_EVENT, {
+      jsonrpc: JSONRPC_VERSION,
+      id: "a:1",
+      result: "for a",
+    });
     await expect(fromA).resolves.toMatchObject({ id: 1, result: "for a" });
   });
 
@@ -80,7 +95,11 @@ describe("createHotTransport", () => {
     const seen = vi.fn();
     const unlisten = await transport.subscribe(seen);
 
-    const update = { jsonrpc: JSONRPC_VERSION, method: SESSION_UPDATE, params: { n: 1 } };
+    const update = {
+      jsonrpc: JSONRPC_VERSION,
+      method: SESSION_UPDATE,
+      params: { n: 1 },
+    };
     emit(HOST_BRIDGE_EVENT, update);
     expect(seen).toHaveBeenCalledWith(update);
 
@@ -110,10 +129,16 @@ describe("createHotTransport", () => {
 
     transport.close();
 
-    await expect(pending).resolves.toMatchObject({ id: 3, error: { message: "transport closed" } });
+    await expect(pending).resolves.toMatchObject({
+      id: 3,
+      error: { message: "transport closed" },
+    });
     expect(listeners.get(HOST_BRIDGE_EVENT)?.size ?? 0).toBe(0);
     // Nothing left to receive it, and nothing throws.
-    emit(HOST_BRIDGE_EVENT, { jsonrpc: JSONRPC_VERSION, method: SESSION_UPDATE });
+    emit(HOST_BRIDGE_EVENT, {
+      jsonrpc: JSONRPC_VERSION,
+      method: SESSION_UPDATE,
+    });
     await expect(transport.request(request(4))).resolves.toMatchObject({
       error: { message: "transport closed" },
     });
@@ -146,7 +171,11 @@ describe("selectTransport", () => {
     // A bare `vite`, or vitest — which stubs `import.meta.hot` with an object.
     const bare = selectTransport({ tauri: false, bridge: false, hot });
     expect("close" in bare).toBe(false);
-    const noHot = selectTransport({ tauri: false, bridge: true, hot: undefined });
+    const noHot = selectTransport({
+      tauri: false,
+      bridge: true,
+      hot: undefined,
+    });
     expect("close" in noHot).toBe(false);
   });
 });

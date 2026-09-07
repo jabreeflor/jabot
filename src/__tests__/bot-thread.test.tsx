@@ -57,7 +57,11 @@ const BOT: Bot = {
   isChief: false,
 };
 
-const HOST: HostTarget = { hostId: "host-1", name: "This Mac", reachable: true };
+const HOST: HostTarget = {
+  hostId: "host-1",
+  name: "This Mac",
+  reachable: true,
+};
 
 /** The id `crew/thread` derives from the bot. Deliberately not the bot id —
     the fixture path used that, and a test where the two are equal cannot tell
@@ -145,7 +149,13 @@ function stub(over: Record<string, unknown> = {}) {
           handler({
             jsonrpc: "2.0",
             method: SESSION_UPDATE,
-            params: { hostId: "h1", threadId, seq: 2, transcriptSeq: 2, acp: payload },
+            params: {
+              hostId: "h1",
+              threadId,
+              seq: 2,
+              transcriptSeq: 2,
+              acp: payload,
+            },
           });
         }
       });
@@ -175,7 +185,9 @@ describe("a bot's standing chat, live", () => {
         expect.objectContaining({ threadId: THREAD_ID }),
       ),
     );
-    expect(await screen.findByText("summarise the overnight mail")).toBeInTheDocument();
+    expect(
+      await screen.findByText("summarise the overnight mail"),
+    ).toBeInTheDocument();
   });
 
   it("draws what the agent says on that thread", async () => {
@@ -280,7 +292,10 @@ describe("a bot's standing chat, live", () => {
 describe("the shell's bot pane", () => {
   it("opens the host's standing thread for the bot it is showing", async () => {
     const host = stub();
-    vi.mocked(connectHost).mockResolvedValue({ client: host.client, hello: HELLO });
+    vi.mocked(connectHost).mockResolvedValue({
+      client: host.client,
+      hello: HELLO,
+    });
 
     render(<App />);
     await screen.findByRole("button", { name: "Settings" });
@@ -289,7 +304,9 @@ describe("the shell's bot pane", () => {
     await waitFor(() =>
       expect(host.botThread).toHaveBeenCalledWith({ botId: "chief" }),
     );
-    expect(await screen.findByText("summarise the overnight mail")).toBeInTheDocument();
+    expect(
+      await screen.findByText("summarise the overnight mail"),
+    ).toBeInTheDocument();
     // And not the reducer's fixture conversation, which is what it drew before.
     expect(screen.queryByText(/Fold the migration/)).toBeNull();
   });
@@ -306,7 +323,9 @@ describe("the shell's bot pane", () => {
     render(<App />);
     await screen.findByRole("button", { name: "Settings" });
 
-    expect(screen.getByRole("heading", { level: 2, name: "Chief" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Chief" }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Message Chief")).toBeInTheDocument();
   });
 });

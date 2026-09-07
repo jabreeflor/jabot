@@ -117,7 +117,9 @@ describe("FoldButton", () => {
     expect(
       within(menu).getByText(/reads are allowed while you are away/),
     ).toBeInTheDocument();
-    expect(within(menu).getByText(/Never an execute or a delete/)).toBeInTheDocument();
+    expect(
+      within(menu).getByText(/Never an execute or a delete/),
+    ).toBeInTheDocument();
 
     await userEvent.click(
       within(menu).getByRole("menuitem", { name: /Disappear until done/ }),
@@ -166,15 +168,20 @@ describe("ThreadContextMenu", () => {
     // offering the gesture would be an error message where an affordance
     // should have been. Archive and Delete are still legal from there.
     expect(screen.queryByRole("menuitem", { name: /Disappear/ })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /Wait for Inbox/ })).toBeNull();
-    expect(screen.getByRole("menuitem", { name: /Archive/ })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: /Wait for Inbox/ }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("menuitem", { name: /Archive/ }),
+    ).toBeInTheDocument();
   });
 });
 
 describe("folding a host-owned thread", () => {
   const listFolders = vi.fn<() => Promise<FolderListResult>>();
   const fold = vi.fn<(params: unknown) => Promise<ThreadStateResult>>();
-  const archiveThread = vi.fn<(params: unknown) => Promise<ThreadStateResult>>();
+  const archiveThread =
+    vi.fn<(params: unknown) => Promise<ThreadStateResult>>();
   const deleteThread = vi.fn<(params: unknown) => Promise<ThreadStateResult>>();
 
   function client(): HostClient {
@@ -223,7 +230,10 @@ describe("folding a host-owned thread", () => {
       asleep = true;
       return { ...folded, state: "deleted" };
     });
-    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+    vi.mocked(connectHost).mockResolvedValue({
+      client: client(),
+      hello: HELLO,
+    });
   });
 
   /**
@@ -276,9 +286,12 @@ describe("folding a host-owned thread", () => {
     );
 
     // No `policy` key: the plain fold keeps the thread's own policy.
-    await waitFor(() => expect(fold).toHaveBeenCalledWith({ threadId: "t-auth" }), {
-      timeout: FOLD_SETTLE_MS,
-    });
+    await waitFor(
+      () => expect(fold).toHaveBeenCalledWith({ threadId: "t-auth" }),
+      {
+        timeout: FOLD_SETTLE_MS,
+      },
+    );
     // The pane cannot stay on a thread the user just sent away — that is the
     // one screen guaranteed to have nothing to show.
     await waitFor(() =>
@@ -411,8 +424,11 @@ describe("Chief's card", () => {
 
     // Chief's card is an affordance on a thread, so it has to reach the same
     // host call the sidebar's menu does — and with the same policy rule.
-    await waitFor(() => expect(fold).toHaveBeenCalledWith({ threadId: "auth" }), {
-      timeout: FOLD_SETTLE_MS,
-    });
+    await waitFor(
+      () => expect(fold).toHaveBeenCalledWith({ threadId: "auth" }),
+      {
+        timeout: FOLD_SETTLE_MS,
+      },
+    );
   });
 });

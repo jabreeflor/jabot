@@ -95,7 +95,10 @@ describe("adapter spawn", () => {
   it("completes the ACP handshake and accepts the prompt", async () => {
     const { host } = await connected();
 
-    const response = await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-spawn"));
+    const response = await host.call<PromptResult>(
+      SESSION_PROMPT,
+      promptFor("t-spawn"),
+    );
 
     // `accepted` is only reachable if initialize and session/new both round
     // tripped over the adapter's stdio — the session id comes from the agent.
@@ -153,7 +156,10 @@ describe("adapter spawn", () => {
     // own runtime; guessing one would spawn the wrong harness.
     await expect(
       client.prompt({ threadId: "t-no-runtime", content: "hi" }),
-    ).rejects.toMatchObject({ name: "HostRpcError", code: RPC_ERROR.INVALID_PARAMS });
+    ).rejects.toMatchObject({
+      name: "HostRpcError",
+      code: RPC_ERROR.INVALID_PARAMS,
+    });
   });
 
   it("tees adapter stderr to a per-thread log under the data dir", async () => {
@@ -168,7 +174,9 @@ describe("adapter spawn", () => {
     // The agent prints `cancelled` when the ACP notification lands, so the log
     // is proof the cancel travelled host → adapter stdin, not just that the
     // host returned success.
-    expect(await waitForAdapterLog(host, "t-log", "cancelled")).toContain("cancelled");
+    expect(await waitForAdapterLog(host, "t-log", "cancelled")).toContain(
+      "cancelled",
+    );
   });
 });
 
@@ -176,7 +184,9 @@ describe("adapter errors", () => {
   it("rejects a cancel for a thread with no live adapter", async () => {
     const { client } = await connected();
 
-    await expect(client.cancel({ threadId: "t-never-prompted" })).rejects.toMatchObject({
+    await expect(
+      client.cancel({ threadId: "t-never-prompted" }),
+    ).rejects.toMatchObject({
       name: "HostRpcError",
       code: RPC_ERROR.INTERNAL_ERROR,
     });
@@ -217,7 +227,9 @@ describe("adapter streaming", () => {
     const echo = await host.waitFor(isUpdate("t-stream", "user_message_chunk"));
     expect(updateOf(echo).seq).toBe(1);
 
-    const chunk = await host.waitFor(isUpdate("t-stream", "agent_message_chunk"));
+    const chunk = await host.waitFor(
+      isUpdate("t-stream", "agent_message_chunk"),
+    );
     expect(updateOf(chunk).hostId).toBe(hello.hostId);
     expect(updateOf(chunk).threadId).toBe("t-stream");
     expect(updateOf(chunk).seq).toBe(2);
@@ -235,7 +247,10 @@ describe("adapter streaming", () => {
 
   it("surfaces a permission request and routes the answer back to the agent", async () => {
     const { host, client, hello } = await connected();
-    await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-perm", "permission", "rm -rf"));
+    await host.call<PromptResult>(
+      SESSION_PROMPT,
+      promptFor("t-perm", "permission", "rm -rf"),
+    );
 
     const ask = await host.waitFor(PERMISSION_ASK);
     const asked = ask.params as PermissionAskParams;
@@ -244,7 +259,9 @@ describe("adapter streaming", () => {
     expect(asked.requestId).toMatch(/^[0-9a-f-]{36}$/);
     expect(asked.subject).toMatchObject({ kind: "execute", title: "Run ls" });
     expect(asked.options).toEqual(
-      expect.arrayContaining([expect.objectContaining({ optionId: "allow_once" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ optionId: "allow_once" }),
+      ]),
     );
 
     await client.replyPermission({
@@ -274,7 +291,9 @@ describe("adapter streaming", () => {
     const { host, client } = await connected();
     await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-resume"));
     const echo = await host.waitFor(isUpdate("t-resume", "user_message_chunk"));
-    const chunk = await host.waitFor(isUpdate("t-resume", "agent_message_chunk"));
+    const chunk = await host.waitFor(
+      isUpdate("t-resume", "agent_message_chunk"),
+    );
     const idle = await host.waitFor(isUpdate("t-resume", "state_update"));
 
     const missedAll = await client.resumeFrom({ threadId: "t-resume", seq: 0 });
@@ -304,8 +323,12 @@ describe("adapter streaming", () => {
 describe("cancel ordering", () => {
   it("answers outstanding permission requests as cancelled before cancelling the turn", async () => {
     const { host, client } = await connected({ persistent: true });
-    await host.call<PromptResult>(SESSION_PROMPT, promptFor("t-cancel", "permission", "rm -rf"));
-    const asked = (await host.waitFor(PERMISSION_ASK)).params as PermissionAskParams;
+    await host.call<PromptResult>(
+      SESSION_PROMPT,
+      promptFor("t-cancel", "permission", "rm -rf"),
+    );
+    const asked = (await host.waitFor(PERMISSION_ASK))
+      .params as PermissionAskParams;
 
     await client.cancel({ threadId: "t-cancel" });
 
@@ -323,6 +346,8 @@ describe("cancel ordering", () => {
     // assertion `session_cancel`'s current call order fails — see the header.
     const log = await waitForAdapterLog(host, "t-cancel", "cancelled");
     expect(log).toContain("permission_reply=");
-    expect(log.indexOf("permission_reply=")).toBeLessThan(log.indexOf("cancelled"));
+    expect(log.indexOf("permission_reply=")).toBeLessThan(
+      log.indexOf("cancelled"),
+    );
   });
 });

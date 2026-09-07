@@ -22,10 +22,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type {
-  HostTransport,
-  NotificationHandler,
-} from "../../src/host/client";
+import type { HostTransport, NotificationHandler } from "../../src/host/client";
 import {
   JSONRPC_VERSION,
   type JsonRpcNotification,
@@ -34,7 +31,10 @@ import {
   type RuntimeSpec,
 } from "../../src/host/protocol";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 export function hostdBinaryPath(): string {
   const override = process.env.JABOT_HOSTD_BIN;
@@ -241,16 +241,21 @@ export class HostdProcess implements HostTransport {
   /** `HostTransport` — send a request, resolve on the matching `id`. */
   request(request: JsonRpcRequest): Promise<JsonRpcResponse> {
     if (this.exited) {
-      return Promise.reject(new Error(`jabot-hostd is not running: ${this.stderr}`));
+      return Promise.reject(
+        new Error(`jabot-hostd is not running: ${this.stderr}`),
+      );
     }
     return new Promise((resolve, reject) => {
       this.pending.set(String(request.id), { resolve, reject });
-      this.child.stdin.write(`${JSON.stringify(request)}\n`, (err?: Error | null) => {
-        if (err) {
-          this.pending.delete(String(request.id));
-          reject(err);
-        }
-      });
+      this.child.stdin.write(
+        `${JSON.stringify(request)}\n`,
+        (err?: Error | null) => {
+          if (err) {
+            this.pending.delete(String(request.id));
+            reject(err);
+          }
+        },
+      );
     });
   }
 
@@ -270,7 +275,10 @@ export class HostdProcess implements HostTransport {
    * itself. Ids are string-tagged so they cannot collide with the numeric ones
    * a `HostClient` on the same transport is handing out.
    */
-  call<T = unknown>(method: string, params?: unknown): Promise<JsonRpcResponse<T>> {
+  call<T = unknown>(
+    method: string,
+    params?: unknown,
+  ): Promise<JsonRpcResponse<T>> {
     const request: JsonRpcRequest = {
       jsonrpc: JSONRPC_VERSION,
       id: `harness-${this.nextId++}`,
@@ -286,7 +294,10 @@ export class HostdProcess implements HostTransport {
    * the host rather than only on the client side.
    */
   adapterLogPath(threadId: string): string {
-    if (!this.dataDir) throw new Error("adapter logs need a data dir; start the host persistent");
+    if (!this.dataDir)
+      throw new Error(
+        "adapter logs need a data dir; start the host persistent",
+      );
     return path.join(this.dataDir, "adapter-logs", `${threadId}.stderr.log`);
   }
 
@@ -341,7 +352,9 @@ export class HostdProcess implements HostTransport {
     timeoutMs = 10_000,
   ): Promise<JsonRpcNotification> {
     const predicate =
-      typeof match === "string" ? (n: JsonRpcNotification) => n.method === match : match;
+      typeof match === "string"
+        ? (n: JsonRpcNotification) => n.method === match
+        : match;
     const already = this.received.find(predicate);
     if (already) return Promise.resolve(already);
     return new Promise((resolve, reject) => {

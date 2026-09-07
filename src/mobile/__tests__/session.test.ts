@@ -40,7 +40,8 @@ class FakeHost implements HostTransport {
   scoped: readonly string[] = APPROVER_METHODS;
   /** What `sync/resumeFrom` answers. Set per-test: the whole point of the
       call is a host that has something this device missed. */
-  resume: { threadId: string; headSeq: number; events: unknown[] } | null = null;
+  resume: { threadId: string; headSeq: number; events: unknown[] } | null =
+    null;
 
   constructor(private readonly deviceRole: "full" | "approver" = "approver") {}
 
@@ -136,11 +137,12 @@ function askNotification(requestId = "req-1"): JsonRpcNotification {
       seq: 3,
       requestId,
       subject: { title: "Run ls", command: "ls -la" },
-      options: [{ optionId: "allow_once", name: "Allow once", kind: "allow_once" }],
+      options: [
+        { optionId: "allow_once", name: "Allow once", kind: "allow_once" },
+      ],
     },
   };
 }
-
 
 /**
  * Every wire method `MobileSession` is capable of emitting.
@@ -153,9 +155,13 @@ function askNotification(requestId = "req-1"): JsonRpcNotification {
  */
 function methodsTheSessionCanEmit(): string[] {
   const wire = new Map<string, string>();
-  for (const block of readFileSync("src/host/client.ts", "utf8").split(/\n  async /)) {
+  for (const block of readFileSync("src/host/client.ts", "utf8").split(
+    /\n  async /,
+  )) {
     const name = /^(\w+)\s*\(/.exec(block)?.[1];
-    const konst = /this\.request(?:<[^>]*>)?\(\s*([A-Z][A-Z0-9_]*)/.exec(block)?.[1];
+    const konst = /this\.request(?:<[^>]*>)?\(\s*([A-Z][A-Z0-9_]*)/.exec(
+      block,
+    )?.[1];
     if (!name || !konst) continue;
     const value = (protocol as unknown as Record<string, unknown>)[konst];
     if (typeof value === "string") wire.set(name, value);
@@ -179,7 +185,10 @@ function methodsTheSessionCanEmit(): string[] {
 describe("the phone client", () => {
   it("says hello as its own device, with the proof its pairing derived", async () => {
     const host = new FakeHost();
-    const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
     const hello = await session.connect();
 
     const sent = host.sent.find((r) => r.method === HOST_HELLO);
@@ -212,9 +221,16 @@ describe("the phone client", () => {
     // Sanity on the extraction itself: a parse that found nothing would make
     // the assertion below vacuous in exactly the way this test replaces.
     expect(emitted).toEqual(
-      expect.arrayContaining([HOST_HELLO, INBOX_LIST, PERMISSION_PENDING, PERMISSION_REPLY]),
+      expect.arrayContaining([
+        HOST_HELLO,
+        INBOX_LIST,
+        PERMISSION_PENDING,
+        PERMISSION_REPLY,
+      ]),
     );
-    expect(emitted.filter((method) => !APPROVER_METHODS.includes(method))).toEqual([]);
+    expect(
+      emitted.filter((method) => !APPROVER_METHODS.includes(method)),
+    ).toEqual([]);
     // The one that must never appear, named so the guard above has teeth for
     // a reader as well as for the runner.
     expect(emitted).not.toContain(SESSION_PROMPT);
@@ -222,7 +238,10 @@ describe("the phone client", () => {
 
   it("sends exactly the calls its four operations need, and no others", async () => {
     const host = new FakeHost();
-    const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
     await session.connect();
     host.push(askNotification());
     await session.refresh();
@@ -251,10 +270,15 @@ describe("the phone client", () => {
   it("stops offering a method the host has taken off this device", async () => {
     const host = new FakeHost();
     host.scoped = APPROVER_METHODS.filter((m) => m !== SESSION_CANCEL);
-    const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
     await session.connect();
 
-    await expect(session.cancelThread("t9")).rejects.toBeInstanceOf(OutOfScopeError);
+    await expect(session.cancelThread("t9")).rejects.toBeInstanceOf(
+      OutOfScopeError,
+    );
     expect(host.sent.some((r) => r.method === SESSION_CANCEL)).toBe(false);
     // Everything still granted keeps working.
     await expect(session.refresh()).resolves.toBeTruthy();
@@ -285,7 +309,10 @@ describe("the phone client", () => {
 
   it("answers with the option the agent offered, naming this device", async () => {
     const host = new FakeHost();
-    const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
     await session.connect();
     host.push(askNotification());
 
@@ -293,7 +320,11 @@ describe("the phone client", () => {
     expect(result.delivered).toBe(true);
     expect(host.sent[host.sent.length - 1]).toMatchObject({
       method: PERMISSION_REPLY,
-      params: { requestId: "req-1", optionId: "allow_once", deviceId: "phone-1" },
+      params: {
+        requestId: "req-1",
+        optionId: "allow_once",
+        deviceId: "phone-1",
+      },
     });
     // The card goes as soon as the answer lands; the host is idempotent, so a
     // `permission/resolved` arriving afterwards agrees rather than fights.
@@ -302,7 +333,10 @@ describe("the phone client", () => {
 
   it("drops the card when another device answers first", async () => {
     const host = new FakeHost();
-    const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
     await session.connect();
     host.push(askNotification());
     expect(session.inbox.needs).toHaveLength(1);
@@ -338,7 +372,10 @@ describe("the phone client", () => {
         stale: true,
       },
     ];
-    const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
     await session.connect();
     const inbox = await session.refresh();
 
@@ -346,10 +383,12 @@ describe("the phone client", () => {
       expect.arrayContaining([INBOX_LIST, PERMISSION_PENDING]),
     );
     // An ask whose adapter is gone is still answerable and says so (#20).
-    expect(inbox.needs[0].ask).toMatchObject({ requestId: "req-2", stale: true });
+    expect(inbox.needs[0].ask).toMatchObject({
+      requestId: "req-2",
+      stale: true,
+    });
   });
 });
-
 
 /**
  * Coming back after a tunnel (#29).
@@ -362,7 +401,11 @@ describe("the phone client", () => {
  * loss is a gap in a conversation somebody is looking at.
  */
 describe("reconnecting after the phone was offline", () => {
-  function update(threadId: string, seq: number, text: string): JsonRpcNotification {
+  function update(
+    threadId: string,
+    seq: number,
+    text: string,
+  ): JsonRpcNotification {
     return {
       jsonrpc: JSONRPC_VERSION,
       method: SESSION_UPDATE,
@@ -371,14 +414,20 @@ describe("reconnecting after the phone was offline", () => {
         threadId,
         seq,
         transcriptSeq: seq,
-        acp: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
+        acp: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text },
+        },
       },
     };
   }
 
   async function connected() {
     const host = new FakeHost();
-    const session = new MobileSession({ transport: host, credentials: CREDENTIALS });
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
     await session.connect();
     return { host, session };
   }
@@ -399,9 +448,7 @@ describe("reconnecting after the phone was offline", () => {
     const seen: string[] = [];
     host.push(update("t9", 4, "before the tunnel"));
     session.watchThread("t9", (u) => {
-      seen.push(
-        ((u.acp as { content: { text: string } }).content).text,
-      );
+      seen.push((u.acp as { content: { text: string } }).content.text);
     });
     host.resume = {
       threadId: "t9",
@@ -409,9 +456,21 @@ describe("reconnecting after the phone was offline", () => {
       events: [
         // At the head this device already has. Replaying it would draw a
         // chunk twice.
-        { seq: 4, method: SESSION_UPDATE, params: update("t9", 4, "before the tunnel").params },
-        { seq: 5, method: SESSION_UPDATE, params: update("t9", 5, "while you were away").params },
-        { seq: 6, method: SESSION_UPDATE, params: update("t9", 6, "and this too").params },
+        {
+          seq: 4,
+          method: SESSION_UPDATE,
+          params: update("t9", 4, "before the tunnel").params,
+        },
+        {
+          seq: 5,
+          method: SESSION_UPDATE,
+          params: update("t9", 5, "while you were away").params,
+        },
+        {
+          seq: 6,
+          method: SESSION_UPDATE,
+          params: update("t9", 6, "and this too").params,
+        },
       ],
     };
 

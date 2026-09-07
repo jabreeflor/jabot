@@ -43,7 +43,12 @@ import {
   type ScheduleSeed,
 } from "../components/SchedulePrompt";
 import type { ScheduleDraft } from "./schedules";
-import { describeCron, describeFire, relativeWhen, shortTime } from "./schedules";
+import {
+  describeCron,
+  describeFire,
+  relativeWhen,
+  shortTime,
+} from "./schedules";
 
 /** Slow on purpose: `schedule/list` is a couple of SQLite reads, and nothing
     on this screen is worth a tighter loop than the job it describes. */
@@ -234,8 +239,8 @@ export function SchedulesView({
                   only puts a cursor in a field the user can already see is one
                   affordance too many. */}
               <p>
-                Say what a bot should do and when, in the box below —
-                “summarise overnight mail every weekday at 9am”.
+                Say what a bot should do and when, in the box below — “summarise
+                overnight mail every weekday at 9am”.
               </p>
             </div>
           )}
@@ -383,10 +388,16 @@ function ScheduleRow({
                 ·
               </span>
               <span
-                className={next === "due now" ? "sched-next is-due" : "sched-next"}
-                title={schedule.enabled ? shortTime(schedule.nextRunAt) : undefined}
+                className={
+                  next === "due now" ? "sched-next is-due" : "sched-next"
+                }
+                title={
+                  schedule.enabled ? shortTime(schedule.nextRunAt) : undefined
+                }
               >
-                {schedule.enabled ? `Next run ${next ?? "unscheduled"}` : "Paused"}
+                {schedule.enabled
+                  ? `Next run ${next ?? "unscheduled"}`
+                  : "Paused"}
               </span>
               <span className="sep" aria-hidden="true">
                 ·

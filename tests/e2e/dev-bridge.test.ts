@@ -40,7 +40,11 @@ import {
   type CustomHarness,
   type HostBridge,
 } from "../../scripts/dev/host-bridge";
-import { fakeAcpAgentPath, fakeAcpRuntime, hostdBinaryPath } from "../support/hostd";
+import {
+  fakeAcpAgentPath,
+  fakeAcpRuntime,
+  hostdBinaryPath,
+} from "../support/hostd";
 
 /** A tab: frames the bridge sends it, and a `HostTransport` over `handle`. */
 function tab(bridge: HostBridge) {
@@ -99,7 +103,10 @@ describe("dev bridge", () => {
     const b = tab(bridge);
     // Both tabs' first request is id 1; they ask different things so the
     // answers are distinguishable if they were ever crossed.
-    const [helloA, healthB] = await Promise.all([a.host.hello(), b.host.health()]);
+    const [helloA, healthB] = await Promise.all([
+      a.host.hello(),
+      b.host.health(),
+    ]);
     expect(helloA.hostMode).toBe("in-process");
     expect(healthB).toMatchObject({ connected: true });
     expect(a.received.map((f) => ("id" in f ? f.id : "n"))).toEqual([1]);
@@ -117,10 +124,18 @@ describe("dev bridge", () => {
     });
     expect(response.id).toBe("seed-1");
     expect(response.error).toBeUndefined();
-    expect((response.result as HarnessListResult).harnesses.length).toBeGreaterThan(0);
-    expect(bridge.status().hello).toMatchObject({ hostName: expect.any(String) });
+    expect(
+      (response.result as HarnessListResult).harnesses.length,
+    ).toBeGreaterThan(0);
+    expect(bridge.status().hello).toMatchObject({
+      hostName: expect.any(String),
+    });
 
-    const hello = await bridge.request({ jsonrpc: JSONRPC_VERSION, id: 2, method: HOST_HELLO });
+    const hello = await bridge.request({
+      jsonrpc: JSONRPC_VERSION,
+      id: 2,
+      method: HOST_HELLO,
+    });
     expect((hello.result as HelloResult).methods).toContain(HOST_HEALTH);
   });
 
@@ -133,12 +148,18 @@ describe("dev bridge", () => {
       {
         jsonrpc: JSONRPC_VERSION,
         id: null,
-        error: { code: RPC_ERROR.INVALID_REQUEST, message: "not a JSON-RPC 2.0 request" },
+        error: {
+          code: RPC_ERROR.INVALID_REQUEST,
+          message: "not a JSON-RPC 2.0 request",
+        },
       },
       {
         jsonrpc: JSONRPC_VERSION,
         id: null,
-        error: { code: RPC_ERROR.INVALID_REQUEST, message: "not a JSON-RPC 2.0 request" },
+        error: {
+          code: RPC_ERROR.INVALID_REQUEST,
+          message: "not a JSON-RPC 2.0 request",
+        },
       },
     ]);
     expect(bridge.status().requests).toBe(0);
@@ -183,7 +204,12 @@ describe("dev bridge", () => {
 
   it("installs the harnesses it was given before the host reads its catalog", async () => {
     const bridge = bridgeUp(hostdBinaryPath(), [
-      { id: "fake-acp", label: "Fake ACP", command: fakeAcpAgentPath(), args: [] },
+      {
+        id: "fake-acp",
+        label: "Fake ACP",
+        command: fakeAcpAgentPath(),
+        args: [],
+      },
     ]);
     const { host } = tab(bridge);
     await host.hello();

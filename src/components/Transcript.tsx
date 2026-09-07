@@ -123,7 +123,11 @@ const ToolBlock = memo(ToolBlockRow, (before, after) =>
  * token reparses one bubble and re-renders nothing else. Parsing inline in the
  * switch would reparse the whole conversation on every chunk.
  */
-function AgentBubble({ item }: { item: Extract<TranscriptItem, { kind: "agent" }> }) {
+function AgentBubble({
+  item,
+}: {
+  item: Extract<TranscriptItem, { kind: "agent" }>;
+}) {
   const nodes = useMemo(() => renderMarkdown(item.text), [item.text]);
   return (
     <div className="msg bot">

@@ -63,13 +63,16 @@ describe("SettingsView", () => {
 
   it("declares Gemini capabilities next to the enable toggle", () => {
     draw({
-      harnesses: [{
-        id: "gemini",
-        label: "Gemini CLI",
-        accent: "var(--h-gemini)",
-        blurb: "Google's Gemini CLI over its documented ACP mode",
-        capabilityNotes: "Streams, tools, permissions, cancel, and session/load.",
-      }],
+      harnesses: [
+        {
+          id: "gemini",
+          label: "Gemini CLI",
+          accent: "var(--h-gemini)",
+          blurb: "Google's Gemini CLI over its documented ACP mode",
+          capabilityNotes:
+            "Streams, tools, permissions, cancel, and session/load.",
+        },
+      ],
     });
     expect(screen.getByRole("checkbox", { name: /Gemini CLI/ })).toBeChecked();
     expect(screen.getByText(/session\/load/)).toBeVisible();
@@ -78,12 +81,23 @@ describe("SettingsView", () => {
   it("enables a missing adapter while retaining other disabled harnesses and install guidance", async () => {
     const props = draw({
       settings: { ...SETTINGS, disabledHarnessIds: ["pi", "custom"] },
-      harnesses: [{ id: "pi", label: "Pi", accent: "red", blurb: "Pi agent", available: false, installHint: "Install Pi adapter" }],
+      harnesses: [
+        {
+          id: "pi",
+          label: "Pi",
+          accent: "red",
+          blurb: "Pi agent",
+          available: false,
+          installHint: "Install Pi adapter",
+        },
+      ],
     });
     expect(screen.getByRole("checkbox", { name: /Pi/ })).not.toBeChecked();
     expect(screen.getByText("Install Pi adapter")).toBeVisible();
     await userEvent.click(screen.getByRole("checkbox", { name: /Pi/ }));
-    expect(props.onSave).toHaveBeenCalledWith({ disabledHarnessIds: ["custom"] });
+    expect(props.onSave).toHaveBeenCalledWith({
+      disabledHarnessIds: ["custom"],
+    });
   });
 
   it("shows Cursor account-isolation notes on the enable row", () => {
@@ -140,7 +154,9 @@ describe("SettingsView", () => {
   it("sends only the control that was used", async () => {
     const props = draw();
 
-    await userEvent.click(screen.getByRole("radio", { name: /Wait for Inbox/ }));
+    await userEvent.click(
+      screen.getByRole("radio", { name: /Wait for Inbox/ }),
+    );
 
     await waitFor(() =>
       expect(props.onSave).toHaveBeenCalledWith({
@@ -157,7 +173,9 @@ describe("SettingsView", () => {
   it("says the host's own refusal", async () => {
     draw({
       onSave: vi.fn(async () => {
-        throw new Error("idleTimeoutMs must be between 1000 and 86400000, not 5");
+        throw new Error(
+          "idleTimeoutMs must be between 1000 and 86400000, not 5",
+        );
       }),
     });
 
@@ -202,7 +220,9 @@ describe("SettingsView", () => {
    * rather be told than quietly ignored.
    */
   it("disables the timeout and says why when the environment is in force", () => {
-    draw({ settings: { ...SETTINGS, idleTimeoutMs: 1500, idleTimeoutFromEnv: true } });
+    draw({
+      settings: { ...SETTINGS, idleTimeoutMs: 1500, idleTimeoutFromEnv: true },
+    });
 
     expect(minutes()).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
@@ -276,10 +296,10 @@ describe("SettingsView", () => {
     draw({ onRunSetup });
 
     expect(screen.getByRole("heading", { name: "Setup" })).toBeInTheDocument();
-    expect(
-      screen.getByText(/same first-run flow again/i),
-    ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+    expect(screen.getByText(/same first-run flow again/i)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Run setup again" }),
+    );
     expect(onRunSetup).toHaveBeenCalledTimes(1);
   });
 
@@ -288,13 +308,17 @@ describe("SettingsView", () => {
   it("keeps the setup control when the host has not answered", () => {
     draw({ settings: null, onRunSetup: vi.fn() });
 
-    expect(screen.getByRole("button", { name: "Run setup again" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Run setup again" }),
+    ).toBeEnabled();
   });
 
   it("does not invent a setup control when nobody can start it", () => {
     draw();
 
-    expect(screen.queryByRole("button", { name: "Run setup again" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Run setup again" }),
+    ).toBeNull();
   });
 
   it("shows the paired list when Devices is selected", async () => {

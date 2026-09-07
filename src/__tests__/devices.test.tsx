@@ -89,8 +89,12 @@ describe("DevicesView", () => {
     ).toBeInTheDocument();
     // The safety number the two humans compared, kept on the row so somebody
     // can still check months later that this is that device.
-    expect(within(rowFor("Jabree's iPhone")).getByText("1174-6602")).toBeInTheDocument();
-    expect(within(rowFor("Jabree's iPhone")).getByText("Paired by QR")).toBeInTheDocument();
+    expect(
+      within(rowFor("Jabree's iPhone")).getByText("1174-6602"),
+    ).toBeInTheDocument();
+    expect(
+      within(rowFor("Jabree's iPhone")).getByText("Paired by QR"),
+    ).toBeInTheDocument();
   });
 
   /**
@@ -105,7 +109,9 @@ describe("DevicesView", () => {
     draw();
 
     const row = rowFor("Jabree's MacBook Pro");
-    expect(within(row).getByText("Paired by spawning this host")).toBeInTheDocument();
+    expect(
+      within(row).getByText("Paired by spawning this host"),
+    ).toBeInTheDocument();
     expect(within(row).queryByText(/Paired via/)).toBeNull();
     expect(within(row).queryByText(/Last seen/)).toBeNull();
     expect(within(row).queryByText("—")).toBeNull();
@@ -173,7 +179,9 @@ describe("DevicesView", () => {
       within(rowFor("Jabree's iPhone")).getByRole("button", { name: "Revoke" }),
     );
 
-    await waitFor(() => expect(props.onRevoke).toHaveBeenCalledWith("dev-phone"));
+    await waitFor(() =>
+      expect(props.onRevoke).toHaveBeenCalledWith("dev-phone"),
+    );
   });
 
   /** The host's sentence, not ours. "The local device cannot be revoked; it is
@@ -220,7 +228,9 @@ describe("DevicesView", () => {
     expect(
       within(rowFor("Jabree's MacBook Pro")).getByText("Connected"),
     ).toBeInTheDocument();
-    expect(within(rowFor("Jabree's iPhone")).queryByText("Connected")).toBeNull();
+    expect(
+      within(rowFor("Jabree's iPhone")).queryByText("Connected"),
+    ).toBeNull();
   });
 
   /** Nested in Settings the pane already said "Settings". A second h1 would

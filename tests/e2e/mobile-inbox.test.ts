@@ -56,7 +56,10 @@ import {
 } from "../../src/mobile/credentials";
 import { APPROVER_METHODS, checkScope } from "../../src/mobile/scope";
 import { MobileSession } from "../../src/mobile/session";
-import { createLineTransport, type LineTransport } from "../../src/mobile/transport";
+import {
+  createLineTransport,
+  type LineTransport,
+} from "../../src/mobile/transport";
 import {
   fakeAcpRuntime,
   HostdProcess,
@@ -88,7 +91,10 @@ async function twoClientHost() {
 }
 
 /** Run #19's handshake and come back with what the phone ends up holding. */
-async function pairPhone(desktop: HostClient, role: "full" | "approver" = "approver") {
+async function pairPhone(
+  desktop: HostClient,
+  role: "full" | "approver" = "approver",
+) {
   const phone = new TestDevice();
   const start: PairingStartResult = await desktop.startPairing();
   const qr = JSON.parse(start.qrPayload) as PairingQr;
@@ -158,7 +164,11 @@ async function attachPhone(
   return { session, transport, hello, proven };
 }
 
-async function openThread(client: HostClient, threadId: string, mode = "permission") {
+async function openThread(
+  client: HostClient,
+  threadId: string,
+  mode = "permission",
+) {
   return client.openThread({
     threadId,
     title: "Auth migration",
@@ -225,7 +235,9 @@ describe("the Mobile Inbox client", () => {
     // said hello on another. If one binding served the whole process, this is
     // the call that would come back `DEVICE_SCOPE`.
     const devices = await desktop.listDevices();
-    expect(devices.devices.find((d) => d.deviceId === phone.deviceId)).toMatchObject({
+    expect(
+      devices.devices.find((d) => d.deviceId === phone.deviceId),
+    ).toMatchObject({
       role: "approver",
       connected: true,
     });
@@ -234,7 +246,12 @@ describe("the Mobile Inbox client", () => {
   it("answers a permission from the phone, and the agent hears it", async () => {
     const { host, desktop } = await twoClientHost();
     const { phone, qr, derived } = await pairPhone(desktop);
-    const { session } = await attachPhone(host, phone, qr.hostId, derived.token);
+    const { session } = await attachPhone(
+      host,
+      phone,
+      qr.hostId,
+      derived.token,
+    );
 
     await openThread(desktop, "t-mobile");
     await desktop.prompt({ threadId: "t-mobile", content: "rm -rf" });
@@ -265,11 +282,13 @@ describe("the Mobile Inbox client", () => {
     expect(logHasPermissionReply(log, "allow_once")).toBe(true);
 
     // The desktop is told, and told *who* — including that it was not itself.
-    const resolved = (await host.waitFor(
-      (n) =>
-        n.method === PERMISSION_RESOLVED &&
-        (n.params as PermissionResolvedParams).requestId === requestId,
-    )).params as PermissionResolvedParams;
+    const resolved = (
+      await host.waitFor(
+        (n) =>
+          n.method === PERMISSION_RESOLVED &&
+          (n.params as PermissionResolvedParams).requestId === requestId,
+      )
+    ).params as PermissionResolvedParams;
     expect(resolved).toMatchObject({
       threadId: "t-mobile",
       optionId: "allow_once",
@@ -277,14 +296,21 @@ describe("the Mobile Inbox client", () => {
     });
 
     // One answer, not two: the question is gone for everyone.
-    expect((await desktop.pendingPermissions({ threadId: "t-mobile" })).requests).toEqual([]);
+    expect(
+      (await desktop.pendingPermissions({ threadId: "t-mobile" })).requests,
+    ).toEqual([]);
     expect(session.inbox.needs).toEqual([]);
   });
 
   it("keeps the phone inside its role, on the host", async () => {
     const { host, desktop } = await twoClientHost();
     const { phone, qr, derived } = await pairPhone(desktop);
-    const { transport } = await attachPhone(host, phone, qr.hostId, derived.token);
+    const { transport } = await attachPhone(
+      host,
+      phone,
+      qr.hostId,
+      derived.token,
+    );
     await openThread(desktop, "t-scope", "echo");
 
     // Straight down the phone's own transport, past anything the client would
@@ -298,7 +324,9 @@ describe("the Mobile Inbox client", () => {
     expect(deleted.error?.code).toBe(RPC_ERROR.DEVICE_SCOPE);
     expect((deleted.error?.data as { role: string }).role).toBe("approver");
     // Refused, not "refused and then done anyway".
-    expect((await desktop.threadState({ threadId: "t-scope" })).state).toBe("active");
+    expect((await desktop.threadState({ threadId: "t-scope" })).state).toBe(
+      "active",
+    );
 
     // What the phone *is* for still works over the same connection.
     const transcript = await transport.request({
@@ -313,15 +341,22 @@ describe("the Mobile Inbox client", () => {
   it("will not let the phone be recorded as the Mac", async () => {
     const { host, desktop, hello } = await twoClientHost();
     const { phone, qr, derived } = await pairPhone(desktop);
-    const { session, transport } = await attachPhone(host, phone, qr.hostId, derived.token);
+    const { session, transport } = await attachPhone(
+      host,
+      phone,
+      qr.hostId,
+      derived.token,
+    );
 
     await openThread(desktop, "t-attrib");
     await desktop.prompt({ threadId: "t-attrib", content: "rm -rf" });
-    const asked = (await host.waitFor(
-      (n) =>
-        n.method === PERMISSION_ASK &&
-        (n.params as PermissionAskParams).threadId === "t-attrib",
-    )).params as PermissionAskParams;
+    const asked = (
+      await host.waitFor(
+        (n) =>
+          n.method === PERMISSION_ASK &&
+          (n.params as PermissionAskParams).threadId === "t-attrib",
+      )
+    ).params as PermissionAskParams;
 
     // "Who answered" is what the record keeps and what every other client is
     // told. A device that could write somebody else's id into it could be
@@ -348,7 +383,12 @@ describe("the Mobile Inbox client", () => {
   it("shows the phone the same three states the desktop shows", async () => {
     const { host, desktop } = await twoClientHost();
     const { phone, qr, derived } = await pairPhone(desktop);
-    const { session } = await attachPhone(host, phone, qr.hostId, derived.token);
+    const { session } = await attachPhone(
+      host,
+      phone,
+      qr.hostId,
+      derived.token,
+    );
 
     // One thread folded away, one holding a question.
     await openThread(desktop, "t-asleep", "echo");
@@ -437,7 +477,12 @@ describe("the Mobile Inbox client", () => {
     // And the gate is "unidentified", not "socket": a paired phone on an
     // identical connection hears the next turn.
     const { phone, qr, derived } = await pairPhone(desktop);
-    const { session } = await attachPhone(host, phone, qr.hostId, derived.token);
+    const { session } = await attachPhone(
+      host,
+      phone,
+      qr.hostId,
+      derived.token,
+    );
     await openThread(desktop, "t-loud");
     await desktop.prompt({ threadId: "t-loud", content: "rm -rf" });
     await until(() => session.inbox.needs.length > 0);
@@ -484,9 +529,14 @@ describe("the Mobile Inbox client", () => {
     // While it is paired it hears everything, which is what makes the second
     // half of this test an assertion rather than a coincidence.
     await openThread(desktop, "t-before", "echo");
-    await desktop.prompt({ threadId: "t-before", content: "before the revoke" });
+    await desktop.prompt({
+      threadId: "t-before",
+      content: "before the revoke",
+    });
     await until(() =>
-      overheard.some((n) => JSON.stringify(n.params).includes("before the revoke")),
+      overheard.some((n) =>
+        JSON.stringify(n.params).includes("before the revoke"),
+      ),
     );
 
     await desktop.revokeDevice({ deviceId: phone.deviceId });

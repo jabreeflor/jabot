@@ -45,9 +45,9 @@ describe("what a phone may call", () => {
       refusedThere: [],
     });
     // The host opened something this client does not draw.
-    expect(checkScope([...APPROVER_METHODS, "thread/fold"]).missingHere).toEqual([
-      "thread/fold",
-    ]);
+    expect(
+      checkScope([...APPROVER_METHODS, "thread/fold"]).missingHere,
+    ).toEqual(["thread/fold"]);
     // The host took something away that this client still offers — the case
     // that turns into a button which always fails.
     expect(
