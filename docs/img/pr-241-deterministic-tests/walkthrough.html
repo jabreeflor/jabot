@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Make tests deterministic across machines and parallel runs</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:960px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:40px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .grid div { padding:14px; background:#0f141a; border-radius:9px; }
+    .grid strong { display:block; margin-bottom:6px; }
+    .fail { color:var(--bad); }
+    .pass { color:var(--ok); }
+    .note { font-size:14px; }
+    @media (max-width:700px) { .flow,.grid { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #241 walkthrough · closes #229</div>
+    <h1>Make tests deterministic across machines and parallel runs</h1>
+    <p>The audit at <code>c898b8f</code> had real coverage and intermittent failures. Four of them depended on PATH, socket scheduling, or a partial flush. This change pins the fixture, waits for the complete record, and leaves the suites parallel.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>Chief handoff assumed no Claude on the box. A real CLI made <code>dispatched</code> true.</li>
+            <li>OAuth loopback dropped a CSRF GET when the accepted socket was still nonblocking.</li>
+            <li>Mobile inbox waited for <code>permission_reply=</code>, then required <code>allow_once</code> on a half-written line.</li>
+            <li>Bot-icon FileReader/Image and fold’s 380ms leave animation raced the default 1s <code>findBy</code>.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li>Chief fixtures pin <code>jabot-test-absent</code> at <code>/jabot-test/no-such-agent</code>. Not a catalog launch, so recover cannot swap in Claude.</li>
+            <li>Accepted loopback sockets are blocking with a 5s deadline — same as <code>LocalAuthServer</code>.</li>
+            <li>Waiters parse a complete <code>permission_reply=</code> JSON line and read <code>optionId</code>.</li>
+            <li>Image decode is stubbed and flushed inside <code>act</code>. Fold waits for the host mock first, with a 3s budget.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="look-at">
+      <h2>What to look at</h2>
+      <table>
+        <tr><th>File</th><th>Why</th></tr>
+        <tr><td><code>src-tauri/src/host/chief/mod.rs</code></td><td>Per-tempdir custom harness. No process <code>PATH</code> mutation.</td></tr>
+        <tr><td><code>src-tauri/src/host/tools/loopback.rs</code></td><td>Blocking accepted socket + delayed-write CSRF regression.</td></tr>
+        <tr><td><code>tests/support/hostd.ts</code></td><td>Complete-record waiter; hostd reaped on process exit.</td></tr>
+        <tr><td><code>src/__tests__/bot-icon.test.tsx</code> / <code>fold.test.tsx</code></td><td>act flush and leave-animation budget.</td></tr>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <div class="grid">
+        <div>
+          <strong class="pass">Focused ×20</strong>
+          <span class="note">bot-icon + fold; Chief handoff + mismatched-state with <code>--test-threads=8</code>; mobile-inbox permission reply.</span>
+        </div>
+        <div>
+          <strong class="pass">Full suites</strong>
+          <span class="note">Frontend 555; Rust lib 505 + integration; e2e 152; <code>./scripts/verify.sh</code> on Node 22.</span>
+        </div>
+      </div>
+      <ul>
+        <li>No blanket retries, sleeps, or global serialization.</li>
+        <li>Supported runtime is Node 22 (CI). A localStorage shim covers the Node 26 setup crash tracked in #215; the upgrade itself is not this PR.</li>
+        <li>Unresolved flakes: none skipped. Pre-existing <code>act(...)</code> warnings remain in crew-store, inbox-host, and mobile screen — they did not fail the run.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
