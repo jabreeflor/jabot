@@ -10,7 +10,7 @@
 
 import type { ResurfaceReason, ToolConnectionStatus } from "../host";
 
-/** `bots.color` — the mascot's light-well colour and motion signature. */
+/** Legacy `bots.color` appearance IDs; mapped to monochrome icons by avatar/bots.ts. */
 export type BotColor =
   | "b-teal"
   | "b-yellow"
@@ -210,6 +210,8 @@ export interface HarnessCard {
     resume: boolean;
     notes?: string;
   };
+  /** What the harness supports, including verbs it does not advertise. */
+  capabilityNotes?: string;
 }
 
 /** One line of a toolblock — one ACP `tool_call` / `tool_call_update`. */

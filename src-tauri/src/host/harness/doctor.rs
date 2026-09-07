@@ -18,7 +18,8 @@ use std::time::{Duration, Instant};
 
 use super::super::procgroup;
 use super::super::protocol::methods::HarnessStatus;
-use super::catalog::{HarnessDescriptor, Launch, Readiness};
+use super::catalog::{HarnessDescriptor, InspectKind, Launch, Readiness};
+use super::gemini;
 
 /// A readiness command gets this long before it is killed. Long enough for a
 /// CLI that checks a token over the network, short enough that five of them in
@@ -74,6 +75,15 @@ pub trait ProbeHost: Sync {
     fn read_file(&self, path: &str) -> Option<String> {
         std::fs::read_to_string(path).ok()
     }
+
+    /// Captured stdout+stderr of a short probe. Used when the exit code is
+    /// not the diagnosis (`gemini --help` lists flags; `gemini --version`
+    /// names the build).
+    fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun>;
+    fn env(&self, key: &str) -> Option<String>;
+    /// A file under `$HOME`, using `/` separators. `None` if missing or empty
+    /// is still `Some` — the caller decides whether blank counts.
+    fn home_file(&self, relative: &str) -> Option<String>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,10 +210,12 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
 
     match &descriptor.readiness {
         Readiness::Binary => {}
-        Readiness::Inspect => {
-            // Copilot is the only Inspect card today. Its CLI *is* the
-            // adapter, so reaching here means `copilot` resolved; what is
-            // left is version, login, policy, and model.
+        Readiness::Inspect {
+            kind: InspectKind::Copilot,
+        } => {
+            // Copilot's CLI *is* the adapter, so reaching here means
+            // `copilot` resolved; what is left is version, login, policy,
+            // and model.
             let report = super::copilot::classify(&super::copilot::gather(probe));
             return finish(
                 report.status,
@@ -270,6 +282,27 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                     );
                 }
             }
+        }
+        Readiness::Inspect {
+            kind: InspectKind::Gemini,
+        } => {
+            let inspected = gemini::inspect(probe, launch);
+            if inspected.status != HarnessStatus::Ready {
+                return finish(
+                    inspected.status,
+                    inspected.detail,
+                    inspected.remedy,
+                    Some(inspected.launch),
+                    Some(path),
+                );
+            }
+            return finish(
+                HarnessStatus::Ready,
+                inspected.detail,
+                None,
+                Some(inspected.launch),
+                Some(path),
+            );
         }
     }
 
@@ -406,6 +439,24 @@ impl ProbeHost for SystemProbe {
         self.run_captured(command, args, PROBE_TIMEOUT, true)
     }
 
+    fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
+        let output = self.run_captured(command, args, PROBE_TIMEOUT, true);
+        match output.run {
+            ProbeRun::Exit(_) => Ok(output.text),
+            other => Err(other),
+        }
+    }
+
+    fn env(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok().filter(|value| !value.is_empty())
+    }
+
+    fn home_file(&self, relative: &str) -> Option<String> {
+        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        let path = relative.split('/').fold(home, |dir, part| dir.join(part));
+        std::fs::read_to_string(path).ok()
+    }
+
     fn listening(&self, addr: &str) -> bool {
         let Ok(mut resolved) = addr.to_socket_addrs() else {
             return false;
@@ -428,7 +479,7 @@ mod tests {
         installed: HashMap<String, PathBuf>,
         exits: HashMap<String, ProbeRun>,
         outputs: HashMap<String, String>,
-        env: HashMap<String, Option<String>>,
+        env: HashMap<String, String>,
         files: HashMap<String, String>,
         open_ports: Vec<String>,
         delay: Duration,
@@ -456,8 +507,8 @@ mod tests {
             self
         }
 
-        fn with_env(mut self, key: &str, value: Option<&str>) -> Self {
-            self.env.insert(key.to_string(), value.map(str::to_string));
+        fn with_env(mut self, key: &str, value: &str) -> Self {
+            self.env.insert(key.to_string(), value.to_string());
             self
         }
 
@@ -500,15 +551,11 @@ mod tests {
         }
 
         fn env_value(&self, key: &str) -> Option<String> {
-            self.env
-                .get(key)
-                .cloned()
-                .unwrap_or(None)
-                .filter(|value| !value.is_empty())
+            self.env.get(key).cloned().filter(|value| !value.is_empty())
         }
 
         fn env_raw(&self, key: &str) -> Option<String> {
-            self.env.get(key).cloned().unwrap_or(None)
+            self.env.get(key).cloned()
         }
 
         fn read_file(&self, path: &str) -> Option<String> {
@@ -520,6 +567,25 @@ mod tests {
                 std::thread::sleep(self.delay);
             }
             self.open_ports.iter().any(|open| open == addr)
+        }
+
+        fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
+            match self.run(command, args) {
+                ProbeRun::Exit(_) => self
+                    .outputs
+                    .get(command)
+                    .cloned()
+                    .ok_or_else(|| ProbeRun::Failed(format!("{command} printed nothing"))),
+                other => Err(other),
+            }
+        }
+
+        fn env(&self, key: &str) -> Option<String> {
+            self.env.get(key).cloned().filter(|value| !value.is_empty())
+        }
+
+        fn home_file(&self, relative: &str) -> Option<String> {
+            self.files.get(relative).cloned()
         }
     }
 
@@ -638,6 +704,92 @@ mod tests {
         assert!(report.detail.contains("first use"), "{}", report.detail);
     }
 
+    fn gemini_ready() -> FakeMachine {
+        FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp --debug")
+            .with_env("GEMINI_API_KEY", "test-key")
+    }
+
+    #[test]
+    fn gemini_without_the_cli_blames_the_product() {
+        let report = diagnose(&descriptor("gemini"), &FakeMachine::default());
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+        assert!(report.detail.contains("gemini"), "{}", report.detail);
+        assert!(report.remedy.is_some());
+    }
+
+    #[test]
+    fn gemini_without_acp_flags_is_outdated() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --prompt --yolo")
+            .with_env("GEMINI_API_KEY", "test-key");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::AdapterOutdated);
+        assert!(report.remedy.unwrap().contains("--acp"));
+    }
+
+    #[test]
+    fn gemini_without_auth_says_logged_out() {
+        let machine = FakeMachine::with(&["gemini"]).printing("gemini", "Usage: gemini --acp");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("GEMINI_API_KEY"));
+    }
+
+    #[test]
+    fn gemini_account_profile_counts_as_signed_in() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_file(
+                ".gemini/settings.json",
+                r#"{"security":{"auth":{"selectedType":"oauth-personal"}}}"#,
+            );
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert_eq!(report.launch.unwrap().args, ["--acp"]);
+    }
+
+    #[test]
+    fn gemini_vertex_without_a_project_is_invalid_config() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_file(
+                ".gemini/settings.json",
+                r#"{"security":{"auth":{"selectedType":"vertex-ai"}}}"#,
+            );
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("GOOGLE_CLOUD_PROJECT"));
+    }
+
+    #[test]
+    fn gemini_empty_model_name_is_invalid_config() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_env("GEMINI_API_KEY", "test-key")
+            .with_file(".gemini/settings.json", r#"{"model":{"name":""}}"#);
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("model.name"));
+    }
+
+    #[test]
+    fn gemini_falls_back_to_the_experimental_flag() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "  --experimental-acp  Start ACP mode")
+            .with_env("GEMINI_API_KEY", "test-key");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert_eq!(report.launch.unwrap().args, ["--experimental-acp"]);
+    }
+
+    #[test]
+    fn a_ready_gemini_uses_the_documented_acp_flag() {
+        let report = diagnose(&descriptor("gemini"), &gemini_ready());
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert!(report.detail.contains("--acp"), "{}", report.detail);
+    }
+
     /// The Doctor is the thing a user opens *because* a CLI is hanging, so the
     /// timeout path is the one that has to clean up — and these probes are all
     /// node wrappers that fork work of their own. Killing the pid we spawned
@@ -728,7 +880,7 @@ mod tests {
     fn copilot_token_env_makes_it_ready() {
         let machine = FakeMachine::with(&["copilot"])
             .printing("copilot", "  --acp\n")
-            .with_env("GH_TOKEN", Some("gho_test"));
+            .with_env("GH_TOKEN", "gho_test");
         let report = diagnose(&descriptor("copilot"), &machine);
         assert_eq!(report.status, HarnessStatus::Ready);
         assert!(report.detail.contains("GH_TOKEN"), "{}", report.detail);
@@ -738,7 +890,7 @@ mod tests {
     fn copilot_stored_login_makes_it_ready_without_a_token() {
         let machine = FakeMachine::with(&["copilot"])
             .printing("copilot", "  --acp\n")
-            .with_env("HOME", Some("/home/octo"))
+            .with_env("HOME", "/home/octo")
             .with_file(
                 "/home/octo/.copilot/config.json",
                 r#"{"loggedInUsers":[{"login":"octocat"}]}"#,
@@ -752,8 +904,8 @@ mod tests {
     fn copilot_empty_model_env_is_invalid_config() {
         let machine = FakeMachine::with(&["copilot"])
             .printing("copilot", "  --acp\n")
-            .with_env("GH_TOKEN", Some("gho_test"))
-            .with_env("COPILOT_MODEL", Some(""));
+            .with_env("GH_TOKEN", "gho_test")
+            .with_env("COPILOT_MODEL", "");
         let report = diagnose(&descriptor("copilot"), &machine);
         assert_eq!(report.status, HarnessStatus::InvalidConfig);
         assert!(report.detail.contains("COPILOT_MODEL"), "{}", report.detail);

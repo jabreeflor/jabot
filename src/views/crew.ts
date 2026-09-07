@@ -111,6 +111,7 @@ export function harnessCard(card: HarnessCardView): HarnessCard {
     accent: card.accent,
     installHint: card.installHint,
     capabilities: card.capabilities,
+    capabilityNotes: card.capabilityNotes,
   };
 }
 

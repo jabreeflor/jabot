@@ -1257,6 +1257,9 @@ pub struct HarnessCardView {
     pub install_hint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install_url: Option<String>,
+    /// What the harness supports, including verbs it does not advertise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability_notes: Option<String>,
     pub session_scope: SessionScope,
     /// Reserved ids cannot be shadowed by a user file.
     pub reserved: bool,

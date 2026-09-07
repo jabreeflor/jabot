@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Restore animated bot avatars in the vertical tab list</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --warn:#f2cc60; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:center; }
+    .state { min-height:180px; padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 14px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .row { display:flex; align-items:center; gap:10px; margin:10px 0; }
+    .blob { width:34px; height:34px; border-radius:50%; flex:none; }
+    .glyph { width:34px; height:34px; flex:none; color:#e6edf3; }
+    .glyph svg { width:100%; height:100%; overflow:visible; }
+    .who { min-width:0; }
+    .nm { display:block; color:var(--text); font-weight:600; font-size:14px; }
+    .say { display:block; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:18ch; }
+    .arrow { text-align:center; color:var(--accent); font-size:28px; }
+    .decision { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:18px; }
+    .decision div { padding:14px; background:#0f141a; border-radius:9px; }
+    .decision strong { display:block; margin-bottom:5px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .note { color:var(--warn); }
+    @media (max-width:700px) { .flow,.decision { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR walkthrough · closes #207</div>
+    <h1>Restore animated bot avatars in the vertical tab list</h1>
+    <p>The sidebar is still a list of chats. The faces in that list are drawings again — eight monochrome characters keyed off the existing color IDs — instead of solid circles.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>After #169 · color blocks</h3>
+          <p>A row still had a face, a name, and a last line. The face was a filled circle in <code>bots.color</code>.</p>
+          <div class="row">
+            <span class="blob" style="background:#2fb894"></span>
+            <span class="who"><span class="nm">Chief</span><span class="say">Route work across the crew…</span></span>
+          </div>
+          <div class="row">
+            <span class="blob" style="background:#6c55e8"></span>
+            <span class="who"><span class="nm">Bot Recruiter</span><span class="say">Help me shape and add…</span></span>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>This PR · same rows, drawings</h3>
+          <p>The row is unchanged. <code>Avatar</code> draws <code>BotMark</code> for that color ID. Motion is CSS on the glyph.</p>
+          <div class="row">
+            <span class="glyph" aria-hidden="true">
+              <svg viewBox="4 3 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M24 17V12"/><circle cx="24" cy="10" r="2"/><path d="M16 17H32Q36 17 36 21V31Q36 35 32 35H16Q12 35 12 31V21Q12 17 16 17Z"/><path d="M20 24V27M28 24V27"/></svg>
+            </span>
+            <span class="who"><span class="nm">Chief</span><span class="say">Route work across the crew…</span></span>
+          </div>
+          <div class="row">
+            <span class="glyph" aria-hidden="true">
+              <svg viewBox="4 3 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M24 17V12"/><circle cx="24" cy="10" r="2"/><path d="M18 17H30C37 17 39 35 30 35H18C9 35 11 17 18 17Z"/><path d="M20 24V27M28 24V27"/></svg>
+            </span>
+            <span class="who"><span class="nm">Bot Recruiter</span><span class="say">Help me shape and add…</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="decision">
+        <div><strong>Stable IDs</strong><code>b-teal</code> still means Classic. Saved bots and the host schema do not move.</div>
+        <div><strong>Motion on the glyph</strong>Idle bounce/tilt/bob lives in <code>bot-icons.css</code>. Running, waiting, and failed swap the loop. <code>prefers-reduced-motion</code> stills it.</div>
+        <div><strong>One ring</strong>Selected-row highlight is <code>.bot-row &gt; .av</code>, so the Crew cluster is not outlined three times.</div>
+      </div>
+      <p>PR #163 replaced an earlier mascot atlas with solid circles. The vertical list in #169 kept those circles. This restores the later animated-identity treatment (the catalog on <code>codex/animated-bot-icons</code>) without undoing the list.</p>
+    </section>
+
+    <section id="review">
+      <h2>What to look at</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>src/components/avatar/bots.ts</code></td><td>Eight silhouettes mapped onto the existing color IDs. Order is load-bearing.</td></tr>
+          <tr><td><code>src/components/avatar/BotMark.tsx</code></td><td>The SVG parts the keyframes target: pose, antenna, eyes, happy, error.</td></tr>
+          <tr><td><code>src/components/avatar/Avatar.tsx</code></td><td>Draws <code>BotMark</code> when there is no uploaded picture. Crew cluster uses three of them.</td></tr>
+          <tr><td><code>src/styles/bot-icons.css</code></td><td>Idle motions per character and the state loops. Stroke is <code>--ink</code>.</td></tr>
+          <tr><td><code>src/styles/sidebar.css</code></td><td>Vertical rows unchanged. Selection ring is a direct-child selector.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>./scripts/verify.sh</code> — already green on this tree.</li>
+        <li><code>./scripts/live.sh up</code> then look at BOT CHATS. Each row should show a distinct outline character, not a color disc. Names and last lines must still ellipsis on one line.</li>
+        <li>Crew → Add a bot → CHOOSE A BOT. Picking Scout, Mini, … should change the preview and persist as the same color ID.</li>
+        <li>Light theme: the stroke follows <code>--ink</code>, so the glyphs stay readable on cream paper.</li>
+        <li class="note">A PNG is one frame. Confirm motion in the live app; reduced-motion should still the glyph.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

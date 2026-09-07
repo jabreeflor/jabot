@@ -24,7 +24,7 @@ export function CrewView({
   onEdit: (botId: string) => void;
   onAdd: () => void;
   onRemove: (botId: string) => void;
-  /** Re-run first-run setup — the one in-app way to change your name. */
+  /** Re-run first-run setup — also offered from Settings. */
   onRunSetup?: () => void;
 }) {
   return (

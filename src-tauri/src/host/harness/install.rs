@@ -30,8 +30,9 @@ fn package(id: &str) -> Result<&'static str, RpcError> {
         "claude" => Ok("@agentclientprotocol/claude-agent-acp@0.75.1"),
         "codex" => Ok("@zed-industries/codex-acp@0.16.0"),
         "pi" => Ok("pi-acp@0.0.33"),
+        "gemini" => Ok("@google/gemini-cli@0.58.0"),
         _ => Err(RpcError::InvalidParams(
-            "Automatic installation is available only for Claude, Codex and Pi adapters.".into(),
+            "Automatic installation is available only for Claude, Codex, Pi and Gemini CLI.".into(),
         )),
     }
 }
@@ -119,6 +120,7 @@ mod tests {
             package("codex").unwrap(),
             "@zed-industries/codex-acp@0.16.0"
         );
+        assert_eq!(package("gemini").unwrap(), "@google/gemini-cli@0.58.0");
     }
     #[test]
     fn polling_does_not_start_an_install() {

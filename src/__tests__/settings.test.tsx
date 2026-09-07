@@ -61,6 +61,20 @@ describe("SettingsView", () => {
     expect(screen.getByText(/Resume after the Copilot process exits is not supported/)).toBeVisible();
   });
 
+  it("declares Gemini capabilities next to the enable toggle", () => {
+    draw({
+      harnesses: [{
+        id: "gemini",
+        label: "Gemini CLI",
+        accent: "var(--h-gemini)",
+        blurb: "Google's Gemini CLI over its documented ACP mode",
+        capabilityNotes: "Streams, tools, permissions, cancel, and session/load.",
+      }],
+    });
+    expect(screen.getByRole("checkbox", { name: /Gemini CLI/ })).toBeChecked();
+    expect(screen.getByText(/session\/load/)).toBeVisible();
+  });
+
   it("enables a missing adapter while retaining other disabled harnesses and install guidance", async () => {
     const props = draw({
       settings: { ...SETTINGS, disabledHarnessIds: ["pi", "custom"] },
@@ -224,6 +238,37 @@ describe("SettingsView", () => {
     );
     expect(minutes()).toBeInTheDocument();
     expect(screen.queryByText("This Mac")).toBeNull();
+  });
+
+  /**
+   * #208: Settings is the place a person looks to replay first-run setup.
+   * The control must be named, and choosing it must start the existing
+   * re-entry — it does not wipe storage itself.
+   */
+  it("offers a control that starts the same setup flow again", async () => {
+    const onRunSetup = vi.fn();
+    draw({ onRunSetup });
+
+    expect(screen.getByRole("heading", { name: "Setup" })).toBeInTheDocument();
+    expect(
+      screen.getByText(/same first-run flow again/i),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Run setup again" }));
+    expect(onRunSetup).toHaveBeenCalledTimes(1);
+  });
+
+  /** Setup is a renderer action. Waiting on the host would hide the one
+      control that still works without it. */
+  it("keeps the setup control when the host has not answered", () => {
+    draw({ settings: null, onRunSetup: vi.fn() });
+
+    expect(screen.getByRole("button", { name: "Run setup again" })).toBeEnabled();
+  });
+
+  it("does not invent a setup control when nobody can start it", () => {
+    draw();
+
+    expect(screen.queryByRole("button", { name: "Run setup again" })).toBeNull();
   });
 
   it("shows the paired list when Devices is selected", async () => {

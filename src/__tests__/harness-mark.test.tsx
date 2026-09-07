@@ -59,6 +59,12 @@ describe("the harness mark", () => {
     expect(marksIn(copilot)[0].innerHTML).not.toBe(marksIn(custom)[0].innerHTML);
   });
 
+  it("draws Gemini CLI's own mark, not the custom terminal", () => {
+    const { container: gemini } = render(<HarnessMark harnessId="gemini" />);
+    const { container: custom } = render(<HarnessMark harnessId="my-own-agent" />);
+    expect(marksIn(gemini)[0].innerHTML).not.toBe(marksIn(custom)[0].innerHTML);
+  });
+
   it("still draws something for a harness it has never heard of", () => {
     // A tier-3 harness a user brought. There is no mark to know, so it gets
     // the terminal the harness is — never nothing.

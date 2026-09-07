@@ -1,35 +1,4 @@
-/* Solid bot colours scale with the avatar size set by each surface. */
-.av {
-  --s: var(--blob-size, 44px);
-  width: var(--s);
-  height: var(--s);
-  flex: none;
-  position: relative;
-  display: block;
-  background: none;
-  border-radius: 0;
-}
-
-.av.b-teal { --deep: #2fb894; }
-.av.b-yellow { --deep: #efa92f; }
-.av.b-purple { --deep: #6c55e8; }
-.av.b-violet { --deep: #9257e8; }
-.av.b-blue { --deep: #3c7fe8; }
-.av.b-orange { --deep: #ef7e2f; }
-.av.b-pink { --deep: #e85d8a; }
-.av.b-green { --deep: #3ea65c; }
-
-.av .color-mark,
-.av .pic {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-}
-
-.av .color-mark { background: var(--deep); }
-.av .pic { object-fit: cover; }
+@import "./bot-icons.css";
 
 /* ---- chrome -------------------------------------------------------------
    The dot and the ring are drawn by Avatar.tsx for every avatar, so they are
@@ -107,7 +76,7 @@
 }
 
 /* ---- the crew cluster ---------------------------------------------------
-   Three solid colour tiles. It keeps the `cluster` class so sidebar.css's selected-tile
+   Three animated bot icons. It keeps the `cluster` class so sidebar.css's selected-tile
    ring and onboarding.css's `.setup-cluster` sizing keep working untouched,
    and adds `av-cluster` so a rule here says plainly that it is about the drawn
    cluster and not about the class those two sheets happen to target. */

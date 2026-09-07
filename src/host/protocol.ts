@@ -630,6 +630,8 @@ export interface HarnessCardView {
   args: string[];
   installHint?: string;
   installUrl?: string;
+  /** What the harness supports, including verbs it does not advertise. */
+  capabilityNotes?: string;
   sessionScope: SessionScope;
   /** Reserved ids cannot be shadowed by a user file. */
   reserved: boolean;

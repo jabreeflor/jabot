@@ -13,6 +13,7 @@
 //! routed back to a thread by [`AcpConnection::route`].
 
 mod connection;
+mod no_reply;
 mod runtime;
 mod spawn;
 mod wake;
@@ -361,6 +362,12 @@ impl HostSession {
         if let Some(err) = error {
             eprintln!("adapter for {thread_id} closed: {err}");
         }
+        // Diagnose before the connection is dropped: the log path lives on the
+        // process, and a no-reply turn has to name why while the file is still
+        // the one this adapter wrote.
+        let has_reply = self.lifecycle.entry(thread_id).has_reply;
+        let run_open = self.open_run(thread_id).is_some();
+        let diagnosis = (run_open && !has_reply).then(|| self.diagnose_no_reply(thread_id, true));
         self.withdraw_pending_permissions(thread_id, "adapter closed", Withdrawal::Cancelled);
         if let Some(vacated) = self.release_thread(thread_id) {
             self.connections.remove(&vacated);
@@ -373,6 +380,21 @@ impl HostSession {
         // that no longer exists; keeping them would let the next adapter's
         // reuse of the same id be read as PR evidence (#28).
         self.pr_forget_thread(thread_id);
+        if let Some(diagnosis) = diagnosis {
+            // Same shape as an empty `end_turn`: a sys line in the transcript
+            // and a failed run, so a process that dies mid-prompt is not a
+            // silent "Session finished."
+            let message = diagnosis.error_line();
+            let acp = json!({
+                "sessionUpdate": "state_update",
+                "sessionState": "idle",
+                "stopReason": diagnosis.stop_reason,
+                "error": message,
+            });
+            let seq = self.persist_transcript_event(thread_id, "session/update", &acp);
+            self.notify_session_update_at(thread_id, acp, seq);
+            self.lifecycle_on_turn_end(thread_id, Some(diagnosis.stop_reason), Some(&message));
+        }
         self.lifecycle_on_adapter_closed(thread_id, error);
     }
 
@@ -544,13 +566,38 @@ impl HostSession {
 
     /// Normalize empty successful turns before either persistence or streaming,
     /// so the transcript and run ledger agree (including duplicate v2 endings).
-    fn reply_stop_reason(&mut self, thread_id: &str, reason: Option<&str>) -> Option<String> {
+    ///
+    /// When the turn produced no visible reply, the adapter stderr log is read
+    /// so the stop reason can name a prerequisite (sign-in, CLI, model) instead
+    /// of only `empty_response`.
+    fn classify_reply_end(
+        &mut self,
+        thread_id: &str,
+        reason: Option<&str>,
+    ) -> (Option<String>, Option<String>) {
         match reason {
             Some("end_turn") if !self.lifecycle.entry(thread_id).has_reply => {
-                Some("empty_response".into())
+                let diagnosis = self.diagnose_no_reply(thread_id, false);
+                (
+                    Some(diagnosis.stop_reason.to_string()),
+                    Some(diagnosis.error_line()),
+                )
             }
-            other => other.map(str::to_string),
+            other => (other.map(str::to_string), None),
         }
+    }
+
+    fn diagnose_no_reply(
+        &self,
+        thread_id: &str,
+        process_exited: bool,
+    ) -> no_reply::NoReplyDiagnosis {
+        let path = self
+            .conn(thread_id)
+            .map(|conn| conn.log_path.clone())
+            .unwrap_or_else(|| self.adapter_log_path(thread_id));
+        let stderr = no_reply::read_log_excerpt(&path).unwrap_or_default();
+        no_reply::diagnose(&stderr, process_exited)
     }
 
     pub(crate) fn handle_inbound(&mut self, thread_id: &str, event: Inbound) {
@@ -570,12 +617,15 @@ impl HostSession {
                     }
                 }
                 if acp.get("sessionUpdate").and_then(Value::as_str) == Some("state_update") {
-                    let reason = self.reply_stop_reason(
+                    let (reason, error) = self.classify_reply_end(
                         thread_id,
                         acp.get("stopReason").and_then(Value::as_str),
                     );
                     if let Some(reason) = reason {
                         acp["stopReason"] = json!(reason);
+                    }
+                    if let Some(error) = error {
+                        acp["error"] = json!(error);
                     }
                 }
                 let seq = self.persist_transcript_event(thread_id, "session/update", &acp);
@@ -598,12 +648,15 @@ impl HostSession {
             Inbound::PromptResult {
                 payload: result, ..
             } => {
-                let stop_reason = self
-                    .reply_stop_reason(thread_id, result.get("stopReason").and_then(Value::as_str));
+                let (stop_reason, error) = self.classify_reply_end(
+                    thread_id,
+                    result.get("stopReason").and_then(Value::as_str),
+                );
                 let acp = json!({
                     "sessionUpdate": "state_update",
                     "sessionState": "idle",
                     "stopReason": stop_reason,
+                    "error": error,
                     "result": result,
                 });
                 // Labelled by the ACP message it came from — this payload was
@@ -620,7 +673,7 @@ impl HostSession {
                 // it went idle no longer ends one it knows nothing about. A v2
                 // adapter that does report a stop reason gets there first; the
                 // ledger transition is idempotent and this is then a no-op.
-                self.lifecycle_on_turn_end(thread_id, stop_reason.as_deref());
+                self.lifecycle_on_turn_end(thread_id, stop_reason.as_deref(), error.as_deref());
                 // A turn that talked about opening a pull request but never
                 // printed a URL gets asked about now, from the thread's own
                 // worktree — the authoritative check in `pr-linkage.md` (#28).

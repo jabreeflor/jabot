@@ -9,9 +9,11 @@
 //!
 //! Host knobs stay scoped to what the host actually decides. Appearance (#178)
 //! is a renderer preference parked on this pane because Settings is where a
-//! person looks — it never goes over the wire. A remembered permission scope
-//! still has no host support, and a pane offering a control that decides
-//! nothing is worse than no pane.
+//! person looks — it never goes over the wire. Re-running first-run setup
+//! (#208) is the same kind of renderer action: it re-enters the takeover
+//! already seeded from Crew, and does not touch the host store. A remembered
+//! permission scope still has no host support, and a pane offering a control
+//! that decides nothing is worse than no pane.
 //!
 //! Minutes on screen, milliseconds on the wire. Nobody thinks about a
 //! backstop in milliseconds, and the wire keeps them because that is what
@@ -92,6 +94,7 @@ export function SettingsView({
   harnesses = [],
   error,
   onSave,
+  onRunSetup,
   devices,
   devicesError,
   onReloadDevices,
@@ -106,6 +109,8 @@ export function SettingsView({
     idleTimeoutMs?: number;
     defaultFoldPolicy?: FoldPolicy;
   }) => Promise<unknown>;
+  /** Re-enter the first-run takeover without wiping the stored profile. */
+  onRunSetup?: () => void;
   /** `null` until the host answers. The console is always in a real list. */
   devices: readonly PairedDeviceView[] | null;
   devicesError: string | null;
@@ -147,6 +152,7 @@ export function SettingsView({
                 harnesses={harnesses}
                 error={error}
                 onSave={onSave}
+                onRunSetup={onRunSetup}
               />
             ) : (
               <DevicesView
@@ -169,6 +175,7 @@ function GeneralSettings({
   harnesses,
   error,
   onSave,
+  onRunSetup,
 }: {
   settings: HostSettings | null;
   harnesses: readonly HarnessCard[];
@@ -178,6 +185,7 @@ function GeneralSettings({
     idleTimeoutMs?: number;
     defaultFoldPolicy?: FoldPolicy;
   }) => Promise<unknown>;
+  onRunSetup?: () => void;
 }) {
   const [minutes, setMinutes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -229,7 +237,8 @@ function GeneralSettings({
                   ? ids.filter((id) => id !== harness.id) : [...ids, harness.id] });
               }} />
             <span><b>{harness.label}</b><small>{harness.available === false
-              ? harness.installHint ?? "Not installed" : harness.blurb}</small>
+              ? harness.installHint ?? "Not installed" : harness.blurb}
+              {harness.capabilityNotes ? ` ${harness.capabilityNotes}` : ""}</small>
               {harness.capabilities?.notes && (
                 <small className="settings-harness-caps">{harness.capabilities.notes}</small>
               )}</span>
@@ -327,6 +336,23 @@ function GeneralSettings({
             </p>
           )}
         </>
+      )}
+
+      {onRunSetup && (
+        <section className="setting">
+          <h2>Setup</h2>
+          <p className="setting-note">
+            Walk through the same first-run flow again — your name, default
+            engine, then Chief. Bots, threads, and host settings stay put
+            unless you change them there. Escape or Skip setup returns you
+            to the app.
+          </p>
+          <div className="setting-row">
+            <button type="button" className="btn" onClick={onRunSetup}>
+              Run setup again
+            </button>
+          </div>
+        </section>
       )}
     </>
   );

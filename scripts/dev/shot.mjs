@@ -13,6 +13,7 @@
 //   --click <selector>          click it (Playwright selector syntax, so
 //                               `text=Inbox`, `role=button[name="Add folder"]`
 //                               and CSS all work)
+//   --hover <selector>          move the pointer onto it and leave it there
 //   --fill <selector> <text>    type into it (two arguments)
 //   --press <key>               a key on the focused element (Enter, Escape…)
 //   --wait <selector>           wait until it is visible
@@ -111,6 +112,7 @@ function parse(argv) {
         options.rpc.push(value());
         break;
       case "--click":
+      case "--hover":
       case "--wait":
       case "--wait-text":
       case "--press":
@@ -234,6 +236,9 @@ async function main() {
       switch (step.kind) {
         case "click":
           await page.locator(step.arg).first().click();
+          break;
+        case "hover":
+          await page.locator(step.arg).first().hover();
           break;
         case "fill":
           await page.locator(step.selector).first().fill(step.text);
