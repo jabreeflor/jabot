@@ -4,8 +4,9 @@
  * and reports the gestures — a right-click, a folder's ＋, the rail toggle —
  * rather than acting on them itself.
  */
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -306,6 +307,87 @@ describe("Sidebar", () => {
     expect(
       screen.getByRole("button", { name: /Auth migration/ }),
     ).toBeInTheDocument();
+  });
+
+  it("does not peek the list until the toggle is focused or hovered", () => {
+    renderSidebar({ open: false });
+
+    fireEvent.pointerMove(window, { clientX: 80, clientY: 40 });
+
+    expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
+    expect(document.querySelector(".sidebar.is-peeking")).toBeNull();
+  });
+
+  it("peeks the list after the toggle is focused and the pointer enters the rail", () => {
+    const onToggle = vi.fn();
+    renderSidebar({ open: false, onToggle });
+
+    fireEvent.focus(screen.getByRole("button", { name: "Show sidebar" }));
+    expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
+
+    fireEvent.pointerMove(window, { clientX: 120, clientY: 80 });
+
+    expect(screen.getByRole("button", { name: /Chief/ })).toBeInTheDocument();
+    expect(document.querySelector(".sidebar.is-peeking")).not.toBeNull();
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Show sidebar" }),
+    ).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("closes a peek when the pointer leaves the rail and does not pin it", () => {
+    const onToggle = vi.fn();
+    renderSidebar({ open: false, onToggle });
+
+    const toggle = screen.getByRole("button", { name: "Show sidebar" });
+    fireEvent.pointerEnter(toggle);
+    expect(screen.getByRole("button", { name: /Chief/ })).toBeInTheDocument();
+
+    fireEvent.pointerMove(window, { clientX: 640, clientY: 80 });
+    fireEvent.pointerLeave(document.querySelector(".sidebar") as HTMLElement);
+
+    expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
+    expect(document.querySelector(".sidebar.is-peeking")).toBeNull();
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it("does not peek from the click that hid the rail until the pointer moves", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Sidebar
+          bots={BOTS}
+          folders={FOLDERS}
+          selection={{ view: "bot", botId: "chief" }}
+          inboxCount={0}
+          openPrCount={0}
+          userName="Jabree Flor"
+          hostLine=""
+          onSelectBot={vi.fn()}
+          onSelectThread={vi.fn()}
+          onOpenCrew={vi.fn()}
+          onOpenInbox={vi.fn()}
+          onOpenPullRequests={vi.fn()}
+          onOpenSchedules={vi.fn()}
+          onNewChat={vi.fn()}
+          onThreadMenu={vi.fn()}
+          open={open}
+          onToggle={() => setOpen((value) => !value)}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
+
+    fireEvent.pointerMove(window, { clientX: 120, clientY: 80 });
+    expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
+
+    const toggle = screen.getByRole("button", { name: "Show sidebar" });
+    fireEvent.pointerLeave(toggle);
+    fireEvent.pointerMove(window, { clientX: 120, clientY: 80 });
+    expect(screen.getByRole("button", { name: /Chief/ })).toBeInTheDocument();
   });
 
   it("only an explicit 0 hides the rail on the next launch", () => {

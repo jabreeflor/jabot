@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hover-to-expand a collapsed sidebar</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --pin:#58a6ff; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 52px 24px 72px; background: var(--bg); color: var(--text); font: 16px/1.55 ui-sans-serif, system-ui, sans-serif; }
+    main { max-width: 920px; margin: auto; }
+    .kicker { color: var(--accent); font-size: 12px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+    h1 { margin: 8px 0 12px; font-size: 42px; line-height: 1.08; letter-spacing: -.035em; }
+    h2 { margin: 0 0 14px; font-size: 22px; }
+    p { color: var(--muted); }
+    section { margin-top: 34px; padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+    .flow { display: grid; grid-template-columns: 1fr 36px 1fr 36px 1fr; gap: 10px; align-items: stretch; }
+    .state { padding: 16px; background: #0f141a; border: 1px solid var(--line); border-radius: 11px; }
+    .state h3 { margin: 0 0 10px; font-size: 12px; color: var(--muted); letter-spacing: .09em; text-transform: uppercase; }
+    .state ul { margin: 0; padding-left: 18px; }
+    .state li { margin: 6px 0; color: var(--text); }
+    .arrow { display: grid; place-items: center; color: var(--accent); font-size: 26px; }
+    .note { margin-top: 16px; padding: 12px 14px; border-left: 3px solid var(--pin); background: #0f141a; border-radius: 0 8px 8px 0; color: var(--muted); }
+    code { padding: 2px 6px; border-radius: 5px; background: #262c33; color: #c9e9df; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    ul { margin: 10px 0 0; padding-left: 21px; }
+    li { margin: 8px 0; }
+    @media (max-width: 800px) {
+      .flow { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · issue #209</div>
+    <h1>Hover-to-expand a collapsed sidebar</h1>
+    <p>A closed rail stays a 78px strip. After the toggle is focused or hovered, moving the pointer into the sidebar’s full width slides the list open over the chat. That flyout is not a pin: localStorage, the toggle, and ⌘B still own the remembered open/closed state.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Collapsed</h3>
+          <ul>
+            <li>Layout keeps the traffic-lights strip.</li>
+            <li>The list is unmounted, so Tab skips it.</li>
+            <li>A stray pointer over the chat does nothing.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>Armed</h3>
+          <ul>
+            <li>Tab to the toggle, or hover it.</li>
+            <li>Focus alone does not mount the list.</li>
+            <li>The hide click arms, but suppresses peek until the pointer leaves the button.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>Peek</h3>
+          <ul>
+            <li>Pointer in the 310px rail region slides the list over the chat.</li>
+            <li><code>open</code> stays false; <code>aria-expanded</code> stays false.</li>
+            <li>Leave the region and the list unmounts again.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="note">Clicking the toggle or pressing Ctrl/⌘B still pins or unpins. Peek never writes <code>jabot.sidebarOpen</code>.</p>
+    </section>
+
+    <section id="files">
+      <h2>What to look at</h2>
+      <ul>
+        <li><code>src/components/Sidebar.tsx</code> — arm on focus/hover; peek from pointer location; suppress after the hide click.</li>
+        <li><code>src/styles/sidebar.css</code> — collapsed rail is absolutely positioned so the peek overlays instead of shoving the chat.</li>
+        <li><code>src/styles/tokens.css</code> — <code>--t-sidebar</code> / <code>--ease-sidebar</code> for the width slide.</li>
+        <li><code>src/App.tsx</code> — unchanged. The shell still owns the pin.</li>
+      </ul>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li>Hide the sidebar. Tab to “Show sidebar”, then move the mouse into the left ~310px. The list should slide open. Tab order before that hover still skips the list.</li>
+        <li>Click Hide. The list must stay gone until the pointer leaves the toggle and comes back into the rail.</li>
+        <li>Click the toggle or press Ctrl/⌘B. That pins; a reload keeps the choice.</li>
+        <li><code>./scripts/verify.sh</code></li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

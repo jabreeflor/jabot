@@ -7,9 +7,11 @@
 //! The rail can close. A closed sidebar is a strip wide enough for the traffic
 //! lights and the toggle that opens it again — not gone, because overlay
 //! chrome still has to sit on something, and because a control that vanished
-//! with the thing it reveals is a trap.
+//! with the thing it reveals is a trap. After that toggle is focused or
+//! hovered, moving into the rail's full width peeks the list open as a
+//! flyout; the pin (`open`, localStorage, ⌘B) does not change.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BotStrip } from "./BotStrip";
 import { FolderList } from "./FolderList";
@@ -30,6 +32,35 @@ import type {
   Selection,
   ThreadSummary,
 } from "./types";
+
+/** Matches `--sidebar-w`. jsdom has no stylesheet, so the peek hit-region
+    falls back to this rather than treating a missing variable as zero. */
+const SIDEBAR_PEEK_W = 310;
+
+function peekWidthPx(node: HTMLElement): number {
+  const raw = getComputedStyle(node).getPropertyValue("--sidebar-w").trim();
+  const px = Number.parseFloat(raw);
+  return Number.isFinite(px) && px > 0 ? px : SIDEBAR_PEEK_W;
+}
+
+/** The full rail, not the collapsed strip: after the toggle is armed, a
+    pointer in this rectangle slides the list open. jsdom reports a zero
+    rect, so a missing height is treated as unbounded rather than as
+    "the pointer is never inside". */
+function pointerInSidebarRegion(
+  event: { clientX: number; clientY: number },
+  rail: HTMLElement,
+  width: number,
+): boolean {
+  const rect = rail.getBoundingClientRect();
+  const bottom = rect.height > 0 ? rect.bottom : Number.POSITIVE_INFINITY;
+  return (
+    event.clientX >= rect.left &&
+    event.clientX < rect.left + width &&
+    event.clientY >= rect.top &&
+    event.clientY <= bottom
+  );
+}
 
 export function Sidebar({
   bots,
@@ -92,9 +123,75 @@ export function Sidebar({
 }) {
   const [query, setQuery] = useState("");
   const visibleFolders = filterFolders(folders, query);
+  const railRef = useRef<HTMLElement>(null);
+  const suppressPeek = useRef(false);
+  const [armed, setArmed] = useState(false);
+  const [peeked, setPeeked] = useState(false);
+  // Peek is a flyout, not a pin. `open` is what localStorage and ⌘B own;
+  // this only mounts the list over the chat until the pointer leaves.
+  const shown = open || peeked;
+
+  useEffect(() => {
+    if (!open) return;
+    setPeeked(false);
+    setArmed(false);
+    suppressPeek.current = false;
+  }, [open]);
+
+  useEffect(() => {
+    if (open || !armed) return;
+
+    function onPointerMove(event: PointerEvent) {
+      if (suppressPeek.current) return;
+      const rail = railRef.current;
+      if (!rail) return;
+      setPeeked(pointerInSidebarRegion(event, rail, peekWidthPx(rail)));
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    return () => window.removeEventListener("pointermove", onPointerMove);
+  }, [open, armed]);
+
+  function armFromAffordance() {
+    if (!open) setArmed(true);
+  }
+
+  function handleToggle() {
+    if (open) {
+      // The click that hides the rail leaves the pointer on the button.
+      // Peeking from that would undo the click; wait until it moves.
+      suppressPeek.current = true;
+      setArmed(true);
+      setPeeked(false);
+    } else {
+      setPeeked(false);
+      setArmed(false);
+      suppressPeek.current = false;
+    }
+    onToggle?.();
+  }
+
+  const railClass = [
+    "sidebar",
+    !open ? "is-collapsed" : "",
+    peeked ? "is-peeking" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <aside className={open ? "sidebar" : "sidebar is-collapsed"}>
+    <div className={open ? "sidebar-slot" : "sidebar-slot is-collapsed"}>
+      <aside
+        ref={railRef}
+        className={railClass}
+        onPointerLeave={() => {
+          if (open) return;
+          setPeeked(false);
+          const active = document.activeElement;
+          if (railRef.current?.contains(active)) return;
+          setArmed(false);
+        }}
+      >
       <div className="sidebar-search">
         {onToggle && (
           <button
@@ -103,12 +200,21 @@ export function Sidebar({
             aria-expanded={open}
             aria-label={open ? "Hide sidebar" : "Show sidebar"}
             title={open ? "Hide sidebar" : "Show sidebar"}
-            onClick={onToggle}
+            onClick={handleToggle}
+            onFocus={armFromAffordance}
+            onPointerEnter={() => {
+              if (open || suppressPeek.current) return;
+              setArmed(true);
+              setPeeked(true);
+            }}
+            onPointerLeave={() => {
+              suppressPeek.current = false;
+            }}
           >
             <SidebarIcon />
           </button>
         )}
-        {open && (
+        {shown && (
           <div className="field">
             <SearchIcon />
             <input
@@ -122,7 +228,7 @@ export function Sidebar({
         )}
       </div>
 
-      {open && (
+      {shown && (
         <div className="sidebar-list">
         <div className="section-header">BOT CHATS</div>
         <BotStrip
@@ -222,7 +328,7 @@ export function Sidebar({
         </div>
       )}
 
-      {open && (
+      {shown && (
         <div className="me-row">
         <div className="me-face" aria-hidden="true">
           {initials(userName)}
@@ -247,7 +353,8 @@ export function Sidebar({
         )}
         </div>
       )}
-    </aside>
+      </aside>
+    </div>
   );
 }
 
