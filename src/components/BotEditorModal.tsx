@@ -349,6 +349,9 @@ export function BotEditorModal({
       />
 
       <FieldLabel>HARNESS</FieldLabel>
+      {!harnesses.some((harness) => harness.id === harnessId) && (
+        <p role="status">Choose an enabled harness, or enable this bot’s harness in Settings.</p>
+      )}
       <HarnessPicker
         harnesses={harnesses}
         value={harnessId}
@@ -405,6 +408,7 @@ export function BotEditorModal({
         <button
           type="button"
           className="btn primary"
+          disabled={!harnesses.some((harness) => harness.id === harnessId)}
           onClick={() =>
             onSave({
               name: name.trim() || "Unnamed bot",

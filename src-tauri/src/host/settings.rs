@@ -31,7 +31,13 @@ impl HostSession {
         let default_fold_policy = store
             .default_fold_policy()
             .map_err(|err| RpcError::Internal(err.to_string()))?;
+        let disabled_harness_ids = store
+            .get_setting("disabled_harness_ids")
+            .map_err(|err| RpcError::Internal(err.to_string()))?
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
         Ok(SettingsView {
+            disabled_harness_ids,
             idle_timeout_ms: self.idle_timeout().as_millis() as u64,
             default_fold_policy,
             idle_timeout_from_env: std::env::var(IDLE_TIMEOUT_ENV).is_ok(),
@@ -47,6 +53,13 @@ impl HostSession {
         params.validate()?;
         {
             let store = self.store.as_ref().ok_or(RpcError::StoreUnavailable)?;
+            if let Some(ids) = params.disabled_harness_ids.as_ref() {
+                let value = serde_json::to_string(ids)
+                    .map_err(|err| RpcError::Internal(err.to_string()))?;
+                store
+                    .set_setting("disabled_harness_ids", &value)
+                    .map_err(|err| RpcError::Internal(err.to_string()))?;
+            }
             if let Some(ms) = params.idle_timeout_ms {
                 store
                     .set_setting(KEY_IDLE_TIMEOUT_MS, &ms.to_string())

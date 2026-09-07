@@ -40,6 +40,17 @@ function draw(over: Partial<Parameters<typeof SettingsView>[0]> = {}) {
 const minutes = () => screen.getByLabelText(/Go quiet after/);
 
 describe("SettingsView", () => {
+  it("enables a missing adapter while retaining other disabled harnesses and install guidance", async () => {
+    const props = draw({
+      settings: { ...SETTINGS, disabledHarnessIds: ["pi", "custom"] },
+      harnesses: [{ id: "pi", label: "Pi", accent: "red", blurb: "Pi agent", available: false, installHint: "Install Pi adapter" }],
+    });
+    expect(screen.getByRole("checkbox", { name: /Pi/ })).not.toBeChecked();
+    expect(screen.getByText("Install Pi adapter")).toBeVisible();
+    await userEvent.click(screen.getByRole("checkbox", { name: /Pi/ }));
+    expect(props.onSave).toHaveBeenCalledWith({ disabledHarnessIds: ["custom"] });
+  });
+
   it("shows the host's values, in the units a person thinks in", () => {
     draw();
 

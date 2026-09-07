@@ -229,6 +229,8 @@ function AppShell({
   const toolChips = crew.tools ?? TOOL_CATALOG;
   const hostToolChips = crew.hostTools ?? HOST_TOOLS;
   const harnesses = crew.harnesses ?? HARNESSES;
+  const enabledHarnesses = harnesses.filter((harness) =>
+    !settings.settings?.disabledHarnessIds?.includes(harness.id));
   // Registered folders replace the fixtures the moment the host answers; the
   // threads inside them are real rows, so the main pane has to be able to find
   // one that the mock reducer has never heard of.
@@ -673,7 +675,7 @@ function AppShell({
         {selection.view === "new-chat" ? (
           <NewChatView
             key={selection.folderId ?? "scratch"}
-            harnesses={harnesses}
+            harnesses={enabledHarnesses}
             folders={registered.folders ?? (fixtures ? state.folders : [])}
             defaultFolderId={selection.folderId}
             defaultHarnessId={profile.harnessId ?? undefined}
@@ -802,7 +804,7 @@ function AppShell({
           bot={editingBot}
           templates={templates}
           tools={toolChips}
-          harnesses={harnesses}
+          harnesses={enabledHarnesses}
           error={editorError}
           onSave={saveBot}
           onRemove={(botId) => removeBot(botId, true)}
@@ -972,6 +974,7 @@ function MainView({
       return (
         <SettingsView
           settings={settings.settings}
+          harnesses={harnesses}
           error={settings.error}
           // The promise is handed to the pane rather than resolved here: it
           // keeps what was typed and shows the host's own refusal, which is
