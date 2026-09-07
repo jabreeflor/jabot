@@ -1,0 +1,20 @@
+{
+  "name": "jabot",
+  "interface": {
+    "displayName": "JaBot plugins"
+  },
+  "plugins": [
+    {
+      "name": "jabstack",
+      "source": {
+        "source": "local",
+        "path": "./plugins/jabstack"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

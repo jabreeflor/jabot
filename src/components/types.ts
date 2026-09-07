@@ -151,6 +151,15 @@ export interface Bot {
   image?: string | null;
   /** Unread work on this bot's standing thread — the red dot on its avatar. */
   unread?: boolean;
+  /**
+   * The last thing said in this bot's standing thread, as one line.
+   *
+   * The chat row's second line. Absent means nothing has been said yet — or a
+   * host too old to have an answer — and the row shows what the bot is *for*
+   * instead, which is the only other true thing there is to say about a
+   * conversation that has not started.
+   */
+  preview?: string;
 }
 
 /** A template is a bot without an id, harness included (#6). */
@@ -366,5 +375,4 @@ export type Selection =
   | { view: "inbox" }
   | { view: "prs" }
   | { view: "schedules" }
-  | { view: "devices" }
   | { view: "settings" };

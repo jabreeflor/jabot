@@ -7,8 +7,13 @@
 //! failures (logged out, daemon down, adapter missing) are not tier-specific.
 //!
 //! The host never installs anything. A card can say how to install a harness
-//! and link to instructions; it cannot run an installer, from any tier.
+//! and link to instructions; it cannot run an installer, from any tier. What
+//! it can do is *find* an adapter the build already shipped — `bundled.rs`,
+//! staged by `scripts/bundle-adapters.sh` and copied into JaBot.app by
+//! `bundle.resources` — so that installing JaBot is one install rather than
+//! two. That is still not the host installing anything at run time.
 
+pub mod bundled;
 pub mod catalog;
 pub mod custom;
 pub mod doctor;
@@ -636,6 +641,8 @@ mod tests {
             command: "sh".into(),
             args: vec![],
             downloads_on_first_run: false,
+            bundled: false,
+            env: BTreeMap::new(),
         };
         let spec = resolved_runtime_spec(&descriptors, "claude").unwrap();
         assert_eq!(spec.command, "sh");

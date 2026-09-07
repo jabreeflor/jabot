@@ -1,0 +1,23 @@
+{
+  "name": "jabstack",
+  "displayName": "Jabstack",
+  "version": "0.3.0",
+  "description": "Jabree's personal agent plugin — gauntlet-loop, create-pr-artifact, and the gauntlet-critic subagent.",
+  "author": {
+    "name": "Jabree Flor",
+    "url": "https://github.com/jabreeflor"
+  },
+  "homepage": "https://github.com/jabreeflor/jabstack",
+  "repository": "https://github.com/jabreeflor/jabstack",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "cursor",
+    "jabstack",
+    "gauntlet",
+    "pr-artifact",
+    "quality"
+  ],
+  "skills": "./skills/",
+  "agents": "./agents/"
+}

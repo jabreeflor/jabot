@@ -9,20 +9,20 @@
 //! Folded threads are not listed at all. That is the promise fold makes: the
 //! row goes away and comes back through the Inbox.
 //!
-//! A folder whose directory is not a git checkout is badged rather than hidden:
-//! it runs threads perfectly well and only the PR view has nothing to say about
-//! it (folders-and-auth.md).
+//! A folder whose directory is not a git checkout is listed like any other: it
+//! runs threads perfectly well, and the one thing that differs — the PR view
+//! having nothing to say about it — is stated in folder settings, not in the
+//! sidebar row (folders-and-auth.md).
 
 import { useState } from "react";
 
 import {
   ChevronDownIcon,
-  DotIcon,
   FolderIcon,
   SlidersIcon,
   PlusIcon,
-  RingIcon,
 } from "./Icon";
+import { Sparkle } from "./Sparkle";
 import { threadStatus } from "./status";
 import type { FolderWithThreads, Selection, ThreadSummary } from "./types";
 import type { MenuPosition } from "./ThreadContextMenu";
@@ -79,13 +79,6 @@ export function FolderList({
                     folder for an expanded one. */}
                 <FolderIcon open={open} />
                 <span className="name">{folder.name}</span>
-                {/* Only when the host has actually looked: `undefined` is "not
-                    asked yet", and a badge for that would be a lie. */}
-                {folder.isGit === false && (
-                  <span className="folder-badge" title="Not a git repo — threads run here, pull requests do not">
-                    no git
-                  </span>
-                )}
                 {!open && <span className="count">{folder.threads.length}</span>}
               </button>
               {onFolderSettings && (
@@ -146,17 +139,15 @@ function ThreadRow({
       type="button"
       className={leaving ? "thread-row leaving" : "thread-row"}
       aria-current={selected}
+      aria-label={`${thread.title}, ${status.label}`}
       onClick={() => onSelect(thread.id)}
       onContextMenu={(event) => {
         event.preventDefault();
         onMenu(thread, { x: event.clientX, y: event.clientY });
       }}
     >
-      <span className={`pip ${status.tone}`} aria-hidden="true">
-        {status.tone === "quiet" ? <RingIcon /> : <DotIcon />}
-      </span>
+      <Sparkle tone={status.tone} title={status.label} seed={thread.id} />
       <span className="title">{thread.title}</span>
-      <span className="state">{status.label}</span>
     </button>
   );
 }

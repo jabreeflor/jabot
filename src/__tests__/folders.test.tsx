@@ -8,7 +8,7 @@
  * thread in *that* folder's cwd, and that a registration the host refuses
  * leaves the user's typing on screen.
  */
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -342,12 +342,9 @@ describe("App, once the host has answered", () => {
     expect(
       screen.queryByRole("button", { name: "New thread in globnet-sync" }),
     ).not.toBeInTheDocument();
-    // A directory git does not claim says so rather than disappearing.
-    const notes = screen
-      .getByRole("button", { name: /^notes/ })
-      .closest(".folder-head");
+    // A directory git does not claim is listed like any other folder.
     expect(
-      within(notes as HTMLElement).getByText("no git"),
+      screen.getByRole("button", { name: "New thread in notes" }),
     ).toBeInTheDocument();
   });
 
@@ -687,8 +684,14 @@ describe("editing a registered folder", () => {
       folders: [folder({ isGit: false, origin: undefined })],
     });
     render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
-    expect(await screen.findByText("no git")).toBeInTheDocument();
+    // The settings affordance appears only once the host has answered, so this
+    // is also the point where the fixture rows are gone.
+    await screen.findByRole("button", { name: "Folder settings for jabot" });
+    // Git named no remote, so the row's tooltip is the bare directory.
+    expect(screen.getByRole("button", { name: "jabot" })).toHaveAttribute(
+      "title",
+      "/Users/j/code/jabot",
+    );
 
     listFolders.mockResolvedValue({ folders: [folder()] });
     await userEvent.click(
@@ -698,8 +701,13 @@ describe("editing a registered folder", () => {
       screen.getByRole("button", { name: "Ask git again" }),
     );
 
-    // The re-probe found a checkout, so the badge the old answer earned goes.
-    await waitFor(() => expect(screen.queryByText("no git")).toBeNull());
+    // The re-probe found a checkout, and the row carries the repo it named.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "jabot" })).toHaveAttribute(
+        "title",
+        "/Users/j/code/jabot · jabreeflor/jabot",
+      ),
+    );
   });
 
   /** Same promise the Add card makes: a refused save keeps the draft, because

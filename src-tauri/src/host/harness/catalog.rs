@@ -10,11 +10,18 @@
 //! down (`docs/research/setup-porting/buzz.md` §4), so every tier carries the
 //! same [`Readiness`] description and goes through the same probe.
 //!
-//! A card lists *candidates*, not one command: Claude renamed its adapter from
-//! `claude-code-acp` to `claude-agent-acp` and both are the same zero-arg
+//! A card lists *candidates*, not one command: Claude's adapter was renamed
+//! from `@zed-industries/claude-code-acp` to
+//! `@agentclientprotocol/claude-agent-acp` and both are the same zero-arg
 //! runtime, and Pi is reachable as `pi-acp`, as `omp acp`, or through `npx`.
 //! Resolution picks the first candidate that exists on the augmented PATH, so
 //! a machine with only the older binary still gets a working card.
+//!
+//! The last candidate on a card can be the copy this build ships inside
+//! JaBot.app (`bundled.rs`). It goes last on purpose: an adapter the user
+//! installed themselves is a deliberate choice, and ours is the floor under it
+//! — there so that having Claude Code installed is the only thing a person has
+//! to do before New Chat works.
 
 use std::collections::BTreeMap;
 
@@ -31,6 +38,15 @@ pub struct Launch {
     /// harness is. Ready, but the first run pays for a download — the Doctor
     /// says so rather than pretending the package is already here.
     pub downloads_on_first_run: bool,
+    /// This candidate is the copy shipped inside JaBot.app (`bundled.rs`), not
+    /// something the user installed. It changes what the Doctor says — the
+    /// resolved path is a Node, not an adapter, and "Ready — /opt/homebrew/bin/node"
+    /// would tell a user nothing.
+    pub bundled: bool,
+    /// Env this candidate needs and the others do not. The bundled adapter
+    /// carries `CLAUDE_CODE_EXECUTABLE`; a globally installed one ships its own
+    /// Claude Code binary and must not be redirected at ours.
+    pub env: BTreeMap<String, String>,
 }
 
 impl Launch {
@@ -39,6 +55,17 @@ impl Launch {
             command: command.to_string(),
             args: args.iter().map(|a| (*a).to_string()).collect(),
             downloads_on_first_run,
+            bundled: false,
+            env: BTreeMap::new(),
+        }
+    }
+
+    /// A candidate resolved out of this build's own resources.
+    pub fn bundled(command: &str, args: &[&str], env: BTreeMap<String, String>) -> Self {
+        Self {
+            bundled: true,
+            env,
+            ..Self::new(command, args, false)
         }
     }
 }
@@ -91,9 +118,16 @@ impl HarnessDescriptor {
     /// Downstream the spec is indistinguishable from env a client passed to
     /// `thread/open`, and that env is not a default the environment may
     /// outvote — it is the runtime the thread recorded.
+    ///
+    /// A candidate's own env (`Launch::env`) is merged in first and floored
+    /// the same way: `CLAUDE_CODE_EXECUTABLE` is how the bundled adapter is
+    /// told which Claude Code to drive, and someone who exported their own
+    /// still means it.
     pub fn runtime_spec(&self, launch: &Launch) -> RuntimeSpec {
+        let mut catalog_env = self.env.clone();
+        catalog_env.extend(launch.env.clone());
         let env: BTreeMap<String, String> =
-            super::floor_env(&self.env, |key| std::env::var_os(key).is_some())
+            super::floor_env(&catalog_env, |key| std::env::var_os(key).is_some())
                 .into_iter()
                 .map(|(key, value)| (key.to_string(), value.to_string()))
                 .collect();
@@ -187,7 +221,11 @@ const SHIPPED: &[Compiled] = &[
         ],
         cli: Some("claude"),
         env: &[],
-        install_hint: "Install Claude Code, then `npm i -g @zed-industries/claude-code-acp`.",
+        // JaBot ships the adapter, so the only install left is Claude Code
+        // itself — and Node, which the bundled adapter runs on. The npm line
+        // stays for the machine with no Node and for anyone who would rather
+        // run their own.
+        install_hint: "Install Claude Code (and Node 20+, which JaBot's bundled adapter runs on), or install the adapter yourself with `npm i -g @agentclientprotocol/claude-agent-acp`.",
         install_url: "https://github.com/agentclientprotocol/claude-agent-acp",
         readiness: CompiledReadiness::Command(
             "claude",
@@ -293,10 +331,13 @@ fn build(compiled: &Compiled) -> HarnessDescriptor {
         blurb: compiled.blurb.to_string(),
         accent: compiled.accent.to_string(),
         tier: compiled.tier,
+        // The user's own installs first, this build's copy after them
+        // (module docs above). A card with nothing bundled is unchanged.
         launches: compiled
             .launches
             .iter()
             .map(|(command, args, downloads)| Launch::new(command, args, *downloads))
+            .chain(super::bundled::launches_for(compiled.id))
             .collect(),
         cli: compiled.cli.map(str::to_string),
         env: compiled
@@ -355,18 +396,61 @@ mod tests {
         assert!(!is_reserved("my-agent"));
     }
 
+    /// Both adapter names are tried, current one first, and whatever this
+    /// build bundles comes after them — never instead of them. Filtered by
+    /// `bundled` rather than asserted on the whole list because the bundled
+    /// candidate only exists on a machine that has Node, `claude`, and a
+    /// staged tree, and this test has to say the same thing on all of them.
     #[test]
-    fn claude_falls_back_to_the_older_adapter_name() {
+    fn claude_tries_both_adapter_names_before_anything_bundled() {
         let claude = compiled_in()
             .into_iter()
             .find(|d| d.id == "claude")
             .unwrap();
-        let commands: Vec<_> = claude
+        let installed: Vec<_> = claude
             .launches
             .iter()
-            .map(|l| l.command.as_str().to_string())
+            .take_while(|l| !l.bundled)
+            .map(|l| l.command.clone())
             .collect();
-        assert_eq!(commands, ["claude-agent-acp", "claude-code-acp"]);
+        assert_eq!(installed, ["claude-agent-acp", "claude-code-acp"]);
+        assert!(
+            claude.launches[installed.len()..].iter().all(|l| l.bundled),
+            "a bundled candidate may only follow the user's own installs"
+        );
+    }
+
+    /// The bundled candidate is the app's, not the user's, so it carries the
+    /// env that makes it work and the other candidates do not inherit it.
+    #[test]
+    fn a_bundled_launch_contributes_its_env_to_the_snapshot() {
+        let claude = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "claude")
+            .unwrap();
+        let bundled = Launch::bundled(
+            "/usr/bin/node",
+            &["/Applications/JaBot.app/adapter.js"],
+            BTreeMap::from([("CLAUDE_CODE_EXECUTABLE".into(), "/opt/bin/claude".into())]),
+        );
+        let spec = claude.runtime_spec(&bundled);
+        assert_eq!(spec.command, "/usr/bin/node");
+        // Skipped for whoever is debugging with their own export: the floor
+        // hands them theirs, which is the documented behaviour and not this
+        // test's subject.
+        if std::env::var_os("CLAUDE_CODE_EXECUTABLE").is_none() {
+            assert_eq!(
+                spec.env
+                    .as_ref()
+                    .and_then(|env| env.get("CLAUDE_CODE_EXECUTABLE"))
+                    .map(String::as_str),
+                Some("/opt/bin/claude")
+            );
+        }
+        assert!(
+            claude.runtime_spec(claude.primary()).env.is_none(),
+            "a candidate the user installed is not redirected at our Claude Code"
+        );
     }
 
     /// The floor is the snapshot's, not the spawner's: a key the environment

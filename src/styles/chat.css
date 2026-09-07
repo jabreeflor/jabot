@@ -1,8 +1,8 @@
 /*
- * Transcript and composer — the iMessage grammar the prototype set:
- * cream bubble right for me, graphite bubble left for the bot, both with a
- * squared-off tail corner; monospace toolblocks sunk below the chat ground so
- * machine output never competes with speech.
+ * Transcript and composer — the bot speaks as prose on the chat ground, my
+ * words sit in a graphite bubble on the right with a squared-off tail corner;
+ * monospace toolblocks sink below the ground so machine output never competes
+ * with speech.
  */
 
 .chat-head {
@@ -65,7 +65,7 @@
 
 /* The status line is a live reading once a thread is streaming (#14): a stop
    reason, or the agent's own plan position. Same three tones as the sidebar's
-   pip, so "running" means the same colour wherever it is read. */
+   sparkle, so "running" means the same state wherever it is read. */
 .chat-head .status[data-tone="running"] {
   color: var(--amber);
 }
@@ -162,21 +162,31 @@
 }
 
 .bubble {
-  max-width: 72%;
-  padding: 11px var(--sp-5);
-  border-radius: var(--r-bubble);
   font-size: var(--fs-chat);
   line-height: var(--lh-chat);
   white-space: pre-line;
-  background: var(--bub-bot);
-  align-self: flex-start;
-  border-bottom-left-radius: var(--r-tail);
+}
+
+/* The bot is not in a balloon. A cream (or graphite) fill around someone
+   else's words made the thread look like iMessage; the agent is writing on
+   the page, and the page is already the chat ground. */
+.msg.bot .bubble {
+  max-width: 100%;
+  padding: 2px 0;
+  background: none;
+  color: var(--ink);
+  border-radius: 0;
+  /* Markdown draws real block elements; `pre-line` on the wrapper would turn
+     every newline between `</p>` and the next `<p>` into a blank line. */
+  white-space: normal;
 }
 
 .msg.me .bubble {
+  max-width: 72%;
+  padding: 11px var(--sp-5);
   background: var(--bub-me);
   color: var(--bub-me-ink);
-  border-bottom-left-radius: var(--r-bubble);
+  border-radius: var(--r-bubble);
   border-bottom-right-radius: var(--r-tail);
 }
 
@@ -495,21 +505,16 @@
   color: var(--danger);
 }
 
-/* Markdown inside an agent bubble (#14).
+/* Markdown inside an agent reply (#14).
  *
- * `.bubble` has `white-space: pre-line`, which is right for a text node and
- * fights real block elements — every newline between a `</p>` and the next
- * `<p>` becomes a blank line. The agent bubble draws elements now, so it takes
- * `normal` and the elements below carry the spacing; `pre` and `code` put
- * `pre-wrap` back, because inside code the whitespace is the content.
+ * The wrapper is already `white-space: normal` (above). Paragraphs put
+ * `pre-line` back so an agent's deliberate line breaks still show; `pre` and
+ * `code` put `pre-wrap` back, because inside code the whitespace is the
+ * content.
  *
  * The user bubble is untouched and stays literal: a person's asterisks are
  * their own.
  */
-.msg.bot .bubble {
-  white-space: normal;
-}
-
 .msg.bot .bubble > p {
   margin: 0;
   /* The one thing `pre-line` was doing that is still wanted: an agent's line
@@ -548,7 +553,7 @@
   border: 1px solid var(--sunk-edge);
   border-radius: var(--r-md);
   padding: var(--sp-3) var(--sp-4);
-  /* A long line scrolls rather than widening the 72% bubble past it. */
+  /* A long line scrolls rather than widening the column. */
   overflow-x: auto;
 }
 

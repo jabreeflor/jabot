@@ -222,4 +222,13 @@ describe("DevicesView", () => {
     ).toBeInTheDocument();
     expect(within(rowFor("Jabree's iPhone")).queryByText("Connected")).toBeNull();
   });
+
+  /** Nested in Settings the pane already said "Settings". A second h1 would
+      be the screen naming itself twice. */
+  it("skips the page heading when it is nested in Settings", () => {
+    draw({ embedded: true });
+
+    expect(screen.queryByRole("heading", { name: "Devices" })).toBeNull();
+    expect(screen.getByText("Jabree's iPhone")).toBeInTheDocument();
+  });
 });

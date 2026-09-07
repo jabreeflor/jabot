@@ -1,10 +1,16 @@
 /*
  * The sidebar: crew above, code below, me at the bottom.
  *
- * Bots are a strip of faces because there are few of them and they are chosen
- * by recognition. Code threads are rows inside folder containers because there
- * are many and they are chosen by name. That contrast is the whole navigation
- * model, so the two halves deliberately do not share a row style.
+ * Bots are chat rows — a face, a name, and the last thing said — because a bot
+ * *is* a conversation (#6). Code threads are rows inside folder containers
+ * because a code thread only means something relative to its checkout. Both
+ * are lists now, so the contrast is carried by what a row holds rather than by
+ * its axis: a bot row is two lines around a face, a thread row is one line
+ * behind its status mark.
+ *
+ * Closed, the rail keeps a strip the traffic lights can sit on and the
+ * toggle that opens it again. The list is unmounted, not hidden, so Tab
+ * cannot wander into a column that is not on screen.
  */
 
 .sidebar {
@@ -18,6 +24,9 @@
 }
 
 .sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   padding: var(--sp-4) 14px var(--sp-4);
 }
 
@@ -28,7 +37,9 @@
   display: flex;
   align-items: center;
   gap: var(--sp-3);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+  width: auto;
   padding: var(--sp-3) var(--sp-4);
   color: var(--faint);
   font-size: var(--fs-ui);
@@ -56,10 +67,59 @@
   outline-offset: 2px;
 }
 
-.sidebar-search svg {
+.sidebar-search .field svg {
   flex: none;
   width: 14px;
   height: 14px;
+}
+
+/*
+ * The split-window glyph. Always a raised square so it reads as a control
+ * even before hover — a ghost button next to the search field would look
+ * like part of the field. Collapsed, it is the only thing on the rail.
+ */
+.sidebar-toggle {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--raise);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.sidebar-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sidebar-toggle:hover {
+  background: #333336;
+}
+
+.sidebar-toggle:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/*
+ * Closed is not gone. Overlay traffic lights still need a dark strip to sit
+ * on, and the toggle that brings the list back has to stay where the hand
+ * already is. Width matches --traffic-lights-w so the lights never spill
+ * onto the chat.
+ */
+.sidebar.is-collapsed {
+  width: var(--traffic-lights-w);
+  overflow: hidden;
+}
+
+.sidebar.is-collapsed .sidebar-search {
+  justify-content: center;
+  padding: var(--sp-4) var(--sp-3);
 }
 
 .sidebar-list {
@@ -78,82 +138,99 @@
   align-items: center;
 }
 
-/* ---- bot strip ---- */
+/* ---- bot chat rows ---- */
 
-.chief-row {
-  display: flex;
-  justify-content: center;
-  padding: 2px var(--sp-2) var(--sp-2);
-}
-
-.bot-strip {
-  display: grid;
-  grid-template-columns: repeat(3, 62px);
-  gap: var(--sp-3) 18px;
-  padding: 2px var(--sp-2) var(--sp-4);
-  justify-content: center;
-}
-
-.bot-tile {
-  flex: none;
-  width: 62px;
+.bot-list {
   display: flex;
   flex-direction: column;
+  padding: 2px var(--sp-1) var(--sp-3);
+}
+
+.bot-row {
+  display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  cursor: pointer;
-  padding: var(--sp-2) 0;
+  gap: var(--sp-3);
+  width: 100%;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: 1px;
   border: 0;
   background: none;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   color: inherit;
-  --blob-size: 44px;
+  cursor: pointer;
+  text-align: left;
+  --blob-size: 34px;
 }
 
-.bot-tile:hover {
+.bot-row:hover {
   background: var(--raise2);
 }
 
-.bot-tile small {
-  color: var(--dim);
-  font-size: var(--fs-caps);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.bot-tile[aria-current="true"] {
+.bot-row[aria-current="true"] {
   background: var(--raise2);
 }
 
-/* The ring is round even though an avatar's box is square: the drawing inside
-   it is a creature on a circular body, and a square halo would read as a tile
-   around the bot rather than a highlight on it. A hat or a crest overflows the
-   box and so paints across the ring, which is the right way round — the mark
-   belongs to the bot, not to the selection. */
-.bot-tile[aria-current="true"] .av,
-.bot-tile[aria-current="true"] .cluster {
+/* Chief is the bot you talk to about the others, so it keeps the larger face
+   the grid gave it — the one difference between it and the rest, now that
+   every bot has a row of the same shape. */
+.bot-row.chief {
+  --blob-size: 42px;
+}
+
+/* The ring is round even though an avatar's box is square: what the box holds
+   is a circle, and a square halo would read as a tile around the bot rather
+   than a highlight on it. */
+.bot-row[aria-current="true"] .av,
+.bot-row[aria-current="true"] .cluster {
   border-radius: 50%;
   box-shadow:
     0 0 0 2px var(--side),
     0 0 0 4px var(--ink);
 }
 
-.bot-tile[aria-current="true"] small {
+/* `min-width: 0` twice on purpose: a flex item will not shrink below its
+   content's intrinsic width without it, so the preview would push the row
+   wider than the sidebar instead of ellipsing inside it. */
+.bot-row .who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.bot-row .nm {
+  color: var(--dim);
+  font-size: var(--fs-ui);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bot-row[aria-current="true"] .nm {
   color: var(--ink);
 }
 
-.chief-row .bot-tile {
-  width: 76px;
-  --blob-size: 54px;
+/* One line, always. A preview that wrapped would make rows different heights
+   and turn the crew into a wall of text. */
+.bot-row .say {
+  color: var(--faint);
+  font-size: var(--fs-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Not a chat line: what the bot is for, standing in until it has been talked
+   to. Italic is the whole of the distinction, and it is enough — nobody needs
+   to be told in words that a conversation has not started. */
+.bot-row .say.persona {
+  font-style: italic;
 }
 
 /* ---- code rows ---- */
-
-.sidebar-divider {
-  height: 1px;
-  background: var(--line);
-  margin: var(--sp-2) 2px var(--sp-1);
-}
 
 .nav-row {
   display: flex;
@@ -329,22 +406,6 @@
   font-weight: 400;
 }
 
-/* A folder that is not a repo. Quiet, because it is a fact about the folder,
-   not a problem with it. */
-.folder-badge {
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  flex: none;
-}
-
-.folder-toggle .folder-badge + .count {
-  margin-left: var(--sp-3);
-}
-
 .folder-add {
   width: 20px;
   height: 20px;
@@ -441,37 +502,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.thread-row .state {
-  margin-left: auto;
-  color: var(--faint);
-  font-size: 11.5px;
-  flex: none;
-}
-
-.thread-row .pip {
-  flex: none;
-  display: grid;
-  place-items: center;
-  color: var(--faint);
-}
-
-.thread-row .pip svg {
-  width: 9px;
-  height: 9px;
-}
-
-.thread-row .pip.running {
-  color: var(--amber);
-}
-
-.thread-row .pip.ok {
-  color: var(--ok);
-}
-
-.thread-row .pip.bad {
-  color: var(--danger);
 }
 
 /* ---- me ---- */

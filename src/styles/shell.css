@@ -115,8 +115,8 @@
 }
 
 .btn.primary {
-  background: var(--bub-me);
-  color: var(--bub-me-ink);
+  background: var(--cream);
+  color: var(--cream-ink);
 }
 
 .btn.danger {

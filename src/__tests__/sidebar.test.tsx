@@ -1,14 +1,19 @@
 /**
  * The sidebar is the navigation model: faces above, folder threads below. What
  * matters is that it lists what it is given, says what each thread is doing,
- * and reports the gestures — a right-click, a folder's ＋ — rather than acting
- * on them itself.
+ * and reports the gestures — a right-click, a folder's ＋, the rail toggle —
+ * rather than acting on them itself.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { Sidebar } from "../components/Sidebar";
+import {
+  Sidebar,
+  loadSidebarOpen,
+  saveSidebarOpen,
+  SIDEBAR_OPEN_KEY,
+} from "../components/Sidebar";
 import type {
   Bot,
   FolderWithThreads,
@@ -34,6 +39,7 @@ const BOTS: Bot[] = [
     harnessId: "claude",
     isChief: false,
     unread: true,
+    preview: "Opened PR #23 — checks are green.",
   },
 ];
 
@@ -84,6 +90,7 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
     onOpenSchedules: vi.fn(),
     onNewChat: vi.fn(),
     onThreadMenu: vi.fn(),
+    onToggle: vi.fn(),
     ...over,
   };
   render(<Sidebar {...props} />);
@@ -91,29 +98,22 @@ function renderSidebar(over: Partial<Parameters<typeof Sidebar>[0]> = {}) {
 }
 
 describe("Sidebar", () => {
-  /** The Devices row is host-only, for the same reason Settings is: what it
-      lists is what the *host* is paired to, and a preview build is paired to
-      nothing. Drawing it there would offer a screen with nothing on it. */
-  it("shows Devices only when there is a host to ask", async () => {
-    renderSidebar();
+  /** Pairing is a fact about this Mac, so Devices lives under Settings rather
+      than as a CODE row. A preview build still has no host to ask, which is
+      why the gear itself is host-only — same as before. */
+  it("does not offer Devices as its own row", () => {
+    renderSidebar({ onOpenSettings: vi.fn() });
     expect(screen.queryByRole("button", { name: "Devices" })).toBeNull();
-
-    const onOpenDevices = vi.fn();
-    cleanup();
-    renderSidebar({ onOpenDevices });
-    const row = screen.getByRole("button", { name: "Devices" });
-    expect(row).toHaveAttribute("aria-current", "false");
-    await userEvent.click(row);
-    expect(onOpenDevices).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
   });
 
-  it("marks the Devices row as current when it is the open view", () => {
+  it("marks the Settings gear as current when the pane is open", () => {
     renderSidebar({
-      onOpenDevices: vi.fn(),
-      selection: { view: "devices" } as Selection,
+      onOpenSettings: vi.fn(),
+      selection: { view: "settings" } as Selection,
     });
 
-    expect(screen.getByRole("button", { name: "Devices" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
       "aria-current",
       "true",
     );
@@ -122,20 +122,51 @@ describe("Sidebar", () => {
   it("lists every thread it is given, with what that thread is doing", () => {
     renderSidebar();
 
-    expect(
-      screen.getByRole("button", { name: /Auth migration/ }),
-    ).toHaveTextContent("running");
-    expect(
-      screen.getByRole("button", { name: /Sidebar overflow fix/ }),
-    ).toHaveTextContent("done");
+    const running = screen.getByRole("button", {
+      name: "Auth migration, running",
+    });
+    expect(running.querySelector(".sparkle.live")).not.toBeNull();
+    expect(running.querySelectorAll("[data-testid=sparkle] > span")).toHaveLength(
+      9,
+    );
+    expect(running).not.toHaveTextContent("running");
+
+    const done = screen.getByRole("button", {
+      name: "Sidebar overflow fix, done",
+    });
+    expect(done.querySelector(".sparkle.live")).toBeNull();
+    expect(done.querySelector("[data-testid=sparkle]")).toHaveAttribute(
+      "data-tone",
+      "ok",
+    );
+    expect(done).not.toHaveTextContent("done");
   });
 
-  it("shows the crew as faces, with the unread dot where there is news", () => {
+  it("shows the crew as chat rows, with the unread dot where there is news", () => {
     renderSidebar();
 
-    expect(screen.getByRole("button", { name: /Chief/ })).toBeInTheDocument();
-    const code = screen.getByRole("button", { name: /^Code$/ });
+    expect(screen.getByRole("button", { name: /^Chief/ })).toBeInTheDocument();
+    const code = screen.getByRole("button", { name: /^Code/ });
     expect(within(code).getByTestId("unread-dot")).toBeInTheDocument();
+  });
+
+  /** The row's second line is the conversation, which is the whole reason a
+      face became a row. */
+  it("shows the last thing said in each bot's chat", () => {
+    renderSidebar();
+
+    const code = screen.getByRole("button", { name: /^Code/ });
+    expect(code).toHaveTextContent("Opened PR #23 — checks are green.");
+  });
+
+  /** A bot nobody has talked to has no last line. Saying nothing there would
+      leave a blank row; saying what the bot is *for* is the only other true
+      thing about a conversation that has not started. */
+  it("falls back to what a bot is for until it has been talked to", () => {
+    renderSidebar();
+
+    const chief = screen.getByRole("button", { name: /^Chief/ });
+    expect(chief).toHaveTextContent("Route work.");
   });
 
   it("counts what is waiting", () => {
@@ -237,5 +268,44 @@ describe("Sidebar", () => {
 
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(glyph()).toHaveAttribute("data-open", "false");
+  });
+
+  it("hides the list when closed and keeps the toggle that opens it", () => {
+    const onToggle = vi.fn();
+    renderSidebar({ open: false, onToggle });
+
+    expect(
+      screen.getByRole("button", { name: "Show sidebar" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("Search threads")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Chief/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Auth migration/ })).toBeNull();
+    expect(screen.queryByText("Jabree Flor")).toBeNull();
+  });
+
+  it("reports a click on the toggle rather than folding itself", async () => {
+    const props = renderSidebar();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    expect(props.onToggle).toHaveBeenCalled();
+    // Still open: the shell owns the state, the same way a right-click is
+    // reported rather than acted on.
+    expect(
+      screen.getByRole("button", { name: /Auth migration/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("only an explicit 0 hides the rail on the next launch", () => {
+    expect(loadSidebarOpen()).toBe(true);
+
+    saveSidebarOpen(false);
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_KEY)).toBe("0");
+    expect(loadSidebarOpen()).toBe(false);
+
+    saveSidebarOpen(true);
+    expect(loadSidebarOpen()).toBe(true);
+
+    window.localStorage.setItem(SIDEBAR_OPEN_KEY, "garbage");
+    expect(loadSidebarOpen()).toBe(true);
   });
 });

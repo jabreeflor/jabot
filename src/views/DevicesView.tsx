@@ -1,5 +1,9 @@
 //! The paired devices screen (#19, #29).
 //!
+//! Drawn as a Settings tab rather than a CODE row: pairing is a fact about
+//! this Mac, and revoke is the answer to "my phone was stolen", not a daily
+//! surface that belongs under Schedules.
+//!
 //! `device/list` and `device/revoke` have been on the host and wrapped in the
 //! client since #19, and nothing drew any of it — so the only way to see which
 //! phones can answer your permission prompts, or to take one away, was a test.
@@ -38,6 +42,7 @@ export function DevicesView({
   error,
   onReload,
   onRevoke,
+  embedded = false,
 }: {
   /** `null` means the host has not answered. Different from `[]`, which is a
       list that should never be empty — this Mac's own console is always in it. */
@@ -46,6 +51,9 @@ export function DevicesView({
   onReload: () => void;
   /** Rejects with the host's own sentence, which the row shows verbatim. */
   onRevoke: (deviceId: string) => Promise<unknown>;
+  /** Nested in Settings: skip the page chrome and the second heading. The
+      Settings pane already named the screen. */
+  embedded?: boolean;
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -69,57 +77,67 @@ export function DevicesView({
 
   const rows = devices ?? [];
 
+  const body = (
+    <>
+      {!embedded && (
+        <div className="page-top">
+          <h1>Devices</h1>
+          <p>
+            Everything paired with this Mac. A device can answer permission
+            prompts and read your Inbox — revoking one cuts it off
+            immediately, including a connection it already has open.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <p className="modal-error" role="alert">
+          {error}
+        </p>
+      )}
+      {failure && (
+        <p className="modal-error" role="alert">
+          {failure}
+        </p>
+      )}
+
+      {devices === null && !error && (
+        <div className="page-empty">Asking the host…</div>
+      )}
+
+      {devices !== null && rows.length === 0 && (
+        <div className="page-empty">No devices are paired with this Mac.</div>
+      )}
+
+      {rows.length > 0 && (
+        <ul className="dev-list">
+          {rows.map((device) => (
+            <DeviceRow
+              key={device.deviceId}
+              device={device}
+              confirming={confirming === device.deviceId}
+              busy={busy === device.deviceId}
+              onAsk={() => {
+                setFailure(null);
+                setConfirming(device.deviceId);
+              }}
+              onCancel={() => setConfirming(null)}
+              onConfirm={() => revoke(device.deviceId)}
+            />
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
+  if (embedded) {
+    return <div className="dev-page">{body}</div>;
+  }
+
   return (
     <div className="view">
       <div className="page-scroll">
-        <div className="page dev-page">
-          <div className="page-top">
-            <h1>Devices</h1>
-            <p>
-              Everything paired with this Mac. A device can answer permission
-              prompts and read your Inbox — revoking one cuts it off
-              immediately, including a connection it already has open.
-            </p>
-          </div>
-
-          {error && (
-            <p className="modal-error" role="alert">
-              {error}
-            </p>
-          )}
-          {failure && (
-            <p className="modal-error" role="alert">
-              {failure}
-            </p>
-          )}
-
-          {devices === null && !error && (
-            <div className="page-empty">Asking the host…</div>
-          )}
-
-          {devices !== null && rows.length === 0 && (
-            <div className="page-empty">No devices are paired with this Mac.</div>
-          )}
-
-          {rows.length > 0 && (
-            <ul className="dev-list">
-              {rows.map((device) => (
-                <DeviceRow
-                  key={device.deviceId}
-                  device={device}
-                  confirming={confirming === device.deviceId}
-                  busy={busy === device.deviceId}
-                  onAsk={() => {
-                    setFailure(null);
-                    setConfirming(device.deviceId);
-                  }}
-                  onCancel={() => setConfirming(null)}
-                  onConfirm={() => revoke(device.deviceId)}
-                />
-              ))}
-            </ul>
-          )}
-        </div>
+        <div className="page dev-page">{body}</div>
       </div>
     </div>
   );

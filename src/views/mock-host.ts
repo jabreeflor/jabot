@@ -1009,6 +1009,26 @@ function saveBot(
 }
 
 /**
+ * The crew as the sidebar's chat rows: each bot with the last thing said in
+ * its conversation.
+ *
+ * Derived from the fixture transcripts rather than written beside them, for
+ * the reason the host derives it from the log: two copies of "what was last
+ * said" is two answers, and the preview build is where a wrong one is easiest
+ * to ship. A bot whose fixture chat is only a notice or a tool line has no
+ * last *message* and so has no preview, which is the same answer a real host
+ * gives for a conversation that has not started.
+ */
+export function sidebarBots(state: MockState): Bot[] {
+  return state.bots.map((bot) => {
+    const said = [...(state.transcripts[bot.id] ?? [])]
+      .reverse()
+      .find((item) => item.kind === "user" || item.kind === "agent");
+    return said ? { ...bot, preview: said.text } : bot;
+  });
+}
+
+/**
  * Folded and archived threads are not in the sidebar. Everything else is
  * grouped under its folder; a thread with no folder has no home in the rail and
  * is reached from the Inbox or by having just started it.

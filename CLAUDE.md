@@ -6,11 +6,18 @@ is the one required gate before anything lands on `main`.
 
 ## Plugin: jabstack
 
-`.claude/settings.json` enables the [jabstack](https://github.com/jabreeflor/jabstack)
-plugin (marketplace `jabstack`, plugin `jabstack@jabstack`). Claude Code offers to
-install it on session start; accept. It provides `/create-pr-artifact`,
-`/gauntlet-loop` and the `gauntlet-critic` subagent. If the skill is not
-loaded, the plugin is not installed — run `/plugin install jabstack@jabstack`
+This repo vendors [jabstack](https://github.com/jabreeflor/jabstack) at
+`plugins/jabstack/` (snapshot noted in `plugins/jabstack/SOURCE.md`). It
+provides `/create-pr-artifact`, `/gauntlet-loop`, and the `gauntlet-critic`
+subagent.
+
+| Harness | How it loads |
+| --- | --- |
+| **Cursor** | `.cursor-plugin/marketplace.json` lists the plugin; `.cursor/settings.json` enables `jabstack@jabot`. Reload the window if skills are missing. Local fallback: symlink `plugins/jabstack` to `~/.cursor/plugins/local/jabstack`. |
+| **Codex / ChatGPT Work** | `.agents/plugins/marketplace.json` installs `jabstack` from `./plugins/jabstack` by default. Start a new conversation after changing the plugin. |
+| **Claude Code** | `.claude/settings.json` still pins the GitHub marketplace (`jabstack@jabstack`). Accept the install prompt on session start, or run `/plugin install jabstack@jabstack`. |
+
+If the skill is not loaded, install or enable the plugin for that harness
 rather than working around it.
 
 ## Rule: every PR gets a PR artifact
@@ -55,10 +62,15 @@ Applies to (non-exhaustive):
 
 ### What "screenshot evidence" means
 
-1. Use the `run` skill (or the project's own app-launch skill if one exists)
-   to actually launch/build the app and get it into the state under test —
-   never fake or hand-draw a screenshot, and never describe a screenshot
-   instead of capturing one.
+1. Launch the real app with `./scripts/live.sh up` and capture with
+   `./scripts/live.sh shot --out docs/img/<feature>/<name>.png [steps…]` —
+   this works on Linux and in Claude Code on the web, against the real Rust
+   host, and refuses to shoot until the host is live. Drive the UI into the
+   state under test with the step flags (`--click`, `--fill`, `--wait-text`,
+   …; see `scripts/dev/shot.mjs`), or seed it with `--rpc`. Never fake or
+   hand-draw a screenshot, and never describe a screenshot instead of
+   capturing one. `./scripts/live.sh smoke` proves the loop works on the
+   machine you are on; run it first if `up` misbehaves.
 2. Capture a real screenshot of the before/after (or just after, when there's
    no meaningful before) state.
 3. Save it into the repo under `docs/img/` (create a task-specific

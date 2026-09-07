@@ -1,0 +1,16 @@
+{
+  "plugins": {
+    "jabstack": { "enabled": true }
+  },
+  "enabledPlugins": {
+    "jabstack@jabot": true
+  },
+  "extraKnownMarketplaces": {
+    "jabot": {
+      "source": {
+        "source": "directory",
+        "path": "./"
+      }
+    }
+  }
+}

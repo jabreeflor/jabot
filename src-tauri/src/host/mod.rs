@@ -7,7 +7,7 @@ mod acp;
 mod chief;
 mod crew;
 mod git;
-mod harness;
+pub(crate) mod harness;
 mod identity;
 mod lifecycle;
 mod log;
@@ -243,6 +243,11 @@ pub struct HostSession {
     /// first pump after a launch polls immediately, so nothing here is worth
     /// surviving a quit.
     pr_poll: pr::PrPoll,
+    /// The message each thread is part-way through saying, so consecutive
+    /// chunks extend one preview line instead of each replacing it with its
+    /// own fragment. RAM, and rightly: it describes a turn in flight, and
+    /// `threads.preview` already holds what was last said.
+    preview_tails: transcript::preview::PreviewTails,
 }
 
 impl HostSession {
@@ -325,6 +330,7 @@ impl HostSession {
             current_connection: None,
             schedules: schedule::ScheduleState::from_env(),
             pr_poll: pr::PrPoll::from_env(),
+            preview_tails: HashMap::new(),
         }
     }
 

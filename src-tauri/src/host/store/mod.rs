@@ -319,6 +319,16 @@ impl Store {
         overlay::transcript_head(&self.conn, thread_id)
     }
 
+    pub fn set_thread_preview(&self, thread_id: &str, preview: &str) -> Result<(), StoreError> {
+        overlay::set_thread_preview(&self.conn, thread_id, preview)
+    }
+
+    /// Every bot's standing-thread preview, in one query — see
+    /// [`overlay::bot_previews`].
+    pub fn bot_previews(&self) -> Result<std::collections::HashMap<String, String>, StoreError> {
+        overlay::bot_previews(&self.conn)
+    }
+
     pub fn insert_inbox_event(
         &self,
         thread_id: &str,
@@ -1692,6 +1702,89 @@ mod tests {
         assert_eq!(store.count_unread_inbox(None).unwrap(), 1);
         store.mark_inbox_read("t-atomic").unwrap();
         assert_eq!(store.count_unread_inbox(None).unwrap(), 0);
+    }
+
+    /// The second line of a bot's sidebar chat row.
+    ///
+    /// The standing thread is the one with no folder (#6), and that is the
+    /// whole of the filter: a code session the bot happens to own is listed
+    /// under its folder and is not the conversation the row opens, so it must
+    /// not be the conversation the row quotes.
+    #[test]
+    fn previews_the_standing_thread_and_not_a_code_session() {
+        let (store, _dir) = open_store();
+        let folder = store
+            .insert_folder(&sample_folder("app", "/tmp/app"))
+            .unwrap();
+        store
+            .insert_thread(&NewThread {
+                bot_id: Some("writer".into()),
+                folder_id: None,
+                ..sample_thread("bot-writer")
+            })
+            .unwrap();
+        store
+            .insert_thread(&NewThread {
+                bot_id: Some("writer".into()),
+                folder_id: Some(folder.id.clone()),
+                ..sample_thread("t-app")
+            })
+            .unwrap();
+        // A bot with a thread but nothing said in it yet.
+        store
+            .insert_thread(&NewThread {
+                bot_id: Some("code".into()),
+                folder_id: None,
+                ..sample_thread("bot-code")
+            })
+            .unwrap();
+
+        store
+            .set_thread_preview("bot-writer", "Digest is parked for you.")
+            .unwrap();
+        store
+            .set_thread_preview("t-app", "Rewrote the middleware.")
+            .unwrap();
+
+        let previews = store.bot_previews().unwrap();
+        assert_eq!(
+            previews.get("writer").map(String::as_str),
+            Some("Digest is parked for you.")
+        );
+        // Absent rather than empty, which is what lets the row show what the
+        // bot is *for* instead of a blank line.
+        assert_eq!(previews.get("code"), None);
+        assert_eq!(previews.len(), 1);
+    }
+
+    /// A deleted standing thread leaves a tombstone and the bot opens the next
+    /// generation (`crew/standing.rs`). The row must quote the live one.
+    #[test]
+    fn a_deleted_conversation_stops_being_the_preview() {
+        let (store, _dir) = open_store();
+        for thread in ["bot-writer", "bot-writer-2"] {
+            store
+                .insert_thread(&NewThread {
+                    bot_id: Some("writer".into()),
+                    folder_id: None,
+                    ..sample_thread(thread)
+                })
+                .unwrap();
+        }
+        store.set_thread_preview("bot-writer", "Old news.").unwrap();
+        store
+            .set_thread_preview("bot-writer-2", "New news.")
+            .unwrap();
+        store.tombstone_thread("bot-writer").unwrap();
+
+        assert_eq!(
+            store
+                .bot_previews()
+                .unwrap()
+                .get("writer")
+                .map(String::as_str),
+            Some("New news.")
+        );
     }
 
     /// The red dot on a crew blob (#22, #24).

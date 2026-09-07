@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Import jabstack as Cursor and Codex workspace plugins</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --line: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #8b5cf6;
+      --cyan: #22d3ee;
+      --green: #3fb950;
+      --cursor: #79c0ff;
+      --codex: #f0883e;
+      --claude: #d2a8ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+    body {
+      font: 16px/1.55 ui-sans-serif, "Segoe UI", Helvetica, Arial, sans-serif;
+      padding: 48px 24px 72px;
+    }
+    main { max-width: 880px; margin: 0 auto; }
+    .kicker {
+      color: var(--cyan);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    h1 { font-size: 34px; line-height: 1.2; margin: 8px 0 12px; letter-spacing: -0.03em; }
+    .lede { color: var(--muted); font-size: 18px; margin: 0 0 28px; }
+    h2 {
+      font-size: 20px;
+      margin: 36px 0 12px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+    }
+    p, li { color: var(--text); }
+    .muted { color: var(--muted); }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin: 16px 0;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 12px;
+      align-items: stretch;
+    }
+    .col h3 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .before h3 { color: var(--muted); }
+    .after h3 { color: var(--green); }
+    .arrow {
+      align-self: center;
+      color: var(--accent);
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .chip {
+      display: block;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin: 8px 0;
+      font-size: 13px;
+    }
+    .chip strong { display: block; margin-bottom: 2px; }
+    .cursor { border-left: 3px solid var(--cursor); }
+    .codex { border-left: 3px solid var(--codex); }
+    .claude { border-left: 3px solid var(--claude); }
+    .missing { opacity: 0.55; }
+    svg.diagram { width: 100%; height: auto; display: block; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88em;
+      background: #21262d;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    ol { padding-left: 1.2em; }
+    .files code { display: inline; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">PR walkthrough</div>
+    <h1>Import jabstack as Cursor and Codex workspace plugins</h1>
+    <p class="lede">JaBot already pinned jabstack for Claude Code. This change vendors the plugin in-repo and registers it so Cursor and Codex load the same skills from the workspace.</p>
+
+    <h2>How it works</h2>
+    <p>One plugin tree, two native manifests, two repo marketplaces. Skills stay in a single <code>skills/</code> directory. Each harness discovers that tree through its own catalog format.</p>
+
+    <div class="panel flow">
+      <div class="col before">
+        <h3>Before</h3>
+        <div class="chip claude"><strong>Claude Code</strong>GitHub marketplace pin in <code>.claude/settings.json</code></div>
+        <div class="chip missing"><strong>Cursor</strong>No plugin in this repo</div>
+        <div class="chip missing"><strong>Codex</strong>No plugin in this repo</div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="col after">
+        <h3>After</h3>
+        <div class="chip claude"><strong>Claude Code</strong>Unchanged: still <code>jabstack@jabstack</code> from GitHub</div>
+        <div class="chip cursor"><strong>Cursor</strong><code>.cursor-plugin/marketplace.json</code> + workspace enable</div>
+        <div class="chip codex"><strong>Codex</strong><code>.agents/plugins/marketplace.json</code> installs by default</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <svg class="diagram" viewBox="0 0 840 220" role="img" aria-label="Harnesses resolve plugins/jabstack through their own manifests">
+        <rect x="1" y="1" width="838" height="218" rx="12" fill="#0d1117" stroke="#30363d"/>
+        <rect x="300" y="68" width="240" height="84" rx="10" fill="#161b22" stroke="#8b5cf6"/>
+        <text x="420" y="98" text-anchor="middle" fill="#e6edf3" font-size="15" font-family="ui-sans-serif,Helvetica,sans-serif" font-weight="700">plugins/jabstack</text>
+        <text x="420" y="122" text-anchor="middle" fill="#8b949e" font-size="12" font-family="ui-sans-serif,Helvetica,sans-serif">skills + gauntlet-critic</text>
+        <rect x="32" y="36" width="200" height="56" rx="8" fill="#161b22" stroke="#79c0ff"/>
+        <text x="132" y="58" text-anchor="middle" fill="#79c0ff" font-size="12" font-weight="700" font-family="ui-sans-serif,Helvetica,sans-serif">Cursor</text>
+        <text x="132" y="76" text-anchor="middle" fill="#8b949e" font-size="11" font-family="ui-sans-serif,Helvetica,sans-serif">.cursor-plugin + settings</text>
+        <rect x="32" y="128" width="200" height="56" rx="8" fill="#161b22" stroke="#f0883e"/>
+        <text x="132" y="150" text-anchor="middle" fill="#f0883e" font-size="12" font-weight="700" font-family="ui-sans-serif,Helvetica,sans-serif">Codex</text>
+        <text x="132" y="168" text-anchor="middle" fill="#8b949e" font-size="11" font-family="ui-sans-serif,Helvetica,sans-serif">.agents/plugins marketplace</text>
+        <rect x="608" y="82" width="200" height="56" rx="8" fill="#161b22" stroke="#d2a8ff"/>
+        <text x="708" y="104" text-anchor="middle" fill="#d2a8ff" font-size="12" font-weight="700" font-family="ui-sans-serif,Helvetica,sans-serif">Claude Code</text>
+        <text x="708" y="122" text-anchor="middle" fill="#8b949e" font-size="11" font-family="ui-sans-serif,Helvetica,sans-serif">GitHub marketplace (unchanged)</text>
+        <line x1="232" y1="64" x2="300" y2="100" stroke="#79c0ff" stroke-width="1.5"/>
+        <line x1="232" y1="156" x2="300" y2="120" stroke="#f0883e" stroke-width="1.5"/>
+      </svg>
+    </div>
+
+    <p>Trade-off: the tree is a snapshot of jabstack <code>0.3.0</code> (<code>7d1c29c</code>), not a live submodule. That keeps plugin paths local and offline. Update <code>plugins/jabstack/</code> when upstream releases; <code>SOURCE.md</code> records the pin.</p>
+
+    <h2>What to look at</h2>
+    <table class="files">
+      <thead>
+        <tr><th>File</th><th>Why it matters</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>plugins/jabstack/</code></td>
+          <td>Vendored plugin: Cursor + Codex + Agent Plugin manifests, both skills, and <code>gauntlet-critic</code>.</td>
+        </tr>
+        <tr>
+          <td><code>.cursor-plugin/marketplace.json</code></td>
+          <td>Makes this repo a Cursor marketplace whose <code>pluginRoot</code> is <code>plugins/</code>.</td>
+        </tr>
+        <tr>
+          <td><code>.cursor/settings.json</code></td>
+          <td>Enables <code>jabstack@jabot</code> for the workspace.</td>
+        </tr>
+        <tr>
+          <td><code>.agents/plugins/marketplace.json</code></td>
+          <td>Codex repo marketplace; <code>INSTALLED_BY_DEFAULT</code> on <code>./plugins/jabstack</code>.</td>
+        </tr>
+        <tr>
+          <td><code>CLAUDE.md</code></td>
+          <td>Tells agents how each harness loads the plugin.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>How to verify</h2>
+    <ol>
+      <li>Confirm manifests parse and paths exist:
+        <br><code>python3 -c "import json,pathlib; json.loads(pathlib.Path('.cursor-plugin/marketplace.json').read_text()); json.loads(pathlib.Path('.agents/plugins/marketplace.json').read_text())"</code>
+        <br>and <code>test -f plugins/jabstack/skills/create-pr-artifact/SKILL.md</code></li>
+      <li><strong>Cursor:</strong> reload the window, then open Customize and confirm <code>gauntlet-loop</code>, <code>create-pr-artifact</code>, and <code>gauntlet-critic</code>. Optional local fallback: <code>ln -sfn "$(pwd)/plugins/jabstack" ~/.cursor/plugins/local/jabstack</code></li>
+      <li><strong>Codex:</strong> start a new conversation in this repo and ask to run <code>/create-pr-artifact</code> or “run the gauntlet”. The repo marketplace should offer jabstack without a Git clone of jabreeflor/jabstack.</li>
+      <li><strong>Claude Code:</strong> unchanged — accept <code>jabstack@jabstack</code> from <code>.claude/settings.json</code>.</li>
+      <li>No app UI change: skip visual regression. <code>./scripts/verify.sh --fast</code> is enough for the existing gate.</li>
+    </ol>
+  </main>
+</body>
+</html>

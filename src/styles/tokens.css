@@ -28,10 +28,13 @@
      is used at, and the uppercase 11px form labels are its worst case. */
   --faint: #8e8e93;
 
-  /* bubbles — cream for me, graphite for the bot (iMessage grammar) */
-  --bub-bot: #2c2c2e;
-  --bub-me: #f1f1ec;
-  --bub-me-ink: #1c1c1e;
+  /* cream — primary chrome (tabs, buttons, chips) */
+  --cream: #f1f1ec;
+  --cream-ink: #1c1c1e;
+
+  /* my bubble — graphite on the chat ground; the bot has no balloon */
+  --bub-me: #2c2c2e;
+  --bub-me-ink: #f2f2f2;
 
   /* status */
   --amber: #e8a33d;

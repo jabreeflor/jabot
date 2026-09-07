@@ -30,9 +30,18 @@ reason the tooling below exists rather than being a nicety:
 ## Setup
 
 ```bash
-npm install          # deps, and installs the git hooks (see below)
-./scripts/verify.sh  # ~1.5 min warm, several minutes on a cold Rust build
+npm install               # deps, and installs the git hooks (see below)
+npm run bundle:adapters   # the ACP adapter the app ships inside its bundle
+./scripts/verify.sh       # ~1.5 min warm, several minutes on a cold Rust build
 ```
+
+The app ships the Claude ACP adapter inside its own bundle, staged into
+`src-tauri/vendor/adapters/node_modules` (gitignored) from the manifest and
+lock committed beside it. `./scripts/live.sh setup` and `npm run build:app` —
+the `beforeBuildCommand` a `tauri build` runs — both stage it; to do it on its
+own, `npm run bundle:adapters`. Without it the Claude card is only ready on a
+machine where someone separately ran `npm i -g`, which is the state this
+replaced. See [docs/packaging.md](docs/packaging.md#what-ships-inside-the-bundle-the-claude-acp-adapter).
 
 `npm install` runs `scripts/install-hooks.sh` for you through npm's `prepare`
 lifecycle. If you cloned and did something else, or you want to check:
@@ -56,8 +65,52 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:e2e` | one slice, while you are working on it |
+| `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
+
+## Running it live, on any machine
+
+`npm run tauri dev` needs macOS. Everything else about the product does not:
+the host is `jabot-hostd` on Linux in CI already, and the renderer is a web
+page. `scripts/live.sh` puts the two together so a change can be *seen*
+working on a Linux box, in a container, or in Claude Code on the web, with no
+agent improvising the setup:
+
+```bash
+./scripts/live.sh setup   # system libs (apt on Linux), npm deps, bundled adapters, dev bins, a Chromium — idempotent
+./scripts/live.sh up      # vite + a real jabot-hostd behind it; returns once the host says hello
+./scripts/live.sh shot --out docs/img/<feature>/after.png --click 'text=Inbox'
+./scripts/live.sh smoke   # reset, up, seed, one real agent turn, screenshot — the whole loop
+./scripts/live.sh down
+```
+
+What `up` serves is the product minus the window chrome, not a mock. The
+`jabot-host` Vite plugin (`scripts/dev/host-plugin.ts`) spawns `jabot-hostd`
+with a real SQLite under `.jabot-dev/data` and bridges its NDJSON over Vite's
+own HMR WebSocket; `src/host/devTransport.ts` is the renderer's end of that
+bridge, picked by `defaultTransport()` only when the plugin has announced
+itself (`import.meta.env.JABOT_LIVE_HOST`). Inside JaBot.app, under `tauri
+dev`, in a unit test, in a production bundle: Tauri IPC exactly as before.
+
+The loop is then: edit, HMR reloads the tab, `live.sh shot …` writes the PNG
+under `docs/img/`, look at it, repeat, `verify.sh` before the push. `shot`
+refuses to take a picture until the sidebar's host line reports a live host,
+so a screenshot of "Connecting to host…" cannot be mistaken for evidence.
+
+Driving it without a real harness installed: `fake-acp-agent` (the scriptable
+ACP agent the e2e suite uses) is registered as the `fake-acp` harness whenever
+it is built, and `live.sh seed` puts Chief on it. `live.sh smoke` is that plus
+one turn through the UI, and is the acceptance test for this whole section —
+if it passes, the machine can run the loop.
+
+Two more handles, both for scripts: `GET /__jabot/host` is the host's status
+(what `up` polls), and `POST /__jabot/rpc` forwards one JSON-RPC request
+(`live.sh rpc '{"method":"host/health"}'`), which is how a screenshot script
+seeds folders and threads instead of clicking them into existence.
+
+Claude Code on the web runs `setup` from `.claude/hooks/session-start.sh`
+before the session starts, so a web session begins with the loop ready.
 
 ## What each gate means, and what to do when it fails
 
@@ -67,8 +120,8 @@ one run tells you everything that is wrong.
 | gate | what it proves | when it fails |
 | --- | --- | --- |
 | `toolchain` | your rustc/clippy/node match what CI would use, and clear the declared MSRV floor | `rustup update stable` for drift; if it says clippy and rustc disagree, that is a half-finished update and clippy is lying to you (D-014). A *warning* here about local stable being old is worth acting on before you trust a green clippy. |
-| `lockfiles` | `package-lock.json` satisfies `package.json`, and `Cargo.lock` satisfies `src-tauri/Cargo.toml` | `npm install` or `cargo update -p <crate>` and commit the lock. CI runs `npm ci`, which refuses to install through this. |
-| `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
+| `lockfiles` | `package-lock.json` satisfies `package.json`, `Cargo.lock` satisfies `src-tauri/Cargo.toml`, and `src-tauri/vendor/adapters`' lock satisfies its own manifest | `npm install` or `cargo update -p <crate>` and commit the lock. CI runs `npm ci`, which refuses to install through this. For the vendored adapters, `npm install --prefix src-tauri/vendor/adapters` and commit both files. |
+| `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
 | `typecheck` | `tsc --noEmit`, strict, no `any` | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. |
 | `unit tests` | 200+ vitest cases in jsdom: React components and the host client | `npx vitest --project unit` to iterate |
@@ -173,10 +226,12 @@ Deleting a branch pushes no content and is not gated.
 
 Every PR carries an explainer artifact in its `## Artifact` section (the PR
 template has the heading). It is produced by `/create-pr-artifact <n>` from the
-[jabstack](https://github.com/jabreeflor/jabstack) plugin, which
-`.claude/settings.json` enables for this repo — Claude Code offers to install it
-on session start. Run it after the PR exists and before you ask for review; it
-needs `gh` v2.99.0+ for the `--attach` upload. `CLAUDE.md` has the full rule.
+vendored [jabstack](https://github.com/jabreeflor/jabstack) plugin at
+`plugins/jabstack/`. Cursor and Codex load it from this repo
+(`.cursor-plugin/marketplace.json` and `.agents/plugins/marketplace.json`);
+Claude Code still uses the GitHub marketplace pin in `.claude/settings.json`.
+Run the skill after the PR exists and before you ask for review; it needs
+`gh` v2.99.0+ for the `--attach` upload. `CLAUDE.md` has the full rule.
 
 ## Before you call something a gap
 
