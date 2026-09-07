@@ -43,7 +43,7 @@ test.describe("fold → Inbox → reopen", () => {
       })
       .toBe(true);
 
-    await page.getByRole("button", { name: "Fold" }).click();
+    await page.getByRole("button", { name: "Fold", exact: true }).click();
     await page.getByRole("menuitem", { name: /Disappear until done/ }).click();
 
     await expect(threadRow(page, "Auth migration")).toHaveCount(0);

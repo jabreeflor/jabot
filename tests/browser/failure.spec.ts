@@ -26,7 +26,11 @@ test.describe("failure and cancel", () => {
     await openConnectedApp(page, jabot.baseURL);
     await openThread(page, "Missing runtime");
 
-    await sendComposer(page, "please fail", "Missing runtime");
+    const box = page.getByRole("textbox", { name: "Message Missing runtime" });
+    await expect(box).toBeEnabled();
+    await box.fill("please fail");
+    await box.press("Enter");
+
     const alert = page.getByRole("alert");
     await expect(alert).toBeVisible();
     await expect(alert).toContainText(/unavailable|not found|missing|Harness|ENOENT|spawn/i);

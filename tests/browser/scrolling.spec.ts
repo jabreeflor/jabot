@@ -13,7 +13,7 @@ import {
 } from "./ui";
 
 const CHUNK =
-  "Line of streamed output that forces the transcript past the viewport.\n".repeat(12);
+  "Line of streamed output that forces the transcript past the viewport.\n".repeat(40);
 
 test.describe("scrolling", () => {
   test("follows the tail, holds when scrolled up, and jumps back", async ({
@@ -26,6 +26,7 @@ test.describe("scrolling", () => {
       title: "Scroll journey",
       runtime: pumpAcpRuntime(gate),
     });
+    await page.setViewportSize({ width: 1100, height: 520 });
     await openConnectedApp(page, jabot.baseURL);
     await openThread(page, "Scroll journey");
 
