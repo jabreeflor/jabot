@@ -20,17 +20,19 @@
 #   2. bundle-config  — what the macOS `bundle` job reads, checked without macOS
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   2c. install script — the release installer's pins, delivery, and refusals
+#   2d. macos lint    — planner/path tests for the before-merge macOS jobs
+#   2e. coverage policy — include/exclude/thresholds still fail when they should
 #   3. tsc            — renderer types
 #   3b. eslint        — React Hooks + type-aware promise rules (npm run lint)
-#   4. vitest unit    — React components + host client (jsdom)
+#   4. vitest unit    — React components + host client (jsdom), with coverage
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors
 #   6b. cargo check   — the crate compiles WITHOUT dev-bins, i.e. what tauri build sees
 #   7. cargo test     — Rust host unit + integration tests
+#                       (or cargo-llvm-cov when JABOT_RUST_COVERAGE=1; CI only)
 #   8. build hostd    — the NDJSON stdio host the e2e suite drives
 #   9. vitest e2e     — TypeScript client against the real Rust host
 #  10. vite build     — the renderer bundle actually builds
-#   2d. macos lint    — planner/path tests for the before-merge macOS jobs
 #   *. mac notify     — --check-mac only: notify/mac.rs, which is cfg'd out on
 #                      Linux. CI runs the same script automatically on relevant
 #                      PRs; locally it stays opt-in (NETWORK)
@@ -659,6 +661,42 @@ macos_lint_tests() {
 }
 
 # ---------------------------------------------------------------------------
+# 2e. coverage policy
+#
+# The floors in vitest.config.ts only matter if a miss actually fails, and if
+# a new production file that no test imports still counts. scripts/tests/
+# coverage.test.sh proves both on a throwaway fixture, and that CI (not this
+# script) is where cargo-llvm-cov gets installed. Offline, a few seconds.
+# ---------------------------------------------------------------------------
+coverage_policy() {
+  ./scripts/tests/coverage.test.sh
+}
+
+# Frontend unit tests plus the scoped coverage floor. `--coverage` uses the
+# already-installed @vitest/coverage-v8; it does not fetch anything. Reports
+# land in coverage/frontend/ (gitignored) even when tests fail
+# (`reportOnFailure`), so CI can upload them. Scope: docs/coverage.md.
+unit_tests() {
+  mkdir -p coverage
+  if [[ -f docs/coverage.md ]]; then
+    cp docs/coverage.md coverage/SCOPE.md
+  fi
+  npx vitest run --project unit --coverage
+}
+
+# Rust tests. Local default is `cargo test`, same as before. CI sets
+# JABOT_RUST_COVERAGE=1 after installing cargo-llvm-cov in the workflow
+# setup; this then writes coverage/rust/ instead of running the suite twice.
+# The script refuses to install the tool.
+rust_tests() {
+  if [[ "${JABOT_RUST_COVERAGE:-}" == 1 ]]; then
+    ./scripts/coverage-rust.sh
+  else
+    cargo test "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # The tree this run is about to describe.
 #
 # Empty when this is not a git worktree (a tarball, a vendored copy); every
@@ -672,9 +710,10 @@ run "binary set"     binary_set
 run "commit guards"  guards
 run "install script" install_script
 run "macos lint tests" macos_lint_tests
+run "coverage policy" coverage_policy
 run "typecheck"      npx tsc --noEmit
 run "lint"           npm run lint
-run "unit tests"     npx vitest run --project unit
+run "unit tests"     unit_tests
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
 run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings
 # Everything else in this script compiles the crate with `dev-bins` on. That is
@@ -696,7 +735,7 @@ run "default-features check" cargo check "${MANIFEST[@]}" "${LOCKED[@]}"
 if [[ $CHECK_MAC -eq 1 ]]; then
   run "mac notify cross-check" ./scripts/check-mac-notify.sh
 fi
-run "rust tests"     cargo test "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}"
+run "rust tests"     rust_tests
 
 if [[ $FAST -eq 0 ]]; then
   run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bin jabot-hostd
