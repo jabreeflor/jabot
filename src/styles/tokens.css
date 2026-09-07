@@ -122,6 +122,10 @@
   /* an icon changing state: fast enough to feel like the click, slow enough
      to be a movement rather than a redraw */
   --t-icon: 0.22s;
+  /* the collapsed rail sliding open as a flyout — long enough to read as
+     motion, short enough that a hover does not feel lagged */
+  --t-sidebar: 0.2s;
+  --ease-sidebar: cubic-bezier(0.22, 1, 0.36, 1);
   /* a flap settling — a little past the mark, then back */
   --ease-flap: cubic-bezier(0.32, 1.4, 0.6, 1);
 }
