@@ -138,8 +138,6 @@ impl Secrets {
 
 #[cfg(target_os = "macos")]
 fn os_put(account: &str, secret: &str) -> Result<(), StoreError> {
-    // #228 proof: this unused binding must fail native `macos clippy`.
-    let _intentional_lint_violation = 1;
     let entry = keyring::Entry::new(KEYCHAIN_SERVICE, account)
         .map_err(|e| StoreError::invalid(e.to_string()))?;
     entry
