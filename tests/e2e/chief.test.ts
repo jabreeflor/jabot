@@ -420,23 +420,21 @@ describe("spawn_code_session", () => {
     expect(thread.handoff?.kind).toBe("code_session");
     expect(thread.handoff?.fromBotName).toBe("Chief");
 
-    // Folding it is the other half of the gesture: the job disappears from the
-    // sidebar and stays on the roster, so Chief does not double-book the bot.
+    // Folding is the other half of the gesture. The fake fallback harness
+    // ends the turn at once, so wait_for_inbox must resurface instead of
+    // parking a finished job in Still Sleeping (state-machine.md).
     const folded = await callTool<FoldResult>(server, "fold_thread", {
       threadId: thread.threadId,
       policy: "wait_for_inbox",
     });
-    expect(folded.value.state).toBe("folded");
+    expect(folded.value.state).toBe("resurfaced");
     expect(folded.value.foldPolicy).toBe("wait_for_inbox");
     const inbox = await client.inbox();
-    expect(inbox.sleeping.map((row) => row.threadId)).toContain(
-      thread.threadId,
-    );
+    const card = inbox.events.find((row) => row.threadId === thread.threadId);
+    expect(card).toBeDefined();
     // With no default Code bot, the fallback harness owns no crew seat and the
     // Inbox uses its generic code-session mark.
-    expect(
-      inbox.sleeping.find((row) => row.threadId === thread.threadId)?.botId,
-    ).toBeUndefined();
+    expect(card?.botId).toBeUndefined();
     const status = await callTool<CrewStatus>(server, "list_crew_status");
     const code = status.value.crew.find((bot) => bot.name === "Code");
     expect(code).toBeUndefined();
