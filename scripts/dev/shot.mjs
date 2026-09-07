@@ -30,6 +30,9 @@
 //   --full-page                 the whole scrollable page, not the viewport
 //   --first-run                 do not seed the onboarding record; show setup
 //   --theme light|dark|system   seed jabot.theme before load (default dark)
+//   --translucency preview      ?translucency=preview so chrome fills mix
+//   --desktop light|dark        paint a fake desktop behind the page so a
+//                               translucent fill has something to bleed
 //   --timeout <ms>              per-step and readiness limit, default 15000
 //
 // Exit code is 0 only if the shot was written. Anything else prints why.
@@ -67,6 +70,8 @@ function parse(argv) {
     fullPage: false,
     firstRun: false,
     theme: null,
+    translucency: null,
+    desktop: null,
     timeout: 15_000,
     rpc: [],
   };
@@ -103,6 +108,20 @@ function parse(argv) {
           usage("--theme wants light, dark, or system");
         }
         options.theme = theme;
+        break;
+      }
+      case "--translucency": {
+        const mode = value();
+        if (mode !== "preview") usage("--translucency wants preview");
+        options.translucency = mode;
+        break;
+      }
+      case "--desktop": {
+        const desktop = value();
+        if (desktop !== "light" && desktop !== "dark") {
+          usage("--desktop wants light or dark");
+        }
+        options.desktop = desktop;
         break;
       }
       case "--timeout":
@@ -163,8 +182,38 @@ async function seed(url, requests) {
   }
 }
 
+/** A loud, desktop-like field so a 3–4% mix is visible in a PNG. */
+function desktopStyle(kind) {
+  if (kind === "light") {
+    return {
+      backgroundColor: "#d7e6ff",
+      backgroundImage: [
+        "linear-gradient(90deg, rgba(255,72,72,0.38) 0 14px, transparent 14px)",
+        "linear-gradient(180deg, rgba(40,120,255,0.28) 0 14px, transparent 14px)",
+        "linear-gradient(135deg, #f6e4b8, #c5dcff 55%, #f3c0d4)",
+      ].join(","),
+      backgroundSize: "56px 56px, 56px 56px, 100% 100%",
+    };
+  }
+  return {
+    backgroundColor: "#1a2040",
+    backgroundImage: [
+      "linear-gradient(90deg, rgba(255,220,70,0.32) 0 14px, transparent 14px)",
+      "linear-gradient(180deg, rgba(70,255,210,0.22) 0 14px, transparent 14px)",
+      "linear-gradient(135deg, #2a1848, #123050 55%, #0d2820)",
+    ].join(","),
+    backgroundSize: "56px 56px, 56px 56px, 100% 100%",
+  };
+}
+
 async function main() {
   const { options, steps } = parse(process.argv.slice(2));
+
+  if (options.translucency === "preview") {
+    const previewed = new URL(options.url);
+    previewed.searchParams.set("translucency", "preview");
+    options.url = previewed.toString();
+  }
 
   const status = await fetch(new URL("/__jabot/host", options.url))
     .then((r) => r.json())
@@ -259,6 +308,15 @@ async function main() {
           throw new Error(`unknown step ${step.kind}`);
       }
       console.log(`step ${step.kind}: ok`);
+    }
+
+    if (options.desktop) {
+      await page.evaluate((style) => {
+        const html = document.documentElement;
+        html.style.backgroundColor = style.backgroundColor;
+        html.style.backgroundImage = style.backgroundImage;
+        html.style.backgroundSize = style.backgroundSize;
+      }, desktopStyle(options.desktop));
     }
 
     mkdirSync(path.dirname(options.out), { recursive: true });
