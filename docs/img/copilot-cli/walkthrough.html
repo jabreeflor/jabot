@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add GitHub Copilot CLI as a first-class harness</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#79c0ff; --ok:#3fb950; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .ok { color:var(--ok); }
+    .warn { color:var(--warn); }
+    @media (max-width:700px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · Issue #221</div>
+    <h1>Add GitHub Copilot CLI as a first-class harness</h1>
+    <p>Copilot joins Claude, Codex, and Pi as a shipped card. JaBot speaks to the vendor CLI over ACP (<code>copilot --acp</code>). There is no second adapter package.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>Shipped ids were <code>claude</code>, <code>codex</code>, <code>pi</code>.</li>
+            <li>Doctor classified those by CLI vs adapter vs login.</li>
+            <li>Copilot was research-only.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li><code>copilot</code> is a shipped card that launches <code>copilot --acp</code>.</li>
+            <li>Doctor inspects help text, tokens, <code>~/.copilot</code>, and model pins.</li>
+            <li>Capabilities are declared; resume is not advertised.</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:16px">The CLI <em>is</em> the ACP server. A one-shot <code>copilot -p</code> path exists upstream but has no permission mediation and is not used for chat. JaBot does not wrap the TUI.</p>
+    </section>
+
+    <section id="doctor">
+      <h2>Doctor and auth</h2>
+      <table>
+        <tr><th>Finding</th><th>Status</th><th>Fix</th></tr>
+        <tr><td>No <code>copilot</code> on PATH</td><td>cli_missing</td><td><code>npm i -g @github/copilot</code></td></tr>
+        <tr><td>Help does not list <code>--acp</code></td><td>adapter_outdated</td><td><code>copilot update</code></td></tr>
+        <tr><td>No token and no stored login</td><td>logged_out</td><td><code>copilot login</code> or <code>COPILOT_GITHUB_TOKEN</code> / <code>GH_TOKEN</code> / <code>GITHUB_TOKEN</code></td></tr>
+        <tr><td>Org / subscription policy</td><td>invalid_config</td><td>License + org admin; not a login problem</td></tr>
+        <tr><td>Empty <code>COPILOT_MODEL</code> or <code>model: ""</code></td><td>invalid_config</td><td>Unset, or pin a real model</td></tr>
+      </table>
+      <p>Token precedence matches Copilot: <code>COPILOT_GITHUB_TOKEN</code>, then <code>GH_TOKEN</code>, then <code>GITHUB_TOKEN</code>, then <code>copilot login</code>. A deep handshake reclassifies policy / 401 / bad model instead of “unknown”.</p>
+    </section>
+
+    <section id="caps">
+      <h2>What we claim</h2>
+      <table>
+        <tr><th>Capability</th><th>JaBot</th><th>Why</th></tr>
+        <tr><td>Streaming, tool events, permissions, cancel</td><td class="ok">Supported</td><td>Official ACP server; JaBot mediates permissions (no <code>--allow-all</code>).</td></tr>
+        <tr><td>Resume after process death</td><td class="warn">Not advertised</td><td>Sessions are process-local (copilot-cli#1767). A new <code>copilot --acp</code> cannot see the last one.</td></tr>
+        <tr><td>Account isolation</td><td class="warn">COPILOT_HOME only</td><td><code>/user switch</code> and <code>activeProfile</code> share plugins/MCP. #218 should set <code>COPILOT_HOME</code>.</td></tr>
+      </table>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <ul>
+        <li><code>src-tauri/src/host/harness/copilot.rs</code> — facts, classify, handshake errors, <code>profile_env</code> hook.</li>
+        <li><code>src-tauri/src/host/harness/catalog.rs</code> — shipped card, <code>Readiness::Inspect</code>, capability notes.</li>
+        <li><code>src-tauri/src/host/harness/doctor.rs</code> — Inspect path, env/file probes that do not leak CI’s <code>GITHUB_TOKEN</code>.</li>
+        <li><code>src-tauri/tests/acp_adapter.rs</code> — auth failure, empty reply as a failed turn, cancel, success stream.</li>
+        <li><code>docs/setup/copilot.md</code> — install, auth, isolation limits.</li>
+      </ul>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>./scripts/verify.sh</code> on this tree.</li>
+        <li>UI: first-run picker, Settings enable/disable, New Chat chip — screenshots in this folder.</li>
+        <li>With a licensed CLI: start a thread on Copilot; a reply must persist; an empty turn must be <code>failed</code> / <code>empty_response</code>.</li>
+        <li>This cloud box has no Copilot install or license, so a live <code>copilot --acp</code> turn was not run here. The ACP client is the same one Claude/Codex use, covered by <code>fake-acp-agent</code>.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

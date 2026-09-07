@@ -35,12 +35,47 @@ pub enum ProbeRun {
     TimedOut,
 }
 
+/// A readiness command plus whatever it printed. Copilot's Doctor reads
+/// `--help` / `--version` rather than trusting the exit code alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbeOutput {
+    pub run: ProbeRun,
+    pub text: String,
+}
+
 /// Everything the classifier needs from the machine, behind a seam so the
 /// classification rules can be tested without installing five vendor CLIs.
 pub trait ProbeHost: Sync {
     fn resolve(&self, command: &str) -> Option<PathBuf>;
     fn run(&self, command: &str, args: &[String]) -> ProbeRun;
     fn listening(&self, addr: &str) -> bool;
+
+    /// Combined stdout+stderr of a short probe. Default is the exit only —
+    /// most readiness commands are classified by status, not by what they
+    /// printed. Copilot is the exception (`--help` must mention `--acp`).
+    fn run_text(&self, command: &str, args: &[String]) -> ProbeOutput {
+        ProbeOutput {
+            run: self.run(command, args),
+            text: String::new(),
+        }
+    }
+
+    /// A non-empty environment value. Empty and unset are the same here:
+    /// Copilot treats a blank token as missing.
+    fn env_value(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok().filter(|value| !value.is_empty())
+    }
+
+    /// An exported value including the empty string. `COPILOT_MODEL=` is a
+    /// misconfiguration, not "use the default".
+    fn env_raw(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok()
+    }
+
+    fn read_file(&self, path: &str) -> Option<String> {
+        std::fs::read_to_string(path).ok()
+    }
+
     /// Captured stdout+stderr of a short probe. Used when the exit code is
     /// not the diagnosis (`gemini --help` lists flags; `gemini --version`
     /// names the build).
@@ -175,6 +210,21 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
 
     match &descriptor.readiness {
         Readiness::Binary => {}
+        Readiness::Inspect {
+            kind: InspectKind::Copilot,
+        } => {
+            // Copilot's CLI *is* the adapter, so reaching here means
+            // `copilot` resolved; what is left is version, login, policy,
+            // and model.
+            let report = super::copilot::classify(&super::copilot::gather(probe));
+            return finish(
+                report.status,
+                report.detail,
+                report.remedy,
+                Some(launch.clone()),
+                Some(path),
+            );
+        }
         Readiness::Daemon { addr, remedy } => {
             if !probe.listening(addr) {
                 return finish(
@@ -295,24 +345,24 @@ impl SystemProbe {
     /// The deadline is a parameter so the kill path can be tested without
     /// waiting out the real one.
     fn run_until(&self, command: &str, args: &[String], timeout: Duration) -> ProbeRun {
-        match self.run_until_output(command, args, timeout, false) {
-            Ok(_) => ProbeRun::Exit(0),
-            Err(run) => run,
-        }
+        self.run_captured(command, args, timeout, false).run
     }
 
-    fn run_until_output(
+    fn run_captured(
         &self,
         command: &str,
         args: &[String],
         timeout: Duration,
         capture: bool,
-    ) -> Result<String, ProbeRun> {
+    ) -> ProbeOutput {
         // Resolve first so the child is exec'd from the same augmented PATH
         // the probe searched, and inherit that PATH so a CLI that shells out
         // to `node` finds the same one the terminal would.
         let Some(path) = self.resolve(command) else {
-            return Err(ProbeRun::Failed(format!("{command} is not on PATH")));
+            return ProbeOutput {
+                run: ProbeRun::Failed(format!("{command} is not on PATH")),
+                text: String::new(),
+            };
         };
         let mut cmd = Command::new(path);
         cmd.args(args)
@@ -330,47 +380,49 @@ impl SystemProbe {
         procgroup::own_group(&mut cmd);
         let mut child = match cmd.spawn() {
             Ok(child) => child,
-            Err(err) => return Err(ProbeRun::Failed(err.to_string())),
+            Err(err) => {
+                return ProbeOutput {
+                    run: ProbeRun::Failed(err.to_string()),
+                    text: String::new(),
+                }
+            }
         };
         let deadline = Instant::now() + timeout;
-        loop {
+        let run = loop {
             match child.try_wait() {
-                Ok(Some(status)) => {
-                    let output = if capture {
-                        let mut buf = String::new();
-                        if let Some(mut stdout) = child.stdout.take() {
-                            let _ = std::io::Read::read_to_string(&mut stdout, &mut buf);
-                        }
-                        if let Some(mut stderr) = child.stderr.take() {
-                            let _ = std::io::Read::read_to_string(&mut stderr, &mut buf);
-                        }
-                        buf
-                    } else {
-                        String::new()
-                    };
-                    return if status.success() || capture {
-                        // Help/version still count when the CLI prints to
-                        // stderr and exits 0 *or* when it exits non-zero
-                        // after writing the text we needed.
-                        if capture {
-                            Ok(output)
-                        } else {
-                            Ok(String::new())
-                        }
-                    } else {
-                        Err(ProbeRun::Exit(status.code().unwrap_or(-1)))
-                    };
-                }
+                Ok(Some(status)) => break ProbeRun::Exit(status.code().unwrap_or(-1)),
                 Ok(None) if Instant::now() < deadline => {
                     std::thread::sleep(Duration::from_millis(25));
                 }
                 Ok(None) => {
                     procgroup::terminate(&mut child);
-                    return Err(ProbeRun::TimedOut);
+                    break ProbeRun::TimedOut;
                 }
-                Err(err) => return Err(ProbeRun::Failed(err.to_string())),
+                Err(err) => break ProbeRun::Failed(err.to_string()),
             }
-        }
+        };
+        let text = if capture {
+            let mut combined = String::new();
+            if let Some(mut stdout) = child.stdout.take() {
+                use std::io::Read;
+                let mut buf = String::new();
+                let _ = stdout.read_to_string(&mut buf);
+                combined.push_str(&buf);
+            }
+            if let Some(mut stderr) = child.stderr.take() {
+                use std::io::Read;
+                let mut buf = String::new();
+                let _ = stderr.read_to_string(&mut buf);
+                if !combined.is_empty() && !buf.is_empty() {
+                    combined.push('\n');
+                }
+                combined.push_str(&buf);
+            }
+            combined
+        } else {
+            String::new()
+        };
+        ProbeOutput { run, text }
     }
 }
 
@@ -383,8 +435,16 @@ impl ProbeHost for SystemProbe {
         self.run_until(command, args, PROBE_TIMEOUT)
     }
 
+    fn run_text(&self, command: &str, args: &[String]) -> ProbeOutput {
+        self.run_captured(command, args, PROBE_TIMEOUT, true)
+    }
+
     fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
-        self.run_until_output(command, args, PROBE_TIMEOUT, true)
+        let output = self.run_captured(command, args, PROBE_TIMEOUT, true);
+        match output.run {
+            ProbeRun::Exit(_) => Ok(output.text),
+            other => Err(other),
+        }
     }
 
     fn env(&self, key: &str) -> Option<String> {
@@ -418,7 +478,7 @@ mod tests {
     struct FakeMachine {
         installed: HashMap<String, PathBuf>,
         exits: HashMap<String, ProbeRun>,
-        stdout: HashMap<String, String>,
+        outputs: HashMap<String, String>,
         env: HashMap<String, String>,
         files: HashMap<String, String>,
         open_ports: Vec<String>,
@@ -442,8 +502,8 @@ mod tests {
             self
         }
 
-        fn printing(mut self, command: &str, stdout: &str) -> Self {
-            self.stdout.insert(command.to_string(), stdout.to_string());
+        fn printing(mut self, command: &str, text: &str) -> Self {
+            self.outputs.insert(command.to_string(), text.to_string());
             self
         }
 
@@ -452,9 +512,8 @@ mod tests {
             self
         }
 
-        fn with_file(mut self, relative: &str, contents: &str) -> Self {
-            self.files
-                .insert(relative.to_string(), contents.to_string());
+        fn with_file(mut self, path: &str, body: &str) -> Self {
+            self.files.insert(path.to_string(), body.to_string());
             self
         }
     }
@@ -484,6 +543,25 @@ mod tests {
                 .unwrap_or(ProbeRun::Exit(0))
         }
 
+        fn run_text(&self, command: &str, args: &[String]) -> ProbeOutput {
+            ProbeOutput {
+                run: self.run(command, args),
+                text: self.outputs.get(command).cloned().unwrap_or_default(),
+            }
+        }
+
+        fn env_value(&self, key: &str) -> Option<String> {
+            self.env.get(key).cloned().filter(|value| !value.is_empty())
+        }
+
+        fn env_raw(&self, key: &str) -> Option<String> {
+            self.env.get(key).cloned()
+        }
+
+        fn read_file(&self, path: &str) -> Option<String> {
+            self.files.get(path).cloned()
+        }
+
         fn listening(&self, addr: &str) -> bool {
             if !self.delay.is_zero() {
                 std::thread::sleep(self.delay);
@@ -493,8 +571,8 @@ mod tests {
 
         fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
             match self.run(command, args) {
-                ProbeRun::Exit(0) | ProbeRun::Exit(_) => self
-                    .stdout
+                ProbeRun::Exit(_) => self
+                    .outputs
                     .get(command)
                     .cloned()
                     .ok_or_else(|| ProbeRun::Failed(format!("{command} printed nothing"))),
@@ -503,7 +581,7 @@ mod tests {
         }
 
         fn env(&self, key: &str) -> Option<String> {
-            self.env.get(key).cloned()
+            self.env.get(key).cloned().filter(|value| !value.is_empty())
         }
 
         fn home_file(&self, relative: &str) -> Option<String> {
@@ -779,6 +857,58 @@ mod tests {
             "sweep took {elapsed:?}; serial would be at least {:?}",
             delay * probing.len() as u32
         );
+    }
+
+    #[test]
+    fn copilot_without_acp_in_help_is_outdated() {
+        let machine = FakeMachine::with(&["copilot"]).printing("copilot", "Usage: copilot login");
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::AdapterOutdated);
+        assert!(report.remedy.unwrap().contains("--acp"));
+    }
+
+    #[test]
+    fn copilot_with_acp_but_no_login_is_logged_out() {
+        let machine = FakeMachine::with(&["copilot"])
+            .printing("copilot", "Usage:\n  --acp  Start ACP server\n");
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("copilot login"));
+    }
+
+    #[test]
+    fn copilot_token_env_makes_it_ready() {
+        let machine = FakeMachine::with(&["copilot"])
+            .printing("copilot", "  --acp\n")
+            .with_env("GH_TOKEN", "gho_test");
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert!(report.detail.contains("GH_TOKEN"), "{}", report.detail);
+    }
+
+    #[test]
+    fn copilot_stored_login_makes_it_ready_without_a_token() {
+        let machine = FakeMachine::with(&["copilot"])
+            .printing("copilot", "  --acp\n")
+            .with_env("HOME", "/home/octo")
+            .with_file(
+                "/home/octo/.copilot/config.json",
+                r#"{"loggedInUsers":[{"login":"octocat"}]}"#,
+            );
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert!(report.detail.contains("octocat"), "{}", report.detail);
+    }
+
+    #[test]
+    fn copilot_empty_model_env_is_invalid_config() {
+        let machine = FakeMachine::with(&["copilot"])
+            .printing("copilot", "  --acp\n")
+            .with_env("GH_TOKEN", "gho_test")
+            .with_env("COPILOT_MODEL", "");
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.detail.contains("COPILOT_MODEL"), "{}", report.detail);
     }
 
     #[test]
