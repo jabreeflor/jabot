@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach } from "vitest";
 
+import { applyTheme } from "../../src/theme";
 import { seedOnboarded } from "./onboarding";
 
 // The unit default is "this Mac has already been through first-run setup".
@@ -12,6 +13,7 @@ import { seedOnboarded } from "./onboarding";
 beforeEach(() => {
   window.localStorage.clear();
   seedOnboarded();
+  applyTheme("dark");
 });
 
 afterEach(() => {

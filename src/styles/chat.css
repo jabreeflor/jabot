@@ -739,7 +739,7 @@
 .newchat-pill.accent {
   background: rgba(93, 187, 110, 0.14);
   border-color: transparent;
-  color: #8ee09a;
+  color: var(--ok-bright);
 }
 
 .newchat-pill.accent:hover:not(:disabled) {

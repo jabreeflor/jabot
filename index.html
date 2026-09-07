@@ -6,6 +6,32 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/app-icon.png" />
     <title>JaBot</title>
+    <!--
+      Paint the stored palette before CSS/React load so the first frame is
+      not a dark flash. Must stay in lockstep with THEME_KEY / resolveTheme
+      in src/theme.ts: jabot.theme is dark | light | system, default dark.
+    -->
+    <script>
+      (function () {
+        var preference = "dark";
+        try {
+          var stored = localStorage.getItem("jabot.theme");
+          if (stored === "light" || stored === "dark" || stored === "system") {
+            preference = stored;
+          }
+        } catch (e) {}
+        var resolved =
+          preference === "light"
+            ? "light"
+            : preference === "system" &&
+                window.matchMedia &&
+                window.matchMedia("(prefers-color-scheme: light)").matches
+              ? "light"
+              : "dark";
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.style.colorScheme = resolved;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

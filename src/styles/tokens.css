@@ -9,16 +9,22 @@
  * scattering #37373A across nine stylesheets.
  *
  * Only tokens, the reset, and element defaults live here. Layout belongs to
- * the stylesheet of the component that owns it.
+ * the stylesheet of the component that owns it. `[data-theme="light"]`
+ * reassigns the surface/text/edge tokens; components should keep reading
+ * the names, not the dark hexes.
  */
 
 :root {
+  color-scheme: dark;
+
   /* surfaces */
   --win: #1c1c1e;
   --side: #1c1c1e;
   --chat: #151516;
   --raise: #2a2a2c;
   --raise2: #232325;
+  /* Hover on --raise; the prototype's #333336, named so light can invert it. */
+  --raise-hover: #333336;
 
   /* text */
   --ink: #f2f2f2;
@@ -52,6 +58,9 @@
   /* toolblocks sit *below* the chat ground, not above it */
   --sunk: #101012;
   --sunk-edge: #2c2c2f;
+
+  /* A bright ok on the chat ground — New Chat's Start pill. Darker in light. */
+  --ok-bright: #8ee09a;
 
   /* harness accents — the dot on a New Chat card and the header chip */
   --h-claude: #d97757;
@@ -115,6 +124,43 @@
   --t-icon: 0.22s;
   /* a flap settling — a little past the mark, then back */
   --ease-flap: cubic-bezier(0.32, 1.4, 0.6, 1);
+}
+
+/*
+ * Light palette (#178). Surfaces come from the avatar prototype's light
+ * check, which was already keyed to these token names. Cream inverts so
+ * primary chrome stays a contrast punch on a cream-paper ground; sunk
+ * stays a well below the chat surface rather than a black hole.
+ */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --win: #f6f6f4;
+  --side: #ffffff;
+  --chat: #efeeec;
+  --raise: #ffffff;
+  --raise2: #f4f3f1;
+  --raise-hover: #ecebe8;
+
+  --ink: #1c1c1e;
+  --dim: #5c5c63;
+  --faint: #6e6e73;
+
+  --cream: #1c1c1e;
+  --cream-ink: #f6f6f4;
+
+  --bub-me: #ffffff;
+  --bub-me-ink: #1c1c1e;
+
+  --line: #d8d7d3;
+  --edge: #dcdbd8;
+  --edge-strong: #c9c8c4;
+  --edge-menu: #c9c8c4;
+
+  --sunk: #e6e5e2;
+  --sunk-edge: #cfcfc9;
+
+  --ok-bright: #2a7a3d;
 }
 
 *,
