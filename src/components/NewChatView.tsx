@@ -67,7 +67,7 @@ export function NewChatView({
   host?: HostTarget;
   onStart: (draft: NewChatDraft) => void | Promise<void>;
 }) {
-  const [harnessId, setHarnessId] = useState(
+  const [chosenHarnessId, setHarnessId] = useState(
     defaultHarnessId ?? harnesses[0]?.id ?? "",
   );
   const [folder, setFolder] = useState(defaultFolderId ?? "");
@@ -75,6 +75,8 @@ export function NewChatView({
   const [busy, setBusy] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
+  const harnessId = harnesses.some((harness) => harness.id === chosenHarnessId)
+    ? chosenHarnessId : harnesses[0]?.id ?? "";
   const selectedHarness = harnesses.find((harness) => harness.id === harnessId);
   const selectedFolder = folders.find((row) => row.id === folder);
 
@@ -164,6 +166,7 @@ export function NewChatView({
           </button>
         </div>
 
+        {!harnessId && <p role="status">Enable a harness in Settings to start a chat.</p>}
         <form className="newchat-box" onSubmit={submit}>
           <textarea
             value={text}

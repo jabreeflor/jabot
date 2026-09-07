@@ -826,6 +826,7 @@ export interface FolderUpdateParams {
  * Whole rather than partial on the way out, including from `settings/set`, so
  * the renderer never merges a patch into what it thought it had. */
 export interface SettingsView {
+  disabledHarnessIds?: string[];
   /** The stuck backstop's silence threshold. Always the value in force, so a
       host running under `JABOT_IDLE_TIMEOUT_MS` reports what it is using. */
   idleTimeoutMs: number;
@@ -840,6 +841,7 @@ export interface SettingsView {
 /** A patch: an absent field is "leave it alone", the same reading
     `folder/update` gives its own. */
 export interface SettingsSetParams {
+  disabledHarnessIds?: string[];
   idleTimeoutMs?: number;
   defaultFoldPolicy?: FoldPolicy;
 }

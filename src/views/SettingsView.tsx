@@ -28,6 +28,7 @@ import type {
   PairedDeviceView,
   SettingsView as HostSettings,
 } from "../host";
+import type { HarnessCard } from "../components/types";
 import { DevicesView } from "./DevicesView";
 
 type SettingsTab = "general" | "devices";
@@ -61,6 +62,7 @@ const POLICIES: ReadonlyArray<{
 
 export function SettingsView({
   settings,
+  harnesses = [],
   error,
   onSave,
   devices,
@@ -70,8 +72,10 @@ export function SettingsView({
 }: {
   /** `null` until the host answers — a preview build has no settings. */
   settings: HostSettings | null;
+  harnesses?: readonly HarnessCard[];
   error?: string | null;
   onSave: (patch: {
+    disabledHarnessIds?: string[];
     idleTimeoutMs?: number;
     defaultFoldPolicy?: FoldPolicy;
   }) => Promise<unknown>;
@@ -113,6 +117,7 @@ export function SettingsView({
             {tab === "general" ? (
               <GeneralSettings
                 settings={settings}
+                harnesses={harnesses}
                 error={error}
                 onSave={onSave}
               />
@@ -134,12 +139,15 @@ export function SettingsView({
 
 function GeneralSettings({
   settings,
+  harnesses,
   error,
   onSave,
 }: {
   settings: HostSettings | null;
+  harnesses: readonly HarnessCard[];
   error?: string | null;
   onSave: (patch: {
+    disabledHarnessIds?: string[];
     idleTimeoutMs?: number;
     defaultFoldPolicy?: FoldPolicy;
   }) => Promise<unknown>;
@@ -157,6 +165,7 @@ function GeneralSettings({
   }, [settings]);
 
   async function send(patch: {
+    disabledHarnessIds?: string[];
     idleTimeoutMs?: number;
     defaultFoldPolicy?: FoldPolicy;
   }) {
@@ -178,6 +187,23 @@ function GeneralSettings({
 
   return (
     <>
+      <section className="settings-section" aria-label="Harnesses">
+        <h2>Harnesses</h2>
+        <p>Choose which harnesses appear when starting a chat or choosing a bot’s engine.</p>
+        {harnesses.map((harness) => (
+          <label className="settings-harness" key={harness.id}>
+            <input type="checkbox" checked={!settings?.disabledHarnessIds?.includes(harness.id)}
+              disabled={!settings || saving}
+              onChange={(event) => {
+                const ids = settings?.disabledHarnessIds ?? [];
+                void send({ disabledHarnessIds: event.target.checked
+                  ? ids.filter((id) => id !== harness.id) : [...ids, harness.id] });
+              }} />
+            <span><b>{harness.label}</b><small>{harness.available === false
+              ? harness.installHint ?? "Not installed" : harness.blurb}</small></span>
+          </label>
+        ))}
+      </section>
       {error && (
         <div className="page-empty" role="alert">
           {error}

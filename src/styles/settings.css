@@ -1,0 +1,17 @@
+.settings-harness {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  cursor: pointer;
+}
+.settings-harness small {
+  display: block;
+  color: var(--dim);
+  margin-top: 4px;
+}
+.settings-harness input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ink);
+}

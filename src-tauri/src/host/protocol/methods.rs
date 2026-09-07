@@ -1625,6 +1625,8 @@ impl GithubLoginParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsView {
+    #[serde(default)]
+    pub disabled_harness_ids: Vec<String>,
     /// The stuck backstop's silence threshold. Always the value in force, so
     /// a host running under `JABOT_IDLE_TIMEOUT_MS` reports what it is
     /// actually using rather than what is stored.
@@ -1644,6 +1646,8 @@ pub struct SettingsView {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsSetParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_harness_ids: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_timeout_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

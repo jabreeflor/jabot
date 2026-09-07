@@ -33,6 +33,20 @@ async function pickHarness(name: RegExp) {
 }
 
 describe("NewChatView", () => {
+  it("falls back when the saved default is disabled", async () => {
+    const enabled = HARNESSES.filter((harness) => harness.id !== "claude");
+    const props = renderView({ harnesses: enabled, defaultHarnessId: "claude" });
+    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+    expect(props.onStart).toHaveBeenCalledWith(expect.objectContaining({ harnessId: enabled[0].id }));
+  });
+  it("explains how to recover when all harnesses are disabled", async () => {
+    const props = renderView({ harnesses: [], defaultHarnessId: "claude" });
+    expect(screen.getByText("Enable a harness in Settings to start a chat.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Start session" })).toBeDisabled();
+    await userEvent.type(screen.getByRole("textbox", { name: /Plan, build/ }), "hello{Enter}");
+    expect(props.onStart).not.toHaveBeenCalled();
+  });
+
   it("is a chat window, not a dialog", () => {
     renderView();
 

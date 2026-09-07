@@ -63,6 +63,7 @@ describe("settings over the host protocol", () => {
     const first = await connected(dataDir);
 
     const saved = await first.client.saveSettings({
+      disabledHarnessIds: ["pi", "custom-engine"],
       idleTimeoutMs: 90_000,
       defaultFoldPolicy: "wait_for_inbox",
     });
@@ -77,6 +78,8 @@ describe("settings over the host protocol", () => {
     // because an env var does not survive a relaunch either.
     const second = await connected(dataDir);
     const after = await second.client.settings();
+    expect(after.disabledHarnessIds).toEqual(["pi", "custom-engine"]);
+    expect((await second.client.saveSettings({ disabledHarnessIds: [] })).disabledHarnessIds).toEqual([]);
     expect(after.idleTimeoutMs).toBe(90_000);
     expect(after.defaultFoldPolicy).toBe("wait_for_inbox");
   });
