@@ -385,7 +385,21 @@ describe("App", () => {
       screen.getByRole("button", { name: "Hide sidebar" }),
     ).toBeInTheDocument();
 
+    // New Chat is a main view, not a dialog — the chord still works.
     await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await userEvent.keyboard("{Control>}b{/Control}");
+    expect(
+      screen.getByRole("button", { name: "Show sidebar" }),
+    ).toBeInTheDocument();
+
+    await userEvent.keyboard("{Control>}b{/Control}");
+    expect(
+      screen.getByRole("button", { name: "Hide sidebar" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Crew/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Add a bot/ }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await userEvent.keyboard("{Control>}b{/Control}");
     expect(
