@@ -127,8 +127,8 @@ impl Clients {
 }
 
 fn main() {
-    let mut args = std::env::args().skip(1);
-    if args.clone().next().as_deref() == Some("--aider-acp") {
+    let mut args = std::env::args().skip(1).peekable();
+    if args.peek().map(String::as_str) == Some("--aider-acp") {
         std::process::exit(jabot_lib::run_aider_acp());
     }
     let mut data_dir: Option<PathBuf> = None;
