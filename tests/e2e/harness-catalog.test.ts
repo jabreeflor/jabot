@@ -107,6 +107,22 @@ describe("harness/list", () => {
       reserved: true,
       sessionScope: "thread",
     });
+    expect(byId.get("copilot")).toMatchObject({
+      tier: "shipped",
+      label: "GitHub Copilot",
+      reserved: true,
+      sessionScope: "thread",
+      command: "copilot",
+      args: ["--acp"],
+    });
+    expect(byId.get("copilot")?.capabilities).toMatchObject({
+      streaming: true,
+      toolEvents: true,
+      permissions: true,
+      cancel: true,
+      resume: false,
+    });
+    expect(byId.get("copilot")?.capabilities?.notes).toMatch(/process-local/);
     // Hermes multiplexes chats onto one process per profile, and the catalog
     // is where that is written down (#13).
     expect(byId.get("hermes")).toMatchObject({

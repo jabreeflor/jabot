@@ -201,6 +201,15 @@ export interface HarnessCard {
   accent: string;
   available?: boolean;
   installHint?: string;
+  /** Catalog-declared capabilities. Absent means unverified. */
+  capabilities?: {
+    streaming: boolean;
+    toolEvents: boolean;
+    permissions: boolean;
+    cancel: boolean;
+    resume: boolean;
+    notes?: string;
+  };
 }
 
 /** One line of a toolblock — one ACP `tool_call` / `tool_call_update`. */

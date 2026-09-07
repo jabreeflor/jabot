@@ -121,7 +121,7 @@ type HostSession = ReturnType<typeof useHost>;
  */
 function App() {
   const host = useHost();
-  // The first harness a user ever picks came from `mock-host.ts` — the three
+  // The first harness a user ever picks came from `mock-host.ts` — the
   // compiled-in defaults — so a fresh install never saw a tier-2 preset or the
   // user's own tier-3 JSON on the one screen that asks them to choose, and
   // could pick an engine the host would refuse at thread start. The connection

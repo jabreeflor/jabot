@@ -175,6 +175,7 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
                 .filter(|u| !u.trim().is_empty()),
             readiness: Readiness::Binary,
             session_scope: SessionScope::Thread,
+            capabilities: None,
             id,
             label,
         },

@@ -41,6 +41,26 @@ function draw(over: Partial<Parameters<typeof SettingsView>[0]> = {}) {
 const minutes = () => screen.getByLabelText(/Go quiet after/);
 
 describe("SettingsView", () => {
+  it("declares Copilot capabilities instead of implying resume works", () => {
+    draw({
+      harnesses: [{
+        id: "copilot",
+        label: "GitHub Copilot",
+        accent: "var(--h-copilot)",
+        blurb: "GitHub's coding agent, over ACP",
+        capabilities: {
+          streaming: true,
+          toolEvents: true,
+          permissions: true,
+          cancel: true,
+          resume: false,
+          notes: "Resume after the Copilot process exits is not supported.",
+        },
+      }],
+    });
+    expect(screen.getByText(/Resume after the Copilot process exits is not supported/)).toBeVisible();
+  });
+
   it("enables a missing adapter while retaining other disabled harnesses and install guidance", async () => {
     const props = draw({
       settings: { ...SETTINGS, disabledHarnessIds: ["pi", "custom"] },

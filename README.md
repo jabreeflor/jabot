@@ -1,6 +1,6 @@
 # JaBot
 
-Bot-crew messenger UI prototypes. Wraps coding TUIs (Claude Code, Codex, Pi, or bring-your-own harness) in a chat-first interface with a Chief of Staff bot, folding "disappearing" threads, and an Inbox where long-running tasks resurface.
+Bot-crew messenger UI prototypes. Wraps coding TUIs (Claude Code, Codex, Pi, GitHub Copilot, or bring-your-own harness) in a chat-first interface with a Chief of Staff bot, folding "disappearing" threads, and an Inbox where long-running tasks resurface.
 
 ## Install
 
