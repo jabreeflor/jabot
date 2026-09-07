@@ -274,6 +274,16 @@ function stopReasonLabel(reason: string): string {
       return "cancelled";
     case "empty_response":
       return "failed: no reply";
+    case "not_signed_in":
+      return "failed: not signed in";
+    case "cli_unavailable":
+      return "failed: CLI missing";
+    case "unsupported_model":
+      return "failed: model";
+    case "adapter_launch":
+      return "failed: adapter launch";
+    case "adapter_exit":
+      return "failed: adapter exited";
     case "max_tokens":
       return "stopped: out of tokens";
     case "max_turn_requests":
@@ -434,18 +444,33 @@ function stateUpdate(
     lastStopReason: stopReason,
     items: [
       ...closed.items,
-      { kind: "sys", id: nextId(closed), text: sysLine(stopReason) },
+      {
+        kind: "sys",
+        id: nextId(closed),
+        text: sysLine(stopReason, str(update.error)),
+      },
     ],
     counter: closed.counter + 1,
   };
 }
 
-function sysLine(stopReason: string): string {
+function sysLine(stopReason: string, detail?: string | null): string {
+  if (detail && detail.trim()) return detail.trim();
   switch (stopReason) {
     case "end_turn":
       return "Session finished.";
     case "empty_response":
       return "The harness ended without a reply. Check the harness’s adapter, sign-in, and model configuration, then retry.";
+    case "not_signed_in":
+      return "The harness is not signed in. Run `claude` once and sign in, or export ANTHROPIC_API_KEY, then retry.";
+    case "cli_unavailable":
+      return "The harness CLI is not available. Install Claude Code (and its ACP adapter), then retry.";
+    case "unsupported_model":
+      return "The harness rejected the model configuration. Check the selected model, then retry.";
+    case "adapter_launch":
+      return "The harness adapter failed to start. Check the adapter install and retry.";
+    case "adapter_exit":
+      return "The harness process exited before sending a reply. Check the adapter, sign-in, and model configuration, then retry.";
     case "cancelled":
       return "Cancelled.";
     default:

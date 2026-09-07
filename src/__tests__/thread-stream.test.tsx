@@ -66,6 +66,58 @@ describe("ACP → transcript", () => {
     const stream = feed([{ sessionUpdate: "state_update", sessionState: "idle", stopReason: "empty_response" }]);
     expect(last(stream.items)).toMatchObject({ kind: "sys", text: expect.stringContaining("ended without a reply") });
     expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({ label: "failed: no reply", tone: "bad" });
+    expect(stream.busy).toBe(false);
+  });
+
+  it("names a specific no-reply cause and prefers the host’s diagnostic", () => {
+    const stream = feed([
+      {
+        sessionUpdate: "state_update",
+        sessionState: "idle",
+        stopReason: "not_signed_in",
+        error:
+          "stopped: not_signed_in — The harness is not signed in. Run `claude` once and sign in, then retry.\n\nAdapter log:\nnot logged in",
+      },
+    ]);
+    expect(last(stream.items)).toMatchObject({
+      kind: "sys",
+      text: expect.stringMatching(/not signed in[\s\S]*Adapter log:[\s\S]*not logged in/),
+    });
+    expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({
+      label: "failed: not signed in",
+      tone: "bad",
+    });
+    expect(stream.busy).toBe(false);
+  });
+
+  it("surfaces an adapter that exits before a reply", () => {
+    const stream = feed([
+      {
+        sessionUpdate: "state_update",
+        sessionState: "idle",
+        stopReason: "adapter_exit",
+        error:
+          "stopped: adapter_exit — The harness process exited before sending a reply.\n\nAdapter log:\nadapter panicked: boom",
+      },
+    ]);
+    expect(last(stream.items)).toMatchObject({
+      kind: "sys",
+      text: expect.stringContaining("exited before sending a reply"),
+    });
+    expect(streamStatus(stream, { label: "idle", tone: "quiet" })).toEqual({
+      label: "failed: adapter exited",
+      tone: "bad",
+    });
+  });
+
+  it.each([
+    ["cli_unavailable", "failed: CLI missing", "CLI is not available"],
+    ["unsupported_model", "failed: model", "model configuration"],
+    ["adapter_launch", "failed: adapter launch", "adapter failed to start"],
+  ] as const)("labels %s as a failed turn", (reason, label, copy) => {
+    const stream = feed([{ sessionUpdate: "state_update", sessionState: "idle", stopReason: reason }]);
+    expect(last(stream.items)).toMatchObject({ kind: "sys", text: expect.stringContaining(copy) });
+    expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({ label, tone: "bad" });
   });
 
   it("streams agent chunks into one bubble", () => {
