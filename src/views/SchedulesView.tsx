@@ -124,7 +124,7 @@ export function SchedulesView({
     return () => window.clearInterval(timer);
   }, [onReload]);
 
-  const rows = schedules ?? [];
+  const rows = useMemo(() => schedules ?? [], [schedules]);
   const counts = {
     all: rows.length,
     active: rows.filter((row) => row.enabled).length,

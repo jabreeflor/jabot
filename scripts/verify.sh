@@ -20,6 +20,7 @@
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   2c. install script — the release installer's pins, delivery, and refusals
 #   3. tsc            — renderer types
+#   3b. frontend lint — React hooks (eslint); #225/#226 extend the same config
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors
@@ -655,6 +656,7 @@ run "binary set"     binary_set
 run "commit guards"  guards
 run "install script" install_script
 run "typecheck"      npx tsc --noEmit
+run "frontend lint"  npm run lint
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
 run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings

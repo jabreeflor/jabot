@@ -64,6 +64,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh --check-mac` | **whenever you touch `src-tauri/src/notify/`** — the only thing that lints `notify/mac.rs` (below) |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
+| `npm run lint` / `npm run lint:fix` | frontend lint slice (React hooks today; same command `verify.sh` runs, including `--fast`) |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
@@ -124,6 +125,7 @@ one run tells you everything that is wrong.
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
 | `typecheck` | `tsc --noEmit`, strict, no `any` | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. |
+| `frontend lint` | ESLint on first-party frontend and `scripts/dev` (Rules of Hooks + exhaustive-deps today; #225/#226 extend the same config) | `npm run lint` to see the same errors; `npm run lint:fix` for the auto-fixable ones |
 | `unit tests` | 200+ vitest cases in jsdom: React components, host client, and axe on the primary views | `npx vitest --project unit` to iterate; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | `rust clippy` | `-D warnings` over all targets, `dev-bins` included | fix, or justify a narrow `#[allow]` in the code. Do not suggest APIs newer than the `msrv` in `src-tauri/clippy.toml`. |
@@ -137,6 +139,23 @@ one run tells you everything that is wrong.
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
 caused a real failure at least once.
+
+## Frontend lint
+
+The renderer, its tests, and the TypeScript/JavaScript under `scripts/dev`
+share one ESLint config (`eslint.config.js`). `./scripts/verify.sh` runs it
+on every path, `--fast` included. After `npm install` the check is offline.
+
+```bash
+npm run lint        # eslint . , then a probe that a conditional hook and a
+                    # missing effect dependency still fail
+npm run lint:fix    # apply auto-fixes only; does not run the probe
+```
+
+Today the config enforces React Rules of Hooks and exhaustive-deps. Issues
+#225 (promises) and #226 (`no-explicit-any`) add their rules to the same
+file — do not stand up a second linter. Generated output, vendored code,
+`node_modules`, and nested `worktrees/` are ignored.
 
 ## Accessibility tests
 
