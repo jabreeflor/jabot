@@ -43,10 +43,20 @@ cd "$ROOT"
 
 # --ignore-unknown keeps a stray extension from expanding the contract.
 # No --cache: a stale cache can mark a file clean that --check then
-# rejects (seen on tests/e2e/lifecycle.test.ts). The run is ~0.5s.
-# The glob is the contract: TS/TSX, JS/MJS/CJS, CSS, JSON.
-exec "$PRETTIER" "$MODE" --ignore-unknown \
-  --config "$ROOT/prettier.config.mjs" \
-  --ignore-path "$ROOT/.prettierignore" \
-  "$@" \
+# rejects. Nested `.then()` chains can take two --write passes to
+# stabilize (tests/e2e/lifecycle.test.ts); --write runs twice so
+# format:check is a no-op afterwards. The glob is the contract:
+# TS/TSX, JS/MJS/CJS, CSS, JSON.
+ARGS=(
+  --ignore-unknown
+  --config "$ROOT/prettier.config.mjs"
+  --ignore-path "$ROOT/.prettierignore"
+  "$@"
   "**/*.{ts,tsx,js,mjs,cjs,css,json}"
+)
+
+if [[ "$MODE" == "--write" ]]; then
+  "$PRETTIER" --write "${ARGS[@]}"
+  exec "$PRETTIER" --write "${ARGS[@]}"
+fi
+exec "$PRETTIER" --check "${ARGS[@]}"

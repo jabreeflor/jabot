@@ -353,16 +353,14 @@ describe("resurface", () => {
         )
         .then(
           (n) =>
-            client
-              .inbox()
-              .then(
-                (inbox) =>
-                  resolve({
-                    announced: n.params as InboxResurfaceParams,
-                    inbox,
-                  }),
-                reject,
-              ),
+            client.inbox().then(
+              (inbox) =>
+                resolve({
+                  announced: n.params as InboxResurfaceParams,
+                  inbox,
+                }),
+              reject,
+            ),
           reject,
         );
     });
