@@ -254,30 +254,8 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                 }
             }
         }
-        Readiness::AuthAndModels {
-            acp_help_args,
-            auth_args,
-            models_args,
-            logged_out_remedy,
-            model_remedy,
-            outdated_remedy,
-            env_auth_keys,
-        } => {
-            let cli = descriptor.cli.as_deref().unwrap_or(launch.command.as_str());
-            return diagnose_auth_and_models(
-                finish,
-                probe,
-                launch,
-                path,
-                cli,
-                acp_help_args,
-                auth_args,
-                models_args,
-                logged_out_remedy,
-                model_remedy,
-                outdated_remedy,
-                env_auth_keys,
-            );
+        Readiness::AuthAndModels { .. } => {
+            return diagnose_auth_and_models(finish, probe, descriptor, launch, path);
         }
     }
 
@@ -323,17 +301,23 @@ fn diagnose_auth_and_models(
         Vec<String>,
     ) -> Diagnosis,
     probe: &dyn ProbeHost,
+    descriptor: &HarnessDescriptor,
     launch: &Launch,
     path: PathBuf,
-    cli: &str,
-    acp_help_args: &[String],
-    auth_args: &[String],
-    models_args: &[String],
-    logged_out_remedy: &str,
-    model_remedy: &str,
-    outdated_remedy: &str,
-    env_auth_keys: &[String],
 ) -> Diagnosis {
+    let Readiness::AuthAndModels {
+        acp_help_args,
+        auth_args,
+        models_args,
+        logged_out_remedy,
+        model_remedy,
+        outdated_remedy,
+        env_auth_keys,
+    } = &descriptor.readiness
+    else {
+        unreachable!("diagnose_auth_and_models is only called for AuthAndModels");
+    };
+    let cli = descriptor.cli.as_deref().unwrap_or(launch.command.as_str());
     let help = probe.run_capture(cli, acp_help_args);
     match help.run {
         ProbeRun::Exit(0) => {}
