@@ -155,6 +155,8 @@ export class HostdProcess implements HostTransport {
   readonly dataDir?: string;
   readonly socketPath?: string;
 
+  private readonly reapOnExit: () => void;
+
   constructor(options: HostdOptions = {}) {
     const args: string[] = [];
     if (options.dataDir) {
@@ -191,6 +193,20 @@ export class HostdProcess implements HostTransport {
       for (const [, waiter] of this.pending) waiter.reject(err);
       this.pending.clear();
     });
+    // Own the child for the life of this process. A leaked hostd keeps its
+    // adapters (separate process groups) and temp data dirs after a timeout
+    // or an interrupted run; SIGKILL here is last-resort, the happy path is
+    // stdin-close so HostSession::drop reaps adapters.
+    this.reapOnExit = () => {
+      if (!this.exited && this.child.pid) {
+        try {
+          this.child.kill("SIGKILL");
+        } catch {
+          // Already gone.
+        }
+      }
+    };
+    process.once("exit", this.reapOnExit);
   }
 
   private onStdout(chunk: string) {
@@ -279,6 +295,35 @@ export class HostdProcess implements HostTransport {
     return existsSync(file) ? readFileSync(file, "utf8") : "";
   }
 
+  /**
+   * Wait until the adapter log satisfies `match`.
+   *
+   * Prefer a complete-record predicate (see {@link permissionReplyFromLog})
+   * over a prefix such as `permission_reply=`. The host tees stderr as the
+   * agent writes, so a prefix can appear a flush before the JSON that carries
+   * the option id.
+   */
+  async waitForAdapterLog(
+    threadId: string,
+    match: string | ((log: string) => boolean),
+    timeoutMs = 10_000,
+  ): Promise<string> {
+    const ok =
+      typeof match === "string" ? (log: string) => log.includes(match) : match;
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const log = this.readAdapterLog(threadId);
+      if (ok(log)) return log;
+      if (Date.now() > deadline) {
+        const preview = log.length > 0 ? log : "<empty>";
+        throw new Error(
+          `adapter log for ${threadId} never matched; saw: ${preview}`,
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
   /** Raw line write, for protocol-level tests (malformed frames, batching). */
   writeRaw(line: string) {
     this.child.stdin.write(line.endsWith("\n") ? line : `${line}\n`);
@@ -333,9 +378,50 @@ export class HostdProcess implements HostTransport {
 
   /** Stop and remove the temp data dir, if this instance created one. */
   async dispose(): Promise<void> {
+    process.removeListener("exit", this.reapOnExit);
     await this.stop();
     if (this.ownsDataDir && this.dataDir) {
       rmSync(this.dataDir, { recursive: true, force: true });
     }
   }
+}
+
+/**
+ * A complete `permission_reply=` line from the fake agent's stderr, or
+ * `undefined` if the prefix has landed but the JSON has not flushed yet.
+ */
+export function permissionReplyFromLog(log: string): unknown | undefined {
+  for (const line of log.split(/\r?\n/)) {
+    if (!line.startsWith("permission_reply=")) continue;
+    try {
+      return JSON.parse(line.slice("permission_reply=".length));
+    } catch {
+      // Partial write — the next read will have the rest of the line.
+    }
+  }
+  return undefined;
+}
+
+/** True once a complete permission-reply record carries this option id. */
+export function logHasPermissionReply(log: string, optionId: string): boolean {
+  return optionIdIn(permissionReplyFromLog(log)) === optionId;
+}
+
+function optionIdIn(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = optionIdIn(item);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (typeof record.optionId === "string") return record.optionId;
+    for (const item of Object.values(record)) {
+      const found = optionIdIn(item);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
 }

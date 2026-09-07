@@ -10,9 +10,8 @@ import { defineConfig, devices } from "@playwright/test";
  * wipe `.jabot-dev/data`.
  *
  * `@playwright/test` and `playwright-core` stay on the same version in
- * package.json (shot.mjs uses the latter). Node is whatever CI uses
- * (`.github/workflows/ci.yml`); #215 may bump that major and this file
- * must not pin a different one.
+ * package.json (shot.mjs uses the latter). Node follows CI (`verify` and
+ * `browser` jobs in `.github/workflows/ci.yml`) — currently 26.
  */
 export default defineConfig({
   testDir: "./tests/browser",

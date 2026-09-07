@@ -255,6 +255,7 @@ describe("primary views", () => {
       <SettingsView
         settings={SETTINGS}
         onSave={vi.fn(async () => SETTINGS)}
+        onRunSetup={vi.fn()}
         devices={[DEVICE]}
         devicesError={null}
         onReloadDevices={vi.fn()}

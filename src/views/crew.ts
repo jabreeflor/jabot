@@ -110,6 +110,7 @@ export function harnessCard(card: HarnessCardView): HarnessCard {
     blurb: card.blurb,
     accent: card.accent,
     installHint: card.installHint,
+    capabilityNotes: card.capabilityNotes,
   };
 }
 

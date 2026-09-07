@@ -1,0 +1,456 @@
+/* Shared by desktop and web. Motion belongs to the glyph; the avatar owns
+   size, unread dots, and the state ring. Color IDs pick a silhouette, not a
+   fill — the stroke follows --ink so light and dark stay readable. */
+
+.av {
+  --s: var(--blob-size, 44px);
+  --deep: var(--dim);
+  width: var(--s);
+  height: var(--s);
+  flex: none;
+  position: relative;
+  display: block;
+  overflow: visible;
+  background: none;
+  color: var(--ink);
+  border-radius: 0;
+}
+
+.av .bot-mark {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  color: inherit;
+}
+
+.av .pic {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 28%;
+  box-shadow: inset 0 0 0 1px var(--deep);
+}
+
+.bot-mark {
+  --bot-speed: 4.8s;
+  --bot-delay: -0.9s;
+}
+
+.bot-mark .bot-pose {
+  transform-origin: 24px 35px;
+  animation: bot-breathe var(--bot-speed) ease-in-out var(--bot-delay) infinite;
+}
+
+.bot-mark .bot-antenna {
+  transform-origin: 24px 17px;
+  animation: bot-antenna 5.2s ease-in-out var(--bot-delay) infinite;
+}
+
+.bot-mark[data-character="mini"] .bot-antenna {
+  transform-origin: 24px 15px;
+}
+
+.bot-mark[data-character="wide"] .bot-antenna {
+  transform-origin: 24px 20px;
+}
+
+.bot-mark[data-character="relay"] .bot-antenna {
+  transform-origin: 24px 18px;
+}
+
+.bot-mark .bot-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-blink 5.4s linear var(--bot-delay) infinite;
+}
+
+.bot-mark .bot-happy,
+.bot-mark .bot-error {
+  display: none;
+}
+
+.bot-mark[data-character="scout"] {
+  --bot-speed: 5.1s;
+  --bot-delay: -2.4s;
+}
+
+.bot-mark[data-character="scout"] .bot-pose {
+  animation-name: bot-peek;
+}
+
+.bot-mark[data-character="buddy"] {
+  --bot-speed: 4.2s;
+  --bot-delay: -1.7s;
+}
+
+.bot-mark[data-character="buddy"] .bot-pose {
+  animation-name: bot-bob;
+}
+
+.bot-mark[data-character="pixel"] {
+  --bot-speed: 5.6s;
+  --bot-delay: -3.3s;
+}
+
+.bot-mark[data-character="pixel"] .bot-face {
+  animation: bot-glance 4.2s steps(2, end) -1s infinite;
+}
+
+.bot-mark[data-character="relay"] {
+  --bot-delay: -0.3s;
+}
+
+.bot-mark[data-character="relay"] .bot-antenna {
+  animation-duration: 2.8s;
+}
+
+.bot-mark[data-character="mini"] {
+  --bot-speed: 4.3s;
+  --bot-delay: -2.9s;
+}
+
+.bot-mark[data-character="mini"] .bot-pose {
+  animation-name: bot-nod;
+}
+
+.bot-mark[data-character="wide"] {
+  --bot-delay: -3.6s;
+}
+
+.bot-mark[data-character="wide"] .bot-face {
+  animation: bot-glance 5s ease-in-out -2s infinite;
+}
+
+.bot-mark[data-character="visor"] {
+  --bot-speed: 5.8s;
+  --bot-delay: -1.1s;
+}
+
+.bot-mark[data-character="visor"] .bot-pose {
+  animation-name: bot-sway;
+}
+
+.av[data-state="running"] .bot-pose {
+  animation: bot-work 1.8s ease-in-out infinite;
+}
+
+.av[data-state="running"] .bot-antenna {
+  animation: bot-wiggle 0.8s ease-in-out infinite;
+}
+
+.av[data-state="running"] .bot-face {
+  animation: bot-glance 1.8s ease-in-out infinite;
+}
+
+.av[data-state="waiting"] .bot-pose {
+  animation: bot-attend 3.5s ease-in-out infinite;
+}
+
+.av[data-state="waiting"] .bot-face {
+  animation: none;
+  transform: translateY(-1px);
+}
+
+.av[data-state="failed"] .bot-pose {
+  animation: bot-shake 0.55s ease-in-out 1;
+}
+
+.av[data-state="failed"] .bot-antenna,
+.av[data-state="failed"] .bot-face {
+  animation: none;
+}
+
+.av[data-state="failed"] .bot-eyes {
+  display: none;
+}
+
+.av[data-state="failed"] .bot-error {
+  display: block;
+}
+
+.av[data-state="done"] .bot-pose {
+  animation: bot-hop 0.95s ease both;
+}
+
+.av[data-state="done"] .bot-eyes {
+  display: none;
+}
+
+.av[data-state="done"] .bot-happy {
+  display: block;
+}
+
+.bot-icon-option:hover .av[data-state="idle"] .bot-pose,
+.bot-icon-option:focus-within .av[data-state="idle"] .bot-pose {
+  animation: bot-hop 0.95s ease both;
+}
+
+.bot-icon-picker {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.bot-icon-picker legend {
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 0;
+  margin: 0 0 10px;
+}
+
+.bot-icon-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bot-icon-option {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.bot-icon-option input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  opacity: 0;
+  border: 0;
+  margin: 0;
+}
+
+.bot-icon-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 4px;
+  border: 1px solid var(--edge-strong);
+  border-radius: 12px;
+  background: var(--sunk);
+  color: var(--dim);
+  min-height: 100px;
+}
+
+.bot-icon-choice .av {
+  --blob-size: 42px;
+  color: var(--dim);
+}
+
+.bot-icon-option input:checked + .bot-icon-choice {
+  background: var(--raise);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.bot-icon-option input:checked + .bot-icon-choice .av {
+  color: var(--ink);
+}
+
+.bot-icon-option input:focus-visible + .bot-icon-choice {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.bot-icon-name {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.bot-icon-motion {
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--faint);
+}
+
+@media (max-width: 480px) {
+  .bot-icon-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@keyframes bot-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-0.65px) scale(1.012, 0.988);
+  }
+}
+
+@keyframes bot-antenna {
+  0%,
+  70%,
+  100% {
+    transform: rotate(0);
+  }
+  78% {
+    transform: rotate(-10deg);
+  }
+  86% {
+    transform: rotate(7deg);
+  }
+  94% {
+    transform: rotate(-3deg);
+  }
+}
+
+@keyframes bot-blink {
+  0%,
+  40%,
+  44%,
+  72%,
+  76%,
+  100% {
+    transform: scaleY(1);
+  }
+  42%,
+  74% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes bot-peek {
+  0%,
+  50%,
+  100% {
+    transform: rotate(0);
+  }
+  65%,
+  80% {
+    transform: rotate(-7deg);
+  }
+}
+
+@keyframes bot-bob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1.02, 0.98);
+  }
+  50% {
+    transform: translateY(-1.4px) scale(0.99, 1.01);
+  }
+}
+
+@keyframes bot-nod {
+  0%,
+  65%,
+  100% {
+    transform: scale(1);
+  }
+  75% {
+    transform: translateY(1px) scale(1.04, 0.93);
+  }
+  85% {
+    transform: translateY(-0.5px) scale(0.98, 1.03);
+  }
+}
+
+@keyframes bot-sway {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes bot-glance {
+  0%,
+  30%,
+  100% {
+    transform: translateX(0);
+  }
+  45%,
+  60% {
+    transform: translateX(1.5px);
+  }
+  75%,
+  85% {
+    transform: translateX(-1.5px);
+  }
+}
+
+@keyframes bot-work {
+  0%,
+  100% {
+    transform: rotate(-3deg) translateY(0);
+  }
+  50% {
+    transform: rotate(3deg) translateY(-1px);
+  }
+}
+
+@keyframes bot-wiggle {
+  0%,
+  100% {
+    transform: rotate(-12deg);
+  }
+  50% {
+    transform: rotate(12deg);
+  }
+}
+
+@keyframes bot-attend {
+  0%,
+  100% {
+    transform: rotate(-7deg);
+  }
+  50% {
+    transform: rotate(-5deg) translateY(-0.6px);
+  }
+}
+
+@keyframes bot-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25%,
+  75% {
+    transform: translateX(-1.5px);
+  }
+  50% {
+    transform: translateX(1.5px);
+  }
+}
+
+@keyframes bot-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  14% {
+    transform: translateY(1px) scale(1.1, 0.88);
+  }
+  34% {
+    transform: translateY(-5px) scale(0.94, 1.06);
+  }
+  50% {
+    transform: translateY(-6px) rotate(-4deg);
+  }
+  67% {
+    transform: translateY(0) scale(1.12, 0.86);
+  }
+  82% {
+    transform: translateY(-1px) scale(0.97, 1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .av .bot-mark *,
+  .bot-icon-option .bot-mark * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

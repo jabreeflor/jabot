@@ -44,6 +44,12 @@
 //!   turn — prose with no tool call and no URL. What an agent that only
 //!   *claims* to have opened a pull request looks like, which is what arms the
 //!   host's post-turn `gh` probe without proving anything (#28).
+//! - `empty-reply-logged-out`: empty `end_turn` after writing a sign-in error
+//!   to stderr — the Claude Code "failed: no reply" path with a known cause
+//! - `empty-reply-model`: empty `end_turn` after writing an unsupported-model
+//!   line to stderr
+//! - `exit-before-reply`: exit on `session/prompt` with no ACP response, after
+//!   writing a crash line to stderr — a harness process that dies mid-turn
 
 use std::io::{self, BufRead, Write};
 use std::process::{Command, Stdio};
@@ -189,8 +195,7 @@ fn main() {
                     .as_str()
                     .map(str::to_string)
                     .or_else(|| session_id.clone());
-                if mode != "empty-reply"
-                    && mode != "empty-reply-v2"
+                if !is_empty_reply_mode(&mode)
                     && !(mode == "first-reply-only" && prompts_received > 1)
                 {
                     notify(
@@ -218,6 +223,31 @@ fn main() {
                             id,
                             serde_json::json!({ "stopReason": "end_turn" }),
                         );
+                    }
+                    "empty-reply-logged-out" => {
+                        eprintln!(
+                            "not logged in. Run `claude` once and sign in, or export ANTHROPIC_API_KEY."
+                        );
+                        reply(
+                            &mut stdout,
+                            id,
+                            serde_json::json!({ "stopReason": "end_turn" }),
+                        );
+                    }
+                    "empty-reply-model" => {
+                        eprintln!("unsupported model: claude-opus-4-99 is not available");
+                        reply(
+                            &mut stdout,
+                            id,
+                            serde_json::json!({ "stopReason": "end_turn" }),
+                        );
+                    }
+                    // The Claude Code failure that looks like "failed: no reply":
+                    // the process ends on the prompt without a chunk or a
+                    // `session/prompt` response. Stderr is the only evidence.
+                    "exit-before-reply" => {
+                        eprintln!("adapter panicked: boom");
+                        std::process::exit(1);
                     }
                     // Prose, and nothing else: the agent *says* it opened a
                     // pull request and never prints a URL. `pr-linkage.md` §4
@@ -494,6 +524,17 @@ fn main() {
             }
         }
     }
+}
+
+fn is_empty_reply_mode(mode: &str) -> bool {
+    matches!(
+        mode,
+        "empty-reply"
+            | "empty-reply-v2"
+            | "empty-reply-logged-out"
+            | "empty-reply-model"
+            | "exit-before-reply"
+    )
 }
 
 /// The text blocks of an ACP prompt, joined. The `execute` mode echoes them as

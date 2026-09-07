@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -29,6 +32,7 @@
     "verify:fast": "./scripts/verify.sh --fast",
     "checkpoint": "./scripts/checkpoint.sh",
     "test:guards": "./scripts/tests/guards.test.sh",
+    "test:macos-lint": "./scripts/tests/macos-lint.test.sh",
     "hooks:install": "./scripts/install-hooks.sh",
     "hooks:check": "./scripts/install-hooks.sh --check",
     "prepare": "./scripts/install-hooks.sh --quiet || true"

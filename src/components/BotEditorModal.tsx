@@ -4,7 +4,7 @@
 //! Decision #6 made every bot an ACP harness session, so "which engine runs
 //! this bot" is part of the bot, not a hidden default.
 //!
-//! The icon is the other. A bot wears the JaBot mascot in its colour until
+//! The icon is the other. A bot wears its selected animated outline until
 //! someone gives it a picture, and this is the only screen that can: the
 //! upload is normalised here (centre-cropped, scaled, re-encoded) and saved as
 //! part of the bot, so the picture survives a restart the same way the name
@@ -16,10 +16,10 @@
 import { useId, useRef, useState } from "react";
 
 import { Avatar, ImageError, readBotImage } from "./avatar";
+import { BOT_ICONS } from "./avatar/bots";
 import { FieldLabel, Modal } from "./Modal";
 import { HarnessPicker } from "./HarnessPicker";
 import {
-  BOT_COLORS,
   type Bot,
   type BotColor,
   type BotDraft,
@@ -169,12 +169,13 @@ export function BotEditorModal({
   const nameId = useId();
   const instructionsId = useId();
 
+  const iconGroupId = useId();
   const fileId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [templateId, setTemplateId] = useState("");
   const [name, setName] = useState(bot?.name ?? "");
-  const [color, setColor] = useState<BotColor>(bot?.color ?? "b-green");
+  const [color, setColor] = useState<BotColor>(bot?.color ?? "b-teal");
   const [image, setImage] = useState<string | null>(bot?.image ?? null);
   /** Why the last file could not become an icon. Its own line rather than the
       modal's `error`, which belongs to the save that was refused: picking a
@@ -309,8 +310,7 @@ export function BotEditorModal({
             }}
           />
           <p className="iconhint">
-            Square, and scaled down to icon size. Without one, the bot wears the
-            animated JaBot mascot in its colour.
+            Upload a picture, or choose an animated bot below.
           </p>
         </div>
       </div>
@@ -321,24 +321,32 @@ export function BotEditorModal({
         </p>
       )}
 
-      <FieldLabel>COLOR</FieldLabel>
-      <div className="swatches" role="group" aria-label="Color">
-        {BOT_COLORS.map((swatch) => (
-          <button
-            key={swatch}
-            type="button"
-            className="swatch"
-            aria-label={swatch.replace("b-", "")}
-            aria-pressed={color === swatch}
-            onClick={() => setColor(swatch)}
-          >
-            {/* The mascot in each colour is the real fallback preview. Drawn
-                even while an image is set, because this is what returns when
-                that uploaded picture is removed. */}
-            <Avatar name={name || "New bot"} color={swatch} titled={false} />
-          </button>
-        ))}
-      </div>
+      <fieldset className="bot-icon-picker">
+        <legend>CHOOSE A BOT</legend>
+        <div className="bot-icon-grid">
+          {BOT_ICONS.map((choice) => (
+            <label className="bot-icon-option" key={choice.value}>
+              <input
+                type="radio"
+                name={iconGroupId}
+                value={choice.value}
+                aria-label={choice.name}
+                checked={!image && color === choice.value}
+                onChange={() => {
+                  setColor(choice.value);
+                  setImage(null);
+                  setImageError(null);
+                }}
+              />
+              <span className="bot-icon-choice">
+                <Avatar name={choice.name} color={choice.value} titled={false} />
+                <span className="bot-icon-name">{choice.name}</span>
+                <span className="bot-icon-motion">{choice.motion}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <FieldLabel htmlFor={instructionsId}>WHAT IT DOES</FieldLabel>
       <textarea

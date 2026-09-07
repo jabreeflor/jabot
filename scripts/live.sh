@@ -102,7 +102,7 @@ setup_system() {
 
 setup_toolchain() {
   command -v cargo >/dev/null 2>&1 || die "cargo not on PATH — install rustup (https://rustup.rs); rust-toolchain.toml picks the channel"
-  command -v node >/dev/null 2>&1 || die "node not on PATH (CI uses node 22)"
+  command -v node >/dev/null 2>&1 || die "node not on PATH (CI uses node 26; see .nvmrc)"
   ok "$(rustc --version) / node $(node --version)"
 }
 
