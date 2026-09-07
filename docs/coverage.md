@@ -136,34 +136,51 @@ macOS-only, talk to `gh`, or were flaky under load in #229.
 
 ### Baseline (Linux, Node 22 host, `dev-bins`)
 
-Recorded when this policy landed. Re-measure after large host changes.
+Recorded on this branch with `cargo-llvm-cov` 0.9.1, rustc 1.98.1,
+`dev-bins` on. Re-measure after large host changes. Totals include the
+0% process mains (`jabot-hostd`, `fake-acp-agent`, `lib.rs` Tauri
+commands, `main.rs`).
 
-<!-- rust-baseline: filled after the first cargo-llvm-cov run -->
+| | Regions | Functions | Lines |
+| --- | ---: | ---: | ---: |
+| Covered / total | 35123 / 41009 | 2269 / 2709 | 21479 / 24887 |
+| **Percent** | **85.65%** | **83.76%** | **86.31%** |
 
-| | Lines | Regions / branches | Functions |
-| --- | --- | --- | --- |
-| `src-tauri` (this runner) | *(see artifact `coverage/rust/summary.txt`)* | | |
+A 90% line floor would fail today because of those 0% entry points, not
+because the host library is untested. That is why there is no Rust
+threshold yet.
 
 ### High-risk uncovered / under-covered (investigate before a floor)
 
-These are the areas a threshold would either punish unfairly or paper over:
+These are the areas a threshold would either punish unfairly or paper over.
+Line % from the same run:
 
-- **`notify/mac.rs`** — `cfg(target_os = "macos")`. Invisible on Linux CI.
-  Same class as the `--check-mac` gate. Do not set a global floor that
-  pretends this file is scored.
-- **OAuth / loopback (`host/tools/oauth.rs`, `loopback.rs`)** — #229 saw a
-  load-sensitive mismatch refusal. Instrument, do not silence.
-- **Chief runtime resolution (`host/chief/mod.rs`)** — tests that assume
-  no real Claude CLI is present. Coverage here is only as honest as the
-  fixture.
-- **`host/repo/gh.rs`, `host/pr/github.rs`** — shell out to `gh`; unit
-  tests use fixtures, live GitHub is not in this report.
-- **`host/git/worktree.rs`** — filesystem + git. Integration tests cover
-  the happy path; error/cleanup branches are the risk.
-- **Pairing crypto (`host/pairing/crypto.rs`)** — easy to "cover" with
-  goldens that restate the implementation. Gaps here are security-relevant.
-- **`src/bin/jabot-hostd.rs` / `fake_acp_agent.rs`** — process mains.
-  Exercised by e2e, not by `cargo test` of the library.
+- **`notify/mac.rs`** — `cfg(target_os = "macos")`. Invisible on Linux CI
+  (only `notify/unsupported.rs` appears). Same class as `--check-mac`.
+- **Process mains (0%)** — `bin/jabot-hostd.rs`, `bin/fake_acp_agent.rs`,
+  `lib.rs` (Tauri `host_rpc` / window wiring), `main.rs`. Exercised by e2e
+  and the real app, not by `cargo test` of the library.
+- **`host/settings.rs` (0%)** — `settings/get` + `settings/set` on
+  `HostSession`. The store layer is covered; the session methods are only
+  hit over the wire.
+- **`host/repo/workspace.rs` (24% lines)** — worktree checkout / path
+  resolution. Error and cleanup branches are the risk.
+- **`host/harness/install.rs` (40%)** — adapter installer. Talks to the
+  network and the user's toolchain.
+- **`host/pr/workspace.rs` (41%)** — PR workspace actions (review, merge,
+  comment). `gh` I/O; fixtures cover the parser more than the session.
+- **`host/router.rs` (63%)** — JSON-RPC method dispatch. Large match;
+  many arms are only reached from e2e.
+- **`host/repo/gh.rs` (74%)** and **`host/pr/github.rs` (90%)** — shell
+  out to `gh`. Unit tests use fixtures; live GitHub is not in this report.
+- **OAuth / loopback (`oauth.rs` 91%, `loopback.rs` 92%)** — #229 saw a
+  load-sensitive mismatch refusal. High coverage here is not the same as
+  determinism. Do not silence that flake to protect a future floor.
+- **Chief (`chief/mod.rs` 94%)** — tests that assume no real Claude CLI
+  is present. Coverage is only as honest as the fixture (#229).
+- **Pairing crypto (`pairing/crypto.rs` 100%)** — well covered already.
+  Treat new tests here as security tests, not goldens that restate the
+  implementation.
 
 ## How to read a downloaded artifact
 

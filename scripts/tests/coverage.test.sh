@@ -264,8 +264,8 @@ case_ci_installs_rust_coverage_and_uploads_on_failure() {
 }
 
 case_reports_are_gitignored() {
-  assert_contains "$(cat "$REPO_ROOT/.gitignore")" $'coverage\n' \
-    "coverage/ must be gitignored so reports do not move the tree hash" || return 1
+  assert_contains "$(cat "$REPO_ROOT/.gitignore")" $'/coverage\n' \
+    "root /coverage must be gitignored so reports do not move the tree hash" || return 1
   pass
 }
 

@@ -58,8 +58,9 @@ cargo llvm-cov --manifest-path src-tauri/Cargo.toml \
 cargo llvm-cov report --manifest-path src-tauri/Cargo.toml \
   --json --output-path "$OUT/coverage.json"
 
+# llvm-cov writes `$OUT/html/` when given `--output-dir $OUT`.
 cargo llvm-cov report --manifest-path src-tauri/Cargo.toml \
-  --html --output-dir "$OUT/html"
+  --html --output-dir "$OUT"
 
 # Text summary for the log and for the artifact (no extra test run).
 cargo llvm-cov report --manifest-path src-tauri/Cargo.toml \

@@ -26,7 +26,8 @@ dist-ssr
 # Coverage reports (frontend Vitest + cargo-llvm-cov). Written by
 # `./scripts/verify.sh` and CI; never committed — the tree-hash guard
 # ignores gitignored paths, so a report must not live in a tracked dir.
-coverage
+# Anchored at the repo root so docs/coverage.md is not ignored.
+/coverage
 
 # Rust
 src-tauri/target
