@@ -53,6 +53,45 @@ function status(over: Partial<GithubStatusResult> = {}): GithubStatusResult {
 }
 
 describe("the sign-in strip above the board", () => {
+  it("uses one search to filter the signed-in user's open pull requests", async () => {
+    render(
+      <PullRequestsView
+        pullRequests={[
+          ...ROWS,
+          {
+            ...ROWS[0],
+            id: "mine-188",
+            threadId: undefined,
+            repo: "jabreeflor/portfolio",
+            number: 188,
+            title: "Refresh project cards",
+          },
+        ]}
+        githubStatus={status({ authenticated: true, account: "octocat" })}
+        account="octocat"
+        onOpenThread={vi.fn()}
+      />,
+    );
+
+    const search = screen.getByRole("searchbox", {
+      name: "Search pull requests",
+    });
+    expect(screen.getAllByRole("searchbox")).toHaveLength(1);
+    expect(
+      screen.queryByRole("textbox", { name: "Pull request URL" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open PR" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.type(search, "portfolio #188");
+
+    expect(screen.getByText("Refresh project cards")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Migrate auth to sessions"),
+    ).not.toBeInTheDocument();
+  });
+
   it("offers a sign-in without hiding the pull requests behind it", async () => {
     const onSignIn = vi.fn();
     render(
