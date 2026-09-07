@@ -61,7 +61,8 @@ to nobody. `verify.sh` warns when it is not set.
 | --- | --- |
 | `./scripts/verify.sh` | before you commit anything; the whole gate, ~1.5 min |
 | `./scripts/verify.sh --fast` | tight iteration — skips building `jabot-hostd` and the e2e suite |
-| `./scripts/verify.sh --check-mac` | **whenever you touch `src-tauri/src/notify/`** — the only thing that lints `notify/mac.rs` (below) |
+| `./scripts/verify.sh --check-mac` | local repro of the PR `mac notify cross-check` — **run it when you touch `src-tauri/src/notify/`** so you find rot before CI does |
+| `./scripts/check-macos-clippy.sh` | on a Mac, local repro of the PR `macos clippy` job — Keychain + `lib.rs` cfg(macos) branches |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
@@ -123,6 +124,7 @@ one run tells you everything that is wrong.
 | `lockfiles` | `package-lock.json` satisfies `package.json`, `Cargo.lock` satisfies `src-tauri/Cargo.toml`, and `src-tauri/vendor/adapters`' lock satisfies its own manifest | `npm install` or `cargo update -p <crate>` and commit the lock. CI runs `npm ci`, which refuses to install through this. For the vendored adapters, `npm install --prefix src-tauri/vendor/adapters` and commit both files. |
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
+| `macos lint tests` | the path planner that turns CI's macOS jobs on still matches what `docs/macos-lint.md` claims (`scripts/tests/macos-lint.test.sh`) | you changed the planner or the notify/native check scripts; run `./scripts/tests/macos-lint.test.sh` |
 | `typecheck` | `tsc --noEmit`, strict, no `any` | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. |
 | `unit tests` | 200+ vitest cases in jsdom: React components, host client, and axe on the primary views | `npx vitest --project unit` to iterate; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
@@ -132,7 +134,7 @@ one run tells you everything that is wrong.
 | `build jabot-hostd` | the NDJSON host the e2e suite drives still links | not run under `--fast` |
 | `e2e (ts to rust host)` | 123 cases over 17 suites: the production TypeScript client against a live `jabot-hostd` over real NDJSON | `npx vitest run --project e2e -t "<name>"`. Needs the binary, so build it first or run the full `verify.sh`. Not run under `--fast`. |
 | `renderer build` | `vite build` produces a bundle | usually an import that typechecks but does not resolve |
-| `mac notify cross-check` | opt-in, `--check-mac` only: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
+| `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
@@ -269,11 +271,15 @@ filing or "fixing" a gap.
   `--check-mac` are the precedents.
 - `src-tauri/src/notify/mac.rs` is `cfg(target_os = "macos")`, so the default
   gate compiles straight past it and CI's macOS `bundle` job does not run on
-  pull requests. **If you touch `src-tauri/src/notify/`, run
-  `./scripts/verify.sh --check-mac`** — it is the only thing between that file
-  and a Mac build. It needs the network and `rustup target add
-  x86_64-apple-darwin`, and no Mac. `scripts/check-mac-notify.sh` carries the
-  reason the whole crate cannot be cross-checked the same way.
+  pull requests. PRs that touch `notify/`, its check, or a shared Cargo /
+  toolchain file get the existing `scripts/check-mac-notify.sh` automatically
+  (`mac notify cross-check`). PRs that touch `lib.rs`, `secrets.rs`, or those
+  same shared files get native `macos clippy` (`scripts/check-macos-clippy.sh
+  --lib` only — not a `tauri build`). Coverage, local repro, and deliberate
+  exclusions: [docs/macos-lint.md](docs/macos-lint.md). **If you touch
+  `src-tauri/src/notify/`, still run `./scripts/verify.sh --check-mac`
+  locally** so you see the failure before the PR check does. It needs the
+  network and `rustup target add x86_64-apple-darwin`, and no Mac.
 - A test that cannot fail when the thing it covers breaks is worse than no
   test, because it reads as coverage. Break it once and watch it fail before
   you trust it.

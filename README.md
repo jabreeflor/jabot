@@ -56,7 +56,10 @@ npm install                              # deps, and installs the git hooks
 verified those exact bytes, and refuses a push whose commits are not the files
 that gate can read. **[CONTRIBUTING.md](CONTRIBUTING.md)** has the
 whole local workflow: what every gate proves, what to do when each one fails,
-and the escape hatches.
+and the escape hatches. macOS-only Rust (`notify/mac.rs`, Keychain, the
+updater / hide-to-Dock branches) is linted on the PR by scoped jobs, not by
+`verify.sh` and not by a per-PR bundle — see
+[`docs/macos-lint.md`](docs/macos-lint.md).
 
 ## Prototypes
 
