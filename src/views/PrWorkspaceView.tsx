@@ -1,5 +1,5 @@
 import { usePrDetails, prWorkspaceError as message } from "./prDetails";
-import { renderMarkdown } from "../components/markdown";
+import { GithubMarkdown } from "../components/GithubMarkdown";
 import { useEffect, useRef, useState } from "react";
 import type { HostClient } from "../host";
 import type { PullRequest } from "../components/types";
@@ -321,9 +321,13 @@ export function PrWorkspaceView({
                         </div>
                       ) : (
                         <div className="pr-prose">
-                          {renderMarkdown(
-                            data.pr.body || "No description provided.",
-                          )}
+                          <GithubMarkdown
+                            repository={pr.repo}
+                            revision={data.pr.head.sha}
+                            sourceUrl={pr.url}
+                          >
+                            {data.pr.body || "No description provided."}
+                          </GithubMarkdown>
                         </div>
                       )}
                     </article>
@@ -361,10 +365,14 @@ export function PrWorkspaceView({
                             </code>
                           )}
                           <div className="pr-prose">
-                            {renderMarkdown(
-                              item.body ||
-                                "Review submitted without a comment.",
-                            )}
+                            <GithubMarkdown
+                              repository={pr.repo}
+                              revision={data.pr.head.sha}
+                              sourceUrl={item.html_url}
+                            >
+                              {item.body ||
+                                "Review submitted without a comment."}
+                            </GithubMarkdown>
                           </div>
                         </article>
                       ))}
