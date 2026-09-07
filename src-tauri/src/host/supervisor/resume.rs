@@ -225,10 +225,24 @@ impl HostSession {
         // session: a tool that is not in this array is one the model never
         // sees a schema for.
         let mcp_servers = self.mcp_servers_for_thread(thread_id);
+        let model = self.thread_model(thread_id);
         let conn = self
             .conn_mut(thread_id)
             .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-        conn.new_session(thread_id, cwd, mcp_servers)
+        conn.new_session(thread_id, cwd, mcp_servers, model.as_deref())
+    }
+
+    fn thread_model(&self, thread_id: &str) -> Option<String> {
+        let store = self.store.as_ref()?;
+        let thread = store.get_thread(thread_id).ok().flatten()?;
+        serde_json::from_str::<serde_json::Value>(&thread.runtime_json)
+            .ok()
+            .and_then(|runtime| {
+                runtime
+                    .get("model")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string)
+            })
     }
 
     /// Spawn (if needed), `initialize`, and hand the session back.

@@ -107,6 +107,7 @@ impl HostSession {
             // absence of a folder to imply it.
             use_checkout: Some(true),
             base_ref: None,
+            model: None,
         })
     }
 

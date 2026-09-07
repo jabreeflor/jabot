@@ -261,6 +261,9 @@ pub struct RuntimeSpec {
     pub env: Option<std::collections::BTreeMap<String, String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install_hint: Option<String>,
+    /// Host-selected `provider/model` when the harness exposes one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -536,6 +539,9 @@ pub struct ThreadOpenParams {
     /// `origin/<default branch>`, never the user's possibly-dirty `HEAD`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_ref: Option<String>,
+    /// Host-selected `provider/model` for harnesses that expose one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1260,6 +1266,15 @@ pub struct HarnessCardView {
     pub session_scope: SessionScope,
     /// Reserved ids cannot be shadowed by a user file.
     pub reserved: bool,
+    /// New Chat / bot editor can offer a provider/model picker.
+    #[serde(default)]
+    pub supports_models: bool,
+    /// Catalog-declared ACP capabilities. Resume is still negotiated.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub declared_capabilities: Vec<String>,
+    /// Why concurrent account profiles cannot isolate this harness.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_isolation: Option<String>,
 }
 
 /// A tier-3 file that did not make it into the catalog, and why. Surfaced
@@ -1312,6 +1327,9 @@ pub struct HarnessReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install_url: Option<String>,
     pub elapsed_ms: u64,
+    /// `provider/model` lines the Doctor's models probe printed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub models: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -11,6 +11,7 @@
 //! vendor CLI multiplied by the size of the catalog, and every one of those
 //! seconds is spent in front of a user who just opened New Chat.
 
+use std::io::Read;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -34,12 +35,29 @@ pub enum ProbeRun {
     TimedOut,
 }
 
+/// A probe that also returns stdout, for auth-list / models classifiers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbeOutput {
+    pub run: ProbeRun,
+    pub stdout: String,
+}
+
 /// Everything the classifier needs from the machine, behind a seam so the
 /// classification rules can be tested without installing five vendor CLIs.
 pub trait ProbeHost: Sync {
     fn resolve(&self, command: &str) -> Option<PathBuf>;
     fn run(&self, command: &str, args: &[String]) -> ProbeRun;
+    fn run_capture(&self, command: &str, args: &[String]) -> ProbeOutput {
+        ProbeOutput {
+            run: self.run(command, args),
+            stdout: String::new(),
+        }
+    }
     fn listening(&self, addr: &str) -> bool;
+    /// A non-empty environment value the catalog treats as credentials.
+    fn env_present(&self, key: &str) -> bool {
+        std::env::var_os(key).is_some_and(|value| !value.is_empty())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +71,8 @@ pub struct Diagnosis {
     pub launch: Option<Launch>,
     pub resolved_path: Option<PathBuf>,
     pub elapsed_ms: u64,
+    /// `provider/model` lines the models probe printed, when it answered.
+    pub models: Vec<String>,
 }
 
 impl Diagnosis {
@@ -86,6 +106,7 @@ pub fn diagnose_all(descriptors: &[HarnessDescriptor], probe: &dyn ProbeHost) ->
                     launch: None,
                     resolved_path: None,
                     elapsed_ms: 0,
+                    models: Vec::new(),
                 })
             })
             .collect()
@@ -98,7 +119,8 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                   detail: String,
                   remedy: Option<String>,
                   launch: Option<Launch>,
-                  resolved: Option<PathBuf>| Diagnosis {
+                  resolved: Option<PathBuf>,
+                  models: Vec<String>| Diagnosis {
         id: descriptor.id.clone(),
         status,
         detail,
@@ -106,6 +128,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
         launch,
         resolved_path: resolved,
         elapsed_ms: started.elapsed().as_millis() as u64,
+        models,
     };
 
     // The vendor CLI is asked about first, before any adapter resolves,
@@ -127,6 +150,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                 descriptor.install_hint.clone(),
                 None,
                 None,
+                Vec::new(),
             );
         }
     }
@@ -153,6 +177,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                 descriptor.install_hint.clone(),
                 None,
                 None,
+                Vec::new(),
             ),
             None => finish(
                 HarnessStatus::AdapterMissing,
@@ -160,6 +185,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                 descriptor.install_hint.clone(),
                 None,
                 None,
+                Vec::new(),
             ),
         };
     };
@@ -177,6 +203,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                     Some(remedy.clone()),
                     Some(launch.clone()),
                     Some(path),
+                    Vec::new(),
                 );
             }
         }
@@ -199,6 +226,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                         Some(remedy.clone()),
                         Some(launch.clone()),
                         Some(path),
+                        Vec::new(),
                     );
                 }
                 // A probe we could not run says nothing about the harness. It
@@ -211,6 +239,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                         Some(remedy.clone()),
                         Some(launch.clone()),
                         Some(path),
+                        Vec::new(),
                     );
                 }
                 ProbeRun::Failed(err) => {
@@ -220,9 +249,35 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                         Some(remedy.clone()),
                         Some(launch.clone()),
                         Some(path),
+                        Vec::new(),
                     );
                 }
             }
+        }
+        Readiness::AuthAndModels {
+            acp_help_args,
+            auth_args,
+            models_args,
+            logged_out_remedy,
+            model_remedy,
+            outdated_remedy,
+            env_auth_keys,
+        } => {
+            let cli = descriptor.cli.as_deref().unwrap_or(launch.command.as_str());
+            return diagnose_auth_and_models(
+                finish,
+                probe,
+                launch,
+                path,
+                cli,
+                acp_help_args,
+                auth_args,
+                models_args,
+                logged_out_remedy,
+                model_remedy,
+                outdated_remedy,
+                env_auth_keys,
+            );
         }
     }
 
@@ -254,7 +309,176 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
         None,
         Some(launch.clone()),
         Some(path),
+        Vec::new(),
     )
+}
+
+fn diagnose_auth_and_models(
+    finish: impl Fn(
+        HarnessStatus,
+        String,
+        Option<String>,
+        Option<Launch>,
+        Option<PathBuf>,
+        Vec<String>,
+    ) -> Diagnosis,
+    probe: &dyn ProbeHost,
+    launch: &Launch,
+    path: PathBuf,
+    cli: &str,
+    acp_help_args: &[String],
+    auth_args: &[String],
+    models_args: &[String],
+    logged_out_remedy: &str,
+    model_remedy: &str,
+    outdated_remedy: &str,
+    env_auth_keys: &[String],
+) -> Diagnosis {
+    let help = probe.run_capture(cli, acp_help_args);
+    match help.run {
+        ProbeRun::Exit(0) => {}
+        ProbeRun::Exit(_) | ProbeRun::Failed(_) => {
+            return finish(
+                HarnessStatus::AdapterOutdated,
+                format!("`{cli}` is installed but does not speak ACP (`{cli} acp` is missing)."),
+                Some(outdated_remedy.to_string()),
+                Some(launch.clone()),
+                Some(path),
+                Vec::new(),
+            );
+        }
+        ProbeRun::TimedOut => {
+            return finish(
+                HarnessStatus::Unknown,
+                format!("`{cli} acp --help` did not answer in time."),
+                Some(outdated_remedy.to_string()),
+                Some(launch.clone()),
+                Some(path),
+                Vec::new(),
+            );
+        }
+    }
+
+    let env_auth = env_auth_keys.iter().any(|key| probe.env_present(key));
+    let auth = probe.run_capture(cli, auth_args);
+    let auth_ok = match auth.run {
+        ProbeRun::Exit(0) if env_auth || !auth_list_empty(&auth.stdout) => true,
+        ProbeRun::Exit(0) | ProbeRun::Exit(_) => false,
+        ProbeRun::TimedOut => {
+            return finish(
+                HarnessStatus::Unknown,
+                format!("`{cli} auth list` did not answer in time."),
+                Some(logged_out_remedy.to_string()),
+                Some(launch.clone()),
+                Some(path),
+                Vec::new(),
+            );
+        }
+        ProbeRun::Failed(err) => {
+            return finish(
+                HarnessStatus::Unknown,
+                format!("could not run `{cli} auth list`: {err}"),
+                Some(logged_out_remedy.to_string()),
+                Some(launch.clone()),
+                Some(path),
+                Vec::new(),
+            );
+        }
+    };
+    if !auth_ok {
+        return finish(
+            HarnessStatus::LoggedOut,
+            format!("`{cli}` is installed but no provider is signed in."),
+            Some(logged_out_remedy.to_string()),
+            Some(launch.clone()),
+            Some(path),
+            Vec::new(),
+        );
+    }
+
+    let models = probe.run_capture(cli, models_args);
+    let listed = parse_models(&models.stdout);
+    match models.run {
+        ProbeRun::Exit(0) if !listed.is_empty() => finish(
+            HarnessStatus::Ready,
+            format!("Ready — {} ({} models).", path.display(), listed.len()),
+            None,
+            Some(launch.clone()),
+            Some(path),
+            listed,
+        ),
+        ProbeRun::Exit(0) | ProbeRun::Exit(_) => finish(
+            HarnessStatus::InvalidConfig,
+            format!("`{cli}` is signed in but no model is available."),
+            Some(model_remedy.to_string()),
+            Some(launch.clone()),
+            Some(path),
+            listed,
+        ),
+        ProbeRun::TimedOut => finish(
+            HarnessStatus::Unknown,
+            format!("`{cli} models` did not answer in time."),
+            Some(model_remedy.to_string()),
+            Some(launch.clone()),
+            Some(path),
+            Vec::new(),
+        ),
+        ProbeRun::Failed(err) => finish(
+            HarnessStatus::Unknown,
+            format!("could not run `{cli} models`: {err}"),
+            Some(model_remedy.to_string()),
+            Some(launch.clone()),
+            Some(path),
+            Vec::new(),
+        ),
+    }
+}
+
+fn auth_list_empty(stdout: &str) -> bool {
+    let text = stdout.trim();
+    if text.is_empty() {
+        return true;
+    }
+    let lower = text.to_ascii_lowercase();
+    lower.contains("no credential")
+        || lower.contains("not authenticated")
+        || lower.contains("no provider")
+        || lower.contains("0 providers")
+        || !text.lines().any(looks_like_provider_row)
+}
+
+fn looks_like_provider_row(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if lower.starts_with("provider")
+        || lower.starts_with("name")
+        || lower.starts_with("─")
+        || lower.starts_with('-')
+        || lower.starts_with("id")
+    {
+        return false;
+    }
+    trimmed
+        .split_whitespace()
+        .next()
+        .is_some_and(|word| word.chars().any(|c| c.is_ascii_alphabetic()))
+}
+
+fn parse_models(stdout: &str) -> Vec<String> {
+    stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            !line.is_empty()
+                && !line.starts_with('#')
+                && line.contains('/')
+                && !line.to_ascii_lowercase().starts_with("provider")
+        })
+        .map(str::to_string)
+        .collect()
 }
 
 /// The real machine: the augmented PATH, real subprocesses, real sockets.
@@ -265,17 +489,36 @@ impl SystemProbe {
     /// The deadline is a parameter so the kill path can be tested without
     /// waiting out the real one.
     fn run_until(&self, command: &str, args: &[String], timeout: Duration) -> ProbeRun {
+        self.run_until_output(command, args, timeout, false).run
+    }
+
+    /// The deadline is a parameter so the kill path can be tested without
+    /// waiting out the real one.
+    fn run_until_output(
+        &self,
+        command: &str,
+        args: &[String],
+        timeout: Duration,
+        capture: bool,
+    ) -> ProbeOutput {
         // Resolve first so the child is exec'd from the same augmented PATH
         // the probe searched, and inherit that PATH so a CLI that shells out
         // to `node` finds the same one the terminal would.
         let Some(path) = self.resolve(command) else {
-            return ProbeRun::Failed(format!("{command} is not on PATH"));
+            return ProbeOutput {
+                run: ProbeRun::Failed(format!("{command} is not on PATH")),
+                stdout: String::new(),
+            };
         };
         let mut cmd = Command::new(path);
         cmd.args(args)
             .env("PATH", super::path::joined())
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(if capture {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stderr(Stdio::null());
         // A probe is the one command most likely to hang — that is why the
         // user opened the Doctor — and every one of these CLIs is a wrapper
@@ -284,20 +527,51 @@ impl SystemProbe {
         procgroup::own_group(&mut cmd);
         let mut child = match cmd.spawn() {
             Ok(child) => child,
-            Err(err) => return ProbeRun::Failed(err.to_string()),
+            Err(err) => {
+                return ProbeOutput {
+                    run: ProbeRun::Failed(err.to_string()),
+                    stdout: String::new(),
+                }
+            }
         };
         let deadline = Instant::now() + timeout;
         loop {
             match child.try_wait() {
-                Ok(Some(status)) => return ProbeRun::Exit(status.code().unwrap_or(-1)),
+                Ok(Some(status)) => {
+                    let stdout = if capture {
+                        child
+                            .stdout
+                            .take()
+                            .and_then(|mut pipe| {
+                                let mut buf = String::new();
+                                pipe.read_to_string(&mut buf).ok()?;
+                                Some(buf)
+                            })
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    return ProbeOutput {
+                        run: ProbeRun::Exit(status.code().unwrap_or(-1)),
+                        stdout,
+                    };
+                }
                 Ok(None) if Instant::now() < deadline => {
                     std::thread::sleep(Duration::from_millis(25));
                 }
                 Ok(None) => {
                     procgroup::terminate(&mut child);
-                    return ProbeRun::TimedOut;
+                    return ProbeOutput {
+                        run: ProbeRun::TimedOut,
+                        stdout: String::new(),
+                    };
                 }
-                Err(err) => return ProbeRun::Failed(err.to_string()),
+                Err(err) => {
+                    return ProbeOutput {
+                        run: ProbeRun::Failed(err.to_string()),
+                        stdout: String::new(),
+                    }
+                }
             }
         }
     }
@@ -310,6 +584,10 @@ impl ProbeHost for SystemProbe {
 
     fn run(&self, command: &str, args: &[String]) -> ProbeRun {
         self.run_until(command, args, PROBE_TIMEOUT)
+    }
+
+    fn run_capture(&self, command: &str, args: &[String]) -> ProbeOutput {
+        self.run_until_output(command, args, PROBE_TIMEOUT, true)
     }
 
     fn listening(&self, addr: &str) -> bool {
@@ -333,6 +611,8 @@ mod tests {
     struct FakeMachine {
         installed: HashMap<String, PathBuf>,
         exits: HashMap<String, ProbeRun>,
+        stdout: HashMap<String, String>,
+        env: Vec<String>,
         open_ports: Vec<String>,
         delay: Duration,
         calls: Mutex<Vec<String>>,
@@ -353,6 +633,17 @@ mod tests {
             self.exits.insert(command.to_string(), run);
             self
         }
+
+        fn printing(mut self, invocation: &str, stdout: &str) -> Self {
+            self.stdout
+                .insert(invocation.to_string(), stdout.to_string());
+            self
+        }
+
+        fn with_env(mut self, keys: &[&str]) -> Self {
+            self.env = keys.iter().map(|k| (*k).to_string()).collect();
+            self
+        }
     }
 
     impl ProbeHost for FakeMachine {
@@ -361,23 +652,40 @@ mod tests {
         }
 
         fn run(&self, command: &str, args: &[String]) -> ProbeRun {
+            self.run_capture(command, args).run
+        }
+
+        fn run_capture(&self, command: &str, args: &[String]) -> ProbeOutput {
             if !self.delay.is_zero() {
                 std::thread::sleep(self.delay);
             }
+            let invocation = format!("{command} {}", args.join(" "));
             self.calls
                 .lock()
-                .map(|mut calls| calls.push(format!("{command} {}", args.join(" "))))
+                .map(|mut calls| calls.push(invocation.clone()))
                 .ok();
             // A command that is not installed cannot be run, and saying
             // otherwise is how a fake hides a real machine's diagnosis behind
             // a cheerful exit 0.
             if !self.installed.contains_key(command) {
-                return ProbeRun::Failed(format!("{command} is not on PATH"));
+                return ProbeOutput {
+                    run: ProbeRun::Failed(format!("{command} is not on PATH")),
+                    stdout: String::new(),
+                };
             }
-            self.exits
-                .get(command)
+            let run = self
+                .exits
+                .get(&invocation)
                 .cloned()
-                .unwrap_or(ProbeRun::Exit(0))
+                .or_else(|| self.exits.get(command).cloned())
+                .unwrap_or(ProbeRun::Exit(0));
+            let stdout = self
+                .stdout
+                .get(&invocation)
+                .cloned()
+                .or_else(|| self.stdout.get(command).cloned())
+                .unwrap_or_default();
+            ProbeOutput { run, stdout }
         }
 
         fn listening(&self, addr: &str) -> bool {
@@ -385,6 +693,10 @@ mod tests {
                 std::thread::sleep(self.delay);
             }
             self.open_ports.iter().any(|open| open == addr)
+        }
+
+        fn env_present(&self, key: &str) -> bool {
+            self.env.iter().any(|set| set == key)
         }
     }
 
@@ -430,6 +742,52 @@ mod tests {
         let report = diagnose(&descriptor("codex"), &machine);
         assert_eq!(report.status, HarnessStatus::LoggedOut);
         assert_eq!(report.remedy.as_deref(), Some("Run `codex login`."));
+    }
+
+    #[test]
+    fn opencode_missing_cli_is_not_an_adapter_problem() {
+        let report = diagnose(&descriptor("opencode"), &FakeMachine::default());
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+        assert!(report.detail.contains("opencode"), "{}", report.detail);
+        assert!(report.remedy.unwrap().contains("auth login"));
+    }
+
+    #[test]
+    fn opencode_without_acp_is_outdated() {
+        let machine =
+            FakeMachine::with(&["opencode"]).answering("opencode acp --help", ProbeRun::Exit(1));
+        let report = diagnose(&descriptor("opencode"), &machine);
+        assert_eq!(report.status, HarnessStatus::AdapterOutdated);
+        assert!(report.remedy.unwrap().contains("upgrade"));
+    }
+
+    #[test]
+    fn opencode_without_auth_is_logged_out() {
+        let machine = FakeMachine::with(&["opencode"]).printing("opencode auth list", "");
+        let report = diagnose(&descriptor("opencode"), &machine);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("auth login"));
+    }
+
+    #[test]
+    fn opencode_env_key_counts_as_signed_in() {
+        let machine = FakeMachine::with(&["opencode"])
+            .with_env(&["ANTHROPIC_API_KEY"])
+            .printing("opencode auth list", "")
+            .printing("opencode models", "anthropic/claude-sonnet-4-5\n");
+        let report = diagnose(&descriptor("opencode"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert_eq!(report.models, ["anthropic/claude-sonnet-4-5"]);
+    }
+
+    #[test]
+    fn opencode_signed_in_without_models_is_a_config_problem() {
+        let machine = FakeMachine::with(&["opencode"])
+            .printing("opencode auth list", "anthropic  api-key")
+            .printing("opencode models", "");
+        let report = diagnose(&descriptor("opencode"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("opencode.json"));
     }
 
     /// Hermes fails `--check` when no provider or model is configured. That is

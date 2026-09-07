@@ -130,7 +130,7 @@ and [setup-porting/buzz.md](../research/setup-porting/buzz.md):
 
 | Tier | What | Examples |
 |---|---|---|
-| 1 — compiled-in | Shipped cards, auth probes, reserved ids | `claude`, `codex`, `pi` |
+| 1 — compiled-in | Shipped cards, auth probes, reserved ids | `claude`, `codex`, `pi`, `opencode` |
 | 2 — presets | PATH-probed, not user-editable | Hermes, OpenClaw, Cursor, … |
 | 3 — user JSON | Settings / `custom_harnesses/` | Anything that speaks ACP stdio |
 

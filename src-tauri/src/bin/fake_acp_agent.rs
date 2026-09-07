@@ -40,6 +40,9 @@
 //!   the thread has to still be *running* at the moment it is folded, and then
 //!   go on running, and only then end. A sleep would make that a race; a gate
 //!   makes it an ordering. See [`wait_for_gate`] for the script it reads.
+//! - `empty-reply`: end the turn with `end_turn` and no agent text — the host
+//!   must rewrite that as `empty_response`, not a silent success
+//! - `auth-fail`: reject `session/new` with an authentication error
 //! - `say`: stream the prompt back as an `agent_message_chunk` and end the
 //!   turn — prose with no tool call and no URL. What an agent that only
 //!   *claims* to have opened a pull request looks like, which is what arms the
@@ -144,6 +147,15 @@ fn main() {
                 // servers a session sees (#18), and the only honest place to
                 // check that from a test is the agent's side of the wire.
                 eprintln!("session_new={}", msg["params"]);
+                if mode == "auth-fail" {
+                    error(
+                        &mut stdout,
+                        id,
+                        -32000,
+                        "Authentication required. Run `opencode auth login`.",
+                    );
+                    continue;
+                }
                 sessions_minted += 1;
                 let minted = format!("sess-fake-{sessions_minted}");
                 session_id = Some(minted.clone());
@@ -523,6 +535,17 @@ fn reply(stdout: &mut io::Stdout, id: Option<serde_json::Value>, result: serde_j
         "jsonrpc": "2.0",
         "id": id,
         "result": result
+    });
+    writeln!(stdout, "{msg}").ok();
+    stdout.flush().ok();
+}
+
+fn error(stdout: &mut io::Stdout, id: Option<serde_json::Value>, code: i64, message: &str) {
+    let Some(id) = id else { return };
+    let msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": code, "message": message }
     });
     writeln!(stdout, "{msg}").ok();
     stdout.flush().ok();

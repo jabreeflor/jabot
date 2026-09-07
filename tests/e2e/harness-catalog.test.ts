@@ -107,6 +107,13 @@ describe("harness/list", () => {
       reserved: true,
       sessionScope: "thread",
     });
+    expect(byId.get("opencode")).toMatchObject({
+      tier: "shipped",
+      label: "OpenCode",
+      reserved: true,
+      sessionScope: "thread",
+      supportsModels: true,
+    });
     // Hermes multiplexes chats onto one process per profile, and the catalog
     // is where that is written down (#13).
     expect(byId.get("hermes")).toMatchObject({

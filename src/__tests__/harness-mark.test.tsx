@@ -53,6 +53,14 @@ describe("the harness mark", () => {
     expect(screen.getByText("Codex")).toBeInTheDocument();
   });
 
+  it("draws OpenCode as its own mark, not the custom terminal", () => {
+    const { container: opencode } = render(<HarnessMark harnessId="opencode" />);
+    const { container: custom } = render(<HarnessMark harnessId="my-own-agent" />);
+    expect(marksIn(opencode)[0].innerHTML).not.toBe(
+      marksIn(custom)[0].innerHTML,
+    );
+  });
+
   it("still draws something for a harness it has never heard of", () => {
     // A tier-3 harness a user brought. There is no mark to know, so it gets
     // the terminal the harness is — never nothing.
