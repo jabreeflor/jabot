@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Proves the shared frontend lint still fails the two cases that justified
-// the gate: a hook called behind a condition, and an effect that closes over
-// a value it does not list. A config that no longer reports those is not
-// the gate — the tree being clean is not enough.
+// Proves the shared frontend lint still fails the cases that justified
+// the gate: a hook called behind a condition, an effect that closes over
+// a value it does not list, an explicit `any` annotation, and an `as any`
+// cast. A config that no longer reports those is not the gate — the tree
+// being clean is not enough.
 //
 // The probes are linted in memory against a path under src/ so they match
 // the first-party files glob. Nothing is written into the tree.
@@ -41,6 +42,16 @@ const CASES = [
         return n;
       }
     `,
+  },
+  {
+    name: "explicit any annotation",
+    rule: "@typescript-eslint/no-explicit-any",
+    code: `export const probe: any = 1;\n`,
+  },
+  {
+    name: "as any cast",
+    rule: "@typescript-eslint/no-explicit-any",
+    code: `export const probe = 1 as any;\n`,
   },
 ];
 

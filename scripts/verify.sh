@@ -20,7 +20,7 @@
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   2c. install script — the release installer's pins, delivery, and refusals
 #   3. tsc            — renderer types
-#   3b. frontend lint — React hooks (eslint); #225/#226 extend the same config
+#   3b. frontend lint — eslint (hooks + no-explicit-any); #225 extends this config
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors

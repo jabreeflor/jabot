@@ -64,7 +64,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh --check-mac` | **whenever you touch `src-tauri/src/notify/`** — the only thing that lints `notify/mac.rs` (below) |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
-| `npm run lint` / `npm run lint:fix` | frontend lint slice (React hooks today; same command `verify.sh` runs, including `--fast`) |
+| `npm run lint` / `npm run lint:fix` | frontend lint slice (hooks + no-explicit-any; same command `verify.sh` runs, including `--fast`) |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
@@ -124,8 +124,8 @@ one run tells you everything that is wrong.
 | `lockfiles` | `package-lock.json` satisfies `package.json`, `Cargo.lock` satisfies `src-tauri/Cargo.toml`, and `src-tauri/vendor/adapters`' lock satisfies its own manifest | `npm install` or `cargo update -p <crate>` and commit the lock. CI runs `npm ci`, which refuses to install through this. For the vendored adapters, `npm install --prefix src-tauri/vendor/adapters` and commit both files. |
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
-| `typecheck` | `tsc --noEmit`, strict, no `any` | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. |
-| `frontend lint` | ESLint on first-party frontend and `scripts/dev` (Rules of Hooks + exhaustive-deps today; #225/#226 extend the same config) | `npm run lint` to see the same errors; `npm run lint:fix` for the auto-fixable ones |
+| `typecheck` | `tsc --noEmit`, strict: implicit any, unused locals, unused parameters, no fallthrough | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. `tsc` does **not** reject an explicit `any` annotation or an `as any` cast — that is the linter, below. |
+| `frontend lint` | ESLint on first-party frontend, tests, and `scripts/dev` (Rules of Hooks, exhaustive-deps, and `@typescript-eslint/no-explicit-any`; #225 extends the same config) | replace the `any` with a concrete type, a generic, or `unknown` plus narrowing. `npm run lint` is the same command; `npm run lint:fix` applies safe fixes (`no-explicit-any` is not auto-fixable). A clean tree does not prove the rule is on — `scripts/tests/lint-probe.mjs` does. |
 | `unit tests` | 200+ vitest cases in jsdom: React components, host client, and axe on the primary views | `npx vitest --project unit` to iterate; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | `rust clippy` | `-D warnings` over all targets, `dev-bins` included | fix, or justify a narrow `#[allow]` in the code. Do not suggest APIs newer than the `msrv` in `src-tauri/clippy.toml`. |
@@ -147,15 +147,22 @@ share one ESLint config (`eslint.config.js`). `./scripts/verify.sh` runs it
 on every path, `--fast` included. After `npm install` the check is offline.
 
 ```bash
-npm run lint        # eslint . , then a probe that a conditional hook and a
-                    # missing effect dependency still fail
+npm run lint        # eslint . , then a probe that a conditional hook, a
+                    # missing effect dependency, an explicit `any`, and an
+                    # `as any` cast still fail
 npm run lint:fix    # apply auto-fixes only; does not run the probe
 ```
 
-Today the config enforces React Rules of Hooks and exhaustive-deps. Issues
-#225 (promises) and #226 (`no-explicit-any`) add their rules to the same
-file — do not stand up a second linter. Generated output, vendored code,
-`node_modules`, and nested `worktrees/` are ignored.
+`tsc --noEmit` is strict: it rejects *implicit* any. It still permits
+`const x: any` and `x as any`. The linter is what enforces the documented
+no-any policy (`@typescript-eslint/no-explicit-any`). Do not treat a green
+typecheck as "no any".
+
+Today the config also enforces React Rules of Hooks and exhaustive-deps.
+Issue #225 (promises) adds its rules to the same file — do not stand up a
+second linter. Generated output, vendored code, `node_modules`, and nested
+`worktrees/` are ignored. Unavoidable interop exceptions stay narrow and
+documented next to the site; tests are not broadly exempt.
 
 ## Accessibility tests
 
@@ -281,7 +288,10 @@ filing or "fixing" a gap.
 
 - Rust: `cargo fmt` clean, `clippy -D warnings` clean, nothing newer than the
   `msrv` pinned in `src-tauri/clippy.toml`.
-- TypeScript: strict, no `any`.
+- TypeScript: `tsc` is strict (implicit any is an error). Explicit `any` and
+  `as any` are forbidden by the shared frontend ESLint config
+  (`npm run lint` / `npm run lint:fix`), not by `tsc`. Extend
+  `eslint.config.js`; do not add a second JS/TS linter.
 - Anything added to `verify.sh` must run offline, need no display, no macOS and
   no GitHub token, and be fast enough that people still run it. If a check
   needs any of those, it goes behind a flag — `--check-toolchain` and

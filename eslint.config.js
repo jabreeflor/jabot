@@ -2,9 +2,10 @@
 // its tests, and the TypeScript/JavaScript development tooling that ships
 // beside them.
 //
-// This change (#224) turns on React Rules of Hooks and exhaustive-deps.
-// Issue #225 (floating / misused promises) and #226 (`no-explicit-any`) add
-// their rules here — do not stand up a second linter or a second config.
+// #224 turned on React Rules of Hooks and exhaustive-deps. This change
+// (#226) adds `@typescript-eslint/no-explicit-any`. Issue #225 (floating /
+// misused promises) adds its rules here too — do not stand up a second
+// linter or a second config.
 //
 // Type-aware typescript-eslint rules are not enabled yet. The parser is
 // wired so #225 can set `parserOptions.projectService = true` (or an
@@ -47,6 +48,7 @@ export default tseslint.config(
     files: FIRST_PARTY,
     plugins: {
       "react-hooks": reactHooks,
+      "@typescript-eslint": tseslint.plugin,
     },
     languageOptions: {
       parser: tseslint.parser,
@@ -56,10 +58,13 @@ export default tseslint.config(
     },
     rules: {
       // Recommended in v7 also turns on React Compiler rules. Those are
-      // outside this issue's scope; keep the two hooks-correctness rules
-      // explicit so #225/#226 can append without inheriting that set.
+      // outside this issue's scope; keep the hooks-correctness rules
+      // explicit so later issues can append without inheriting that set.
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "error",
+      // tsc --noEmit is strict and rejects implicit any. It still allows
+      // `const x: any` and `x as any`. This is the documented no-any policy.
+      "@typescript-eslint/no-explicit-any": "error",
     },
   },
 );
