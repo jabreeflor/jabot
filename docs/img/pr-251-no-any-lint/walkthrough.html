@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enforce the documented no-any TypeScript policy with linting</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .gate { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .gate div { padding:14px; background:#0f141a; border-radius:9px; }
+    .gate strong { display:block; margin-bottom:6px; }
+    .fail { color:var(--bad); }
+    .pass { color:var(--ok); }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .stack { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+    .stack span { padding:8px 12px; background:#0f141a; border:1px solid var(--line); border-radius:999px; font-size:13px; font-weight:650; }
+    .stack .here { border-color:var(--accent); color:var(--accent); }
+    @media (max-width:700px) { .flow,.gate { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #251 walkthrough</div>
+    <h1>Enforce the documented no-any TypeScript policy with linting</h1>
+    <p>CONTRIBUTING said TypeScript is strict with no <code>any</code>. <code>tsc --noEmit</code> only rejects implicit any. This PR adds <code>@typescript-eslint/no-explicit-any</code> to the shared frontend ESLint config so an annotation or an <code>as any</code> cast fails the same gate CI already runs.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li><code>tsc --noEmit</code> is strict: unused locals and implicit any fail.</li>
+            <li><code>const x: any</code> and <code>x as any</code> typecheck cleanly.</li>
+            <li>The documented no-any policy was a house rule, not a gate.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li>The shared <code>eslint.config.js</code> from #224 gains one rule.</li>
+            <li><code>npm run lint</code> (and <code>verify.sh</code>, including <code>--fast</code>) rejects both forms.</li>
+            <li>A stdin probe keeps the rule honest if the tree happens to be clean.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="stack">
+        <span>#236 hooks</span>
+        <span class="here">#251 no-explicit-any</span>
+        <span>#225 promises (parallel)</span>
+      </div>
+      <div class="gate">
+        <div>
+          <strong class="fail">Fails lint</strong>
+          <code>export const probe: any = 1</code> and <code>export const probe = 1 as any</code>. Temporary file in <code>src/</code> failed both; then it was deleted.
+        </div>
+        <div>
+          <strong class="pass">Still passes</strong>
+          Concrete types, generics, and <code>unknown</code> plus narrowing. No first-party findings to rewrite. Tests are not exempt.
+        </div>
+      </div>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <table>
+        <tr><th>File</th><th>Why it matters</th></tr>
+        <tr><td><code>eslint.config.js</code></td><td>Registers the typescript-eslint plugin and sets <code>no-explicit-any</code> to error on first-party TS. Same file #224 already uses — not a second linter.</td></tr>
+        <tr><td><code>scripts/tests/lint-probe.mjs</code></td><td>In-memory probes for an annotation and an <code>as any</code> cast. A clean tree cannot prove the rule is on.</td></tr>
+        <tr><td><code>scripts/verify.sh</code></td><td>Already runs <code>npm run lint</code> after typecheck, including <code>--fast</code>. Comment updated only.</td></tr>
+        <tr><td><code>CONTRIBUTING.md</code></td><td>Splits the old “strict, no any” line: <code>tsc</code> owns implicit any; ESLint owns explicit <code>any</code> and <code>as any</code>.</td></tr>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>npm run lint</code> — tree is clean; probe prints both <code>any</code> cases as failures.</li>
+        <li>Write <code>export const x: any = 1</code> under <code>src/</code> and run lint again — must exit non-zero, then delete the file.</li>
+        <li><code>npx tsc --noEmit</code> still accepts that same file. That is the point of the split.</li>
+        <li><code>./scripts/verify.sh --fast</code> includes the frontend lint stage. Full <code>./scripts/verify.sh</code> passed on the pushed tree.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
