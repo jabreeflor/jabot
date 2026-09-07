@@ -17,9 +17,11 @@
  * - The host, not the client, decides what it may do and who it answered as.
  *
  * The proof that the answer *arrived* is the adapter's own stderr: the fake
- * agent logs `permission_reply=` when the host hands it the outcome. Asserting
- * on the client's return value alone would pass even if nothing had reached
- * ACP at all.
+ * agent logs a complete `permission_reply={json}` record when the host hands
+ * it the outcome. Asserting on the client's return value alone would pass
+ * even if nothing had reached ACP at all. Wait for that parsed record, not
+ * the `permission_reply=` prefix — a partial flush can land the prefix
+ * before `allow_once`.
  *
  * The vault runs in-process (`JABOT_SECRETS_BACKEND=memory`) because Linux CI
  * has no Keychain; see `tests/e2e/pairing.test.ts` for what that costs.
@@ -55,7 +57,11 @@ import {
 import { APPROVER_METHODS, checkScope } from "../../src/mobile/scope";
 import { MobileSession } from "../../src/mobile/session";
 import { createLineTransport, type LineTransport } from "../../src/mobile/transport";
-import { fakeAcpRuntime, HostdProcess } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  logHasPermissionReply,
+} from "../support/hostd";
 import { TestDevice } from "../support/pairing";
 import { connectUnixSocket } from "../support/socket";
 
@@ -250,9 +256,13 @@ describe("the Mobile Inbox client", () => {
     expect(answered).toMatchObject({ delivered: true, alreadyAnswered: false });
 
     // The claim this whole issue rests on: it reached ACP. The fake agent
-    // logs what the host handed it, and the host tees adapter stderr to disk.
-    await until(() => host.readAdapterLog("t-mobile").includes("permission_reply="));
-    expect(host.readAdapterLog("t-mobile")).toContain("allow_once");
+    // logs a complete `permission_reply={json}` line; waiting on the prefix
+    // alone raced a partial flush under load (the JSON that carries
+    // `allow_once` had not landed yet).
+    const log = await host.waitForAdapterLog("t-mobile", (text) =>
+      logHasPermissionReply(text, "allow_once"),
+    );
+    expect(logHasPermissionReply(log, "allow_once")).toBe(true);
 
     // The desktop is told, and told *who* — including that it was not itself.
     const resolved = (await host.waitFor(

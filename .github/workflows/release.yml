@@ -68,7 +68,8 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
+          node-version: 26
           cache: npm
 
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2 tag, 2026-08-20

@@ -233,3 +233,8 @@ fn string_for_key(info: &NSDictionary<AnyObject, AnyObject>, key: &str) -> Optio
     let value: Retained<NSString> = value.downcast().ok()?;
     Some(value.to_string())
 }
+
+// #228 proof: this Clippy `ptr_arg` warning must fail `mac notify cross-check`.
+pub fn _intentional_lint_violation(s: &String) {
+    let _ = s.len();
+}

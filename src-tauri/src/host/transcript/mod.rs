@@ -364,7 +364,7 @@ mod tests {
             Some("running"),
         );
 
-        session.lifecycle_on_turn_end("t-open", Some("end_turn"));
+        session.lifecycle_on_turn_end("t-open", Some("end_turn"), None);
         assert_eq!(
             session.thread_transcript(params()).unwrap().run_state,
             None,

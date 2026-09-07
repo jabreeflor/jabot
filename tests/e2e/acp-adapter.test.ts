@@ -82,21 +82,13 @@ function isUpdate(threadId: string, kind: string) {
 }
 
 /** The fake agent narrates to stderr, which the host tees into the thread log. */
-async function waitForAdapterLog(
+function waitForAdapterLog(
   host: HostdProcess,
   threadId: string,
   needle: string,
   timeoutMs = 10_000,
 ): Promise<string> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    const log = host.readAdapterLog(threadId);
-    if (log.includes(needle)) return log;
-    if (Date.now() > deadline) {
-      throw new Error(`adapter log for ${threadId} never mentioned ${needle}; saw: ${log}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
+  return host.waitForAdapterLog(threadId, needle, timeoutMs);
 }
 
 describe("adapter spawn", () => {

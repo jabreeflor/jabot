@@ -99,6 +99,12 @@ export const HARNESSES: readonly HarnessCard[] = [
     accent: "var(--h-opencode)",
     supportsModels: true,
   },
+  {
+    id: "gemini",
+    label: "Gemini CLI",
+    blurb: "Google's Gemini CLI over its documented ACP mode",
+    accent: "var(--h-gemini)",
+  },
 ];
 
 /**

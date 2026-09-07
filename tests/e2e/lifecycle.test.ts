@@ -166,6 +166,46 @@ describe("run ledger", () => {
     expect(state.lastStopReason).toBe("empty_response");
   });
 
+  it("names a missing Claude sign-in instead of a generic empty reply", async () => {
+    const { client } = await connected();
+    await openThread(client, "t-logged-out", "empty-reply-logged-out");
+    await client.prompt({ threadId: "t-logged-out", content: "hi" });
+    const state = await settle(client, "t-logged-out", (s) => s.latestRun?.state === "failed");
+    expect(state.lastStopReason).toBe("not_signed_in");
+    expect(state.lastError).toContain("not signed in");
+    expect(state.lastError).toContain("Adapter log:");
+    expect(state.lastError).toContain("not logged in");
+    expect(state.latestRun?.error).toContain("not_signed_in");
+  });
+
+  it("names a rejected model instead of a generic empty reply", async () => {
+    const { client } = await connected();
+    await openThread(client, "t-model", "empty-reply-model");
+    await client.prompt({ threadId: "t-model", content: "hi" });
+    const state = await settle(client, "t-model", (s) => s.latestRun?.state === "failed");
+    expect(state.lastStopReason).toBe("unsupported_model");
+    expect(state.lastError).toContain("model configuration");
+    expect(state.lastError).toContain("claude-opus-4-99");
+  });
+
+  it("fails a harness process that exits before sending a response, then accepts a retry", async () => {
+    const { client } = await connected();
+    await openThread(client, "t-died", "exit-before-reply");
+    await client.prompt({ threadId: "t-died", content: "hi" });
+    const state = await settle(client, "t-died", (s) => s.latestRun?.state === "failed");
+    expect(state.lastStopReason).toBe("adapter_exit");
+    expect(state.lastError).toContain("exited before sending a reply");
+    expect(state.lastError).toContain("Adapter log:");
+    expect(state.lastError).toContain("adapter panicked: boom");
+
+    // The run is closed, so a second prompt is a retry rather than RUN_IN_FLIGHT.
+    const retry = await client.prompt({ threadId: "t-died", content: "again" });
+    expect(retry.accepted).toBe(true);
+    const again = await settle(client, "t-died", (s) => s.latestRun?.seq === 2);
+    expect(again.latestRun?.state).toBe("failed");
+    expect(again.lastStopReason).toBe("adapter_exit");
+  });
+
   it("opens a run on prompt and closes it on the stop reason", async () => {
     const { client } = await connected();
     await openThread(client, "t-run");

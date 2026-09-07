@@ -45,9 +45,11 @@ host-owned "thin LLM + MCP" runtime. This module is that one runtime.
    design in
    [`docs/decisions/issues-4-6.md`](../decisions/issues-4-6.md#buzz-style-harness-catalog):
    - **Tier 1 — compiled-in**: shipped cards with reserved ids
-     (`claude`, `codex`, `pi`, `opencode`), including auth probes.
-     OpenCode is first-party ACP (`opencode acp`); there is no separate
-     npm adapter. See [setup/opencode.md](../setup/opencode.md).
+     (`claude`, `codex`, `pi`, `opencode`, `gemini`), including auth
+     probes. OpenCode is first-party ACP (`opencode acp`); there is no
+     separate npm adapter. See [setup/opencode.md](../setup/opencode.md).
+     Gemini CLI is first-party ACP (`gemini --acp`). See
+     [setup/gemini-cli.md](../setup/gemini-cli.md).
    - **Tier 2 — presets**: PATH-probed, not user-editable (Hermes,
      OpenClaw, Cursor, …), resolved via `path.rs`.
    - **Tier 3 — user JSON**: user-supplied custom harness definitions

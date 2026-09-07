@@ -17,6 +17,7 @@ pub mod bundled;
 pub mod catalog;
 pub mod custom;
 pub mod doctor;
+pub mod gemini;
 pub mod install;
 pub mod path;
 
@@ -374,10 +375,9 @@ pub fn recovered_launch<'a>(
         .iter()
         .any(|launch| launch.command == command && launch.args == args)
         .then(|| {
-            descriptor
-                .launches
-                .iter()
-                .find(|launch| launch.command != command && resolves(&launch.command))
+            descriptor.launches.iter().find(|launch| {
+                (launch.command != command || launch.args != args) && resolves(&launch.command)
+            })
         })
         .flatten()
 }
@@ -389,12 +389,26 @@ pub fn resolved_runtime_spec(
     harness_id: &str,
 ) -> Option<RuntimeSpec> {
     let descriptor = descriptors.iter().find(|d| d.id == harness_id)?;
-    let launch = descriptor
-        .launches
-        .iter()
-        .find(|launch| resolve_command(&launch.command).is_some())
-        .unwrap_or_else(|| descriptor.primary());
-    Some(descriptor.runtime_spec(launch))
+    let launch = match &descriptor.readiness {
+        catalog::Readiness::Inspect {
+            kind: catalog::InspectKind::Gemini,
+        } => gemini::select_launch(&descriptor.launches, &doctor::SystemProbe)
+            .or_else(|| {
+                descriptor
+                    .launches
+                    .iter()
+                    .find(|launch| resolve_command(&launch.command).is_some())
+                    .cloned()
+            })
+            .unwrap_or_else(|| descriptor.primary().clone()),
+        _ => descriptor
+            .launches
+            .iter()
+            .find(|launch| resolve_command(&launch.command).is_some())
+            .cloned()
+            .unwrap_or_else(|| descriptor.primary().clone()),
+    };
+    Some(descriptor.runtime_spec(&launch))
 }
 
 #[cfg(test)]
@@ -492,6 +506,17 @@ mod tests {
             |candidate| candidate == "pi-acp"
         )
         .is_some());
+    }
+
+    #[test]
+    fn gemini_falls_forward_to_the_experimental_acp_flag() {
+        let gemini = catalog::compiled_in()
+            .into_iter()
+            .find(|d| d.id == "gemini")
+            .expect("the Gemini card is compiled in");
+        let launch = recovered_launch(&gemini, "gemini", &["--acp".into()], |_| true)
+            .expect("the older flag is still a candidate");
+        assert_eq!(launch.args, ["--experimental-acp"]);
     }
 
     #[test]

@@ -110,7 +110,7 @@ User / Chief / schedule
 JaBot host supervisor
         ↓  ACP stdio
 Harness from catalog (claude-agent-acp, codex-acp, pi-acp,
-                      hermes acp, openclaw acp, Custom JSON, …)
+                      opencode acp, gemini --acp, hermes acp, openclaw acp, Custom JSON, …)
         ↓  MCP from JaBot catalog on session/new
 Gmail / Calendar / GitHub / …  (allowlisted per bot)
 ```
@@ -130,7 +130,7 @@ and [setup-porting/buzz.md](../research/setup-porting/buzz.md):
 
 | Tier | What | Examples |
 |---|---|---|
-| 1 — compiled-in | Shipped cards, auth probes, reserved ids | `claude`, `codex`, `pi`, `opencode` |
+| 1 — compiled-in | Shipped cards, auth probes, reserved ids | `claude`, `codex`, `pi`, `opencode`, `gemini` |
 | 2 — presets | PATH-probed, not user-editable | Hermes, OpenClaw, Cursor, … |
 | 3 — user JSON | Settings / `custom_harnesses/` | Anything that speaks ACP stdio |
 

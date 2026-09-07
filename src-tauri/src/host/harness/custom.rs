@@ -174,6 +174,7 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
                 .install_instructions_url
                 .filter(|u| !u.trim().is_empty()),
             readiness: Readiness::Binary,
+            capability_notes: None,
             session_scope: SessionScope::Thread,
             supports_models: false,
             declared_capabilities: Vec::new(),

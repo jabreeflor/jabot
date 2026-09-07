@@ -114,6 +114,15 @@ describe("harness/list", () => {
       sessionScope: "thread",
       supportsModels: true,
     });
+    expect(byId.get("gemini")).toMatchObject({
+      tier: "shipped",
+      label: "Gemini CLI",
+      reserved: true,
+      sessionScope: "thread",
+      command: "gemini",
+      args: ["--acp"],
+    });
+    expect(byId.get("gemini")?.capabilityNotes).toMatch(/session\/load/);
     // Hermes multiplexes chats onto one process per profile, and the catalog
     // is where that is written down (#13).
     expect(byId.get("hermes")).toMatchObject({

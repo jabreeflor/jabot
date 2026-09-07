@@ -95,6 +95,14 @@ pub enum Readiness {
         outdated_remedy: String,
         env_auth_keys: Vec<String>,
     },
+    /// Vendor-specific inspect after the CLI is known to be on PATH.
+    Inspect { kind: InspectKind },
+}
+
+/// Extra classification a binary-on-PATH answer cannot give.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InspectKind {
+    Gemini,
 }
 
 /// A catalog entry, whatever tier it came from.
@@ -115,6 +123,10 @@ pub struct HarnessDescriptor {
     pub env: BTreeMap<String, String>,
     pub install_hint: Option<String>,
     pub install_url: Option<String>,
+    /// What this harness advertises — and what it does not. Absent means the
+    /// host negotiates capabilities at `initialize` and has nothing extra to
+    /// say up front.
+    pub capability_notes: Option<String>,
     pub readiness: Readiness,
     pub session_scope: SessionScope,
     /// New Chat / bot editor can offer a provider/model picker.
@@ -177,6 +189,7 @@ impl HarnessDescriptor {
             args: launch.args.clone(),
             install_hint: self.install_hint.clone(),
             install_url: self.install_url.clone(),
+            capability_notes: self.capability_notes.clone(),
             session_scope: self.session_scope,
             reserved: is_reserved(&self.id),
             supports_models: self.supports_models,
@@ -213,6 +226,7 @@ struct Compiled {
     env: &'static [(&'static str, &'static str)],
     install_hint: &'static str,
     install_url: &'static str,
+    capability_notes: Option<&'static str>,
     readiness: CompiledReadiness,
     session_scope: SessionScope,
     supports_models: bool,
@@ -239,6 +253,7 @@ enum CompiledReadiness {
         outdated: &'static str,
         env_keys: &'static [&'static str],
     },
+    Inspect(InspectKind),
 }
 
 /// Tier 1. Reserved ids, one New Chat card each.
@@ -262,6 +277,7 @@ const SHIPPED: &[Compiled] = &[
         // run their own.
         install_hint: "Install Claude Code (and Node 20+, which JaBot's bundled adapter runs on), or install the adapter yourself with `npm i -g @agentclientprotocol/claude-agent-acp`.",
         install_url: "https://github.com/agentclientprotocol/claude-agent-acp",
+        capability_notes: None,
         readiness: CompiledReadiness::Command(
             "claude",
             &["auth", "status"],
@@ -284,6 +300,7 @@ const SHIPPED: &[Compiled] = &[
         env: &[],
         install_hint: "Install Codex, then `npm i -g @zed-industries/codex-acp`.",
         install_url: "https://github.com/agentclientprotocol/codex-acp",
+        capability_notes: None,
         readiness: CompiledReadiness::Command(
             "codex",
             &["login", "status"],
@@ -310,6 +327,7 @@ const SHIPPED: &[Compiled] = &[
         env: &[],
         install_hint: "Install Pi (pi.dev), then `npm i -g pi-acp`.",
         install_url: "https://pi.dev/",
+        capability_notes: None,
         // Pi resolves credentials per provider at run time and has no
         // login-status command to ask; claiming otherwise would be a guess.
         readiness: CompiledReadiness::Binary,
@@ -330,6 +348,7 @@ const SHIPPED: &[Compiled] = &[
         env: &[],
         install_hint: "Install OpenCode (`curl -fsSL https://opencode.ai/install | bash` or `npm i -g opencode-ai`), then run `opencode auth login`.",
         install_url: "https://opencode.ai/docs/acp/",
+        capability_notes: None,
         // Auth is a global `~/.local/share/opencode/auth.json`. Empty list is
         // logged out; a provider with no usable model is a config problem.
         readiness: CompiledReadiness::AuthAndModels {
@@ -354,6 +373,33 @@ const SHIPPED: &[Compiled] = &[
             "OpenCode keeps one global ~/.local/share/opencode/auth.json. OPENCODE_CONFIG_DIR does not isolate credentials — concurrent accounts need a dedicated XDG_DATA_HOME (or OPENCODE_DATA_DIR / OPENCODE_APPNAME when the vendor ships them). JaBot will set those when the account-profile system (#218) is available.",
         ),
     },
+    Compiled {
+        id: "gemini",
+        label: "Gemini CLI",
+        blurb: "Google's Gemini CLI over its documented ACP mode",
+        accent: "var(--h-gemini)",
+        tier: HarnessTier::Shipped,
+        // Current docs (`geminicli.com/docs/cli/acp-mode/`) start ACP with
+        // `--acp`. Older builds only advertised `--experimental-acp`. Both
+        // are the same stdio JSON-RPC agent; Doctor picks the flag `--help`
+        // actually lists so a thread does not snapshot a name that will fail.
+        launches: &[
+            ("gemini", &["--acp"], false),
+            ("gemini", &["--experimental-acp"], false),
+        ],
+        cli: Some("gemini"),
+        env: &[],
+        install_hint: "Install Gemini CLI (`npm i -g @google/gemini-cli`), then run `gemini` once to sign in or export GEMINI_API_KEY.",
+        install_url: "https://geminicli.com/docs/cli/acp-mode/",
+        capability_notes: Some(
+            "Streams, tools, permissions, cancel, and session/load. Does not advertise session/resume or session/close — JaBot falls back to load, then a new session.",
+        ),
+        readiness: CompiledReadiness::Inspect(InspectKind::Gemini),
+        session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
+    },
 ];
 
 /// Tier 2. PATH-probed, not user-editable, ids still reserved.
@@ -371,6 +417,7 @@ const PRESETS: &[Compiled] = &[
         env: &[("HERMES_ACP_SKIP_CONFIGURED_MCP", "1")],
         install_hint: "Install Hermes Agent, then run `hermes setup`.",
         install_url: "https://hermes-agent.nousresearch.com/docs/user-guide/features/acp",
+        capability_notes: None,
         // `hermes acp --check` is the vendor's own readiness answer: it fails
         // when no provider or model is configured, which is a different fix
         // from "log in".
@@ -396,6 +443,7 @@ const PRESETS: &[Compiled] = &[
         env: &[],
         install_hint: "Install OpenClaw and run `openclaw onboard --install-daemon`.",
         install_url: "https://docs.openclaw.ai/tools/acp-agents",
+        capability_notes: None,
         // `openclaw acp` is a bridge to a long-lived Gateway. On PATH and
         // Gateway down, it is a false ready: the binary answers and every
         // session fails. The daemon socket is the honest question.
@@ -433,6 +481,7 @@ fn build(compiled: &Compiled) -> HarnessDescriptor {
             .collect(),
         install_hint: Some(compiled.install_hint.to_string()),
         install_url: Some(compiled.install_url.to_string()),
+        capability_notes: compiled.capability_notes.map(str::to_string),
         readiness: match &compiled.readiness {
             CompiledReadiness::Binary => Readiness::Binary,
             CompiledReadiness::Command(command, args, on_failure, remedy) => Readiness::Command {
@@ -462,6 +511,7 @@ fn build(compiled: &Compiled) -> HarnessDescriptor {
                 outdated_remedy: (*outdated).to_string(),
                 env_auth_keys: env_keys.iter().map(|k| (*k).to_string()).collect(),
             },
+            CompiledReadiness::Inspect(kind) => Readiness::Inspect { kind: kind.clone() },
         },
         session_scope: compiled.session_scope,
         supports_models: compiled.supports_models,
@@ -496,9 +546,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn shipped_ids_are_the_four_reserved_cards() {
+    fn shipped_ids_are_the_reserved_cards() {
         let ids: Vec<_> = SHIPPED.iter().map(|c| c.id).collect();
-        assert_eq!(ids, ["claude", "codex", "pi", "opencode"]);
+        assert_eq!(ids, ["claude", "codex", "pi", "opencode", "gemini"]);
         for id in ids {
             assert!(is_reserved(id), "{id} must be reserved");
         }
@@ -521,6 +571,34 @@ mod tests {
         assert!(matches!(
             opencode.readiness,
             Readiness::AuthAndModels { .. }
+        ));
+    }
+
+    #[test]
+    fn gemini_speaks_acp_on_the_vendor_cli_itself() {
+        let gemini = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "gemini")
+            .unwrap();
+        assert_eq!(gemini.tier, HarnessTier::Shipped);
+        assert_eq!(gemini.session_scope, SessionScope::Thread);
+        assert_eq!(gemini.cli.as_deref(), Some("gemini"));
+        assert_eq!(gemini.primary().command, "gemini");
+        assert_eq!(gemini.primary().args, ["--acp"]);
+        assert!(gemini
+            .launches
+            .iter()
+            .any(|l| l.args == ["--experimental-acp"]));
+        assert!(gemini
+            .capability_notes
+            .as_deref()
+            .unwrap()
+            .contains("session/load"));
+        assert!(matches!(
+            gemini.readiness,
+            Readiness::Inspect {
+                kind: InspectKind::Gemini
+            }
         ));
     }
 

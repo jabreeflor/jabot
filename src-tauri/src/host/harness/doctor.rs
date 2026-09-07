@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 
 use super::super::procgroup;
 use super::super::protocol::methods::HarnessStatus;
-use super::catalog::{HarnessDescriptor, Launch, Readiness};
+use super::catalog::{HarnessDescriptor, InspectKind, Launch, Readiness};
+use super::gemini;
 
 /// A readiness command gets this long before it is killed. Long enough for a
 /// CLI that checks a token over the network, short enough that five of them in
@@ -54,10 +55,24 @@ pub trait ProbeHost: Sync {
         }
     }
     fn listening(&self, addr: &str) -> bool;
+    /// Captured stdout+stderr of a short probe. Used when the exit code is
+    /// not the diagnosis (`gemini --help` lists flags; `gemini --version`
+    /// names the build).
+    fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
+        let output = self.run_capture(command, args);
+        match output.run {
+            ProbeRun::Exit(_) => Ok(output.stdout),
+            other => Err(other),
+        }
+    }
+    fn env(&self, key: &str) -> Option<String>;
     /// A non-empty environment value the catalog treats as credentials.
     fn env_present(&self, key: &str) -> bool {
-        std::env::var_os(key).is_some_and(|value| !value.is_empty())
+        self.env(key).is_some_and(|value| !value.is_empty())
     }
+    /// A file under `$HOME`, using `/` separators. `None` if missing or empty
+    /// is still `Some` — the caller decides whether blank counts.
+    fn home_file(&self, relative: &str) -> Option<String>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -256,6 +271,29 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
         }
         Readiness::AuthAndModels { .. } => {
             return diagnose_auth_and_models(finish, probe, descriptor, launch, path);
+        }
+        Readiness::Inspect {
+            kind: InspectKind::Gemini,
+        } => {
+            let inspected = gemini::inspect(probe, launch);
+            if inspected.status != HarnessStatus::Ready {
+                return finish(
+                    inspected.status,
+                    inspected.detail,
+                    inspected.remedy,
+                    Some(inspected.launch),
+                    Some(path),
+                    Vec::new(),
+                );
+            }
+            return finish(
+                HarnessStatus::Ready,
+                inspected.detail,
+                None,
+                Some(inspected.launch),
+                Some(path),
+                Vec::new(),
+            );
         }
     }
 
@@ -476,8 +514,6 @@ impl SystemProbe {
         self.run_until_output(command, args, timeout, false).run
     }
 
-    /// The deadline is a parameter so the kill path can be tested without
-    /// waiting out the real one.
     fn run_until_output(
         &self,
         command: &str,
@@ -497,13 +533,13 @@ impl SystemProbe {
         let mut cmd = Command::new(path);
         cmd.args(args)
             .env("PATH", super::path::joined())
-            .stdin(Stdio::null())
-            .stdout(if capture {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stderr(Stdio::null());
+            .stdin(Stdio::null());
+        if capture {
+            // Help/version still count when the CLI prints to stderr.
+            cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        } else {
+            cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        }
         // A probe is the one command most likely to hang — that is why the
         // user opened the Doctor — and every one of these CLIs is a wrapper
         // that forks work of its own. Killing the pid alone would leave that
@@ -523,15 +559,14 @@ impl SystemProbe {
             match child.try_wait() {
                 Ok(Some(status)) => {
                     let stdout = if capture {
-                        child
-                            .stdout
-                            .take()
-                            .and_then(|mut pipe| {
-                                let mut buf = String::new();
-                                pipe.read_to_string(&mut buf).ok()?;
-                                Some(buf)
-                            })
-                            .unwrap_or_default()
+                        let mut buf = String::new();
+                        if let Some(mut out) = child.stdout.take() {
+                            let _ = out.read_to_string(&mut buf);
+                        }
+                        if let Some(mut err) = child.stderr.take() {
+                            let _ = err.read_to_string(&mut buf);
+                        }
+                        buf
                     } else {
                         String::new()
                     };
@@ -574,6 +609,16 @@ impl ProbeHost for SystemProbe {
         self.run_until_output(command, args, PROBE_TIMEOUT, true)
     }
 
+    fn env(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok().filter(|value| !value.is_empty())
+    }
+
+    fn home_file(&self, relative: &str) -> Option<String> {
+        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        let path = relative.split('/').fold(home, |dir, part| dir.join(part));
+        std::fs::read_to_string(path).ok()
+    }
+
     fn listening(&self, addr: &str) -> bool {
         let Ok(mut resolved) = addr.to_socket_addrs() else {
             return false;
@@ -596,7 +641,8 @@ mod tests {
         installed: HashMap<String, PathBuf>,
         exits: HashMap<String, ProbeRun>,
         stdout: HashMap<String, String>,
-        env: Vec<String>,
+        env: HashMap<String, String>,
+        files: HashMap<String, String>,
         open_ports: Vec<String>,
         delay: Duration,
         calls: Mutex<Vec<String>>,
@@ -624,8 +670,14 @@ mod tests {
             self
         }
 
-        fn with_env(mut self, keys: &[&str]) -> Self {
-            self.env = keys.iter().map(|k| (*k).to_string()).collect();
+        fn with_env(mut self, key: &str, value: &str) -> Self {
+            self.env.insert(key.to_string(), value.to_string());
+            self
+        }
+
+        fn with_file(mut self, relative: &str, contents: &str) -> Self {
+            self.files
+                .insert(relative.to_string(), contents.to_string());
             self
         }
     }
@@ -679,8 +731,12 @@ mod tests {
             self.open_ports.iter().any(|open| open == addr)
         }
 
-        fn env_present(&self, key: &str) -> bool {
-            self.env.iter().any(|set| set == key)
+        fn env(&self, key: &str) -> Option<String> {
+            self.env.get(key).cloned()
+        }
+
+        fn home_file(&self, relative: &str) -> Option<String> {
+            self.files.get(relative).cloned()
         }
     }
 
@@ -756,7 +812,7 @@ mod tests {
     #[test]
     fn opencode_env_key_counts_as_signed_in() {
         let machine = FakeMachine::with(&["opencode"])
-            .with_env(&["ANTHROPIC_API_KEY"])
+            .with_env("ANTHROPIC_API_KEY", "test")
             .printing("opencode auth list", "")
             .printing("opencode models", "anthropic/claude-sonnet-4-5\n");
         let report = diagnose(&descriptor("opencode"), &machine);
@@ -843,6 +899,92 @@ mod tests {
         let report = diagnose(&descriptor("pi"), &machine);
         assert_eq!(report.status, HarnessStatus::Ready);
         assert!(report.detail.contains("first use"), "{}", report.detail);
+    }
+
+    fn gemini_ready() -> FakeMachine {
+        FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp --debug")
+            .with_env("GEMINI_API_KEY", "test-key")
+    }
+
+    #[test]
+    fn gemini_without_the_cli_blames_the_product() {
+        let report = diagnose(&descriptor("gemini"), &FakeMachine::default());
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+        assert!(report.detail.contains("gemini"), "{}", report.detail);
+        assert!(report.remedy.is_some());
+    }
+
+    #[test]
+    fn gemini_without_acp_flags_is_outdated() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --prompt --yolo")
+            .with_env("GEMINI_API_KEY", "test-key");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::AdapterOutdated);
+        assert!(report.remedy.unwrap().contains("--acp"));
+    }
+
+    #[test]
+    fn gemini_without_auth_says_logged_out() {
+        let machine = FakeMachine::with(&["gemini"]).printing("gemini", "Usage: gemini --acp");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("GEMINI_API_KEY"));
+    }
+
+    #[test]
+    fn gemini_account_profile_counts_as_signed_in() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_file(
+                ".gemini/settings.json",
+                r#"{"security":{"auth":{"selectedType":"oauth-personal"}}}"#,
+            );
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert_eq!(report.launch.unwrap().args, ["--acp"]);
+    }
+
+    #[test]
+    fn gemini_vertex_without_a_project_is_invalid_config() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_file(
+                ".gemini/settings.json",
+                r#"{"security":{"auth":{"selectedType":"vertex-ai"}}}"#,
+            );
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("GOOGLE_CLOUD_PROJECT"));
+    }
+
+    #[test]
+    fn gemini_empty_model_name_is_invalid_config() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "Usage: gemini --acp")
+            .with_env("GEMINI_API_KEY", "test-key")
+            .with_file(".gemini/settings.json", r#"{"model":{"name":""}}"#);
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("model.name"));
+    }
+
+    #[test]
+    fn gemini_falls_back_to_the_experimental_flag() {
+        let machine = FakeMachine::with(&["gemini"])
+            .printing("gemini", "  --experimental-acp  Start ACP mode")
+            .with_env("GEMINI_API_KEY", "test-key");
+        let report = diagnose(&descriptor("gemini"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert_eq!(report.launch.unwrap().args, ["--experimental-acp"]);
+    }
+
+    #[test]
+    fn a_ready_gemini_uses_the_documented_acp_flag() {
+        let report = diagnose(&descriptor("gemini"), &gemini_ready());
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert!(report.detail.contains("--acp"), "{}", report.detail);
     }
 
     /// The Doctor is the thing a user opens *because* a CLI is hanging, so the

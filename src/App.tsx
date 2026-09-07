@@ -173,7 +173,7 @@ function AppShell({
 }: {
   profile: OnboardingProfile;
   host: HostSession;
-  /** Re-enter setup from Crew — the one in-app way to change the name. */
+  /** Re-enter setup from Crew or Settings. Storage is not wiped first. */
   onRunSetup: () => void;
 }) {
   const [state, dispatch] = useReducer(mockHostReducer, null, initialMockState);
@@ -938,7 +938,7 @@ function MainView({
   onEditBot: (botId: string) => void;
   onAddBot: () => void;
   onRemoveBot: (botId: string) => void;
-  /** Wipe the first-run record and re-enter setup. Surfaced in Crew. */
+  /** Re-enter first-run setup without wiping the stored record. */
   onRunSetup: () => void;
 }) {
   switch (selection.view) {
@@ -982,6 +982,7 @@ function MainView({
           // keeps what was typed and shows the host's own refusal, which is
           // the sentence worth reading.
           onSave={settings.save}
+          onRunSetup={onRunSetup}
           devices={devices.devices}
           devicesError={devices.error}
           onReloadDevices={devices.reload}
