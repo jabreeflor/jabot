@@ -65,6 +65,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
+| `npm run lint` / `npm run lint:fix` | frontend lint (Hooks + promises); same command `verify.sh` runs, including `--fast` |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
@@ -124,6 +125,7 @@ one run tells you everything that is wrong.
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
 | `typecheck` | `tsc --noEmit`, strict, no `any` | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. |
+| `lint` | shared frontend ESLint: official React Hooks rules plus type-aware `no-floating-promises` / `no-misused-promises` | `npm run lint` to iterate; `npm run lint:fix` for anything the rules can rewrite. Type-aware promise checks need `tsc`'s project files; they run offline after `npm install`. |
 | `unit tests` | 200+ vitest cases in jsdom: React components, host client, and axe on the primary views | `npx vitest --project unit` to iterate; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | `rust clippy` | `-D warnings` over all targets, `dev-bins` included | fix, or justify a narrow `#[allow]` in the code. Do not suggest APIs newer than the `msrv` in `src-tauri/clippy.toml`. |
@@ -262,7 +264,15 @@ filing or "fixing" a gap.
 
 - Rust: `cargo fmt` clean, `clippy -D warnings` clean, nothing newer than the
   `msrv` pinned in `src-tauri/clippy.toml`.
-- TypeScript: strict, no `any`.
+- TypeScript: strict, no `any`. `tsc --noEmit` is the type gate; `npm run lint`
+  is the React Hooks and promise-handling gate (`eslint.config.js`). A discarded
+  promise needs `await`, a returned promise, or `void` plus an explicit error
+  strategy (the callee reports the failure, or the same expression has
+  `.catch`). There is no blanket exemption for JSX event handlers — wrap
+  `async` work so `onClick` itself returns `void`. The one Hooks exception is
+  `installing` in `AdapterSetup`: listing it would clear a failed install's
+  error. Exceptions stay next to the line they silence and say why. Subsequent
+  TypeScript lint issues extend this config; do not add a second linter.
 - Anything added to `verify.sh` must run offline, need no display, no macOS and
   no GitHub token, and be fast enough that people still run it. If a check
   needs any of those, it goes behind a flag — `--check-toolchain` and
