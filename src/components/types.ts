@@ -201,6 +201,8 @@ export interface HarnessCard {
   accent: string;
   available?: boolean;
   installHint?: string;
+  /** What the harness supports, including verbs it does not advertise. */
+  capabilityNotes?: string;
 }
 
 /** One line of a toolblock — one ACP `tool_call` / `tool_call_update`. */

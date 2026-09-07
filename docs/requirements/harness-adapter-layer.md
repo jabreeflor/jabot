@@ -45,7 +45,7 @@ host-owned "thin LLM + MCP" runtime. This module is that one runtime.
    design in
    [`docs/decisions/issues-4-6.md`](../decisions/issues-4-6.md#buzz-style-harness-catalog):
    - **Tier 1 — compiled-in**: shipped cards with reserved ids
-     (`claude`, `codex`, `pi`), including auth probes.
+     (`claude`, `codex`, `pi`, `gemini`), including auth probes.
    - **Tier 2 — presets**: PATH-probed, not user-editable (Hermes,
      OpenClaw, Cursor, …), resolved via `path.rs`.
    - **Tier 3 — user JSON**: user-supplied custom harness definitions
