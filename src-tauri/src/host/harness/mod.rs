@@ -13,6 +13,8 @@
 //! `bundle.resources` — so that installing JaBot is one install rather than
 //! two. Onboarding separately offers explicit, pinned adapter installs (`install.rs`).
 
+pub mod aider;
+pub mod aider_acp;
 pub mod bundled;
 pub mod catalog;
 pub mod custom;

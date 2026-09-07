@@ -155,12 +155,12 @@ describe("the seed", () => {
       "src-tauri/src/host/harness/catalog.rs",
       "utf8",
     );
-    const shipped = catalog.slice(
+    const compiled = catalog.slice(
       catalog.indexOf("const SHIPPED:"),
-      catalog.indexOf("const PRESETS:"),
+      catalog.indexOf("fn build("),
     );
     const cards = [
-      ...shipped.matchAll(
+      ...compiled.matchAll(
         /id: "([^"]+)",\s*\n\s*label: "([^"]+)",\s*\n\s*blurb: "([^"]+)",\s*\n\s*accent: "([^"]+)"/g,
       ),
     ].map(([, id, label, blurb, accent]) => ({ id, label, blurb, accent }));

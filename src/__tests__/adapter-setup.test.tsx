@@ -90,6 +90,37 @@ describe("onboarding adapter setup", () => {
     await screen.findByText("Codex adapter is missing.");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+  it("does not offer an npm install for Aider", async () => {
+    const client = {
+      harnessDoctor: vi.fn().mockResolvedValue({
+        reports: [
+          {
+            id: "aider",
+            ready: false,
+            status: "cli_missing",
+            detail: "Aider is not installed — no `aider` on PATH.",
+            remedy: "Install Aider (`python -m pip install aider-chat`).",
+          },
+        ],
+      }),
+      installHarness: vi.fn(),
+    };
+    render(
+      <AdapterSetup
+        client={client as unknown as HostClient}
+        harnessId="aider"
+        onContinue={vi.fn()}
+      />,
+    );
+    expect(
+      await screen.findByText(/Aider is not installed/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Install adapter" }),
+    ).not.toBeInTheDocument();
+    expect(client.installHarness).not.toHaveBeenCalled();
+  });
+
   it("shows a recoverable doctor error instead of claiming success", async () => {
     const { client } = mount({
       harnessDoctor: vi

@@ -302,6 +302,27 @@ const PRESETS: &[Compiled] = &[
         ),
         session_scope: SessionScope::Profile,
     },
+    // Honest: Aider does not speak ACP. JaBot wraps the scripting CLI.
+    Compiled {
+        id: "aider",
+        label: "Aider",
+        blurb: "Paired programming via Aider's scripting CLI — not native ACP",
+        accent: "var(--h-aider)",
+        tier: HarnessTier::Preset,
+        launches: &[("jabot-aider-acp", &[], false)],
+        cli: Some("aider"),
+        env: &[
+            ("AIDER_AUTO_COMMITS", "false"),
+            ("AIDER_DIRTY_COMMITS", "false"),
+            ("AIDER_YES", "true"),
+        ],
+        install_hint: "Install Aider (`python -m pip install aider-chat`), then set AIDER_MODEL and a provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, …).",
+        install_url: "https://aider.chat/docs/install.html",
+        // Version / auth / model are classified in `aider.rs` after `aider` is
+        // found. Binary here is only the last-resort "it is on PATH" answer.
+        readiness: CompiledReadiness::Binary,
+        session_scope: SessionScope::Thread,
+    },
     Compiled {
         id: "openclaw",
         label: "OpenClaw",
@@ -393,6 +414,7 @@ mod tests {
             assert!(is_reserved(id), "{id} must be reserved");
         }
         assert!(is_reserved("hermes"), "presets are reserved too");
+        assert!(is_reserved("aider"), "presets are reserved too");
         assert!(!is_reserved("my-agent"));
     }
 
@@ -522,6 +544,23 @@ mod tests {
             .find(|d| d.id == "claude")
             .unwrap();
         assert_ne!(claude.profile_key("t1"), claude.profile_key("t2"));
+    }
+
+    #[test]
+    fn aider_is_a_preset_that_disables_auto_commits() {
+        let aider = compiled_in().into_iter().find(|d| d.id == "aider").unwrap();
+        assert_eq!(aider.tier, HarnessTier::Preset);
+        assert_eq!(aider.session_scope, SessionScope::Thread);
+        assert_eq!(aider.cli.as_deref(), Some("aider"));
+        assert_eq!(
+            aider.env.get("AIDER_AUTO_COMMITS").map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            aider.env.get("AIDER_DIRTY_COMMITS").map(String::as_str),
+            Some("false")
+        );
+        assert!(aider.blurb.contains("not native ACP"), "{}", aider.blurb);
     }
 
     #[test]

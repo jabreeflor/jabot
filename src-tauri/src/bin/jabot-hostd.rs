@@ -128,6 +128,9 @@ impl Clients {
 
 fn main() {
     let mut args = std::env::args().skip(1);
+    if args.clone().next().as_deref() == Some("--aider-acp") {
+        std::process::exit(jabot_lib::run_aider_acp());
+    }
     let mut data_dir: Option<PathBuf> = None;
     let mut socket_path: Option<PathBuf> = None;
     while let Some(arg) = args.next() {

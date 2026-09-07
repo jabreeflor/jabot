@@ -37,7 +37,7 @@ WKWebView (React 19 + Vite)
 Rust host  —  SQLite, crew, Inbox overlay, supervisor, MCP catalog
         │  ACP stdio
         ▼
-claude-agent-acp / codex-acp / pi-acp / custom
+claude-agent-acp / codex-acp / pi-acp / jabot --aider-acp / custom
 ```
 
 - **Shell:** Tauri 2, macOS-only, Developer ID + notarize (not App Store).
@@ -89,7 +89,7 @@ docs/research/
   README.md                          ← you are here
   harness-integration/
     brief.md  findings.md  acp.md  adapter-design.md
-    claude-code.md  codex.md  pi.md  buzz.md
+    claude-code.md  codex.md  pi.md  aider.md  buzz.md
   setup-porting/
     brief.md  findings.md  openclaw.md  hermes.md  buzz.md
   session-lifecycle/

@@ -92,6 +92,12 @@ export const HARNESSES: readonly HarnessCard[] = [
     blurb: "Mario Zechner's coding agent",
     accent: "var(--h-pi)",
   },
+  {
+    id: "aider",
+    label: "Aider",
+    blurb: "Paired programming via Aider's scripting CLI — not native ACP",
+    accent: "var(--h-aider)",
+  },
 ];
 
 /**
