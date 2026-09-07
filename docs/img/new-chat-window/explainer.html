@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width" />
+  <title>New Chat is an empty conversation</title>
+  <style>
+    body {
+      background: #171717;
+      color: #eee;
+      font: 17px / 1.6 system-ui;
+      max-width: 920px;
+      margin: 48px auto;
+      padding: 0 24px 64px;
+    }
+    h1 {
+      font-size: 38px;
+      line-height: 1.2;
+    }
+    h2 {
+      font-size: 23px;
+      margin-top: 32px;
+    }
+    p,
+    li {
+      color: #bbb;
+    }
+    code {
+      color: #eee;
+    }
+    img {
+      width: 100%;
+      border: 1px solid #444;
+      border-radius: 12px;
+      margin: 12px 0 8px;
+    }
+    figcaption {
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+  </style>
+  <h1>New Chat is an empty conversation</h1>
+  <p>
+    Opening New Chat used to drop a card over whatever you were looking at.
+    The card picked a harness and a folder, then a second screen was the
+    chat. The first message is now typed in the same shape as every message
+    after it.
+  </p>
+  <h2>The window</h2>
+  <p>
+    Context chips sit above a large composer: which folder, which engine,
+    which host. Workspace entry points are pills under the box — Open folder
+    and GitHub repository — not a pair of fat cards. Sending with the box
+    empty still starts an untitled session; anything typed becomes the
+    title and, on a live host, the first prompt.
+  </p>
+  <figure>
+    <img src="empty.png" alt="New Chat as a main-pane empty conversation" />
+    <figcaption>The empty window, with New Chat selected in the sidebar.</figcaption>
+  </figure>
+  <figure>
+    <img src="harness.png" alt="Harness picker opened from the context chip" />
+    <figcaption>The engine list is a chip menu, not a grid of cards.</figcaption>
+  </figure>
+  <figure>
+    <img src="prompt.png" alt="First message typed in the New Chat composer" />
+    <figcaption>A first message; the mic becomes send.</figcaption>
+  </figure>
+  <figure>
+    <img src="folder.png" alt="New Chat pre-selected on jabot-app" />
+    <figcaption>A folder’s ＋ still starts the thread already pointed at that repo.</figcaption>
+  </figure>
+  <h2>What to look at</h2>
+  <ul>
+    <li><code>src/components/NewChatView.tsx</code> — the empty conversation.</li>
+    <li><code>src/App.tsx</code> — New Chat is a main view, not an overlay.</li>
+    <li><code>src/styles/chat.css</code> — the composer box and pills.</li>
+  </ul>
+  <h2>How to verify</h2>
+  <p>
+    Click New Chat in the sidebar and confirm the main pane is this window,
+    not a modal. Pick a harness from the chip, type a prompt, press Enter.
+    The folder ＋ should land you here with that folder already selected.
+    A spawn the host refuses keeps the draft on this screen.
+  </p>
+</html>

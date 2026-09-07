@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { FolderIcon } from "./Icon";
-import { FieldLabel } from "./Modal";
-import type { Folder } from "./types";
 
 export interface Repository {
   full_name: string;
   description: string | null;
   private: boolean;
 }
+
 export interface WorkspaceActions {
   pickFolder: () => Promise<string | null>;
   listRepositories: (page: number) => Promise<Repository[]>;
@@ -17,21 +16,16 @@ export interface WorkspaceActions {
 }
 
 export function WorkspacePicker({
-  folders,
-  value,
   onChange,
   actions,
   busy,
   run,
 }: {
-  folders: readonly Folder[];
-  value: string;
   onChange: (id: string) => void;
   actions?: WorkspaceActions;
   busy: boolean;
   run: (action: () => Promise<void>) => Promise<void>;
 }) {
-  const selected = folders.find((folder) => folder.id === value);
   const [showRepos, setShowRepos] = useState(false);
   const [repos, setRepos] = useState<Repository[]>([]);
   const [page, setPage] = useState(0);
@@ -46,11 +40,10 @@ export function WorkspacePicker({
   }
   return (
     <>
-      <FieldLabel>WORKSPACE</FieldLabel>
-      <div className="workspace-sources">
+      <div className="newchat-pills">
         <button
           type="button"
-          className="workspace-source"
+          className="newchat-pill accent"
           disabled={busy || !actions}
           onClick={() =>
             void run(async () => {
@@ -63,12 +56,11 @@ export function WorkspacePicker({
           }
         >
           <FolderIcon open />
-          <strong>Open folder</strong>
-          <span>Choose from your computer</span>
+          Open folder
         </button>
         <button
           type="button"
-          className="workspace-source"
+          className="newchat-pill"
           disabled={busy || !actions}
           aria-expanded={showRepos}
           onClick={() => {
@@ -92,12 +84,7 @@ export function WorkspacePicker({
             <circle cx="18" cy="6" r="3" />
             <path d="M6 8v8m12-7c0 6-12 0-12 7" />
           </svg>
-          <strong>GitHub repository</strong>
-          <span>
-            {actions?.signedIn
-              ? "Choose a repository to clone"
-              : "Connect your GitHub account"}
-          </span>
+          GitHub repository
         </button>
       </div>
       {!actions && (
@@ -164,28 +151,6 @@ export function WorkspacePicker({
               Retry
             </button>
           )}
-        </div>
-      )}
-      {selected && (
-        <div
-          className="workspace-selection"
-          role="group"
-          aria-label="Selected workspace"
-        >
-          <FolderIcon open />
-          <div>
-            <strong>{selected.name}</strong>
-            <span>{selected.path}</span>
-          </div>
-          <button
-            type="button"
-            className="btn"
-            disabled={busy}
-            aria-label="Remove selected workspace"
-            onClick={() => onChange("")}
-          >
-            Remove
-          </button>
         </div>
       )}
     </>

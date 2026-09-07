@@ -7,14 +7,27 @@
 //! `.ctx-menu`), so a field that opens into a hard-cornered strip reads as a
 //! different app bolted on. This redraws the popup ourselves — same listbox
 //! semantics, but a shape and spacing this stylesheet controls.
+//!
+//! `variant="chip"` is the ghost control New Chat's context row uses: the
+//! same listbox, but a trigger that sits in a metadata line rather than
+//! filling a labelled field.
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 
 import { ChevronDownIcon } from "./Icon";
 
 export interface SelectOption {
   value: string;
   label: string;
+  icon?: ReactNode;
+  detail?: string;
 }
 
 export function Select({
@@ -22,11 +35,17 @@ export function Select({
   value,
   options,
   onChange,
+  variant = "field",
+  disabled = false,
+  "aria-label": ariaLabel,
 }: {
   id?: string;
   value: string;
   options: readonly SelectOption[];
   onChange: (value: string) => void;
+  variant?: "field" | "chip";
+  disabled?: boolean;
+  "aria-label"?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -53,11 +72,11 @@ export function Select({
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
 
-  // Escape closes the popup, not the modal it lives in. Modal.tsx listens for
-  // Escape on `document` itself, capturing — the popup's own listener has to
-  // beat it, and a listener on `window` always sees a captured event before
-  // one on `document` does, whichever was registered first. Without this, the
-  // first Escape while the list is open closes the whole New Chat card.
+  // Escape closes the popup, not the surface it lives in. Modal.tsx listens
+  // for Escape on `document` itself, capturing — the popup's own listener has
+  // to beat it, and a listener on `window` always sees a captured event
+  // before one on `document` does, whichever was registered first. Without
+  // this, the first Escape while the list is open would leave New Chat.
   useEffect(() => {
     if (!open) return;
     function onKeyDown(event: globalThis.KeyboardEvent) {
@@ -96,15 +115,23 @@ export function Select({
   }
 
   return (
-    <div className="mselect" ref={rootRef}>
+    <div
+      className={variant === "chip" ? "mselect chip" : "mselect"}
+      ref={rootRef}
+    >
       <button
         type="button"
         id={id}
-        className="mselect-trigger"
+        className={
+          variant === "chip" ? "mselect-trigger ctx-chip" : "mselect-trigger"
+        }
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
+        disabled={disabled}
         onClick={() => setOpen((was) => !was)}
       >
+        {selected?.icon}
         <span>{selected?.label ?? ""}</span>
         <ChevronDownIcon className="mselect-chev" />
       </button>
@@ -130,7 +157,13 @@ export function Select({
               onMouseEnter={() => setActive(index)}
               onClick={() => choose(option.value)}
             >
-              {option.label}
+              {option.icon}
+              <span>
+                {option.label}
+                {option.detail && (
+                  <span className="mselect-detail">{option.detail}</span>
+                )}
+              </span>
             </li>
           ))}
         </ul>

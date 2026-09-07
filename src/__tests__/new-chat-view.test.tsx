@@ -7,7 +7,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { NewChatModal } from "../components/NewChatModal";
+import { NewChatView } from "../components/NewChatView";
 import type { Folder, HarnessCard } from "../components/types";
 import { HARNESSES } from "../views/mock-host";
 
@@ -16,45 +16,64 @@ const FOLDERS: Folder[] = [
   { id: "globnet-sync", name: "globnet-sync", path: "~/code/globnet-sync" },
 ];
 
-function renderModal(over: Partial<Parameters<typeof NewChatModal>[0]> = {}) {
+function renderView(over: Partial<Parameters<typeof NewChatView>[0]> = {}) {
   const props = {
     harnesses: HARNESSES,
     folders: FOLDERS,
     onStart: vi.fn(),
-    onCancel: vi.fn(),
     ...over,
   };
-  render(<NewChatModal {...props} />);
+  render(<NewChatView {...props} />);
   return props;
 }
 
-describe("NewChatModal", () => {
-  it("offers every catalog harness and pre-selects the first", () => {
-    renderModal();
+async function pickHarness(name: RegExp) {
+  await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
+  await userEvent.click(screen.getByRole("option", { name }));
+}
 
-    for (const harness of HARNESSES) {
-      expect(
-        screen.getByRole("button", { name: new RegExp(harness.label) }),
-      ).toBeInTheDocument();
-    }
-    expect(screen.getByRole("button", { name: /Claude Code/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+describe("NewChatView", () => {
+  it("is a chat window, not a dialog", () => {
+    renderView();
+
+    expect(screen.getByRole("region", { name: "New Chat" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.getByRole("textbox", { name: /Plan, build/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "GitHub repository" }),
+    ).toBeInTheDocument();
   });
 
-  it("describes Pi as a coding agent, not Inflection's chatbot", () => {
-    renderModal();
+  it("offers every catalog harness and pre-selects the first", async () => {
+    renderView();
 
-    const pi = screen.getByRole("button", { name: /^Pi/ });
+    await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
+    for (const harness of HARNESSES) {
+      expect(
+        screen.getByRole("option", { name: new RegExp(harness.label) }),
+      ).toBeInTheDocument();
+    }
+    expect(
+      screen.getByRole("button", { name: /Harness: Claude Code/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("describes Pi as a coding agent, not Inflection's chatbot", async () => {
+    renderView();
+
+    await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
+    const pi = screen.getByRole("option", { name: /^Pi/ });
     expect(pi).toHaveTextContent("Mario Zechner's coding agent");
     expect(pi).not.toHaveTextContent(/Inflection/i);
   });
 
   it("starts the session with the harness, folder, and task picked", async () => {
-    const props = renderModal({ defaultFolderId: "globnet-sync" });
+    const props = renderView({ defaultFolderId: "globnet-sync" });
 
-    await userEvent.click(screen.getByRole("button", { name: /^Pi/ }));
+    await pickHarness(/^Pi/);
     expect(screen.queryByLabelText("WHAT SHOULD IT DO?")).toBeNull();
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
@@ -68,22 +87,20 @@ describe("NewChatModal", () => {
   });
 
   it("moves the selection when another harness is picked", async () => {
-    renderModal();
+    renderView();
 
-    await userEvent.click(screen.getByRole("button", { name: /Codex/ }));
+    await pickHarness(/Codex/);
 
-    expect(screen.getByRole("button", { name: /Codex/ })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(screen.getByRole("button", { name: /Claude Code/ })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    expect(
+      screen.getByRole("button", { name: /Harness: Codex/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Harness: Claude Code/ }),
+    ).toBeNull();
   });
 
   it("names an unnamed session rather than starting a blank one", async () => {
-    const props = renderModal();
+    const props = renderView();
 
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
@@ -92,6 +109,22 @@ describe("NewChatModal", () => {
     expect(props.onStart).toHaveBeenCalledWith(
       expect.objectContaining({ task: "Untitled session", folderId: null }),
     );
+  });
+
+  it("sends the typed prompt as the session's task", async () => {
+    const props = renderView();
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /Plan, build/ }),
+      "Fix the auth middleware",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(props.onStart).toHaveBeenCalledWith({
+      harnessId: "claude",
+      folderId: null,
+      task: "Fix the auth middleware",
+    });
   });
 
   it("says how to install a harness the Doctor could not find", () => {
@@ -105,34 +138,32 @@ describe("NewChatModal", () => {
         installHint: "Install Pi, then `pi-acp` on PATH.",
       },
     ];
-    renderModal({ harnesses: missing });
+    renderView({ harnesses: missing });
 
     expect(
       screen.getByText("Install Pi, then `pi-acp` on PATH."),
     ).toBeInTheDocument();
   });
 
-  it("does not offer a second folder dropdown", () => {
-    renderModal();
+  it("starts with no folder until one is picked", () => {
+    renderView();
+    expect(
+      screen.getByRole("button", { name: /Workspace: No folder/ }),
+    ).toBeInTheDocument();
     expect(screen.queryByLabelText("FOLDER")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
-    expect(screen.queryByRole("button", { name: "No folder" })).toBeNull();
     expect(
       screen.queryByRole("group", { name: "Selected workspace" }),
     ).toBeNull();
   });
 
-  it("shows the chosen workspace and lets it be removed", async () => {
-    const props = renderModal({ defaultFolderId: "jabot-app" });
+  it("shows the chosen workspace and lets it be cleared", async () => {
+    const props = renderView({ defaultFolderId: "jabot-app" });
     expect(
-      screen.getByRole("group", { name: "Selected workspace" }),
-    ).toHaveTextContent("~/code/jabot-app");
-    await userEvent.click(
-      screen.getByRole("button", { name: "Remove selected workspace" }),
-    );
-    expect(
-      screen.queryByRole("group", { name: "Selected workspace" }),
-    ).toBeNull();
+      screen.getByRole("button", { name: /Workspace: jabot-app/ }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Workspace:/ }));
+    await userEvent.click(screen.getByRole("option", { name: "No folder" }));
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
     );
@@ -143,13 +174,13 @@ describe("NewChatModal", () => {
     });
   });
 
-  it("closes on Escape without starting anything", async () => {
-    const props = renderModal();
+  it("stays open on Escape so a half-typed prompt is not thrown away", async () => {
+    const props = renderView();
 
     await userEvent.keyboard("{Escape}");
 
-    expect(props.onCancel).toHaveBeenCalled();
     expect(props.onStart).not.toHaveBeenCalled();
+    expect(screen.getByRole("region", { name: "New Chat" })).toBeInTheDocument();
   });
 });
 
@@ -163,11 +194,11 @@ describe("NewChatModal", () => {
  *
  * `thread/open` still accepts `useCheckout` and `baseRef` — the Rust host
  * honours both and `tests/e2e/worktree.test.ts` drives them — but nothing the
- * card sends sets either.
+ * window sends sets either.
  */
-describe("NewChatModal, where the thread will work", () => {
+describe("NewChatView, where the thread will work", () => {
   it("offers no worktree controls with a folder picked", () => {
-    renderModal({ defaultFolderId: "jabot-app" });
+    renderView({ defaultFolderId: "jabot-app" });
 
     expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
@@ -178,7 +209,7 @@ describe("NewChatModal, where the thread will work", () => {
       `useCheckout: false` or an empty `baseRef` on the wire would be a
       different request than the one that has been shipping. */
   it("sends the three fields and nothing about the tree", async () => {
-    const props = renderModal({ defaultFolderId: "jabot-app" });
+    const props = renderView({ defaultFolderId: "jabot-app" });
 
     await userEvent.click(
       screen.getByRole("button", { name: "Start session" }),
@@ -192,9 +223,9 @@ describe("NewChatModal, where the thread will work", () => {
   });
 
   /** "No folder" is a scratch session: no checkout to work in and no branch to
-      fork from, and the card says nothing about either here too. */
+      fork from, and the window says nothing about either here too. */
   it("offers nothing about the tree without a folder either", () => {
-    renderModal({ defaultFolderId: null });
+    renderView({ defaultFolderId: null });
 
     expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
     expect(screen.queryByLabelText("BASE BRANCH")).toBeNull();
@@ -213,7 +244,7 @@ describe("workspace entry points", () => {
   });
   it("browses a folder and starts without a prompt", async () => {
     const workspaceActions = actions();
-    const props = renderModal({ workspaceActions });
+    const props = renderView({ workspaceActions });
     await userEvent.click(screen.getByRole("button", { name: /Open folder/ }));
     expect(workspaceActions.pickFolder).toHaveBeenCalledOnce();
     await userEvent.click(
@@ -228,7 +259,7 @@ describe("workspace entry points", () => {
   });
   it("lists authenticated repositories and selects the cloned folder", async () => {
     const workspaceActions = actions();
-    const props = renderModal({ workspaceActions });
+    const props = renderView({ workspaceActions });
     await userEvent.click(
       screen.getByRole("button", { name: /GitHub repository/ }),
     );
@@ -250,11 +281,11 @@ describe("workspace entry points", () => {
       ...actions(),
       pickFolder: vi.fn(async () => null),
     };
-    renderModal({ workspaceActions, defaultFolderId: "jabot-app" });
+    renderView({ workspaceActions, defaultFolderId: "jabot-app" });
     await userEvent.click(screen.getByRole("button", { name: /Open folder/ }));
     expect(
-      screen.getByRole("group", { name: "Selected workspace" }),
-    ).toHaveTextContent("jabot-app");
+      screen.getByRole("button", { name: /Workspace: jabot-app/ }),
+    ).toBeInTheDocument();
   });
   it("shows clone failures and keeps the repository available for retry", async () => {
     const workspaceActions = {
@@ -263,7 +294,7 @@ describe("workspace entry points", () => {
         throw new Error("Clone failed");
       }),
     };
-    renderModal({ workspaceActions });
+    renderView({ workspaceActions });
     await userEvent.click(
       screen.getByRole("button", { name: /GitHub repository/ }),
     );
@@ -277,7 +308,7 @@ describe("workspace entry points", () => {
   });
   it("offers sign-in before requesting repositories", async () => {
     const workspaceActions = { ...actions(), signedIn: false };
-    renderModal({ workspaceActions });
+    renderView({ workspaceActions });
     await userEvent.click(
       screen.getByRole("button", { name: /GitHub repository/ }),
     );

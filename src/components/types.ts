@@ -370,6 +370,7 @@ export interface NewChatDraft {
 export type Selection =
   | { view: "bot"; botId: string }
   | { view: "thread"; threadId: string }
+  | { view: "new-chat"; folderId: string | null }
   | { view: "crew" }
   | { view: "inbox" }
   | { view: "prs" }

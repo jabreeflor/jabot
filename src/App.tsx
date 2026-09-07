@@ -1,4 +1,5 @@
 //! The app shell: sidebar, one main view, and the overlays that float over both.
+//! New Chat is a main view — an empty conversation — not a card over the chat.
 //!
 //! Two data sources meet here and they are deliberately separate. The *real*
 //! host connection (#8) supplies who and where the host is, the registered
@@ -35,7 +36,7 @@ import { FolderSettingsModal } from "./components/FolderSettingsModal";
 import { GithubSignInModal } from "./components/GithubSignInModal";
 import { BotEditorModal } from "./components/BotEditorModal";
 import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
-import { NewChatModal } from "./components/NewChatModal";
+import { NewChatView } from "./components/NewChatView";
 import { hostErrorText } from "./views/errors";
 import { SettingsView } from "./views/SettingsView";
 import { Sidebar, loadSidebarOpen, saveSidebarOpen } from "./components/Sidebar";
@@ -102,7 +103,6 @@ import "./App.css";
 /** Matches the row's exit transition, so the state change lands after it. */
 const LEAVE_MS = 380;
 
-type NewChatState = { open: false } | { open: true; folderId: string | null };
 type EditorState = { open: false } | { open: true; botId: string | null };
 /** Editing only: a *new* schedule is written as a prompt inside the Schedules
     screen (#25), so the modal never opens without a record behind it. */
@@ -180,7 +180,6 @@ function AppShell({
     view: "bot",
     botId: "chief",
   });
-  const [newChat, setNewChat] = useState<NewChatState>({ open: false });
   const [newChatError, setNewChatError] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>({ open: false });
   const [editorError, setEditorError] = useState<string | null>(null);
@@ -489,24 +488,35 @@ function AppShell({
             : await invoke<string>("scratch_workspace"),
           harnessId: draft.harnessId,
           folderId: folder?.id,
-          // No `useCheckout` or `baseRef`: the card stopped offering them (#92),
+          // No `useCheckout` or `baseRef`: the window stopped offering them (#92),
           // so every folder thread gets a fresh worktree from the host's own
           // default base ref. A worktree the host cannot make still comes back
-          // as WORKTREE_FAILED, which the catch below puts on the card.
+          // as WORKTREE_FAILED, which the catch below puts on the window.
         })
-        .then((thread) => {
+        .then(async (thread) => {
           registered.reload();
-          setNewChat({ open: false });
           setSelection({ view: "thread", threadId: thread.threadId });
+          // The composer *is* the first message. An empty send still opens a
+          // blank session (the old card's "Start session"); anything typed is
+          // handed to `session/prompt` so the user does not have to type it
+          // twice — once to name the thread and again to talk to it.
+          if (
+            draft.task !== "Untitled session" &&
+            typeof client.prompt === "function"
+          ) {
+            await client.prompt({
+              threadId: thread.threadId,
+              content: draft.task,
+            });
+          }
         })
-        // The card stays open holding the draft: a refused spawn is something
+        // The window stays holding the draft: a refused spawn is something
         // to fix and retry, not a reason to lose what the user typed.
         .catch((err) => setNewChatError(formatError(err)));
       return;
     }
     const threadId = nextThreadId(state);
     dispatch({ type: "startThread", draft });
-    setNewChat({ open: false });
     setSelection({ view: "thread", threadId });
   }
 
@@ -643,7 +653,10 @@ function AppShell({
         onOpenSettings={
           client ? () => setSelection({ view: "settings" }) : undefined
         }
-        onNewChat={(folderId) => setNewChat({ open: true, folderId })}
+        onNewChat={(folderId) => {
+          setNewChatError(null);
+          setSelection({ view: "new-chat", folderId });
+        }}
         onThreadMenu={(thread, position) => setMenu({ thread, position })}
       />
 
@@ -657,6 +670,49 @@ function AppShell({
       )}
 
       <main className="main">
+        {selection.view === "new-chat" ? (
+          <NewChatView
+            key={selection.folderId ?? "scratch"}
+            harnesses={harnesses}
+            folders={registered.folders ?? (fixtures ? state.folders : [])}
+            defaultFolderId={selection.folderId}
+            defaultHarnessId={profile.harnessId ?? undefined}
+            host={host}
+            workspaceActions={
+              client
+                ? {
+                    signedIn: github.signedIn,
+                    signIn: () => setSignIn(true),
+                    pickFolder: async () => {
+                      const path = await invoke<string | null>("pick_workspace");
+                      if (!path) return null;
+                      const existing = folders.find(
+                        (folder) => folder.path === path || folder.cwd === path,
+                      );
+                      return (
+                        existing?.id ??
+                        (await registered.register({ path })).folderId
+                      );
+                    },
+                    listRepositories: (page) =>
+                      invoke<Repository[]>("github_repositories", {
+                        host: github.status?.host ?? "github.com",
+                        page,
+                      }),
+                    pickRepository: async (repo) => {
+                      const path = await invoke<string>("clone_repository", {
+                        host: github.status?.host ?? "github.com",
+                        repo,
+                      });
+                      return (await registered.register({ path })).folderId;
+                    },
+                  }
+                : undefined
+            }
+            error={newChatError}
+            onStart={startThread}
+          />
+        ) : (
         <MainView
           client={client}
           state={state}
@@ -703,6 +759,7 @@ function AppShell({
           onRemoveBot={(botId) => removeBot(botId, false)}
           onRunSetup={onRunSetup}
         />
+        )}
       </main>
 
       {addFolder && (
@@ -719,52 +776,6 @@ function AppShell({
           folder={settingsFolder}
           onSave={registered.update}
           onCancel={() => setFolderSettings(null)}
-        />
-      )}
-
-      {newChat.open && (
-        <NewChatModal
-          harnesses={harnesses}
-          folders={registered.folders ?? (fixtures ? state.folders : [])}
-          defaultFolderId={newChat.folderId}
-          defaultHarnessId={profile.harnessId ?? undefined}
-          workspaceActions={
-            client
-              ? {
-                  signedIn: github.signedIn,
-                  signIn: () => setSignIn(true),
-                  pickFolder: async () => {
-                    const path = await invoke<string | null>("pick_workspace");
-                    if (!path) return null;
-                    const existing = folders.find(
-                      (folder) => folder.path === path || folder.cwd === path,
-                    );
-                    return (
-                      existing?.id ??
-                      (await registered.register({ path })).folderId
-                    );
-                  },
-                  listRepositories: (page) =>
-                    invoke<Repository[]>("github_repositories", {
-                      host: github.status?.host ?? "github.com",
-                      page,
-                    }),
-                  pickRepository: async (repo) => {
-                    const path = await invoke<string>("clone_repository", {
-                      host: github.status?.host ?? "github.com",
-                      repo,
-                    });
-                    return (await registered.register({ path })).folderId;
-                  },
-                }
-              : undefined
-          }
-          error={newChatError}
-          onStart={startThread}
-          onCancel={() => {
-            setNewChat({ open: false });
-            setNewChatError(null);
-          }}
         />
       )}
 
@@ -927,6 +938,10 @@ function MainView({
   onRunSetup: () => void;
 }) {
   switch (selection.view) {
+    case "new-chat":
+      // Rendered by AppShell as the main pane so the composer can sit where
+      // the conversation will. This branch is unreachable.
+      return null;
     case "crew":
       return (
         <CrewView

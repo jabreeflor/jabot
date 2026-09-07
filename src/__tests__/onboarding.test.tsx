@@ -119,13 +119,12 @@ describe("Onboarding", () => {
     await user.click(screen.getByRole("button", { name: "Enter JaBot" }));
 
     await user.click(screen.getByRole("button", { name: /New Chat/ }));
-    const modal = screen.getByRole("dialog");
     expect(
-      within(modal).getByRole("button", { name: /Codex/ }),
-    ).toHaveAttribute("aria-pressed", "true");
+      screen.getByRole("button", { name: /Harness: Codex/ }),
+    ).toBeInTheDocument();
     expect(
-      within(modal).getByRole("button", { name: /Claude Code/ }),
-    ).toHaveAttribute("aria-pressed", "false");
+      screen.queryByRole("button", { name: /Harness: Claude Code/ }),
+    ).toBeNull();
   });
 
   it("keeps what was typed across Back", async () => {

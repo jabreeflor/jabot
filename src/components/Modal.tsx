@@ -1,4 +1,4 @@
-//! Overlay shell for New Chat and the bot editor.
+//! Overlay shell for the bot editor and other cards that sit on top of the app.
 //!
 //! The prototype toggled a class and left the keyboard behind. A modal here
 //! actually behaves: Escape closes it, a click on the backdrop closes it, focus
