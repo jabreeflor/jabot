@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JaBot voice — dictation prototype</title>
+    <!--
+      Visual contract for docs/research/voice-mode/.
+
+      Voice is composer dictation. The existing three-pane setup grows a
+      Yes / Not now row on Chief. The decorative mic becomes start/stop.
+      Partials land in the input; the user still hits Return. Claude /
+      Codex / Pi never see audio.
+
+      Deep links (also the screenshot scenes):
+        #setup-name  #setup-engine  #setup-chief  #setup-chief-yes
+        #chat  #chat-listening  #chat-draft  #chat-off
+        #settings  #settings-phase-b
+      Append ?shot=1 to hide the reviewer rail.
+    -->
+    <style>
+      :root {
+        --win: #1c1c1e;
+        --side: #1c1c1e;
+        --chat: #151516;
+        --raise: #2a2a2c;
+        --raise2: #232325;
+        --ink: #f2f2f2;
+        --dim: #98989e;
+        --faint: #8e8e93;
+        --bub-bot: #2c2c2e;
+        --bub-me: #f1f1ec;
+        --bub-me-ink: #1c1c1e;
+        --amber: #e8a33d;
+        --red: #ff453a;
+        --ok: #5dbb6e;
+        --danger: #e8695d;
+        --line: #000;
+        --edge: #303033;
+        --edge-strong: #37373a;
+        --sunk: #101012;
+        --sunk-edge: #2c2c2f;
+        --h-claude: #d97757;
+        --h-codex: #5dbb6e;
+        --h-pi: #a78bfa;
+        --teal: #2fb894;
+        --font-ui: -apple-system, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+        --fs-caps: 11px;
+        --fs-meta: 12.5px;
+        --fs-body: 13.5px;
+        --fs-ui: 14px;
+        --fs-chat: 14.5px;
+        --fs-title: 15px;
+        --fs-h1: 22px;
+        --sp-2: 6px;
+        --sp-3: 8px;
+        --sp-4: 12px;
+        --sp-5: 16px;
+        --sp-6: 24px;
+        --r-md: 10px;
+        --r-lg: 12px;
+        --r-xl: 16px;
+        --r-modal: 20px;
+        --r-bubble: 18px;
+        --r-tail: 6px;
+        --r-pill: 99px;
+        --titlebar-h: 28px;
+        --sidebar-w: 280px;
+        --thread-max: 680px;
+      }
+
+      * { box-sizing: border-box; margin: 0; }
+      html, body { height: 100%; }
+      body {
+        background: #0e0e10;
+        color: var(--ink);
+        font: var(--fs-ui) / 1.45 var(--font-ui);
+        -webkit-font-smoothing: antialiased;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 28px 24px 48px;
+      }
+      button, input { font-family: inherit; }
+      :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+      .rail {
+        width: min(1100px, 100%);
+        margin-bottom: 16px;
+      }
+      .rail .eyebrow {
+        color: var(--faint);
+        font-size: var(--fs-caps);
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        margin-bottom: 6px;
+      }
+      .rail h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+      .rail p { color: var(--dim); font-size: var(--fs-body); margin-top: 4px; max-width: 46em; }
+      .scenes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 12px;
+      }
+      .scenes a {
+        color: var(--dim);
+        background: var(--raise);
+        border-radius: var(--r-pill);
+        padding: 5px 11px;
+        font-size: 12px;
+        font-weight: 600;
+        text-decoration: none;
+      }
+      .scenes a[aria-current="true"] { background: var(--bub-me); color: var(--bub-me-ink); }
+
+      html.shot body { padding: 0; background: var(--chat); }
+      html.shot .rail { display: none; }
+      html.shot .window {
+        width: 1100px;
+        height: 720px;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
+
+      .window {
+        width: min(1100px, 100%);
+        height: 720px;
+        background: var(--chat);
+        border: 1px solid #2a2a2c;
+        border-radius: 12px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      }
+      .titlebar {
+        height: var(--titlebar-h);
+        flex: none;
+        display: flex;
+        align-items: center;
+        padding: 0 14px;
+        gap: 8px;
+        position: absolute;
+        inset: 0 0 auto 0;
+        z-index: 4;
+      }
+      .titlebar i { width: 12px; height: 12px; border-radius: 50%; }
+      .titlebar i:nth-child(1) { background: #ff5f57; }
+      .titlebar i:nth-child(2) { background: #febc2e; }
+      .titlebar i:nth-child(3) { background: #28c840; }
+
+      /* ---- setup ---- */
+      .setup {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: var(--chat);
+        padding-top: var(--titlebar-h);
+      }
+      .setup-stage {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        overflow-y: auto;
+        padding: 24px;
+      }
+      .setup-card {
+        width: 520px;
+        max-width: 92%;
+        background: var(--side);
+        border: 1px solid var(--edge-strong);
+        border-radius: var(--r-modal);
+        padding: 32px 24px 24px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+      }
+      .setup-eyebrow {
+        color: var(--faint);
+        font-size: var(--fs-caps);
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        margin-bottom: 12px;
+      }
+      .setup-card h1 { font-size: var(--fs-h1); font-weight: 700; letter-spacing: -0.01em; }
+      .setup-lede { color: var(--dim); font-size: var(--fs-body); margin-top: 3px; }
+      .mlab {
+        display: block;
+        color: var(--faint);
+        font-size: var(--fs-caps);
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        margin: 20px 0 8px;
+      }
+      .mfield {
+        width: 100%;
+        background: var(--raise);
+        border: 1px solid var(--edge-strong);
+        border-radius: 11px;
+        padding: 10px 13px;
+        font-size: var(--fs-ui);
+        color: var(--ink);
+        outline: 0;
+      }
+      .setup-preview {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .setup-preview .cap {
+        color: var(--faint);
+        font-size: var(--fs-caps);
+        letter-spacing: 0.1em;
+      }
+      .me-face {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--raise);
+        color: var(--dim);
+        display: grid;
+        place-items: center;
+        font-size: var(--fs-caps);
+        font-weight: 600;
+        flex: none;
+      }
+      .harness-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .harness-card {
+        border: 1px solid var(--edge-strong);
+        border-radius: 13px;
+        padding: 11px 13px;
+        cursor: pointer;
+        background: var(--raise2);
+        text-align: left;
+        color: var(--ink);
+      }
+      .harness-card[aria-pressed="true"] {
+        border-color: var(--ink);
+        background: var(--raise);
+      }
+      .harness-card b {
+        font-size: var(--fs-body);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .harness-card p { font-size: 11.5px; color: var(--faint); margin-top: 4px; }
+      .hdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+      .setup-meet { display: flex; align-items: center; gap: 12px; }
+      .av {
+        width: 54px;
+        height: 54px;
+        border-radius: 50%;
+        background: var(--teal);
+        color: #14141a;
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 18px;
+        flex: none;
+      }
+      .av.sm { width: 28px; height: 28px; font-size: 11px; }
+      .chief-badge {
+        margin-left: auto;
+        font-size: var(--fs-caps);
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: var(--amber);
+        background: rgba(232, 163, 61, 0.12);
+        border-radius: var(--r-pill);
+        padding: 3px 9px;
+        align-self: flex-start;
+      }
+      .setup-quote {
+        background: var(--sunk);
+        border: 1px solid var(--sunk-edge);
+        border-radius: var(--r-lg);
+        padding: 11px 16px;
+        color: var(--dim);
+        font-size: var(--fs-body);
+        margin-top: 16px;
+      }
+      .setup-note { color: var(--dim); font-size: var(--fs-body); margin-top: 12px; }
+      .voice-ask {
+        margin-top: 16px;
+        background: var(--sunk);
+        border: 1px solid var(--sunk-edge);
+        border-radius: var(--r-lg);
+        padding: 12px 14px;
+      }
+      .voice-ask b { display: block; font-size: var(--fs-ui); }
+      .voice-ask p { color: var(--dim); font-size: var(--fs-meta); margin-top: 3px; line-height: 1.45; }
+      .voice-ask .picks { display: flex; gap: 8px; margin-top: 10px; }
+      .voice-ask .picks button[aria-pressed="true"] {
+        background: var(--bub-me);
+        color: var(--bub-me-ink);
+      }
+      .setup-foot {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 22px;
+      }
+      .setup-skip {
+        margin-right: auto;
+        background: none;
+        border: 0;
+        padding: 0;
+        color: var(--faint);
+        font-size: var(--fs-meta);
+        cursor: pointer;
+      }
+      .setup-host {
+        padding: 0 24px 16px;
+        text-align: center;
+        color: var(--faint);
+        font-size: var(--fs-caps);
+      }
+      .btn {
+        font: 13px var(--font-ui);
+        font-weight: 600;
+        cursor: pointer;
+        border-radius: var(--r-pill);
+        padding: 7px 14px;
+        border: 0;
+        background: var(--raise);
+        color: var(--ink);
+      }
+      .btn.primary { background: var(--bub-me); color: var(--bub-me-ink); }
+
+      /* ---- shell ---- */
+      .shell { height: 100%; display: flex; padding-top: var(--titlebar-h); }
+      .sidebar {
+        width: var(--sidebar-w);
+        flex: none;
+        background: var(--side);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+      }
+      .sidebar-list { flex: 1; padding: 8px; }
+      .section-header {
+        color: var(--faint);
+        font-size: var(--fs-caps);
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        padding: 10px 8px 8px;
+      }
+      .bstop {
+        width: 72px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 0;
+        border-radius: 12px;
+        background: var(--raise2);
+      }
+      .bstop small { color: var(--ink); font-size: 11px; font-weight: 500; }
+      .nav {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px 4px;
+      }
+      .nav button {
+        text-align: left;
+        background: none;
+        border: 0;
+        color: var(--dim);
+        font: 13.5px var(--font-ui);
+        font-weight: 600;
+        padding: 8px 10px;
+        border-radius: 10px;
+        cursor: pointer;
+      }
+      .nav button[aria-current="true"] { background: var(--raise); color: var(--ink); }
+      .me-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 16px;
+        border-top: 1px solid var(--line);
+      }
+      .me-row .name { font-size: var(--fs-ui); }
+      .me-row .host { color: var(--faint); font-size: var(--fs-caps); }
+
+      .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .chat-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 20px;
+      }
+      .chat-head h2 { font-size: var(--fs-title); font-weight: 600; }
+      .chat-head .status { color: var(--dim); font-size: var(--fs-meta); }
+      .chat-scroll { flex: 1; overflow-y: auto; padding: 12px 24px; }
+      .transcript {
+        max-width: var(--thread-max);
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .stamp { text-align: center; color: var(--faint); font-size: var(--fs-meta); margin: 8px 0; }
+      .msg { display: flex; }
+      .msg.me { justify-content: flex-end; }
+      .bubble {
+        max-width: 72%;
+        padding: 11px 16px;
+        border-radius: var(--r-bubble);
+        font-size: var(--fs-chat);
+        line-height: 1.5;
+        background: var(--bub-bot);
+        border-bottom-left-radius: var(--r-tail);
+      }
+      .msg.me .bubble {
+        background: var(--bub-me);
+        color: var(--bub-me-ink);
+        border-bottom-left-radius: var(--r-bubble);
+        border-bottom-right-radius: var(--r-tail);
+      }
+      .composer { padding: 14px 24px 20px; }
+      .composer form {
+        max-width: var(--thread-max);
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .composer input {
+        flex: 1;
+        min-width: 0;
+        background: var(--raise);
+        border: 0;
+        outline: 0;
+        border-radius: var(--r-pill);
+        padding: 11px 18px;
+        font-size: var(--fs-chat);
+        color: var(--ink);
+      }
+      .composer input::placeholder { color: var(--faint); }
+      .round-btn {
+        width: 36px;
+        height: 36px;
+        flex: none;
+        border-radius: 50%;
+        background: var(--raise);
+        border: 0;
+        color: var(--dim);
+        cursor: pointer;
+        display: grid;
+        place-items: center;
+      }
+      .round-btn svg { width: 17px; height: 17px; }
+      .round-btn.listen {
+        color: var(--amber);
+        box-shadow: 0 0 0 3px rgba(232, 163, 61, 0.28);
+      }
+      .round-btn.off { color: var(--faint); }
+      .voice-hint {
+        max-width: var(--thread-max);
+        margin: 0 auto 8px;
+        color: var(--dim);
+        font-size: var(--fs-meta);
+      }
+      .voice-hint[data-tone="bad"] { color: var(--danger); }
+
+      .page { max-width: 680px; padding: 28px 32px; }
+      .page-top h1 { font-size: var(--fs-h1); font-weight: 700; }
+      .page-top p { color: var(--dim); font-size: var(--fs-body); margin-top: 3px; }
+      .setting { max-width: 620px; margin-top: 24px; }
+      .setting h2 { font-size: var(--fs-ui); font-weight: 600; margin: 0 0 6px; }
+      .setting-note { margin: 0 0 8px; color: var(--dim); font-size: var(--fs-meta); line-height: 1.5; }
+      .checkline {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-top: 8px;
+        font-size: var(--fs-ui);
+        cursor: pointer;
+      }
+      .checkline input { margin-top: 3px; }
+      .checkline small { display: block; margin-top: 2px; color: var(--dim); font-size: var(--fs-meta); }
+
+      .sheet {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: grid;
+        place-items: center;
+        z-index: 8;
+      }
+      .sheet-card {
+        width: 340px;
+        background: #2c2c2e;
+        border-radius: 14px;
+        padding: 22px 20px 16px;
+        text-align: center;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+      }
+      .sheet-card h3 { font-size: 15px; margin-bottom: 8px; }
+      .sheet-card p { color: var(--dim); font-size: 13px; }
+      .sheet-acts { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header class="rail">
+      <div class="eyebrow">PROTOTYPE · VOICE MODE</div>
+      <h1>Dictation into the box we already have.</h1>
+      <p>
+        Walk the first-run ask, then the composer mic. Nothing here captures a
+        real microphone — the host would. This is the UI contract.
+      </p>
+      <nav class="scenes" aria-label="Scenes">
+        <a href="#setup-name">1 · Name</a>
+        <a href="#setup-engine">2 · Engine</a>
+        <a href="#setup-chief">3 · Chief</a>
+        <a href="#setup-sheet">3 · Permission</a>
+        <a href="#setup-chief-yes">3 · Yes</a>
+        <a href="#chat">Chat</a>
+        <a href="#chat-listening">Listening</a>
+        <a href="#chat-draft">Draft</a>
+        <a href="#chat-off">Mic off</a>
+        <a href="#settings">Settings</a>
+        <a href="#settings-phase-b">Settings · Whisper</a>
+      </nav>
+    </header>
+
+    <div class="window" id="window">
+      <div class="titlebar" aria-hidden="true"><i></i><i></i><i></i></div>
+
+      <div class="setup" id="setup">
+        <main class="setup-stage">
+          <form class="setup-card" id="pane-name" hidden>
+            <div class="setup-eyebrow">STEP 1 OF 3</div>
+            <h1>What should the crew call you?</h1>
+            <p class="setup-lede">
+              JaBot runs a crew of bots on this Mac. Start with your name — it
+              sits at the bottom of the sidebar, next to the host you are
+              connected to.
+            </p>
+            <label class="mlab" for="name">YOUR NAME</label>
+            <input class="mfield" id="name" type="text" placeholder='Defaults to "You"' />
+            <div class="setup-preview">
+              <span class="me-face" id="name-face">Y</span>
+              <span class="cap">This is your badge in the sidebar.</span>
+            </div>
+            <div class="setup-foot">
+              <button type="button" class="setup-skip" data-go="chat-off">Skip setup</button>
+              <button type="submit" class="btn primary">Continue</button>
+            </div>
+          </form>
+
+          <div class="setup-card" id="pane-engine" hidden>
+            <div class="setup-eyebrow">STEP 2 OF 3</div>
+            <h1>Pick your default engine</h1>
+            <p class="setup-lede">Every new code thread starts here. You can switch engines per thread.</p>
+            <div class="mlab">HARNESS — BRING YOUR OWN</div>
+            <div class="harness-grid" id="harnesses">
+              <button type="button" class="harness-card" data-id="claude" aria-pressed="true">
+                <b><span class="hdot" style="background:var(--h-claude)"></span>Claude Code</b>
+                <p>Anthropic’s coding agent</p>
+              </button>
+              <button type="button" class="harness-card" data-id="codex" aria-pressed="false">
+                <b><span class="hdot" style="background:var(--h-codex)"></span>Codex</b>
+                <p>OpenAI’s coding agent</p>
+              </button>
+              <button type="button" class="harness-card" data-id="pi" aria-pressed="false">
+                <b><span class="hdot" style="background:var(--h-pi)"></span>Pi</b>
+                <p>The tiny local agent</p>
+              </button>
+            </div>
+            <div class="setup-foot">
+              <button type="button" class="setup-skip" data-go="chat-off">Skip setup</button>
+              <button type="button" class="btn" data-go="setup-name">Back</button>
+              <button type="button" class="btn primary" data-go="setup-chief">Continue</button>
+            </div>
+          </div>
+
+          <div class="setup-card" id="pane-chief" hidden>
+            <div class="setup-eyebrow">STEP 3 OF 3</div>
+            <div class="setup-meet">
+              <span class="av" aria-hidden="true">C</span>
+              <div>
+                <h1>Chief</h1>
+                <p class="setup-lede">Runs the crew</p>
+              </div>
+              <span class="chief-badge">CHIEF</span>
+            </div>
+            <blockquote class="setup-quote">
+              Route work across the crew. Fold long tasks away, surface only what matters.
+            </blockquote>
+            <p class="setup-note">
+              Long jobs fold out of the sidebar and keep running. They come back
+              through the Inbox when they are done — or when they need you.
+            </p>
+            <div class="voice-ask">
+              <b>Want dictation?</b>
+              <p>
+                The mic in the composer can type for you. Nothing is downloaded
+                unless you say yes.
+              </p>
+              <div class="picks">
+                <button type="button" class="btn" id="voice-yes">Enable dictation</button>
+                <button type="button" class="btn" id="voice-no">Not now</button>
+              </div>
+            </div>
+            <div class="setup-foot">
+              <button type="button" class="btn" data-go="setup-engine">Back</button>
+              <button type="button" class="btn primary" id="enter">Enter JaBot</button>
+            </div>
+          </div>
+        </main>
+        <div class="setup-host">This Mac · v0.1.0</div>
+      </div>
+
+      <div class="shell" id="shell" hidden>
+        <aside class="sidebar">
+          <div class="sidebar-list">
+            <div class="section-header">CREW</div>
+            <div class="bstop">
+              <span class="av" aria-hidden="true">C</span>
+              <small>Chief</small>
+            </div>
+            <div class="nav">
+              <button type="button" data-view="chat" aria-current="true">Chief</button>
+              <button type="button" data-view="settings">Settings</button>
+            </div>
+          </div>
+          <div class="me-row">
+            <span class="me-face" id="me-face">Y</span>
+            <div>
+              <div class="name" id="me-name">You</div>
+              <div class="host">This Mac · v0.1.0</div>
+            </div>
+          </div>
+        </aside>
+        <section class="main">
+          <div id="view-chat">
+            <div class="chat-head">
+              <span class="av sm" aria-hidden="true">C</span>
+              <h2>Chief</h2>
+              <span class="status">Runs the crew</span>
+            </div>
+            <div class="chat-scroll">
+              <div class="transcript" id="transcript">
+                <div class="stamp">Today</div>
+                <div class="msg"><div class="bubble">I’m Chief. Fold the long jobs — I’ll bring them back through the Inbox.</div></div>
+              </div>
+            </div>
+            <div class="composer">
+              <p class="voice-hint" id="voice-hint" hidden></p>
+              <form id="compose">
+                <button type="button" class="round-btn" aria-label="Attach" tabindex="-1">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <input id="draft" placeholder="Message Chief" aria-label="Message Chief" />
+                <button type="button" class="round-btn" id="mic" aria-label="Voice">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="2.5" width="6" height="11" rx="3"/>
+                    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/>
+                    <path d="M12 18v3.5"/>
+                  </svg>
+                </button>
+              </form>
+            </div>
+          </div>
+          <div id="view-settings" hidden>
+            <div class="page">
+              <div class="page-top">
+                <h1>Settings</h1>
+                <p>What JaBot does when you are not watching</p>
+              </div>
+              <section class="setting">
+                <h2>Dictation</h2>
+                <p class="setting-note">
+                  The composer mic types what you say. Off means the button
+                  explains itself instead of listening.
+                </p>
+                <label class="checkline">
+                  <input type="radio" name="dictation" value="off" />
+                  <span>Off<small>The mic stays visible. Tapping it says how to turn this on.</small></span>
+                </label>
+                <label class="checkline">
+                  <input type="radio" name="dictation" value="on" />
+                  <span>On<small>On-device speech on this Mac. Nothing is uploaded.</small></span>
+                </label>
+                <div id="engine-row" hidden>
+                  <h2 style="margin-top:16px">Engine</h2>
+                  <p class="setting-note">Same mic. The host picks which recognizer runs.</p>
+                  <label class="checkline">
+                    <input type="radio" name="engine" value="apple" checked />
+                    <span>On-device (macOS)<small>Apple Speech. Zero extra download.</small></span>
+                  </label>
+                  <label class="checkline">
+                    <input type="radio" name="engine" value="whisper" />
+                    <span>Local Whisper (tiny.en)<small>~31 MB, fetched once after you opt in.</small></span>
+                  </label>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="sheet" id="sheet" hidden>
+        <div class="sheet-card">
+          <h3>“JaBot” Would Like to Access the Microphone</h3>
+          <p>Dictation types into the composer. Audio stays on this Mac.</p>
+          <div class="sheet-acts">
+            <button type="button" class="btn" id="sheet-deny">Don’t Allow</button>
+            <button type="button" class="btn primary" id="sheet-allow">Allow</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const UTTERANCE = "Fold the migration and ping me when the tests are green.";
+      const state = {
+        scene: "setup-name",
+        name: "",
+        harness: "claude",
+        voice: null, // null | true | false
+        permission: "prompt", // prompt | granted | denied
+        listening: false,
+        draft: "",
+        view: "chat",
+        phaseB: false,
+      };
+
+      const $ = (id) => document.getElementById(id);
+      const panes = {
+        "setup-name": $("pane-name"),
+        "setup-engine": $("pane-engine"),
+        "setup-chief": $("pane-chief"),
+        "setup-sheet": $("pane-chief"),
+        "setup-chief-yes": $("pane-chief"),
+      };
+
+      function monogram(name) {
+        const words = name.trim().split(/\s+/).filter(Boolean);
+        if (!words.length) return "Y";
+        const first = Array.from(words[0])[0];
+        const last = words.length > 1 ? Array.from(words[words.length - 1])[0] : "";
+        return (first + last).toLocaleUpperCase();
+      }
+
+      function syncName() {
+        const raw = $("name").value;
+        const shown = raw.trim() === "" ? "You" : raw.trim();
+        $("name-face").textContent = monogram(shown);
+        $("me-face").textContent = monogram(shown);
+        $("me-name").textContent = shown;
+      }
+
+      function setVoiceButtons() {
+        $("voice-yes").setAttribute("aria-pressed", state.voice === true ? "true" : "false");
+        $("voice-no").setAttribute("aria-pressed", state.voice === false ? "true" : "false");
+      }
+
+      function setMic() {
+        const mic = $("mic");
+        const hint = $("voice-hint");
+        mic.classList.toggle("listen", state.listening);
+        mic.classList.toggle("off", state.voice !== true);
+        $("draft").placeholder = state.listening ? "Listening…" : "Message Chief";
+        if (state.voice !== true) {
+          hint.hidden = false;
+          hint.dataset.tone = state.permission === "denied" ? "bad" : "";
+          hint.textContent =
+            state.permission === "denied"
+              ? "macOS refused the microphone. Open System Settings → Privacy & Security → Microphone."
+              : "Dictation is off. Turn it on in Settings, or run setup again.";
+        } else if (state.listening) {
+          hint.hidden = false;
+          hint.dataset.tone = "";
+          hint.textContent = "Listening — tap the mic again to finish. Return still sends.";
+        } else {
+          hint.hidden = true;
+        }
+      }
+
+      function setSettings() {
+        document.querySelectorAll('input[name="dictation"]').forEach((el) => {
+          el.checked = (el.value === "on") === (state.voice === true);
+        });
+        $("engine-row").hidden = !state.phaseB || state.voice !== true;
+      }
+
+      function showScene(scene) {
+        state.scene = scene;
+        state.phaseB = scene === "settings-phase-b";
+        if (scene === "setup-chief-yes") {
+          state.voice = true;
+          state.permission = "granted";
+        }
+        $("sheet").hidden = scene !== "setup-sheet";
+        if (scene === "setup-sheet") {
+          state.voice = null;
+          state.permission = "prompt";
+        }
+        if (scene === "chat-off") {
+          state.voice = false;
+          state.listening = false;
+          state.draft = "";
+        }
+        if (scene === "chat" || scene === "chat-listening" || scene === "chat-draft") {
+          if (state.voice !== true) {
+            state.voice = true;
+            state.permission = "granted";
+          }
+        }
+        if (scene === "chat-listening") {
+          state.listening = true;
+          state.draft = "Fold the migration";
+        } else if (scene === "chat-draft") {
+          state.listening = false;
+          state.draft = UTTERANCE;
+        } else if (scene === "chat" || scene === "chat-off") {
+          state.listening = false;
+          if (scene === "chat") state.draft = "";
+        }
+        if (scene.startsWith("settings")) {
+          state.view = "settings";
+          if (state.voice == null || scene === "settings-phase-b") {
+            state.voice = true;
+            state.permission = "granted";
+          }
+        } else if (scene.startsWith("chat")) {
+          state.view = "chat";
+        }
+
+        const setup = scene.startsWith("setup");
+        $("setup").hidden = !setup;
+        $("shell").hidden = setup;
+        Object.values(panes).forEach((el) => { el.hidden = true; });
+        if (setup) {
+          const key = scene === "setup-chief-yes" ? "setup-chief" : scene;
+          panes[key].hidden = false;
+        }
+        $("view-chat").hidden = state.view !== "chat";
+        $("view-settings").hidden = state.view !== "settings";
+        document.querySelectorAll(".nav button").forEach((btn) => {
+          btn.setAttribute("aria-current", btn.dataset.view === state.view ? "true" : "false");
+        });
+        $("draft").value = state.draft;
+        setVoiceButtons();
+        setMic();
+        setSettings();
+        syncName();
+
+        document.querySelectorAll(".scenes a").forEach((a) => {
+          a.setAttribute("aria-current", a.getAttribute("href") === "#" + scene ? "true" : "false");
+        });
+      }
+
+      function go(scene) {
+        history.replaceState(null, "", "#" + scene + (location.search || ""));
+        showScene(scene);
+      }
+
+      $("name").addEventListener("input", syncName);
+      $("pane-name").addEventListener("submit", (event) => {
+        event.preventDefault();
+        go("setup-engine");
+      });
+      document.querySelectorAll("[data-go]").forEach((btn) => {
+        btn.addEventListener("click", () => go(btn.dataset.go));
+      });
+      $("harnesses").addEventListener("click", (event) => {
+        const card = event.target.closest(".harness-card");
+        if (!card) return;
+        state.harness = card.dataset.id;
+        $("harnesses").querySelectorAll(".harness-card").forEach((el) => {
+          el.setAttribute("aria-pressed", el === card ? "true" : "false");
+        });
+      });
+      $("voice-yes").addEventListener("click", () => {
+        if (state.permission === "granted") {
+          state.voice = true;
+          setVoiceButtons();
+          return;
+        }
+        $("sheet").hidden = false;
+      });
+      $("voice-no").addEventListener("click", () => {
+        state.voice = false;
+        setVoiceButtons();
+      });
+      $("sheet-allow").addEventListener("click", () => {
+        state.permission = "granted";
+        state.voice = true;
+        $("sheet").hidden = true;
+        setVoiceButtons();
+      });
+      $("sheet-deny").addEventListener("click", () => {
+        state.permission = "denied";
+        state.voice = false;
+        $("sheet").hidden = true;
+        setVoiceButtons();
+      });
+      $("enter").addEventListener("click", () => {
+        go(state.voice === true ? "chat" : "chat-off");
+      });
+      document.querySelectorAll(".nav button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          state.view = btn.dataset.view;
+          go(state.view === "settings" ? (state.phaseB ? "settings-phase-b" : "settings") : (state.voice === true ? "chat" : "chat-off"));
+        });
+      });
+      document.querySelectorAll('input[name="dictation"]').forEach((el) => {
+        el.addEventListener("change", () => {
+          state.voice = el.value === "on";
+          if (state.voice && state.permission !== "granted") $("sheet").hidden = false;
+          setMic();
+          setSettings();
+        });
+      });
+
+      let timer = null;
+      function speak() {
+        const words = UTTERANCE.split(" ");
+        let n = 2;
+        $("draft").value = words.slice(0, n).join(" ");
+        timer = setInterval(() => {
+          n += 1;
+          $("draft").value = words.slice(0, n).join(" ");
+          if (n >= words.length) {
+            clearInterval(timer);
+            timer = null;
+            state.listening = false;
+            state.draft = UTTERANCE;
+            setMic();
+          }
+        }, 140);
+      }
+
+      $("mic").addEventListener("click", () => {
+        if (state.voice !== true) return;
+        if (state.listening) {
+          if (timer) { clearInterval(timer); timer = null; }
+          state.listening = false;
+          state.draft = $("draft").value || UTTERANCE;
+          $("draft").value = state.draft;
+          setMic();
+          return;
+        }
+        state.listening = true;
+        setMic();
+        speak();
+      });
+      $("compose").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const text = $("draft").value.trim();
+        if (!text) return;
+        const row = document.createElement("div");
+        row.className = "msg me";
+        row.innerHTML = `<div class="bubble"></div>`;
+        row.querySelector(".bubble").textContent = text;
+        $("transcript").appendChild(row);
+        $("draft").value = "";
+        state.draft = "";
+        state.listening = false;
+        setMic();
+      });
+
+      if (new URLSearchParams(location.search).has("shot")) {
+        document.documentElement.classList.add("shot");
+      }
+      const initial = (location.hash || "#setup-name").slice(1);
+      showScene(initial || "setup-name");
+      window.addEventListener("hashchange", () => {
+        showScene((location.hash || "#setup-name").slice(1));
+      });
+    </script>
+  </body>
+</html>

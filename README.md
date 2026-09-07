@@ -85,4 +85,10 @@ it, and anyone who wants it to be somebody in particular uploads a picture in
 the bot editor — the app stopped inventing an identity for a bot and made one
 the user can give it. `src/components/avatar/` is the whole of it.
 
+`prototypes/jabot-voice.html` is the dictation exploration for the
+voice-mode research ([`docs/research/voice-mode/`](docs/research/voice-mode/findings.md)):
+the three-pane setup with a Yes / Not now row on Chief, the composer
+mic lighting up, and the Settings toggle. Scripted speech, not a
+real microphone — the host would own that.
+
 Other prototypes in `prototypes/` are earlier design directions.

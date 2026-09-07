@@ -6,8 +6,11 @@ Research needed before we open build issues. Each topic has its own folder with 
 its "What this unblocks" list into GitHub issues with dependencies flagged.
 
 **Numbered topics #1–#7 plus cross-cutting setup-porting have findings in
-(August 2026).** Headline decisions are below. The three product forks
-(host process, fold/run/Inbox, what is a bot) are **settled** in
+(August 2026).** [voice-mode](voice-mode/brief.md) is a later topic
+(September 2026): composer dictation that merges into the existing
+three-pane setup and all three engines. Headline decisions are below.
+The three product forks (host process, fold/run/Inbox, what is a bot)
+are **settled** in
 [`docs/decisions/issues-4-6.md`](../decisions/issues-4-6.md). How those
 relate to setup-porting is in [tensions](#tensions-with-setup-porting).
 
@@ -23,6 +26,7 @@ relate to setup-porting is in [tensions](#tensions-with-setup-porting).
 | 5 | [git-and-prs](git-and-prs/brief.md) | [findings](git-and-prs/findings.md) | Folder = one repo. **Host-owned worktree** per thread as ACP `cwd`. Reuse `gh`; GitHub-only; poll GraphQL. |
 | 6 | [data-and-persistence](data-and-persistence/brief.md) | [findings](data-and-persistence/findings.md) | **SQLite WAL** as source of truth; ACP overlay (not harness-log mirrors); secrets in the OS keychain. |
 | 7 | [remote-and-mobile](remote-and-mobile/brief.md) | [findings](remote-and-mobile/findings.md) | **Logical client/host split** from day one. JaBot-owned host protocol. Pairing + thin mobile Inbox are MVP2. |
+| — | [voice-mode](voice-mode/brief.md) | [findings](voice-mode/findings.md) | Composer **dictation**, host-owned, merges into Claude/Codex/Pi. Opt-in on the existing three-pane setup. Apple Speech first; whisper.cpp `tiny.en-q5_1` when we bundle. |
 
 ## Locked stack (what to scaffold)
 
@@ -102,9 +106,19 @@ docs/research/
   remote-and-mobile/
     brief.md  findings.md  architecture.md  protocol-and-reach.md
     pairing-security-mobile.md
+  voice-mode/
+    brief.md  findings.md  engines.md  onboarding-and-composer.md
+    explainer.html
 ```
 
+The clickable contract for voice-mode is
+[`prototypes/jabot-voice.html`](../../prototypes/jabot-voice.html).
+
 ## Product source of truth
+
+`prototypes/jabot-voice.html` is the dictation contract for
+[voice-mode](voice-mode/brief.md): Chief-pane opt-in, composer mic,
+Settings. It does not replace `jabot-classic.html`.
 
 `prototypes/jabot-classic.html` is the MVP prototype. Concepts it defines:
 Chief of Staff bot, crew of template bots, harness selection at new-chat time
