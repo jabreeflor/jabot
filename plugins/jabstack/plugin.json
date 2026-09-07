@@ -1,0 +1,22 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "jabstack",
+  "version": "0.3.0",
+  "description": "Jabree's personal agent plugin — a portable stack of skills for Claude Code, Cursor, and other agent clients.",
+  "author": {
+    "name": "Jabree Flor",
+    "url": "https://github.com/jabreeflor"
+  },
+  "homepage": "https://github.com/jabreeflor/jabstack",
+  "repository": "https://github.com/jabreeflor/jabstack",
+  "license": "MIT",
+  "keywords": [
+    "agent-plugin",
+    "skills",
+    "claude-code",
+    "cursor",
+    "jabstack",
+    "gauntlet",
+    "quality"
+  ]
+}

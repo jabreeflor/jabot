@@ -1,0 +1,36 @@
+{
+  "name": "jabstack",
+  "version": "0.3.0",
+  "description": "Jabree's portable skills for benchmark-driven builds and visual pull request explainers.",
+  "author": {
+    "name": "Jabree Flor",
+    "url": "https://github.com/jabreeflor"
+  },
+  "homepage": "https://github.com/jabreeflor/jabstack",
+  "repository": "https://github.com/jabreeflor/jabstack",
+  "license": "MIT",
+  "keywords": [
+    "agent-plugin",
+    "skills",
+    "claude-code",
+    "jabstack",
+    "gauntlet",
+    "quality",
+    "chatgpt",
+    "codex"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Jabstack",
+    "shortDescription": "Build with rigorous critics. Explain pull requests visually.",
+    "longDescription": "Run gauntlet-loop for benchmark-driven builds with independent critics, or create-pr-artifact for visual PR explainers and screenshots. Requires the host tools described by each skill.",
+    "developerName": "Jabree Flor",
+    "category": "Productivity",
+    "capabilities": [],
+    "websiteURL": "https://github.com/jabreeflor/jabstack",
+    "defaultPrompt": [
+      "Run the gauntlet on my current project.",
+      "Create a visual explainer for my current pull request."
+    ]
+  }
+}

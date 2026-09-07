@@ -1,0 +1,21 @@
+{
+  "name": "jabstack",
+  "owner": {
+    "name": "Jabree Flor",
+    "url": "https://github.com/jabreeflor"
+  },
+  "metadata": {
+    "description": "Single-plugin marketplace for jabstack so it can be enabled from a project's .claude/settings.json.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "jabstack",
+      "source": "./",
+      "description": "gauntlet-loop, create-pr-artifact, and the gauntlet-critic subagent.",
+      "version": "0.3.0",
+      "category": "productivity",
+      "keywords": ["skills", "gauntlet", "pr-artifact"]
+    }
+  ]
+}
