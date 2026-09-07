@@ -30,6 +30,8 @@ reason the tooling below exists rather than being a nicety:
 ## Setup
 
 ```bash
+# Node 26 (Current) — same major as CI / release. `.nvmrc` and `.node-version`
+# are the local pin; `package.json` `engines.node` is `>=26`.
 npm install               # deps, and installs the git hooks (see below)
 npm run bundle:adapters   # the ACP adapter the app ships inside its bundle
 ./scripts/verify.sh       # ~1.5 min warm, several minutes on a cold Rust build
