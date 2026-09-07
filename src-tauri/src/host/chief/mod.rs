@@ -603,7 +603,9 @@ mod tests {
     use super::*;
     use crate::host::crew::standing;
     use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
-    use crate::host::protocol::{CREW_LIST, CREW_THREAD, CREW_UPDATE, HOST_HELLO, THREAD_STATE};
+    use crate::host::protocol::{
+        CREW_CREATE, CREW_LIST, CREW_THREAD, CREW_UPDATE, HOST_HELLO, THREAD_STATE,
+    };
     use crate::host::repo::git::testing;
 
     /// A host with a real data directory: bots need memory directories, and a
