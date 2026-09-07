@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use jabot_lib::host::THREAD_STATE;
 use jabot_lib::{
     HostSession, JsonRpcNotification, JsonRpcRequest, NewThread, RequestId, ThreadRepo, HOST_HELLO,
     PERMISSION_ASK, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
@@ -157,6 +158,92 @@ fn prompt_streams_session_update() {
         "agent_message_chunk"
     );
     assert_eq!(session.live_adapter_count(), 1);
+}
+
+#[test]
+fn empty_reply_is_a_failed_turn() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut session = HostSession::load(dir.path());
+    hello(&mut session);
+    let runtime = json!({
+        "command": fake_agent(),
+        "args": ["empty-reply"]
+    })
+    .to_string();
+    session
+        .store()
+        .unwrap()
+        .insert_thread(&NewThread {
+            id: "t-empty".into(),
+            folder_id: None,
+            bot_id: Some("bot-recruiter".into()),
+            harness_id: "copilot".into(),
+            cwd: dir.path().to_string_lossy().into(),
+            runtime_json: runtime,
+            title: "Empty reply".into(),
+            fold_policy: "default".into(),
+            worktree_path: None,
+            repo: ThreadRepo::default(),
+        })
+        .unwrap();
+
+    let response = session.handle_request(req(
+        2,
+        SESSION_PROMPT,
+        Some(json!({ "threadId": "t-empty", "content": "hi" })),
+    ));
+    assert!(response.error.is_none(), "{:?}", response.error);
+
+    let start = Instant::now();
+    let mut last = Value::Null;
+    while start.elapsed() < Duration::from_secs(3) {
+        session.pump_acp();
+        last = result_value(&session.handle_request(req(
+            9,
+            THREAD_STATE,
+            Some(json!({ "threadId": "t-empty" })),
+        )))
+        .clone();
+        if last["lastStopReason"] == "empty_response" {
+            break;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+    assert_eq!(last["lastStopReason"], "empty_response");
+    assert_eq!(last["latestRun"]["state"], "failed");
+}
+
+#[test]
+fn auth_failure_on_initialize_is_an_error() {
+    let mut session = HostSession::ephemeral();
+    hello(&mut session);
+    let response = session.handle_request(req(
+        2,
+        SESSION_PROMPT,
+        Some(prompt_params("t-auth", "hi", Some("auth-fail"))),
+    ));
+    let error = response
+        .error
+        .expect("startup auth failure must not succeed");
+    assert!(
+        error
+            .message
+            .to_ascii_lowercase()
+            .contains("not authenticated")
+            || error
+                .data
+                .as_ref()
+                .map(|data| data
+                    .to_string()
+                    .to_ascii_lowercase()
+                    .contains("not authenticated"))
+                .unwrap_or(false)
+            || format!("{error:?}")
+                .to_ascii_lowercase()
+                .contains("not authenticated"),
+        "expected an auth failure, got {error:?}"
+    );
+    assert!(response.result.is_none());
 }
 
 #[test]

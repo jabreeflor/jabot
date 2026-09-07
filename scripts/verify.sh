@@ -25,6 +25,7 @@
 #   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
 #   2e. macos lint    — planner/path tests for the before-merge macOS jobs
 #   3. tsc            — renderer types
+#   3b. eslint        — React Hooks + type-aware promise rules (npm run lint)
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors
@@ -702,6 +703,7 @@ run "install script" install_script
 run "macos acceptance" macos_acceptance
 run "macos lint tests" macos_lint_tests
 run "typecheck"      npx tsc --noEmit
+run "lint"           npm run lint
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
 run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings

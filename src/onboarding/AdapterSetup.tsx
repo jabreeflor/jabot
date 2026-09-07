@@ -59,6 +59,10 @@ export function AdapterSetup({
       active = false;
       if (timer) clearTimeout(timer);
     };
+    // `installing` is a mode for the run that `attempt` already restarts.
+    // Listing it would re-enter when a failed install clears the flag and
+    // wipe the error that run just showed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
   }, [client, harnessId, attempt]);
   async function install() {
     if (!client) return;

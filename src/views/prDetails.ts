@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HostClient } from "../host";
 import type { PrTarget, PrWorkspace } from "../host/prWorkspace";
 
@@ -66,7 +66,7 @@ export function usePrDetails(
   { repo, number, host }: PrTarget,
   writing: { readonly current: boolean },
 ) {
-  const target = { repo, number, host };
+  const target = useMemo(() => ({ repo, number, host }), [repo, number, host]);
   const [data, setData] = useState<PrWorkspace | null>(() =>
     cachedDetail(client, target),
   );
@@ -112,7 +112,7 @@ export function usePrDetails(
       running = (async () => {
         try {
           const next = await Promise.resolve().then(() =>
-            client!.pullRequestDetail({ repo, number, host }),
+            client!.pullRequestDetail(target),
           );
           if (!active || (background && writing.current)) return;
           setRefreshError(null);
@@ -162,7 +162,7 @@ export function usePrDetails(
       window.removeEventListener("focus", tick);
       document.removeEventListener("visibilitychange", tick);
     };
-  }, [client, repo, number, host, writing]);
+  }, [client, target, writing]);
 
   return { data, loading, refreshing, refreshError, pendingHead, refresh };
 }

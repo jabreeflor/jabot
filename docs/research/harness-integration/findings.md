@@ -26,7 +26,9 @@ The brief's "What this blocks" list can become issues:
 1. **Harness adapter trait** — ACP client in the host process. See
    [adapter-design.md](adapter-design.md).
 2. **Shipped adapters** — Claude via `claude-agent-acp` / `@zed-industries/claude-code-acp`;
-   Codex via `codex-acp` / `@zed-industries/codex-acp`; Pi via `pi-acp`.
+   Codex via `codex-acp` / `@zed-industries/codex-acp`; Pi via `pi-acp`;
+   Copilot via `copilot --acp` (the vendor CLI *is* the adapter; see
+   [copilot.md](copilot.md)).
 3. **Chat transcript renderer** — consume ACP `session/update` (agent message
    chunks, `tool_call_update` with kinds `read` / `edit` / `execute`, diffs,
    plans). Maps 1:1 onto the prototype's bubbles + toolblocks.

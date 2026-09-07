@@ -635,6 +635,18 @@ export interface HarnessCardView {
   sessionScope: SessionScope;
   /** Reserved ids cannot be shadowed by a user file. */
   reserved: boolean;
+  /** What this card is willing to claim. Absent means unverified. */
+  capabilities?: HarnessCapabilitiesView;
+}
+
+/** Declared harness capabilities, as the catalog is willing to advertise them. */
+export interface HarnessCapabilitiesView {
+  streaming: boolean;
+  toolEvents: boolean;
+  permissions: boolean;
+  cancel: boolean;
+  resume: boolean;
+  notes?: string;
 }
 
 /** A tier-3 file that did not make it into the catalog, and why. */

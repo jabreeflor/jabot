@@ -14,7 +14,7 @@
  * A refusal from GitHub stays on screen with the form intact. A user whose
  * paste was wrong needs to try again, not to start over.
  */
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -179,7 +179,7 @@ describe("the sign-in dialog", () => {
 
     expect(onSignIn).toHaveBeenCalledWith("ghp_pretendtoken");
     // The dialog closes itself on success, and nothing keeps the token.
-    expect(onCancel).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onCancel).toHaveBeenCalledOnce());
     expect(field!.value).toBe("");
   });
 

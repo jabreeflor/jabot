@@ -44,6 +44,9 @@
 //!   turn — prose with no tool call and no URL. What an agent that only
 //!   *claims* to have opened a pull request looks like, which is what arms the
 //!   host's post-turn `gh` probe without proving anything (#28).
+//! - `auth-fail`: refuse `initialize` the way Copilot CLI does when no GitHub
+//!   credentials are present — a startup failure that must never look like a
+//!   successful prompt (#221).
 //! - `empty-reply-logged-out`: empty `end_turn` after writing a sign-in error
 //!   to stderr — the Claude Code "failed: no reply" path with a known cause
 //! - `empty-reply-model`: empty `end_turn` after writing an unsupported-model
@@ -129,6 +132,12 @@ fn main() {
         let method = msg["method"].as_str().unwrap_or("");
         let id = msg.get("id").cloned();
         match method {
+            "initialize" if mode == "auth-fail" => reply_error(
+                &mut stdout,
+                id,
+                -32000,
+                "not authenticated: no authentication information found",
+            ),
             "initialize" => reply(
                 &mut stdout,
                 id,
@@ -564,6 +573,17 @@ fn reply(stdout: &mut io::Stdout, id: Option<serde_json::Value>, result: serde_j
         "jsonrpc": "2.0",
         "id": id,
         "result": result
+    });
+    writeln!(stdout, "{msg}").ok();
+    stdout.flush().ok();
+}
+
+fn reply_error(stdout: &mut io::Stdout, id: Option<serde_json::Value>, code: i64, message: &str) {
+    let Some(id) = id else { return };
+    let msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": code, "message": message }
     });
     writeln!(stdout, "{msg}").ok();
     stdout.flush().ok();
