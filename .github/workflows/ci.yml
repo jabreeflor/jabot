@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # The full pipeline — toolchain, lockfiles, bundle-config, typecheck, lint, unit,
+  # The full pipeline — toolchain, lockfiles, bundle-config, typecheck, unit,
   # fmt, clippy, rust tests, and the TypeScript-against-real-Rust-host e2e
   # suite. Runs on Linux because it does not need a webview: `jabot-hostd` is
   # the host without the window.
