@@ -7,7 +7,9 @@
 //! witness, and that a prompt held for a busy thread really does go out when
 //! the turn ends.
 
-use std::path::PathBuf;
+mod common;
+use common::fake_agent;
+
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -107,17 +109,6 @@ impl Host {
         self.session = HostSession::load(&path);
         self.session.handle_request(req(1, HOST_HELLO, None));
     }
-}
-
-fn fake_agent() -> String {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_fake_acp_agent") {
-        return path.to_string();
-    }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .join("target/debug/fake-acp-agent")
-        .to_string_lossy()
-        .into_owned()
 }
 
 fn kinds(transcript: &Value) -> Vec<String> {

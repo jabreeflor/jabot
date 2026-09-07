@@ -269,6 +269,25 @@ case_reports_are_gitignored() {
   pass
 }
 
+case_rust_tests_find_llvm_cov_bins() {
+  local helper="$REPO_ROOT/src-tauri/tests/common/mod.rs"
+  if [ ! -f "$helper" ]; then
+    fail "shared fake_agent helper is missing (cargo-llvm-cov writes bins under llvm-cov-target)"
+    return 1
+  fi
+  local body
+  body=$(cat "$helper")
+  assert_contains "$body" 'llvm-cov-target' "helper must search cargo-llvm-cov's target dir" || return 1
+  assert_contains "$body" 'CARGO_TARGET_DIR' "helper must honor CARGO_TARGET_DIR" || return 1
+  assert_contains "$body" 'current_exe' "helper must look next to the test binary" || return 1
+  if grep -R --include='*.rs' -l 'fn fake_agent' "$REPO_ROOT/src-tauri/tests" \
+      | grep -v 'common/mod.rs' >/dev/null; then
+    fail "a suite still defines its own fake_agent; use tests/common so llvm-cov can find the bin"
+    return 1
+  fi
+  pass
+}
+
 case_rust_script_refuses_to_install() {
   assert_eq 1 "$(grep -c 'will not install' "$REPO_ROOT/scripts/coverage-rust.sh" || true)" \
     "coverage-rust.sh must say it will not install" || return 1
@@ -283,6 +302,7 @@ printf '\ncoverage policy\n'
 run_case case_repo_vitest_config_scopes_src
 run_case case_verify_runs_unit_coverage_offline
 run_case case_rust_script_does_not_install
+run_case case_rust_tests_find_llvm_cov_bins
 run_case case_ci_installs_rust_coverage_and_uploads_on_failure
 run_case case_reports_are_gitignored
 run_case case_rust_script_refuses_to_install

@@ -7,20 +7,19 @@ as the `coverage-reports` artifact (uploaded even when a gate failed).
 
 ## Assumptions (coordination with #229 / #215)
 
-Neither #229 (determinism) nor #215 (Node upgrade) is merged. This policy
-is based on `main` at the audit commit (`c898b8f`) and the **Node 22** pin
-already in `.github/workflows/ci.yml` and `release.yml`.
+Both #229 (determinism) and #215 (Node upgrade) are on `main`. This
+policy is based on current `main` plus the include/exclude list here.
 
-- **Selected Node:** 22.x. The audit's Node 26 run died in
-  `tests/support/setup-dom.ts` (`localStorage` undefined) — a runtime
-  compatibility failure, not 553 product defects. Until #215 lands a
-  working newer major, the floor is reproduced on Node 22, same as CI.
-- **#229 flakes** (upload/fold timing, Chief runtime detection, OAuth
-  loopback, mobile-inbox log prefix) are not solved here. Coverage is a
-  measurement of what the existing suite executes, not a retry harness.
+- **Selected Node:** 26.x (`.nvmrc`, `engines.node`, CI). jsdom
+  `localStorage` is handled by `--no-experimental-webstorage` from #215.
+- The original audit was Node 22.14.0 at `c898b8f` (92.96 / 85.52 /
+  81.16). The 90/85/80 floor is the hold-the-line start under the same
+  include policy; re-run `npm run test:coverage` after large renderer
+  changes before treating the same headroom as given.
+- Coverage still measures the existing suite; it is not a retry harness.
 
-If #215 later moves CI to another major, re-run `npm run test:coverage` on
-that major before trusting the same floors.
+If CI moves to another major, re-run `npm run test:coverage` on that
+major before trusting the same floors.
 
 ## What is measured
 
@@ -58,15 +57,15 @@ passes; test / plugin / worktree files do not appear in the JSON.
 
 ## Frontend thresholds
 
-| Metric | Floor | Audit at c898b8f (Node 22, unit, `all` files) |
+| Metric | Floor | Audit at c898b8f (Node 22) / hold-the-line |
 | --- | --- | --- |
 | Lines / statements | 90 | 92.96 (audit: 93.0) |
 | Branches | 85 | 85.52 (audit: 85.5) |
 | Functions | 80 | 81.16 (audit: 81.2) |
 
-Reproduced on this branch with Node v22.14.0, Vitest 3.2.7, `coverage.all`
-and the include list above: **11122 / 11963 lines**, 2571 / 3006
-branches, 573 / 706 functions. `main.tsx` (entry), `src/mobile/index.ts`
+Originally reproduced on Node v22.14.0 at the audit commit: **11122 /
+11963 lines**, 2571 / 3006 branches, 573 / 706 functions. CI and
+`engines.node` are now **26**. `main.tsx` (entry), `src/mobile/index.ts`
 (barrel), and the type-only `src/host/prWorkspace.ts` sit at 0% on
 purpose — they count, they are not excluded to flatter the number.
 
@@ -119,7 +118,10 @@ CI installs `llvm-tools-preview` and `cargo-llvm-cov` in the workflow
 **setup**, then sets `JABOT_RUST_COVERAGE=1` so verify's rust-tests stage
 is one instrumented `cargo test` rather than a second compile.
 `scripts/coverage-rust.sh` exits 2 if the binary is missing; it will not
-`cargo install`.
+`cargo install`. Instrumented bins land under
+`src-tauri/target/llvm-cov-target/`; integration tests find
+`fake-acp-agent` via `src-tauri/tests/common/mod.rs` rather than
+assuming `target/debug/`.
 
 Local verify keeps plain `cargo test`. To produce the report on a laptop:
 
@@ -134,7 +136,7 @@ on this branch) are in the section below. A Rust *threshold* is deferred
 until those gaps are understood — several of the hottest paths are
 macOS-only, talk to `gh`, or were flaky under load in #229.
 
-### Baseline (Linux, Node 22 host, `dev-bins`)
+### Baseline (Linux, `dev-bins`)
 
 Recorded on this branch with `cargo-llvm-cov` 0.9.1, rustc 1.98.1,
 `dev-bins` on. Re-measure after large host changes. Totals include the

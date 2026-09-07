@@ -109,7 +109,7 @@
     </table>
 
     <h2>Why 90 / 85 / 80</h2>
-    <p>Reproduced on Node <strong>22.14.0</strong> (CI’s pin; #215’s Node 26 run died in jsdom <code>localStorage</code>): <strong>92.96% lines, 85.52% branches, 81.16% functions</strong>. The proposed start is a hold-the-line floor with a few points of headroom, not a target to climb. #229 flakes are out of scope.</p>
+    <p>Originally measured on Node <strong>22.14.0</strong> at the audit commit: <strong>92.96% lines, 85.52% branches, 81.16% functions</strong>. CI is now Node 26 (#215); jsdom <code>localStorage</code> is handled by <code>--no-experimental-webstorage</code>. The proposed start is a hold-the-line floor with a few points of headroom, not a target to climb. #229 is on <code>main</code>; coverage is still a measurement, not a retry harness.</p>
     <p><code>src/host/client.ts</code> is 52% in unit because slices stub it. <code>selectTransport</code> and the hot-transport error path are already tested. The rest is one-line <code>this.request(METHOD)</code> wrappers and Tauri IPC — the host-protocol suite’s job. No method-mirroring tests were added to lift the number.</p>
 
     <h2>What to look at</h2>
@@ -124,7 +124,7 @@
     <h2>How to verify</h2>
     <div class="card">
       <p><code>npm run test:coverage:policy</code> — fixture miss fails; excludes hold.</p>
-      <p><code>npm run test:coverage</code> — 553 tests, floors hold on Node 22.</p>
+      <p><code>npm run test:coverage</code> — unit suite, floors hold on Node 26.</p>
       <p><code>./scripts/verify.sh</code> — whole gate, including the unit floor. Local rust stays <code>cargo test</code>.</p>
       <p>On the PR: download the <code>coverage-reports</code> artifact even from a red run. Open <code>coverage/SCOPE.md</code> first.</p>
     </div>

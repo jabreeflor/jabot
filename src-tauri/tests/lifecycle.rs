@@ -5,6 +5,9 @@
 //! have. Where a case needs an agent it gets the real `fake-acp-agent`
 //! subprocess over real ACP stdio, not a stub.
 
+mod common;
+use common::fake_agent;
+
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -182,17 +185,6 @@ impl Host {
         conn.busy_timeout(Duration::from_secs(5)).unwrap();
         conn.execute_batch(statement).unwrap();
     }
-}
-
-fn fake_agent() -> String {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_fake_acp_agent") {
-        return path.to_string();
-    }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .join("target/debug/fake-acp-agent")
-        .to_string_lossy()
-        .into_owned()
 }
 
 fn kinds(inbox: &Value) -> Vec<String> {

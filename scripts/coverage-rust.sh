@@ -49,6 +49,10 @@ EOF
 # tests fail, but finishes the suite so a red run still leaves a report
 # (CI uploads those). Further formats are `report` against the same
 # profdata, so the suite is not executed twice.
+#
+# Bins land under `src-tauri/target/llvm-cov-target/debug/`. Integration
+# tests that spawn `fake-acp-agent` resolve that path in
+# `src-tauri/tests/common/mod.rs` — they must not assume `target/debug/`.
 cargo llvm-cov --manifest-path src-tauri/Cargo.toml \
   --features dev-bins \
   --locked \

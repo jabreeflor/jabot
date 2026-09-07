@@ -8,7 +8,9 @@
 //! `schedule/*` and comes back out as a store row, because those are the two
 //! ends a user actually experiences.
 
-use std::path::PathBuf;
+mod common;
+use common::fake_agent;
+
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,29 +24,6 @@ const INVALID_PARAMS: i64 = -32602;
 
 fn req(id: i64, method: &str, params: Option<Value>) -> JsonRpcRequest {
     JsonRpcRequest::new(RequestId::Number(id), method, params)
-}
-
-/// The scriptable ACP agent. Same lookup `tests/lifecycle.rs` uses.
-fn fake_agent() -> String {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_fake_acp_agent") {
-        return path.to_string();
-    }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let mut candidates = vec![
-        manifest.join("target/debug/fake-acp-agent"),
-        manifest.join("../target/debug/fake-acp-agent"),
-    ];
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(debug_dir) = exe.parent().and_then(|p| p.parent()) {
-            candidates.push(debug_dir.join("fake-acp-agent"));
-        }
-    }
-    candidates
-        .into_iter()
-        .find(|p| p.exists())
-        .unwrap_or_else(|| manifest.join("target/debug/fake-acp-agent"))
-        .to_string_lossy()
-        .into_owned()
 }
 
 struct Host {
