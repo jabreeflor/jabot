@@ -133,7 +133,7 @@ impl LifecycleState {
         }
     }
 
-    fn entry(&mut self, thread_id: &str) -> &mut ProcessStatus {
+    pub(super) fn entry(&mut self, thread_id: &str) -> &mut ProcessStatus {
         self.threads.entry(thread_id.to_string()).or_default()
     }
 
@@ -440,6 +440,7 @@ impl HostSession {
             entry.connected = true;
             entry.acp = AcpState::Running;
             entry.run_started = Some(std::time::Instant::now());
+            entry.has_reply = false;
             entry.touch();
         }
         let Some(store) = self.store.as_ref() else {

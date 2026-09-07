@@ -272,6 +272,8 @@ function stopReasonLabel(reason: string): string {
       return "done";
     case "cancelled":
       return "cancelled";
+    case "empty_response":
+      return "failed: no reply";
     case "max_tokens":
       return "stopped: out of tokens";
     case "max_turn_requests":
@@ -442,6 +444,8 @@ function sysLine(stopReason: string): string {
   switch (stopReason) {
     case "end_turn":
       return "Session finished.";
+    case "empty_response":
+      return "The harness ended without a reply. Check the harness’s adapter, sign-in, and model configuration, then retry.";
     case "cancelled":
       return "Cancelled.";
     default:

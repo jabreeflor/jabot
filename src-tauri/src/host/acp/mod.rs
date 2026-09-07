@@ -542,9 +542,42 @@ impl HostSession {
         self.log_dir.join(format!("{thread_id}.stderr.log"))
     }
 
+    /// Normalize empty successful turns before either persistence or streaming,
+    /// so the transcript and run ledger agree (including duplicate v2 endings).
+    fn reply_stop_reason(&mut self, thread_id: &str, reason: Option<&str>) -> Option<String> {
+        match reason {
+            Some("end_turn") if !self.lifecycle.entry(thread_id).has_reply => {
+                Some("empty_response".into())
+            }
+            other => other.map(str::to_string),
+        }
+    }
+
     pub(crate) fn handle_inbound(&mut self, thread_id: &str, event: Inbound) {
         match event {
-            Inbound::Update(acp) => {
+            Inbound::Update(mut acp) => {
+                if acp.get("sessionUpdate").and_then(Value::as_str) == Some("agent_message_chunk") {
+                    if let Some(content) = acp.get("content") {
+                        let visible = match content.get("type").and_then(Value::as_str) {
+                            Some("text") => content
+                                .get("text")
+                                .and_then(Value::as_str)
+                                .is_some_and(|text| !text.trim().is_empty()),
+                            Some("image" | "audio" | "resource" | "resource_link") => true,
+                            _ => false,
+                        };
+                        self.lifecycle.entry(thread_id).has_reply |= visible;
+                    }
+                }
+                if acp.get("sessionUpdate").and_then(Value::as_str) == Some("state_update") {
+                    let reason = self.reply_stop_reason(
+                        thread_id,
+                        acp.get("stopReason").and_then(Value::as_str),
+                    );
+                    if let Some(reason) = reason {
+                        acp["stopReason"] = json!(reason);
+                    }
+                }
                 let seq = self.persist_transcript_event(thread_id, "session/update", &acp);
                 // Before the stream, because a preview is a property of the
                 // log rather than of any client: a window that is not looking
@@ -565,10 +598,8 @@ impl HostSession {
             Inbound::PromptResult {
                 payload: result, ..
             } => {
-                let stop_reason = result
-                    .get("stopReason")
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
+                let stop_reason = self
+                    .reply_stop_reason(thread_id, result.get("stopReason").and_then(Value::as_str));
                 let acp = json!({
                     "sessionUpdate": "state_update",
                     "sessionState": "idle",

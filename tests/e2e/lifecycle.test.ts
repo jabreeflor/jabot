@@ -144,6 +144,28 @@ describe("overlay transitions", () => {
 });
 
 describe("run ledger", () => {
+  it.each(["empty-reply", "empty-reply-v2", "whitespace-reply"])("fails an empty %s response instead of reporting success", async (mode) => {
+    const { client } = await connected();
+    await openThread(client, "t-empty", mode);
+    await client.prompt({ threadId: "t-empty", content: "hi" });
+    const state = await settle(client, "t-empty", (s) => s.latestRun?.state === "failed");
+    expect(state.lastStopReason).toBe("empty_response");
+    expect(state.latestRun?.error).toContain("empty_response");
+    // The duplicate v2 ending must not overwrite the failed run.
+    expect((await client.threadState({ threadId: "t-empty" })).lastStopReason).toBe("empty_response");
+  });
+
+  it("does not count the previous turn’s reply toward a new empty turn", async () => {
+    const { client } = await connected();
+    await openThread(client, "t-second-empty", "first-reply-only");
+    await client.prompt({ threadId: "t-second-empty", content: "first" });
+    await settle(client, "t-second-empty", (s) => s.latestRun?.state === "succeeded");
+    await client.prompt({ threadId: "t-second-empty", content: "second" });
+    const state = await settle(client, "t-second-empty", (s) => s.latestRun?.state === "failed");
+    expect(state.latestRun?.seq).toBe(2);
+    expect(state.lastStopReason).toBe("empty_response");
+  });
+
   it("opens a run on prompt and closes it on the stop reason", async () => {
     const { client } = await connected();
     await openThread(client, "t-run");

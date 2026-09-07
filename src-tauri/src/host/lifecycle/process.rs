@@ -56,6 +56,8 @@ pub struct ProcessStatus {
     /// hard cap measures the run, and a run that talks forever is the case the
     /// cap exists for.
     pub run_started: Option<Instant>,
+    /// Whether this turn produced content the user can see.
+    pub has_reply: bool,
     /// Set once per silence so the backstop resurfaces a thread once, not every
     /// tick for as long as it stays quiet.
     pub stuck_reported: bool,
@@ -69,6 +71,7 @@ impl Default for ProcessStatus {
             last_activity: Instant::now(),
             run_id: None,
             run_started: None,
+            has_reply: false,
             stuck_reported: false,
         }
     }
