@@ -11,7 +11,9 @@
  * Only tokens, the reset, and element defaults live here. Layout belongs to
  * the stylesheet of the component that owns it. `[data-theme="light"]`
  * reassigns the surface/text/edge tokens; components should keep reading
- * the names, not the dark hexes.
+ * the names, not the dark hexes. `--*-fill` is the chrome paint: opaque
+ * until `data-translucency="on"` (#250), then a 96–97% mix so Cursor-thin
+ * desktop bleed can show through. Raised surfaces stay the solid tokens.
  */
 
 :root {
@@ -21,6 +23,9 @@
   --win: #1c1c1e;
   --side: #1c1c1e;
   --chat: #151516;
+  --win-fill: var(--win);
+  --side-fill: var(--side);
+  --chat-fill: var(--chat);
   --raise: #2a2a2c;
   --raise2: #232325;
   /* Hover on --raise; the prototype's #333336, named so light can invert it. */
@@ -170,6 +175,27 @@
   --ok-bright: #2a7a3d;
 }
 
+/*
+ * Cursor-thin translucency (#250). The mix is the experiment point from the
+ * issue (95–98% opaque), not a brand constant — tune here, not in components.
+ * `prefers-reduced-transparency` and a missing `data-translucency` both
+ * leave the fills equal to the solid tokens, so Linux live.sh, Windows,
+ * and Reduce Transparency stay readable.
+ */
+html[data-translucency="on"] {
+  --win-fill: color-mix(in srgb, var(--win) 96%, transparent);
+  --side-fill: color-mix(in srgb, var(--side) 96%, transparent);
+  --chat-fill: color-mix(in srgb, var(--chat) 97%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-translucency="on"] {
+    --win-fill: var(--win);
+    --side-fill: var(--side);
+    --chat-fill: var(--chat);
+  }
+}
+
 *,
 *::before,
 *::after {
@@ -183,8 +209,12 @@ body,
   height: 100%;
 }
 
+html {
+  background: transparent;
+}
+
 body {
-  background: var(--chat);
+  background: var(--chat-fill);
   color: var(--ink);
   overflow: hidden;
   font: var(--fs-ui) / var(--lh-ui) var(--font-ui);

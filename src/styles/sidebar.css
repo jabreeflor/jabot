@@ -32,7 +32,7 @@
   width: var(--sidebar-w);
   flex: 1;
   min-height: 0;
-  background: var(--side);
+  background: var(--side-fill);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
