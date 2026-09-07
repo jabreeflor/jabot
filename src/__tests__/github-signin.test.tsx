@@ -68,7 +68,6 @@ describe("the sign-in strip above the board", () => {
           },
         ]}
         githubStatus={status({ authenticated: true, account: "octocat" })}
-        account="octocat"
         onOpenThread={vi.fn()}
       />,
     );
