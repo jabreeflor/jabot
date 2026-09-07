@@ -2,6 +2,15 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 /**
+ * Node 25+ installs a stub `globalThis.localStorage` (undefined unless
+ * `--localstorage-file` is set). Vitest's jsdom environment then skips
+ * installing Storage, and every unit test that touches
+ * `window.localStorage` crashes. Disable Node's experimental Web Storage
+ * so jsdom owns the globals — same behavior as Node 22/24.
+ */
+const noNodeWebStorage = ["--no-experimental-webstorage"];
+
+/**
  * Two projects, because they need different worlds:
  *
  * - `unit` runs the renderer in jsdom (React components, host client wiring).
@@ -12,6 +21,13 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   test: {
+    // Project configs omit poolOptions; this has to live on the root so
+    // every `npx vitest` worker (verify.sh, npm test, a11y) gets the flag.
+    poolOptions: {
+      forks: { execArgv: noNodeWebStorage },
+      threads: { execArgv: noNodeWebStorage },
+      vmThreads: { execArgv: noNodeWebStorage },
+    },
     projects: [
       {
         plugins: [react()],
