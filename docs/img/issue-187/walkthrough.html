@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Keep PR refresh controls in top-right chrome</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #111113; color: #f4f4f5; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: radial-gradient(circle at 85% 0%, #28233d 0, transparent 34rem), #111113; }
+      main { width: min(1080px, calc(100% - 48px)); margin: 0 auto; padding: 64px 0 80px; }
+      h1 { max-width: 780px; margin: 0; font-size: clamp(36px, 6vw, 68px); line-height: .98; letter-spacing: -.055em; }
+      .lede { max-width: 680px; margin: 22px 0 46px; color: #b6b6bd; font-size: 19px; line-height: 1.55; }
+      .eyebrow, h2 { color: #b9a5ff; font-size: 12px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+      section { margin-top: 52px; }
+      .flow { display: grid; grid-template-columns: 1fr auto 1fr; gap: 22px; align-items: center; }
+      .panel { border: 1px solid #37373d; border-radius: 18px; overflow: hidden; background: #19191c; box-shadow: 0 24px 70px #0008; }
+      .chrome { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid #37373d; background: #151516; }
+      .title { font-weight: 760; font-size: 18px; }
+      .button { padding: 8px 15px; border-radius: 999px; background: #ededeb; color: #202024; font-size: 13px; font-weight: 750; white-space: nowrap; }
+      .content { min-height: 205px; padding: 22px; background: linear-gradient(#171719, #141416); }
+      .search { height: 38px; border: 1px solid #3a3a40; border-radius: 8px; background: #101012; }
+      .row { height: 48px; margin-top: 14px; border-radius: 10px; background: #242427; }
+      .old .chrome { justify-content: flex-start; }
+      .old .content .button { display: inline-block; float: right; margin-left: 12px; background: #2a2a2d; color: #eee; }
+      .arrow { color: #b9a5ff; font-size: 30px; }
+      .caption { margin: 14px 4px 0; color: #9a9aa2; font-size: 14px; line-height: 1.45; }
+      .caption strong { color: #f4f4f5; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+      .card { min-height: 172px; padding: 22px; border: 1px solid #333338; border-radius: 16px; background: #1a1a1d; }
+      .card b { display: block; margin-bottom: 10px; font-size: 17px; }
+      .card p, li { color: #adadb5; font-size: 14px; line-height: 1.55; }
+      code { color: #d9ceff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+      ul { margin: 12px 0 0; padding-left: 20px; }
+      .verify { padding: 24px; border-left: 3px solid #8b6ff0; background: #1c1927; border-radius: 4px 16px 16px 4px; }
+      @media (max-width: 760px) { .flow, .grid { grid-template-columns: 1fr; } .arrow { transform: rotate(90deg); text-align: center; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">PR #198 · Issue #187</div>
+      <h1>Refresh stays where reviewers can reach it.</h1>
+      <p class="lede">The Pull Requests list and detail workspace now place Refresh in full-width view chrome above the scrolling document. Long lists and diffs no longer push the control off-screen.</p>
+
+      <section>
+        <h2>Before → after</h2>
+        <div class="flow">
+          <div>
+            <div class="panel old">
+              <div class="chrome"><span class="title">Pull Requests</span></div>
+              <div class="content"><span class="button">Refresh</span><div class="search"></div><div class="row"></div><div class="row"></div></div>
+            </div>
+            <p class="caption"><strong>Before:</strong> Refresh lived in the scrolling toolbar and disappeared with the content.</p>
+          </div>
+          <div class="arrow">→</div>
+          <div>
+            <div class="panel">
+              <div class="chrome"><span class="title">Pull Requests</span><span class="button">Refresh</span></div>
+              <div class="content"><div class="search"></div><div class="row"></div><div class="row"></div></div>
+            </div>
+            <p class="caption"><strong>After:</strong> full-width chrome owns Refresh while only the document below scrolls.</p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>How it works</h2>
+        <div class="grid">
+          <div class="card"><b>One chrome pattern</b><p><code>.pr-view-chrome</code> is a fixed flex row above <code>.page-scroll</code>, so its right edge follows the view—not the 680px content column.</p></div>
+          <div class="card"><b>Both PR surfaces</b><p>The list keeps its title on the left. The detail workspace keeps Back, repository context, and GitHub link on the left. Refresh stays right in both.</p></div>
+          <div class="card"><b>Behavior preserved</b><p>List Refresh still calls <code>pulls.refresh()</code>. Detail Refresh still calls <code>load()</code> and retains its disabled and “Refreshing…” states.</p></div>
+        </div>
+      </section>
+
+      <section>
+        <h2>What to review</h2>
+        <div class="grid">
+          <div class="card"><b>Views</b><ul><li><code>PullRequestsView.tsx</code></li><li><code>PrWorkspaceView.tsx</code></li></ul></div>
+          <div class="card"><b>Layout</b><ul><li><code>styles/pulls.css</code></li><li>Full-width chrome and truncating detail context</li></ul></div>
+          <div class="card"><b>Regression tests</b><ul><li>Refresh is outside <code>.page-scroll</code></li><li>List callback and detail reload still fire</li></ul></div>
+        </div>
+      </section>
+
+      <section class="verify">
+        <h2>How to verify</h2>
+        <ul>
+          <li>Open Pull Requests and scroll a long list; Refresh remains at the top right.</li>
+          <li>Open a PR, scroll the conversation or files, and repeat the check.</li>
+          <li>Run <code>npx vitest run --project unit src/__tests__/pull-requests.test.tsx src/__tests__/pr-workspace.test.tsx</code>.</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

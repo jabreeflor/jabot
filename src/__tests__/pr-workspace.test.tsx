@@ -30,6 +30,18 @@ function mount(fixture = workspaceFixture) {
   return client;
 }
 describe("PR workspace", () => {
+  it("keeps refresh outside the scrolling detail and reloads the PR", async () => {
+    const client = mount();
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+
+    expect(refresh.closest(".pr-view-chrome")).toBeInTheDocument();
+    expect(refresh.closest(".page-scroll")).not.toBeInTheDocument();
+    await waitFor(() => expect(client.pullRequestDetail).toHaveBeenCalledOnce());
+
+    await userEvent.click(refresh);
+    await waitFor(() => expect(client.pullRequestDetail).toHaveBeenCalledTimes(2));
+  });
+
   it("renders GitHub-flavoured markdown in the PR description", async () => {
     const body = [
       "## Validation",
