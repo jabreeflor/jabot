@@ -1,7 +1,11 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostClient } from "../host";
-import { usePrDetails, PR_DETAIL_REFRESH_MS } from "../views/prDetails";
+import {
+  usePrDetails,
+  PR_DETAIL_CACHE_MAX,
+  PR_DETAIL_REFRESH_MS,
+} from "../views/prDetails";
 import { workspaceFixture } from "../../tests/support/pr-workspace-fixture";
 
 function deferred<T>() {
@@ -45,7 +49,7 @@ afterEach(() => {
 });
 
 describe("live PR details", () => {
-  it("updates conversation/checks on the timer without foreground loading", async () => {
+  it("updates conversation/checks silently on the timer", async () => {
     const { client, result } = mount();
     await flush();
     const next = { ...workspaceFixture, comments: [], checks: null };
@@ -55,9 +59,86 @@ describe("live PR details", () => {
       await vi.advanceTimersByTimeAsync(PR_DETAIL_REFRESH_MS);
     });
     expect(result.current.loading).toBe(false);
-    expect(result.current.refreshing).toBe(true);
+    expect(result.current.refreshing).toBe(false);
     await act(async () => pending.resolve(next));
     expect(result.current.data).toEqual(next);
+  });
+  it("reserves loading chrome for an explicit refresh", async () => {
+    const { client, result } = mount();
+    await flush();
+    const next = { ...workspaceFixture, comments: [] };
+    const pending = deferred<typeof next>();
+    client.pullRequestDetail.mockReturnValueOnce(pending.promise);
+    let request!: Promise<void>;
+    await act(async () => {
+      request = result.current.refresh();
+      await Promise.resolve();
+    });
+    expect(result.current.data).toEqual(workspaceFixture);
+    expect(result.current.loading).toBe(true);
+    expect(result.current.refreshing).toBe(true);
+    await act(async () => {
+      pending.resolve(next);
+      await request;
+    });
+    expect(result.current.loading).toBe(false);
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.data).toEqual(next);
+  });
+  it("reopens a cached PR immediately and revalidates without loading chrome", async () => {
+    const client = {
+      pullRequestDetail: vi.fn().mockResolvedValue(workspaceFixture),
+    };
+    const writing = { current: false };
+    const first = renderHook(() =>
+      usePrDetails(client as unknown as HostClient, target, writing),
+    );
+    await flush();
+    expect(first.result.current.data).toEqual(workspaceFixture);
+    first.unmount();
+
+    const next = { ...workspaceFixture, comments: [] };
+    const pending = deferred<typeof next>();
+    client.pullRequestDetail.mockReturnValueOnce(pending.promise);
+    const reopened = renderHook(() =>
+      usePrDetails(client as unknown as HostClient, target, writing),
+    );
+
+    expect(reopened.result.current.data).toEqual(workspaceFixture);
+    expect(reopened.result.current.loading).toBe(false);
+    expect(reopened.result.current.refreshing).toBe(false);
+    await act(async () => pending.resolve(next));
+    expect(reopened.result.current.data).toEqual(next);
+  });
+  it("bounds cached file payloads to the most recently opened PRs", async () => {
+    const client = {
+      pullRequestDetail: vi.fn().mockResolvedValue(workspaceFixture),
+    };
+    const writing = { current: false };
+    for (let number = 1; number <= PR_DETAIL_CACHE_MAX + 1; number++) {
+      const opened = renderHook(() =>
+        usePrDetails(
+          client as unknown as HostClient,
+          { ...target, number },
+          writing,
+        ),
+      );
+      await flush();
+      opened.unmount();
+    }
+
+    const pending = deferred<typeof workspaceFixture>();
+    client.pullRequestDetail.mockReturnValueOnce(pending.promise);
+    const evicted = renderHook(() =>
+      usePrDetails(
+        client as unknown as HostClient,
+        { ...target, number: 1 },
+        writing,
+      ),
+    );
+    expect(evicted.result.current.data).toBeNull();
+    expect(evicted.result.current.loading).toBe(true);
+    await act(async () => pending.resolve(workspaceFixture));
   });
   it("skips hidden windows and resumes on visibility/focus without overlapping", async () => {
     const { client } = mount();
