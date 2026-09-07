@@ -83,6 +83,10 @@ describe("ACP → transcript", () => {
       kind: "sys",
       text: expect.stringMatching(/not signed in[\s\S]*Adapter log:[\s\S]*not logged in/),
     });
+    expect(last(stream.items)).toMatchObject({
+      kind: "sys",
+      text: expect.not.stringMatching(/^stopped:/),
+    });
     expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({
       label: "failed: not signed in",
       tone: "bad",

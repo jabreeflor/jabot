@@ -455,7 +455,11 @@ function stateUpdate(
 }
 
 function sysLine(stopReason: string, detail?: string | null): string {
-  if (detail && detail.trim()) return detail.trim();
+  if (detail && detail.trim()) {
+    // Host last_error is `stopped: <reason> — <sentence>`. The header already
+    // names the reason; the sys line keeps the sentence and any adapter log.
+    return detail.replace(/^stopped:\s+\S+\s+—\s+/, "").trim();
+  }
   switch (stopReason) {
     case "end_turn":
       return "Session finished.";

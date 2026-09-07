@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Diagnose Claude Code harness turns that end without a reply</title>
+<style>
+  body { margin: 0; background: #151618; color: #eee; font: 18px/1.6 system-ui, sans-serif; }
+  main { max-width: 940px; margin: auto; padding: 64px 48px 80px; }
+  h1 { font-size: 42px; line-height: 1.15; margin: 0 0 12px; }
+  h2 { color: #8edcc4; font-size: 22px; margin: 36px 0 12px; }
+  p, li { color: #ccd0d5; }
+  .lede { font-size: 20px; color: #e8eaed; }
+  section { border-top: 1px solid #45474b; margin-top: 32px; padding-top: 8px; }
+  code, .mono { font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .flow { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+  .card { background: #1c1e21; border: 1px solid #3a3d42; border-radius: 10px; padding: 16px 18px; }
+  .card h3 { margin: 0 0 8px; font-size: 15px; letter-spacing: .04em; text-transform: uppercase; color: #9aa0a6; }
+  .bad { color: #f3a0a0; }
+  .ok { color: #8edcc4; }
+  ul { padding-left: 1.2em; }
+</style>
+<main>
+  <p>JaBot · Issue #213 · PR</p>
+  <h1>Diagnose Claude Code harness turns that end without a reply</h1>
+  <p class="lede">An empty Claude Code turn is still a failed turn. The host now names the prerequisite that failed — sign-in, CLI, model, launch, or a process that exited — and puts the adapter log on the same line so a retry has something to fix.</p>
+
+  <section>
+    <h2>How it works</h2>
+    <div class="flow">
+      <div class="card">
+        <h3>Before</h3>
+        <p class="bad">end_turn + no visible text → <code>empty_response</code></p>
+        <p>Header: <code>failed: no reply</code></p>
+        <p>Sys line listed every possible cause and identified none. A process that died mid-prompt closed the run as <code>adapter_exit</code> without a transcript line.</p>
+      </div>
+      <div class="card">
+        <h3>After</h3>
+        <p class="ok">Same empty-reply gate from #183 / #203, plus stderr classification</p>
+        <p>Header: <code>failed: not signed in</code>, <code>failed: model</code>, <code>failed: adapter exited</code>, …</p>
+        <p>Sys line is the sentence for that cause, then <code>Adapter log:</code> and the tail of the harness stderr. Composer stays open for retry.</p>
+      </div>
+    </div>
+    <p>Classification is a read of the adapter’s <code>*.stderr.log</code> at the moment the turn ends with no visible reply, or the process exits before a <code>session/prompt</code> response. Unknown output stays <code>empty_response</code> / <code>adapter_exit</code> and still carries the excerpt.</p>
+  </section>
+
+  <section>
+    <h2>What to look at</h2>
+    <ul>
+      <li><code>src-tauri/src/host/acp/no_reply.rs</code> — classify stderr into sign-in, CLI, model, launch, or exit.</li>
+      <li><code>src-tauri/src/host/acp/mod.rs</code> — empty <code>end_turn</code> and process-exit both persist a diagnostic <code>state_update</code>.</li>
+      <li><code>src/views/transcript.ts</code> — specific header labels; sys line prefers the host’s error and adapter log.</li>
+      <li><code>src-tauri/src/bin/fake_acp_agent.rs</code> — <code>empty-reply-logged-out</code>, <code>empty-reply-model</code>, <code>exit-before-reply</code>.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>How to verify</h2>
+    <p>Lifecycle e2e: empty-reply still fails as <code>empty_response</code>; logged-out and model modes name their cause; <code>exit-before-reply</code> fails as <code>adapter_exit</code> with the stderr excerpt, then accepts a second prompt.</p>
+    <p class="mono">./scripts/verify.sh</p>
+    <p>Live evidence is in <code>docs/img/issue-213/</code> — real renderer, this branch’s host, fake ACP writing the Claude sign-in / crash lines.</p>
+  </section>
+</main>
