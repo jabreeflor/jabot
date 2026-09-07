@@ -64,7 +64,7 @@ beforeEach(() => {
 
 async function renderApp() {
   render(<App />);
-  await screen.findByText("This Mac · v0.1.0");
+  await screen.findByRole("button", { name: "Settings" });
   await waitFor(() => expect(click).not.toBeNull());
 }
 
@@ -111,7 +111,7 @@ describe("notification clicks", () => {
 
   it("stops listening when the shell unmounts", async () => {
     const { unmount } = render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
+    await screen.findByRole("button", { name: "Settings" });
     await waitFor(() => expect(click).not.toBeNull());
 
     unmount();

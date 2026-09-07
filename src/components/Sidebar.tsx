@@ -61,7 +61,7 @@ export function Sidebar({
   inboxCount: number;
   openPrCount: number;
   userName: string;
-  /** One line under the name: which host, or why there isn't one. */
+  /** Transient connection status. Empty once the host is healthy. */
   hostLine: string;
   hostOffline?: boolean;
   leavingThreadIds?: readonly string[];
@@ -229,7 +229,9 @@ export function Sidebar({
         </div>
         <div className="who">
           <div className="name">{userName}</div>
-          <div className={hostOffline ? "host bad" : "host"}>{hostLine}</div>
+          {hostLine && (
+            <div className={hostOffline ? "host bad" : "host"}>{hostLine}</div>
+          )}
         </div>
         {onOpenSettings && (
           <button

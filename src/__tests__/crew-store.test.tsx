@@ -424,7 +424,7 @@ describe("App, once the host has answered with a crew", () => {
 
   async function openCrew() {
     render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
+    await screen.findByRole("button", { name: "Settings" });
     await userEvent.click(screen.getByRole("button", { name: /Crew/ }));
     return screen.findByRole("heading", { level: 1, name: "Your Crew" });
   }
@@ -485,7 +485,7 @@ describe("App, once the host has answered with a crew", () => {
   it("re-lists the crew when a turn ends, so a row stops quoting old news", async () => {
     crew = [CHIEF, bot({ preview: "Old news." })];
     render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
+    await screen.findByRole("button", { name: "Settings" });
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /^Writer/ })).toHaveTextContent(

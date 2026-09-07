@@ -47,10 +47,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Render a first run and wait for the takeover's host footer to settle. */
+/** Render a first run and wait for the host handshake to settle. */
 async function renderFirstRun() {
   render(<App />);
-  await screen.findByText("This Mac · v0.1.0");
+  await waitFor(() => expect(connected).toHaveBeenCalled());
+  expect(screen.queryByText("This Mac · v0.1.0")).not.toBeInTheDocument();
 }
 
 async function walkToShell(user: ReturnType<typeof userEvent.setup>) {
@@ -74,8 +75,9 @@ describe("Onboarding", () => {
   it("connects the host during setup, not after it", async () => {
     await renderFirstRun();
 
-    // The footer under the card is the hoisted handshake made visible. The
-    // exactly-once holds in this test env; the real app renders under
+    // The hoisted handshake starts during setup even though a healthy host no
+    // longer leaves a permanent footer behind. The exactly-once holds in this
+    // test env; the real app renders under
     // StrictMode, which double-invokes the effect in dev — this is not a
     // production call-count guarantee.
     expect(
