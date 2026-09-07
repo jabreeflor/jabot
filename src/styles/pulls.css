@@ -3,6 +3,30 @@
   margin: 0 auto;
   padding: 30px 36px 70px;
 }
+.pr-view-chrome {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: 18px var(--sp-6) var(--sp-3);
+  border-bottom: 1px solid var(--edge);
+  background: var(--chat);
+}
+.pr-view-chrome > .btn {
+  flex: none;
+}
+.pr-chrome-context {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.pr-chrome-context .pr-muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .pr-toolbar,
 .pr-meta,
 .pr-actions {

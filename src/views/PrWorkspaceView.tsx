@@ -127,26 +127,28 @@ export function PrWorkspaceView({
     );
   return (
     <div className="view">
+      <div className="pr-view-chrome">
+        <div className="pr-chrome-context">
+          <button className="btn" onClick={onBack} disabled={busy}>
+            ← Pull requests
+          </button>
+          <span className="pr-muted">
+            {pr.repo} / #{pr.number}
+          </span>
+          <a className="btn" href={pr.url} target="_blank" rel="noreferrer">
+            View on GitHub ↗
+          </a>
+        </div>
+        <button
+          className="btn"
+          onClick={() => void load()}
+          disabled={refreshing || busy || !client}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
       <div className="page-scroll">
         <div className="pr-workspace">
-          <div className="pr-toolbar">
-            <button className="btn" onClick={onBack} disabled={busy}>
-              ← Pull requests
-            </button>
-            <span className="pr-muted">
-              {pr.repo} / #{pr.number}
-            </span>
-            <a className="btn" href={pr.url} target="_blank" rel="noreferrer">
-              View on GitHub ↗
-            </a>
-            <button
-              className="btn"
-              onClick={() => void load()}
-              disabled={refreshing || busy || !client}
-            >
-              {refreshing ? "Refreshing…" : "Refresh"}
-            </button>
-          </div>
           {client && (
             <p className="pr-muted">
               Auto-refresh every 30 seconds while visible · refreshes when you
