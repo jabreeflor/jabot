@@ -30,6 +30,94 @@ function mount(fixture = workspaceFixture) {
   return client;
 }
 describe("PR workspace", () => {
+  it("renders GitHub-flavoured markdown in the PR description", async () => {
+    const body = [
+      "## Validation",
+      "",
+      "- [x] **Unit tests**",
+      "- [ ] Manual check",
+      "",
+      "Use `npm test` or read the [guide](https://example.com/guide).",
+      "",
+      "```ts",
+      "const ready = true;",
+      "```",
+      "",
+      "| Gate | Result |",
+      "| --- | --- |",
+      "| Typecheck | Pass |",
+      "",
+      "![Rendered preview](https://example.com/preview.png)",
+      "",
+      "[Contributing](CONTRIBUTING.md)",
+      "",
+      "![Architecture](docs/img/architecture.png)",
+    ].join("\n");
+    const { container } = render(
+      <PrWorkspaceView
+        pr={workspacePr}
+        client={
+          {
+            pullRequestDetail: vi.fn().mockResolvedValue({
+              ...workspaceFixture,
+              pr: { ...workspaceFixture.pr, body },
+            }),
+            pullRequestAction: vi.fn(),
+          } as unknown as HostClient
+        }
+        onBack={vi.fn()}
+        onOpenThread={vi.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Validation", level: 2 }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(2);
+    expect(
+      screen.getByText("npm test", { selector: "code" }),
+    ).toBeInTheDocument();
+    expect(container.querySelector("pre code")?.textContent).toBe(
+      "const ready = true;\n",
+    );
+    expect(screen.getByRole("link", { name: "guide" })).toHaveAttribute(
+      "href",
+      "https://example.com/guide",
+    );
+    expect(screen.getByRole("link", { name: "guide" })).toHaveAttribute(
+      "target",
+      "_blank",
+    );
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Rendered preview" }),
+    ).toHaveAttribute("src", "https://example.com/preview.png");
+    expect(screen.getByRole("link", { name: "Contributing" })).toHaveAttribute(
+      "href",
+      "https://github.com/acme/workspace/blob/abc123456789/CONTRIBUTING.md",
+    );
+    expect(screen.getByRole("img", { name: "Architecture" })).toHaveAttribute(
+      "src",
+      "https://github.com/acme/workspace/raw/abc123456789/docs/img/architecture.png",
+    );
+  });
+
+  it("keeps partial markdown readable and blocks unsafe link protocols", async () => {
+    const fixture = {
+      ...workspaceFixture,
+      pr: {
+        ...workspaceFixture.pr,
+        body: "Still typing [a link\n\n[unsafe](javascript:alert(1))",
+      },
+    };
+    mount(fixture);
+
+    expect(
+      await screen.findByText(/Still typing \[a link/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("unsafe").closest("a")).toBeNull();
+  });
+
   it("posts a review against the displayed head and clears only on success", async () => {
     const client = mount();
     const user = userEvent.setup();
