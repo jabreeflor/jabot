@@ -28,6 +28,7 @@
 //   --viewport <w>x<h>          default 1280x800
 //   --full-page                 the whole scrollable page, not the viewport
 //   --first-run                 do not seed the onboarding record; show setup
+//   --theme light|dark|system   seed jabot.theme before load (default dark)
 //   --timeout <ms>              per-step and readiness limit, default 15000
 //
 // Exit code is 0 only if the shot was written. Anything else prints why.
@@ -38,6 +39,9 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 
 const ONBOARDING_KEY = "jabot.onboarding.v1";
+// Mirrors src/theme.ts. Seeded so a screenshot can be the light palette
+// without clicking Settings first — each shot is a fresh browser.
+const THEME_KEY = "jabot.theme";
 // Mirrors tests/support/onboarding.ts: the profile a unit test seeds so <App/>
 // renders the shell instead of first-run setup.
 const ONBOARDED = {
@@ -61,6 +65,7 @@ function parse(argv) {
     viewport: { width: 1280, height: 800 },
     fullPage: false,
     firstRun: false,
+    theme: null,
     timeout: 15_000,
     rpc: [],
   };
@@ -91,6 +96,14 @@ function parse(argv) {
       case "--first-run":
         options.firstRun = true;
         break;
+      case "--theme": {
+        const theme = value();
+        if (theme !== "light" && theme !== "dark" && theme !== "system") {
+          usage("--theme wants light, dark, or system");
+        }
+        options.theme = theme;
+        break;
+      }
       case "--timeout":
         options.timeout = Number(value());
         break;
@@ -169,7 +182,7 @@ async function main() {
     const context = await browser.newContext({
       viewport: options.viewport,
       deviceScaleFactor: 2,
-      colorScheme: "dark",
+      colorScheme: options.theme === "light" ? "light" : "dark",
     });
     if (!options.firstRun) {
       await context.addInitScript(
@@ -177,6 +190,14 @@ async function main() {
           window.localStorage.setItem(key, JSON.stringify(profile));
         },
         [ONBOARDING_KEY, ONBOARDED],
+      );
+    }
+    if (options.theme) {
+      await context.addInitScript(
+        ([key, theme]) => {
+          window.localStorage.setItem(key, theme);
+        },
+        [THEME_KEY, options.theme],
       );
     }
     const page = await context.newPage();
@@ -187,19 +208,25 @@ async function main() {
     await page.goto(options.url, { waitUntil: "networkidle" });
 
     if (!options.firstRun) {
-      // The sidebar's host line is `.host` and gains `.bad` on any failure;
-      // "Connecting to host…" is the state before either. Wait for the live
-      // one, so a screenshot cannot be taken of a renderer that never reached
-      // the host.
+      // A healthy host no longer renders `.host` (the connected subtitle
+      // went away). Wait for the shell's Settings control and the absence
+      // of the connecting copy, so a screenshot cannot be taken of a
+      // renderer that never reached the host.
       await page.waitForFunction(
         () => {
-          const el = document.querySelector(".host");
-          return el && !el.classList.contains("bad") && !el.textContent.includes("Connecting");
+          const connecting = (document.body.innerText || "").includes(
+            "Connecting to host…",
+          );
+          const settings = document.querySelector('[aria-label="Settings"]');
+          const failed = document.querySelector(".host.bad");
+          return Boolean(settings) && !connecting && !failed;
         },
         undefined,
         { timeout: options.timeout },
       );
-      const hostLine = await page.locator(".host").textContent();
+      const host = page.locator(".host");
+      const hostLine =
+        (await host.count()) > 0 ? await host.textContent() : "connected";
       console.log(`host: ${hostLine}`);
     }
 

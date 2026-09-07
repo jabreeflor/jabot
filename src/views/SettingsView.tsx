@@ -7,10 +7,11 @@
 //! nothing in that issue's scope created a place to put one. So the threshold
 //! was an env var on the host process, which a bundled app gives nobody.
 //!
-//! Two controls, not five. A remembered permission scope has no host support
-//! at all, and a pane offering a control that decides nothing is worse than no
-//! pane — the user would set it, and it would do nothing, and they would have
-//! no way to find that out.
+//! Host knobs stay scoped to what the host actually decides. Appearance (#178)
+//! is a renderer preference parked on this pane because Settings is where a
+//! person looks — it never goes over the wire. A remembered permission scope
+//! still has no host support, and a pane offering a control that decides
+//! nothing is worse than no pane.
 //!
 //! Minutes on screen, milliseconds on the wire. Nobody thinks about a
 //! backstop in milliseconds, and the wire keeps them because that is what
@@ -29,6 +30,7 @@ import type {
   SettingsView as HostSettings,
 } from "../host";
 import type { HarnessCard } from "../components/types";
+import { type ThemePreference, useTheme } from "../theme";
 import { DevicesView } from "./DevicesView";
 
 type SettingsTab = "general" | "devices";
@@ -36,6 +38,31 @@ type SettingsTab = "general" | "devices";
 const TABS: readonly TabSpec<SettingsTab>[] = [
   { id: "general", label: "General" },
   { id: "devices", label: "Devices" },
+];
+
+/** Dark / Light / Match system. The stored value is the preference, not the
+    resolved palette — "system" still has to mean something on the next launch. */
+const APPEARANCES: ReadonlyArray<{
+  id: ThemePreference;
+  label: string;
+  detail: string;
+}> = [
+  {
+    id: "dark",
+    label: "Dark",
+    detail: "The shipped graphite palette.",
+  },
+  {
+    id: "light",
+    label: "Light",
+    detail: "A cream-paper reading surface.",
+  },
+  {
+    id: "system",
+    label: "Match system",
+    detail:
+      "Follows this Mac's appearance. Changes when the OS does.",
+  },
 ];
 
 /** The two the fold path accepts, with what each actually does. The wording is
@@ -97,7 +124,7 @@ export function SettingsView({
             <p>
               {tab === "devices"
                 ? "Everything paired with this Mac. A device can answer permission prompts and read your Inbox — revoking one cuts it off immediately, including a connection it already has open."
-                : "What JaBot does when you are not watching"}
+                : "How JaBot looks, and what it does when you are not watching"}
             </p>
           </div>
 
@@ -187,6 +214,8 @@ function GeneralSettings({
 
   return (
     <>
+      <AppearanceSettings />
+
       <section className="settings-section" aria-label="Harnesses">
         <h2>Harnesses</h2>
         <p>Choose which harnesses appear when starting a chat or choosing a bot’s engine.</p>
@@ -297,5 +326,34 @@ function GeneralSettings({
         </>
       )}
     </>
+  );
+}
+
+function AppearanceSettings() {
+  const { preference, setPreference } = useTheme();
+
+  return (
+    <section className="setting">
+      <h2>Appearance</h2>
+      <p className="setting-note">
+        Dark is the default so an existing install does not flip on
+        upgrade. Match system follows this Mac&apos;s appearance via the
+        OS color-scheme preference.
+      </p>
+      {APPEARANCES.map((choice) => (
+        <label className="checkline" key={choice.id}>
+          <input
+            type="radio"
+            name="appearance"
+            checked={preference === choice.id}
+            onChange={() => setPreference(choice.id)}
+          />
+          <span>
+            {choice.label}
+            <small>{choice.detail}</small>
+          </span>
+        </label>
+      ))}
+    </section>
   );
 }

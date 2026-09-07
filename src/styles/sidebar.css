@@ -98,7 +98,7 @@
 }
 
 .sidebar-toggle:hover {
-  background: #333336;
+  background: var(--raise-hover);
 }
 
 .sidebar-toggle:focus-visible {

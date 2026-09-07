@@ -14,6 +14,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { THEME_KEY } from "../theme";
 import { SettingsView } from "../views/SettingsView";
 import type { PairedDeviceView, SettingsView as HostSettings } from "../host";
 
@@ -151,12 +152,31 @@ describe("SettingsView", () => {
   });
 
   /** `null` is "not asked yet", which a preview build and a unit test both
-      are. Drawing zeros would be showing settings nobody chose. */
+      are. Drawing zeros would be showing settings nobody chose. Appearance
+      is local, so it still paints — it does not need the host. */
   it("waits rather than inventing values before the host answers", () => {
     draw({ settings: null });
 
     expect(screen.getByText("Asking the host…")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.getByRole("radio", { name: /Dark/ })).toBeChecked();
+  });
+
+  /**
+   * Appearance is a renderer preference. Switching it must paint the
+   * document and remember the choice without asking the host — a theme
+   * that waits on settings/set flashes the shipped dark palette.
+   */
+  it("applies light theme to the document and remembers it", async () => {
+    const props = draw();
+
+    expect(screen.getByRole("radio", { name: /Dark/ })).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: /^Light/ }));
+
+    expect(screen.getByRole("radio", { name: /^Light/ })).toBeChecked();
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(window.localStorage.getItem(THEME_KEY)).toBe("light");
+    expect(props.onSave).not.toHaveBeenCalled();
   });
 
   it("says why when the host will not answer at all", () => {
