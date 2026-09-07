@@ -10,8 +10,9 @@ import { defineConfig, devices } from "@playwright/test";
  * wipe `.jabot-dev/data`.
  *
  * `@playwright/test` and `playwright-core` stay on the same version in
- * package.json (shot.mjs uses the latter). Node follows CI (`verify` and
- * `browser` jobs in `.github/workflows/ci.yml`) — currently 26.
+ * package.json (shot.mjs uses the latter). Pinned at 1.63+ because 1.56's
+ * extract-zip hangs on Node 26 (Playwright #40724). Node follows CI
+ * (`verify` and `browser` jobs in `.github/workflows/ci.yml`) — currently 26.
  */
 export default defineConfig({
   testDir: "./tests/browser",

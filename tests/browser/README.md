@@ -33,7 +33,9 @@ shared `.jabot-dev/data` a developer may be using on port 1420).
 
 `./scripts/verify.sh` stays offline and display-less. Pass
 `--check-browser` to run the Chromium smoke after the usual gates. CI's
-`browser` job is the required PR check.
+`browser` job is the required PR check. `@playwright/test` and
+`playwright-core` stay pinned together (1.63+); 1.56 hangs extracting
+Chromium on Node 26.
 
 ## Isolation
 
