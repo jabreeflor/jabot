@@ -115,23 +115,23 @@ describe("the sign-in strip above the board", () => {
     expect(onSignIn).toHaveBeenCalledOnce();
   });
 
-  it("says who the board belongs to once there is somebody", () => {
+  it("removes the account subtitle once signed in", () => {
     render(
       <PullRequestsView
         pullRequests={ROWS}
         githubStatus={status({ authenticated: true, account: "octocat" })}
-        account="octocat"
         onSignIn={vi.fn()}
         onOpenThread={vi.fn()}
       />,
     );
 
     expect(
-      screen.getByText(/Showing every pull request you have open as @octocat/),
-    ).toBeInTheDocument();
+      screen.queryByText(/Showing every pull request you have open/),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Sign in with GitHub" }),
     ).not.toBeInTheDocument();
+    expect(screen.getByText("Migrate auth to sessions")).toBeInTheDocument();
   });
 
   it("draws no strip at all until the host has answered", () => {

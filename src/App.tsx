@@ -1015,7 +1015,6 @@ function MainView({
           unavailable={pulls.unavailable}
           error={pulls.error}
           githubStatus={github.status}
-          account={pulls.account}
           onSignIn={onSignIn}
           onRefresh={() => void pulls.refresh()}
           onOpenThread={(threadId) => onSelect({ view: "thread", threadId })}
