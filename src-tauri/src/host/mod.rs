@@ -7,7 +7,7 @@ mod acp;
 mod chief;
 mod crew;
 mod git;
-mod harness;
+pub(crate) mod harness;
 mod identity;
 mod lifecycle;
 mod log;

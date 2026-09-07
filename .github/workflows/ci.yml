@@ -48,6 +48,11 @@ jobs:
             libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
             librsvg2-dev libsoup-3.0-dev
       - run: npm ci
+      # The ACP adapter the app ships inside its own bundle. Staged from its
+      # own lock (src-tauri/vendor/adapters), gitignored, and checked by the
+      # `bundle-config` gate below — verify.sh runs offline by design and so
+      # does not install it itself.
+      - run: npm run bundle:adapters
       - run: ./scripts/verify.sh
 
   # The thing users actually install. macOS-only because that is the target —

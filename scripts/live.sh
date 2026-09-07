@@ -116,6 +116,15 @@ setup_node() {
   ok "node_modules installed"
 }
 
+# The ACP adapter the app ships inside its own bundle. Staged here too, so the
+# live loop resolves the same bundled candidate a shipped JaBot would (the
+# debug fallback root in src-tauri/src/host/harness/bundled.rs is this tree).
+# Without it the Claude card is only ready on a machine that separately ran
+# `npm i -g` — which is the whole thing this stops asking people to do.
+setup_adapters() {
+  ./scripts/bundle-adapters.sh | sed 's/^/  /' || die "staging the bundled adapters failed"
+}
+
 setup_host() {
   # Incremental: a warm tree is a no-op in about a second, a cold one is a
   # few minutes. `--bins` with `dev-bins` is what verify.sh builds for e2e.
@@ -148,6 +157,7 @@ setup() {
   say "setup: system libraries"; setup_system
   say "setup: toolchain";        setup_toolchain
   say "setup: node modules";     setup_node
+  say "setup: bundled adapters"; setup_adapters
   say "setup: host binary";      setup_host
   say "setup: browser";          setup_browser
 }

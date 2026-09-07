@@ -88,6 +88,51 @@ Recovery is telling users to re-download by hand.
 
 ---
 
+## What ships inside the bundle: the Claude ACP adapter
+
+`bundle.resources` in `tauri.conf.json` copies
+`src-tauri/vendor/adapters/node_modules/**/*` into `Contents/Resources`.
+That is the ACP adapter for the Claude card,
+[`@agentclientprotocol/claude-agent-acp`](https://github.com/agentclientprotocol/claude-agent-acp),
+pinned in `src-tauri/vendor/adapters/package.json` and installed from the lock
+next to it by [`scripts/bundle-adapters.sh`](../scripts/bundle-adapters.sh).
+`beforeBuildCommand` is `npm run build:app`, which runs that script before the
+renderer build, so a `tauri build` always packages a staged tree.
+
+Why it is in the bundle at all: installing JaBot used to leave a second install
+to do by hand, and a user with Claude Code working got `Harness unavailable:
+claude-agent-acp` on every launch with no way out of it from inside the app.
+`src-tauri/src/host/harness/bundled.rs` finds this copy and offers it as the
+Claude card's **last** launch candidate — an adapter the user installed
+themselves still wins.
+
+Three things about it matter here:
+
+- **No native code.** The staged tree is JavaScript and JSON only, so nothing
+  in `Contents/Resources` needs its own signature and none of it changes the
+  notarization story. Keep it that way: a dependency that ships a `.node`, a
+  `.dylib` or a platform binary would have to be signed with the app, and
+  `codesign --verify --deep` will say so at release time rather than at build
+  time.
+- **`--omit=optional` is load-bearing.** `@anthropic-ai/claude-agent-sdk`
+  publishes the Claude Code binary itself as per-platform optional
+  dependencies, ~200 MB each. We omit them and point the adapter at the user's
+  own `claude` with `CLAUDE_CODE_EXECUTABLE`, which is also why the bundled
+  candidate is only offered on a machine where `claude` resolves.
+- **Node is not bundled.** The adapter runs on the user's Node (20+). Without
+  one the card falls back to the install hint, exactly as before.
+- **An unstaged tree fails early and loudly.** `tauri-build` reads
+  `bundle.resources` from the build script and errors when a glob matches
+  nothing, so a clone that never staged the adapters fails `cargo check`, not
+  just `tauri build`. `scripts/verify.sh` catches it first, in `bundle-config`,
+  with the command to run.
+
+To change the pinned version: edit `src-tauri/vendor/adapters/package.json`,
+run `npm install` in that directory, commit both files, and re-run
+`./scripts/bundle-adapters.sh`. `./scripts/verify.sh` fails if the two disagree.
+
+---
+
 ## What consumes the feed
 
 `tauri.conf.json` names the endpoint and carries the `pubkey`, but both are
