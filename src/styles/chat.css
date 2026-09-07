@@ -126,6 +126,8 @@
 }
 
 .chat-scroll {
+  min-height: 0;
+  overflow-anchor: none;
   flex: 1;
   overflow-y: auto;
   padding: var(--sp-4) var(--sp-6);

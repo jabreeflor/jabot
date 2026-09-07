@@ -26,6 +26,7 @@ const restore: Array<() => void> = [];
 
 afterEach(() => {
   restore.splice(0).forEach((undo) => undo());
+  vi.restoreAllMocks();
 });
 
 /** A scroller with real geometry: 5000px of transcript in a 500px window. */
@@ -63,6 +64,11 @@ function draw(items: readonly TranscriptItem[]) {
   );
   const scroll = view.container.querySelector(".chat-scroll") as HTMLElement;
   measure(scroll);
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    const top = this.matches(".msg.me") ? 4000 - scroll.scrollTop : 0;
+    const bottom = this.matches(".transcript") ? 4100 - scroll.scrollTop : top;
+    return { top, bottom, left: 0, right: 0, width: 0, height: bottom - top, x: 0, y: top, toJSON() {} };
+  });
   return { ...view, scroll };
 }
 
@@ -127,34 +133,30 @@ describe("Conversation scrolling", () => {
    * typed is done reading back, and a reply that landed off-screen would be
    * the worse surprise.
    */
-  it("goes back to the end when the reader sends", () => {
+  it("aligns a new prompt at the top even when its reply arrives in the same update", () => {
     const view = draw(history);
-    view.scroll.scrollTop = 1_200;
+    view.scroll.scrollTop = 1200;
     fireEvent.scroll(view.scroll);
-
-    extend(view, [
-      ...history,
-      { kind: "user", id: "u1", text: "wait, go back" } as TranscriptItem,
+    extend(view, [...history,
+      { kind: "user", id: "u1", text: "go on" }, agent("a9", "reply"),
     ]);
-
-    expect(view.scroll.scrollTop).toBe(CONTENT);
+    expect(view.scroll.scrollTop).toBe(4000);
+    expect(view.container.querySelector<HTMLElement>(".turn-space")?.style.height).toBe("400px");
   });
 
-  /** And it stays stuck afterwards: the agent's reply follows the send. */
-  it("keeps following after a send, chunk by chunk", () => {
+  it("holds the prompt during streaming, including a short reply that fits", () => {
     const view = draw(history);
-    view.scroll.scrollTop = 1_200;
-    fireEvent.scroll(view.scroll);
-    const sent = [
-      ...history,
-      { kind: "user", id: "u1", text: "go on" } as TranscriptItem,
-    ];
+    const sent: TranscriptItem[] = [...history, { kind: "user", id: "u1", text: "go on" }];
     extend(view, sent);
-
-    view.scroll.scrollTop = 0;
-    extend(view, [...sent, agent("a9", "typ")]);
-
-    expect(view.scroll.scrollTop).toBe(CONTENT);
+    // Even a scroll event at the bottom of a short turn must not resume following.
+    measure(view.scroll, 4500);
+    fireEvent.scroll(view.scroll);
+    extend(view, [...sent, agent("a9", "typing")]);
+    expect(view.scroll.scrollTop).toBe(4000);
+    view.scroll.scrollTop = 1200;
+    fireEvent.scroll(view.scroll);
+    extend(view, [...sent, agent("a9", "typing more")]);
+    expect(view.scroll.scrollTop).toBe(1200);
   });
 
   describe("the way back", () => {
