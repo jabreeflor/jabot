@@ -177,6 +177,7 @@ describe("SettingsView", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
     expect(window.localStorage.getItem(THEME_KEY)).toBe("light");
     expect(props.onSave).not.toHaveBeenCalled();
+    expect(screen.getByText(/reduced transparency/i)).toBeInTheDocument();
   });
 
   it("says why when the host will not answer at all", () => {

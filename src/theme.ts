@@ -10,6 +10,8 @@
 
 import { useEffect, useState } from "react";
 
+import { syncWindowTranslucency } from "./translucency";
+
 export const THEME_KEY = "jabot.theme";
 
 export type ThemePreference = "dark" | "light" | "system";
@@ -88,7 +90,10 @@ export function bootTheme(): ResolvedTheme {
   const preference = loadThemePreference();
   const resolved = applyTheme(preference);
   subscribeSystemTheme(() => {
-    if (loadThemePreference() === "system") applyTheme("system");
+    if (loadThemePreference() === "system") {
+      const next = applyTheme("system");
+      void syncWindowTranslucency(next);
+    }
   });
   return resolved;
 }
@@ -102,12 +107,16 @@ export function useTheme(): {
   useEffect(() => {
     applyTheme(preference);
     if (preference !== "system") return;
-    return subscribeSystemTheme(() => applyTheme("system"));
+    return subscribeSystemTheme(() => {
+      const next = applyTheme("system");
+      void syncWindowTranslucency(next);
+    });
   }, [preference]);
 
   function setPreference(next: ThemePreference) {
     saveThemePreference(next);
-    applyTheme(next);
+    const resolved = applyTheme(next);
+    void syncWindowTranslucency(resolved);
     setPref(next);
   }
 

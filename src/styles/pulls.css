@@ -11,7 +11,7 @@
   gap: var(--sp-4);
   padding: 18px var(--sp-6) var(--sp-3);
   border-bottom: 1px solid var(--edge);
-  background: var(--chat);
+  background: var(--chat-fill);
 }
 .pr-view-chrome > .btn {
   flex: none;

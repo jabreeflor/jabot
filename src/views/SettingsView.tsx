@@ -338,7 +338,10 @@ function AppearanceSettings() {
       <p className="setting-note">
         Dark is the default so an existing install does not flip on
         upgrade. Match system follows this Mac&apos;s appearance via the
-        OS color-scheme preference.
+        OS color-scheme preference. The chrome is a hair translucent on
+        macOS — a Cursor-style hint of the desktop, not glass. It stays
+        fully opaque when this Mac asks for reduced transparency, and on
+        platforms without native window effects.
       </p>
       {APPEARANCES.map((choice) => (
         <label className="checkline" key={choice.id}>

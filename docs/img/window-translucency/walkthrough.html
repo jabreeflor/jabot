@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add subtle Cursor-style window translucency</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --warn:#f2cc60; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:center; }
+    .state { min-height:220px; padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 14px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .pane { height:88px; border-radius:10px; display:flex; overflow:hidden; border:1px solid #2a3038; }
+    .side { width:34%; }
+    .main { flex:1; }
+    .arrow { text-align:center; color:var(--accent); font-size:28px; }
+    .decision { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:18px; }
+    .decision div { padding:14px; background:#0f141a; border-radius:9px; }
+    .decision strong { display:block; margin-bottom:5px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .note { color:var(--warn); }
+    @media (max-width:700px) { .flow,.decision { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · #250 walkthrough</div>
+    <h1>Add subtle Cursor-style window translucency</h1>
+    <p>The chrome stays almost opaque. On macOS a native material sits behind ~96% fills so a faint hint of the desktop reads through the sidebar and main pane. Text, inputs, and raised surfaces never thin out.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before · solid backing</h3>
+          <p>The window was opaque. <code>--side</code> and <code>--chat</code> were the chrome and the text colors.</p>
+          <div class="pane">
+            <div class="side" style="background:#1c1c1e"></div>
+            <div class="main" style="background:#151516"></div>
+          </div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After · material + fill</h3>
+          <p>macOS paints <code>HudWindow</code> / <code>HeaderView</code>. New <code>--*-fill</code> tokens overlay at 96%. Solid tokens stay for foreground.</p>
+          <div class="pane" style="background:linear-gradient(135deg,#3d6cb9,#c45c26);">
+            <div class="side" style="background:rgb(28 28 30 / 0.72)"></div>
+            <div class="main" style="background:rgb(21 21 22 / 0.72)"></div>
+          </div>
+        </div>
+      </div>
+      <p class="note">The walkthrough pane above exaggerates the gap so the layering is visible. The product fill is 96%, not 72%.</p>
+      <div class="decision">
+        <div><strong>macOS</strong>Transparent window + vibrancy. Dark uses HUD, Light uses header, so the 4% gap does not frost the wrong way.</div>
+        <div><strong>Reduced transparency</strong><code>prefers-reduced-transparency</code> clears the material and the <code>data-translucency</code> attribute. Chrome goes solid.</div>
+        <div><strong>Linux / Windows</strong><code>apply</code> is a compile-time no-op. No Mica/Acrylic. The window reads opaque.</div>
+      </div>
+    </section>
+
+    <section id="review">
+      <h2>What to review</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>src-tauri/src/window_fx.rs</code></td><td>Theme → material mapping. macOS applies; Linux returns false.</td></tr>
+          <tr><td><code>src-tauri/tauri.conf.json</code></td><td><code>transparent</code> and default <code>hudWindow</code> so the first frame already has a material.</td></tr>
+          <tr><td><code>src/translucency.ts</code></td><td>Paints <code>data-translucency</code>, asks the host, follows reduced-transparency.</td></tr>
+          <tr><td><code>src/styles/tokens.css</code></td><td><code>--*-fill</code> tokens. <code>--chat</code> stays solid so the send button ink does not go translucent.</td></tr>
+          <tr><td><code>src/styles/sidebar.css</code> / <code>shell.css</code></td><td>Chrome reads the fill tokens; cards and modals still use solid <code>--side</code>.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>./scripts/verify.sh</code> — the one gate. Includes the new unit tests and the <code>window_fx</code> mapping tests.</li>
+        <li>On a Mac: <code>npm run tauri dev</code> over a busy wallpaper, then Dark and Light. The desktop should be a hint, not a distraction.</li>
+        <li>System Settings → Accessibility → Display → Reduce transparency. The window should go fully solid.</li>
+        <li>Live loop (any OS): <code>./scripts/live.sh up</code> then <code>./scripts/live.sh shot --out /tmp/after.png --backdrop dark</code>. <code>--opaque</code> is the fallback.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

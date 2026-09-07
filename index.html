@@ -30,6 +30,21 @@
               : "dark";
         document.documentElement.dataset.theme = resolved;
         document.documentElement.style.colorScheme = resolved;
+        // Same first-frame rule as src/translucency.ts: a hint of desktop
+        // unless this Mac asked for reduced transparency. Must stay in
+        // lockstep with prefersReducedTransparency().
+        var translucent = true;
+        try {
+          if (
+            window.matchMedia &&
+            window.matchMedia("(prefers-reduced-transparency: reduce)").matches
+          ) {
+            translucent = false;
+          }
+        } catch (e) {}
+        if (translucent) {
+          document.documentElement.dataset.translucency = "on";
+        }
       })();
     </script>
   </head>

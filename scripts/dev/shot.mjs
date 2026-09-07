@@ -29,6 +29,9 @@
 //   --full-page                 the whole scrollable page, not the viewport
 //   --first-run                 do not seed the onboarding record; show setup
 //   --theme light|dark|system   seed jabot.theme before load (default dark)
+//   --backdrop dark|light       paint a desktop-like wallpaper behind the
+//                               chrome so a translucent fill can be seen
+//   --opaque                    force the solid fallback (no data-translucency)
 //   --timeout <ms>              per-step and readiness limit, default 15000
 //
 // Exit code is 0 only if the shot was written. Anything else prints why.
@@ -66,6 +69,8 @@ function parse(argv) {
     fullPage: false,
     firstRun: false,
     theme: null,
+    backdrop: null,
+    opaque: false,
     timeout: 15_000,
     rpc: [],
   };
@@ -104,6 +109,17 @@ function parse(argv) {
         options.theme = theme;
         break;
       }
+      case "--backdrop": {
+        const backdrop = value();
+        if (backdrop !== "light" && backdrop !== "dark") {
+          usage("--backdrop wants light or dark");
+        }
+        options.backdrop = backdrop;
+        break;
+      }
+      case "--opaque":
+        options.opaque = true;
+        break;
       case "--timeout":
         options.timeout = Number(value());
         break;
@@ -200,6 +216,31 @@ async function main() {
         [THEME_KEY, options.theme],
       );
     }
+    if (options.opaque) {
+      // Same query src/translucency.ts and index.html listen for. Forcing
+      // it on is how a screenshot shows the solid fallback without a
+      // macOS accessibility pref.
+      await context.addInitScript(() => {
+        const original = window.matchMedia.bind(window);
+        window.matchMedia = (query) => {
+          if (query.includes("prefers-reduced-transparency")) {
+            return {
+              matches: true,
+              media: query,
+              onchange: null,
+              addListener() {},
+              removeListener() {},
+              addEventListener() {},
+              removeEventListener() {},
+              dispatchEvent() {
+                return false;
+              },
+            };
+          }
+          return original(query);
+        };
+      });
+    }
     const page = await context.newPage();
     page.setDefaultTimeout(options.timeout);
     const consoleErrors = [];
@@ -254,6 +295,24 @@ async function main() {
           throw new Error(`unknown step ${step.kind}`);
       }
       console.log(`step ${step.kind}: ok`);
+    }
+
+    if (options.opaque) {
+      await page.evaluate(() => {
+        delete document.documentElement.dataset.translucency;
+      });
+    }
+
+    if (options.backdrop) {
+      // High-contrast "desktop" so a 4% chrome gap is visible in a still.
+      // Not the product wallpaper — the live loop has no native window.
+      const wallpaper =
+        options.backdrop === "dark"
+          ? "radial-gradient(1200px 800px at 15% 20%, #3d6cb9 0%, transparent 55%), radial-gradient(900px 700px at 85% 80%, #c45c26 0%, transparent 50%), linear-gradient(160deg, #14213d 0%, #1b4332 45%, #7f5539 100%)"
+          : "radial-gradient(1000px 700px at 20% 15%, #ffe066 0%, transparent 45%), radial-gradient(900px 800px at 90% 85%, #74c69d 0%, transparent 50%), linear-gradient(160deg, #caf0f8 0%, #90e0ef 40%, #f9c74f 100%)";
+      await page.addStyleTag({
+        content: `html { background: ${wallpaper} !important; background-attachment: fixed !important; }`,
+      });
     }
 
     mkdirSync(path.dirname(options.out), { recursive: true });

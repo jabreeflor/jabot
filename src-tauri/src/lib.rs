@@ -5,6 +5,7 @@
 
 pub mod host;
 pub mod notify;
+mod window_fx;
 
 pub use host::{
     HostSession, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NewThread, RequestId, Store,
@@ -20,6 +21,13 @@ use host::AdapterWake;
 use tauri::{Emitter, Manager, State, WindowEvent};
 
 struct HostState(Mutex<HostSession>);
+
+/// Paint or clear the macOS window material (#250). Off macOS this is a
+/// no-op that returns false so the renderer keeps the opaque fallback.
+#[tauri::command]
+fn apply_window_translucency(app: tauri::AppHandle, theme: String, enabled: bool) -> bool {
+    window_fx::apply(&app, &theme, enabled)
+}
 
 /// JSON-RPC 2.0 request/response. Same payload a socket transport will frame.
 #[tauri::command]
@@ -156,10 +164,14 @@ pub fn run() {
             // genuine no-op, and no click can ever arrive to reach the sink.
             route_notification_clicks(app.handle().clone());
             notify::install();
+            // Dark is the renderer default (#178). Light re-applies from
+            // `apply_window_translucency` once the stored palette is known.
+            window_fx::apply(app.handle(), "dark", true);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             host_rpc,
+            apply_window_translucency,
             host::repo::workspace::pick_workspace,
             host::repo::workspace::github_repositories,
             host::repo::workspace::clone_repository,

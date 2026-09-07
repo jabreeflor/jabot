@@ -573,7 +573,7 @@
 .sched-dock {
   flex: none;
   padding: var(--sp-3) var(--sp-6) 18px;
-  background: var(--chat);
+  background: var(--chat-fill);
 }
 
 /* The box is the one raised surface at the bottom of the screen, so it gets

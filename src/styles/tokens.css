@@ -21,6 +21,12 @@
   --win: #1c1c1e;
   --side: #1c1c1e;
   --chat: #151516;
+  /* Chrome fills. Same as the solid surfaces until translucency is on —
+     then only these go slightly transparent, so `color: var(--chat)` on
+     the send button and raised cards stay fully opaque. */
+  --win-fill: var(--win);
+  --side-fill: var(--side);
+  --chat-fill: var(--chat);
   --raise: #2a2a2c;
   --raise2: #232325;
   /* Hover on --raise; the prototype's #333336, named so light can invert it. */
@@ -163,6 +169,48 @@
   --ok-bright: #2a7a3d;
 }
 
+/*
+ * Cursor-style window translucency (#250). The native material (macOS
+ * HudWindow / HeaderView) sits behind these fills. ~96% opaque is the
+ * starting mix: a hint of desktop, not glass. `--win` / `--side` / `--chat`
+ * stay solid hex so text, icons, inputs, and overlays do not thin out.
+ *
+ * `prefers-reduced-transparency` and a missing native material both fall
+ * back to the solid fills above. Linux/Windows have no material; the 4%
+ * gap then composites against an opaque window backing and reads solid.
+ */
+html[data-translucency="on"] {
+  --win-fill: rgb(28 28 30 / 0.96);
+  --side-fill: rgb(28 28 30 / 0.96);
+  --chat-fill: rgb(21 21 22 / 0.96);
+}
+
+html[data-theme="light"][data-translucency="on"] {
+  --win-fill: rgb(246 246 244 / 0.96);
+  --side-fill: rgb(255 255 255 / 0.95);
+  --chat-fill: rgb(239 238 236 / 0.96);
+}
+
+html[data-translucency="on"],
+html[data-translucency="on"] body,
+html[data-translucency="on"] #root {
+  background: transparent;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-translucency="on"] {
+    --win-fill: var(--win);
+    --side-fill: var(--side);
+    --chat-fill: var(--chat);
+  }
+
+  html[data-translucency="on"],
+  html[data-translucency="on"] body,
+  html[data-translucency="on"] #root {
+    background: var(--chat);
+  }
+}
+
 *,
 *::before,
 *::after {
@@ -177,7 +225,7 @@ body,
 }
 
 body {
-  background: var(--chat);
+  background: var(--chat-fill);
   color: var(--ink);
   overflow: hidden;
   font: var(--fs-ui) / var(--lh-ui) var(--font-ui);
