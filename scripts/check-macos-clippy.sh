@@ -40,6 +40,17 @@ job is the before-merge gate. See docs/macos-lint.md."
 
 command -v cargo >/dev/null 2>&1 || fail "cargo not found"
 
+# tauri-build walks bundle.resources and fails the build script when a glob
+# matches nothing. The real adapters tree is a verify/bundle concern and
+# needs npm; a stub file is enough for Clippy to compile the lib. Skip if
+# someone already staged the real tree.
+ADAPTERS=src-tauri/vendor/adapters/node_modules
+if [[ -z "$(find "$ADAPTERS" -type f -print -quit 2>/dev/null)" ]]; then
+  mkdir -p "$ADAPTERS/.macos-clippy-stub"
+  printf 'stub for clippy resource glob\n' > "$ADAPTERS/.macos-clippy-stub/keep"
+  printf 'staged adapter stub so tauri-build can resolve bundle.resources\n'
+fi
+
 printf 'clippy --lib -D warnings on %s (%s)\n' "$(uname -sm)" "$(rustc --version 2>/dev/null || echo rustc)"
 cargo clippy \
   --manifest-path src-tauri/Cargo.toml \
