@@ -1,5 +1,5 @@
 /**
- * A bot's icon: the solid colour fallback, and the upload that replaces it.
+ * A bot's icon: the animated silhouette fallback, and the upload that replaces it.
  *
  * The interesting half of an upload is everything that happens before the row
  * is written — a photo has to become a small square, a file that is not an
@@ -163,14 +163,14 @@ describe("uploading an icon", () => {
   it("shows the picture in place of the mark and saves it with the bot", async () => {
     const props = renderEditor({ bot: WRITER });
 
-    // Before: a solid mark in the bot's colour.
-    expect(document.querySelector(".iconpick .color-mark")).not.toBeNull();
+    // Before: the animated silhouette for the bot's appearance id.
+    expect(document.querySelector(".iconpick .bot-mark")).not.toBeNull();
 
     await upload(png());
 
     const preview = document.querySelector(".iconpick .pic");
     expect(preview).toHaveAttribute("src", WEBP);
-    expect(document.querySelector(".iconpick .color-mark")).toBeNull();
+    expect(document.querySelector(".iconpick .bot-mark")).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(props.onSave).toHaveBeenCalledWith(
@@ -238,11 +238,11 @@ describe("the icon a bot already has", () => {
     );
   });
 
-  it("goes back to the solid colour when it is removed", async () => {
+  it("goes back to the animated silhouette when it is removed", async () => {
     const props = renderEditor({ bot: { ...WRITER, image: PIXEL } });
 
     await userEvent.click(screen.getByRole("button", { name: "Remove image" }));
-    expect(document.querySelector(".iconpick .color-mark")).not.toBeNull();
+    expect(document.querySelector(".iconpick .bot-mark")).not.toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     // `null` and not `undefined`: the host reads the two differently, and only

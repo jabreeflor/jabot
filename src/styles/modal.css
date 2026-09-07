@@ -1,6 +1,6 @@
 /*
  * Overlays: New Chat and the bot editor. Both are decisions with a shape —
- * pick a harness, pick a colour — so the controls are cards and swatches you
+ * pick a harness, pick a bot — so the controls are cards and a picker you
  * can see at once, not a form of dropdowns.
  */
 
@@ -412,30 +412,6 @@
   color: var(--faint);
   font-size: var(--fs-caps);
   max-width: 34ch;
-}
-
-.swatches {
-  display: flex;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-}
-
-.swatch {
-  --blob-size: 30px;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  border-radius: 50%;
-}
-
-.swatch[aria-pressed="true"] .av {
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 2px var(--side),
-    0 0 0 4px var(--ink);
 }
 
 .toolrow {

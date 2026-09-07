@@ -163,6 +163,27 @@ describe("Sidebar", () => {
     expect(within(code).getByTestId("unread-dot")).toBeInTheDocument();
   });
 
+  /** #207: the vertical list kept the row layout and lost the drawings.
+      Each persisted color id is a distinct animated silhouette, not a fill. */
+  it("draws animated bot silhouettes on the vertical chat rows", () => {
+    renderSidebar();
+
+    const chief = screen.getByRole("button", { name: /^Chief/ });
+    const code = screen.getByRole("button", { name: /^Code/ });
+    expect(chief.querySelector(".bot-mark")).toHaveAttribute(
+      "data-character",
+      "classic",
+    );
+    expect(code.querySelector(".bot-mark")).toHaveAttribute(
+      "data-character",
+      "scout",
+    );
+    expect(chief.querySelector(".color-mark")).toBeNull();
+    expect(code.querySelector(".color-mark")).toBeNull();
+    expect(chief).toHaveTextContent("Route work.");
+    expect(code).toHaveTextContent("Opened PR #23 — checks are green.");
+  });
+
   /** The row's second line is the conversation, which is the whole reason a
       face became a row. */
   it("shows the last thing said in each bot's chat", () => {
