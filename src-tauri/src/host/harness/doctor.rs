@@ -160,19 +160,28 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
     // readiness command whose binary is absent (`claude auth status` with no
     // `claude`) would come back as an unanswered question with a login remedy
     // the user cannot follow, when the answer was knowable up front.
-    if let Some(cli) = descriptor.cli.as_deref() {
-        if probe.resolve(cli).is_none() {
-            return finish(
-                HarnessStatus::CliMissing,
-                format!(
-                    "{} is not installed — no `{cli}` on PATH.",
-                    descriptor.label
-                ),
-                descriptor.install_hint.clone(),
-                None,
-                None,
-            );
-        }
+    if !descriptor.cli.is_empty()
+        && descriptor
+            .cli
+            .iter()
+            .all(|cli| probe.resolve(cli).is_none())
+    {
+        let names = descriptor
+            .cli
+            .iter()
+            .map(|cli| format!("`{cli}`"))
+            .collect::<Vec<_>>()
+            .join(" or ");
+        return finish(
+            HarnessStatus::CliMissing,
+            format!(
+                "{} is not installed — no {names} on PATH.",
+                descriptor.label
+            ),
+            descriptor.install_hint.clone(),
+            None,
+            None,
+        );
     }
 
     let resolved = descriptor
@@ -190,7 +199,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
         // Which of the two sentences the user gets decides which page they go
         // read: install the product, or install its ACP adapter. The CLI is
         // known to be here by now, so this can only be the adapter.
-        return match descriptor.cli.as_deref() {
+        return match descriptor.cli.first() {
             Some(cli) => finish(
                 HarnessStatus::AdapterMissing,
                 format!("`{cli}` is installed but its ACP adapter is not (looked for {commands})."),
@@ -304,6 +313,17 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                 Some(path),
             );
         }
+        Readiness::Inspect {
+            kind: InspectKind::Cursor,
+        } => {
+            let cli = descriptor
+                .cli
+                .iter()
+                .find(|name| probe.resolve(name).is_some())
+                .cloned()
+                .unwrap_or_else(|| launch.command.clone());
+            return diagnose_cursor(descriptor, probe, &cli, launch, path, started);
+        }
     }
 
     let detail = if launch.downloads_on_first_run {
@@ -334,6 +354,123 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
         None,
         Some(launch.clone()),
         Some(path),
+    )
+}
+
+fn diagnose_cursor(
+    descriptor: &HarnessDescriptor,
+    probe: &dyn ProbeHost,
+    cli: &str,
+    launch: &Launch,
+    path: PathBuf,
+    started: Instant,
+) -> Diagnosis {
+    let finish = |status: HarnessStatus, detail: String, remedy: Option<String>| Diagnosis {
+        id: descriptor.id.clone(),
+        status,
+        detail,
+        remedy,
+        launch: Some(launch.clone()),
+        resolved_path: Some(path.clone()),
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    };
+
+    let captured = probe.run_text(cli, &["--version".into()]);
+    let version_detail = match &captured.run {
+        ProbeRun::Exit(0) => String::new(),
+        ProbeRun::Exit(code) => format!("`{cli} --version` exited {code}."),
+        ProbeRun::TimedOut => format!("`{cli} --version` did not answer in time."),
+        ProbeRun::Failed(err) => format!("could not run `{cli} --version`: {err}"),
+    };
+    let printed_version = match super::cursor::classify_version(
+        matches!(captured.run, ProbeRun::Exit(0)),
+        &captured.text,
+        version_detail,
+    ) {
+        super::cursor::VersionCheck::Unsupported { printed, parsed } => {
+            return finish(
+                HarnessStatus::AdapterOutdated,
+                format!(
+                    "`{cli}` reports {printed} (parsed {parsed}), which is older than JaBot's Cursor Agent floor."
+                ),
+                Some("Update the Cursor Agent CLI (`agent update`) and try again.".into()),
+            );
+        }
+        super::cursor::VersionCheck::Unknown(detail) => {
+            return finish(
+                HarnessStatus::Unknown,
+                detail,
+                Some("Update the Cursor Agent CLI (`agent update`) so `agent --version` and `agent acp` both work.".into()),
+            );
+        }
+        super::cursor::VersionCheck::Ok(version) => Some(version.to_string()),
+        super::cursor::VersionCheck::Unparseable => None,
+    };
+
+    if !super::cursor::env_has_cursor_credentials(|key| probe.env(key).is_some()) {
+        match probe.run(cli, &["status".into()]) {
+            ProbeRun::Exit(0) => {}
+            ProbeRun::Exit(code) => {
+                return finish(
+                    HarnessStatus::LoggedOut,
+                    format!("`{cli} status` exited {code}."),
+                    Some(
+                        "Run `agent login`, or export CURSOR_API_KEY (or CURSOR_AUTH_TOKEN) for this process.".into(),
+                    ),
+                );
+            }
+            ProbeRun::TimedOut => {
+                return finish(
+                    HarnessStatus::Unknown,
+                    format!("`{cli} status` did not answer in time."),
+                    Some("Run `agent login`, or export CURSOR_API_KEY.".into()),
+                );
+            }
+            ProbeRun::Failed(err) => {
+                return finish(
+                    HarnessStatus::Unknown,
+                    format!("could not run `{cli} status`: {err}"),
+                    Some("Run `agent login`, or export CURSOR_API_KEY.".into()),
+                );
+            }
+        }
+    }
+
+    match probe.run(cli, &["models".into()]) {
+        ProbeRun::Exit(0) => {}
+        ProbeRun::Exit(code) => {
+            return finish(
+                HarnessStatus::InvalidConfig,
+                format!("`{cli} models` exited {code} — no usable model for this account."),
+                Some(
+                    "Pick a model in Cursor (`agent models`) or confirm this account has one available.".into(),
+                ),
+            );
+        }
+        ProbeRun::TimedOut => {
+            return finish(
+                HarnessStatus::Unknown,
+                format!("`{cli} models` did not answer in time."),
+                Some("Confirm `agent models` lists a model, then retry.".into()),
+            );
+        }
+        ProbeRun::Failed(err) => {
+            return finish(
+                HarnessStatus::Unknown,
+                format!("could not run `{cli} models`: {err}"),
+                Some("Confirm `agent models` lists a model, then retry.".into()),
+            );
+        }
+    }
+
+    let version_bit = printed_version.map(|v| format!(" {v}")).unwrap_or_default();
+    finish(
+        HarnessStatus::Ready,
+        format!(
+            "Ready{version_bit} — {}. Permissions stay in JaBot (ACP); --force is not passed.",
+            path.display()
+        ),
+        None,
     )
 }
 
@@ -537,16 +674,24 @@ mod tests {
             if !self.installed.contains_key(command) {
                 return ProbeRun::Failed(format!("{command} is not on PATH"));
             }
+            let keyed = format!("{command} {}", args.join(" "));
             self.exits
-                .get(command)
+                .get(&keyed)
+                .or_else(|| self.exits.get(command))
                 .cloned()
                 .unwrap_or(ProbeRun::Exit(0))
         }
 
         fn run_text(&self, command: &str, args: &[String]) -> ProbeOutput {
+            let keyed = format!("{command} {}", args.join(" "));
             ProbeOutput {
                 run: self.run(command, args),
-                text: self.outputs.get(command).cloned().unwrap_or_default(),
+                text: self
+                    .outputs
+                    .get(&keyed)
+                    .or_else(|| self.outputs.get(command))
+                    .cloned()
+                    .unwrap_or_default(),
             }
         }
 
@@ -909,6 +1054,65 @@ mod tests {
         let report = diagnose(&descriptor("copilot"), &machine);
         assert_eq!(report.status, HarnessStatus::InvalidConfig);
         assert!(report.detail.contains("COPILOT_MODEL"), "{}", report.detail);
+    }
+
+    #[test]
+    fn cursor_missing_blames_the_cli() {
+        let report = diagnose(&descriptor("cursor"), &FakeMachine::default());
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+        assert!(report.detail.contains("agent"), "{}", report.detail);
+        assert!(report.remedy.unwrap().contains("cursor.com/install"));
+    }
+
+    #[test]
+    fn cursor_legacy_binary_name_still_resolves() {
+        let machine = FakeMachine::with(&["cursor-agent"])
+            .printing("cursor-agent --version", "2026.08.09")
+            .with_env("CURSOR_API_KEY", "test");
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        let launch = report.launch.unwrap();
+        assert_eq!(launch.command, "cursor-agent");
+        assert_eq!(launch.args, ["acp"]);
+    }
+
+    #[test]
+    fn cursor_old_version_is_outdated_not_ready() {
+        let machine = FakeMachine::with(&["agent"]).printing("agent --version", "0.49.0");
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::AdapterOutdated);
+        assert!(report.remedy.unwrap().contains("agent update"));
+    }
+
+    #[test]
+    fn cursor_signed_out_without_an_api_key_says_so() {
+        let machine = FakeMachine::with(&["agent"])
+            .printing("agent --version", "2026.08.09")
+            .answering("agent status", ProbeRun::Exit(1));
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("agent login"));
+    }
+
+    #[test]
+    fn cursor_api_key_counts_as_the_account_profile() {
+        let machine = FakeMachine::with(&["agent"])
+            .printing("agent --version", "2026.08.09")
+            .answering("agent status", ProbeRun::Exit(1))
+            .with_env("CURSOR_API_KEY", "test-key");
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready, "{}", report.detail);
+    }
+
+    #[test]
+    fn cursor_without_models_is_a_config_problem() {
+        let machine = FakeMachine::with(&["agent"])
+            .printing("agent --version", "2026.08.09")
+            .with_env("CURSOR_API_KEY", "test-key")
+            .answering("agent models", ProbeRun::Exit(2));
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("agent models"));
     }
 
     #[test]

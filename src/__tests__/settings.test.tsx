@@ -86,6 +86,32 @@ describe("SettingsView", () => {
     expect(props.onSave).toHaveBeenCalledWith({ disabledHarnessIds: ["custom"] });
   });
 
+  it("shows Cursor account-isolation notes on the enable row", () => {
+    draw({
+      harnesses: [
+        {
+          id: "cursor",
+          label: "Cursor Agent",
+          accent: "var(--h-cursor)",
+          blurb: "Cursor's coding agent. Permissions stay in JaBot — no --force.",
+          capabilities: {
+            streaming: true,
+            toolEvents: true,
+            permissions: true,
+            cancel: true,
+            resume: false,
+            notes:
+              "Auth uses this machine's Cursor account or CURSOR_API_KEY — not isolated per bot.",
+          },
+        },
+      ],
+    });
+    expect(screen.getByRole("checkbox", { name: /Cursor Agent/ })).toBeChecked();
+    expect(
+      screen.getByText(/not isolated per bot/),
+    ).toBeVisible();
+  });
+
   it("shows the host's values, in the units a person thinks in", () => {
     draw();
 
