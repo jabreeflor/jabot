@@ -8,7 +8,13 @@
  * this port's; what is asserted here is that the shell reports the host's
  * answer, including when there isn't one.
  */
-import { render, screen, waitFor, within, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  within,
+  cleanup,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -209,9 +215,9 @@ describe("App", () => {
     // row's second line, which is Chief's conversation saying what it is now
     // about.
     expect(screen.getAllByText("Fold the migration")).toHaveLength(2);
-    expect(
-      screen.getByRole("button", { name: /^Chief/ }),
-    ).toHaveTextContent("Fold the migration");
+    expect(screen.getByRole("button", { name: /^Chief/ })).toHaveTextContent(
+      "Fold the migration",
+    );
     expect(screen.getByLabelText("Message Chief")).toHaveValue("");
   });
 
@@ -236,9 +242,11 @@ describe("App", () => {
     await renderApp();
 
     await userEvent.type(screen.getByLabelText("Message Chief"), "rm -rf prod");
-    await userEvent.click(screen.getByRole("button", { name: /^Writer/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /^Bot Recruiter/ }),
+    );
 
-    expect(screen.getByLabelText("Message Writer")).toHaveValue("");
+    expect(screen.getByLabelText("Message Bot Recruiter")).toHaveValue("");
 
     await userEvent.click(screen.getByRole("button", { name: /^Chief/ }));
     expect(screen.getByLabelText("Message Chief")).toHaveValue("");
@@ -316,7 +324,9 @@ describe("App", () => {
       // Nothing the fixtures would have drawn: no crew strip, no code rows,
       // no counts on the Inbox and Pull Requests buttons.
       expect(screen.queryByRole("button", { name: "Inbox Mgr" })).toBeNull();
-      expect(screen.queryByRole("button", { name: /Auth migration/ })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /Auth migration/ }),
+      ).toBeNull();
       expect(screen.queryByText("jabot-app")).toBeNull();
       expect(
         screen.getByRole("button", { name: /^Pull Requests/ }),

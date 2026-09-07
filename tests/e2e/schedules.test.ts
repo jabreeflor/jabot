@@ -40,7 +40,8 @@ const dataDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(running.splice(0).map((host) => host.stop()));
-  for (const dir of dataDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const dir of dataDirs.splice(0))
+    rmSync(dir, { recursive: true, force: true });
 });
 
 /**
@@ -119,7 +120,7 @@ describe("schedules on the wire", () => {
     }
     expect((await client.listSchedules()).schedules).toEqual([]);
 
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
     await expect(
       client.createSchedule({
         botId: writer.botId,
@@ -135,7 +136,7 @@ describe("schedules on the wire", () => {
   it("runs as the bot, on its standing thread, and delivers to the Inbox", async () => {
     const dataDir = dataDirWithFakeHarness();
     const { client } = await connected(dataDir);
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
     await client.updateBot({ botId: writer.botId, harnessId: "fake-acp" });
 
     const created = await client.createSchedule({
@@ -144,7 +145,7 @@ describe("schedules on the wire", () => {
       cron: "0 9 * * 1-5",
       prompt: "Summarise overnight mail.",
     });
-    expect(created.botName).toBe("Writer");
+    expect(created.botName).toBe("Bot Recruiter");
     expect(created.catchUp).toBe("once");
     // Armed from now: a schedule made at 10am does not owe this morning's 9am.
     expect(new Date(created.nextRunAt!).getTime()).toBeGreaterThan(Date.now());
@@ -172,9 +173,7 @@ describe("schedules on the wire", () => {
     // …and decision #5's projection: the card, carrying the schedule's name
     // rather than the thread's, on a thread that never left the sidebar.
     const inbox = await client.inbox({ limit: 50 });
-    const card = inbox.events.find(
-      (event) => event.runId === scheduled[0].id,
-    );
+    const card = inbox.events.find((event) => event.runId === scheduled[0].id);
     expect(card).toBeDefined();
     expect(card!.kind).toBe("done");
     expect(card!.title).toContain("Morning triage");
@@ -198,7 +197,7 @@ describe("schedules on the wire", () => {
   it("names the card after the schedule even when the thread was folded", async () => {
     const dataDir = dataDirWithFakeHarness();
     const { client } = await connected(dataDir);
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
     await client.updateBot({ botId: writer.botId, harnessId: "fake-acp" });
 
     const created = await client.createSchedule({
@@ -228,7 +227,10 @@ describe("schedules on the wire", () => {
     const runId = settled.lastFire!.runId!;
     const inbox = await client.inbox({ limit: 50 });
     const card = inbox.events.find((event) => event.runId === runId);
-    expect(card, `no card for run ${runId}: ${JSON.stringify(inbox.events)}`).toBeDefined();
+    expect(
+      card,
+      `no card for run ${runId}: ${JSON.stringify(inbox.events)}`,
+    ).toBeDefined();
     // `reason` is the resurface path's own field, and its presence is what
     // makes this test about the folded case: `schedule_card` does not write
     // it. If this ever stops being here, the fold is no longer sticking and
@@ -237,7 +239,7 @@ describe("schedules on the wire", () => {
 
     // Named after the job, not the bot whose thread it ran on.
     expect(card!.title).toContain("Morning triage");
-    expect(card!.title).not.toContain("Writer");
+    expect(card!.title).not.toContain("Bot Recruiter");
     // And carrying what `schedule_card` would have attached, so a card means
     // the same thing whichever path wrote it.
     expect(card!.payload).toMatchObject({
@@ -248,7 +250,9 @@ describe("schedules on the wire", () => {
 
     // Still exactly one card for the run: the resurface wrote it and the
     // schedule stood down, which is the behaviour this must not disturb.
-    expect(inbox.events.filter((event) => event.runId === runId)).toHaveLength(1);
+    expect(inbox.events.filter((event) => event.runId === runId)).toHaveLength(
+      1,
+    );
   });
 
   /**
@@ -261,8 +265,11 @@ describe("schedules on the wire", () => {
   it("collapses a backlog accrued while the host was down to one run", async () => {
     const dataDir = dataDirWithFakeHarness();
     const first = await connected(dataDir);
-    const writer = named((await first.client.listCrew()).bots, "Writer");
-    await first.client.updateBot({ botId: writer.botId, harnessId: "fake-acp" });
+    const writer = named((await first.client.listCrew()).bots, "Bot Recruiter");
+    await first.client.updateBot({
+      botId: writer.botId,
+      harnessId: "fake-acp",
+    });
     const created = await first.client.createSchedule({
       botId: writer.botId,
       name: "Frequent sweep",
@@ -306,7 +313,7 @@ describe("schedules on the wire", () => {
   it("survives a restart, and a removed schedule stays removed", async () => {
     const dataDir = dataDirWithFakeHarness();
     const { client } = await connected(dataDir);
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
     const created = await client.createSchedule({
       botId: writer.botId,
       name: "Morning triage",

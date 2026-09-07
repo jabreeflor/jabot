@@ -23,7 +23,8 @@ struct SeedBot {
     sort_order: i64,
 }
 
-/// Prototype CREW[]. Default harness is `claude` until the user picks otherwise (#6).
+/// The two seats every empty crew starts with. Default harness is `claude`
+/// until the user picks otherwise (#6, #184).
 const SEED_BOTS: &[SeedBot] = &[
     SeedBot {
         id: "chief",
@@ -36,49 +37,13 @@ const SEED_BOTS: &[SeedBot] = &[
         sort_order: 0,
     },
     SeedBot {
-        id: "code",
-        name: "Code",
-        color: "b-yellow",
-        instructions: "Run coding sessions in my repos. Open PRs, never push to main.",
-        tools_json: r#"["github","terminal"]"#,
+        id: "bot-recruiter",
+        name: "Bot Recruiter",
+        color: "b-purple",
+        instructions: "Help me shape and add the right bots for the work I need.",
+        tools_json: "[]",
         is_chief: 0,
         sort_order: 1,
-    },
-    SeedBot {
-        id: "inboxm",
-        name: "Inbox Mgr",
-        color: "b-purple",
-        instructions: "Keep Gmail at zero. Park drafts for anything that needs my voice.",
-        tools_json: r#"["gmail"]"#,
-        is_chief: 0,
-        sort_order: 2,
-    },
-    SeedBot {
-        id: "sched",
-        name: "Scheduler",
-        color: "b-violet",
-        instructions: "Guard the calendar. Fix conflicts, protect deep-work mornings.",
-        tools_json: r#"["calendar"]"#,
-        is_chief: 0,
-        sort_order: 3,
-    },
-    SeedBot {
-        id: "rsrch",
-        name: "Research",
-        color: "b-blue",
-        instructions: "Dig sources, pull context into GlobNet, brief me short.",
-        tools_json: r#"["browser","notion"]"#,
-        is_chief: 0,
-        sort_order: 4,
-    },
-    SeedBot {
-        id: "writer",
-        name: "Writer",
-        color: "b-orange",
-        instructions: "Draft in my voice: plain, short, no filler.",
-        tools_json: r#"["gmail","notion"]"#,
-        is_chief: 0,
-        sort_order: 5,
     },
 ];
 

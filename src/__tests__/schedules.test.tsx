@@ -85,7 +85,9 @@ function row(name: string): HTMLElement {
 
 /** The row is closed at rest: everything but the headline is one click down. */
 async function open(name: string): Promise<HTMLElement> {
-  await userEvent.click(within(row(name)).getByRole("button", { expanded: false }));
+  await userEvent.click(
+    within(row(name)).getByRole("button", { expanded: false }),
+  );
   return row(name);
 }
 
@@ -95,7 +97,9 @@ describe("SchedulesView", () => {
 
     const headline = row("Morning triage");
     expect(within(headline).getByText(/Weekdays at 09:00/)).toBeInTheDocument();
-    expect(within(headline).getByText(/Next run in 3 hours/)).toBeInTheDocument();
+    expect(
+      within(headline).getByText(/Next run in 3 hours/),
+    ).toBeInTheDocument();
     expect(within(headline).getByText(/as Writer/)).toBeInTheDocument();
     // The instruction is real content, not a headline: it waits to be asked for.
     expect(
@@ -244,7 +248,9 @@ describe("finding one in a list of them", () => {
   it("says how many there are when nothing matches", async () => {
     renderView({ schedules: many });
     await userEvent.type(screen.getByLabelText("Search schedules"), "zzz");
-    expect(screen.getByText(/Nothing matches. 2 schedules/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Nothing matches. 2 schedules/),
+    ).toBeInTheDocument();
   });
 });
 
@@ -390,7 +396,9 @@ describe("cron in words", () => {
 
 describe("words in cron", () => {
   it("reads the schedules people write in sentences", () => {
-    expect(parseWhen("summarise mail every weekday at 9am")).toBe("0 9 * * 1-5");
+    expect(parseWhen("summarise mail every weekday at 9am")).toBe(
+      "0 9 * * 1-5",
+    );
     expect(parseWhen("every day at 08:30, do the thing")).toBe("30 8 * * *");
     expect(parseWhen("check the build every hour")).toBe("0 * * * *");
     expect(parseWhen("every monday at 9:30am, plan the week")).toBe(
@@ -494,7 +502,10 @@ describe("ScheduleEditorModal", () => {
     );
 
     await userEvent.type(screen.getByLabelText("NAME"), "Morning triage");
-    await userEvent.selectOptions(screen.getByLabelText("RUNS AS"), "writer");
+    await userEvent.selectOptions(
+      screen.getByLabelText("RUNS AS"),
+      "bot-recruiter",
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "Every weekday, 9am" }),
     );
@@ -510,7 +521,7 @@ describe("ScheduleEditorModal", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSave).toHaveBeenCalledWith({
-      botId: "writer",
+      botId: "bot-recruiter",
       name: "Morning triage",
       cron: "0 9 * * 1-5",
       prompt: "Summarise overnight mail.",

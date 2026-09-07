@@ -25,7 +25,11 @@ import {
   TOOLS_LIST,
   type ToolCardView,
 } from "../../src/host/protocol";
-import { fakeAcpRuntime, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 const running: HostdProcess[] = [];
 
@@ -44,7 +48,10 @@ afterEach(async () => {
 
 const byId = (tools: ToolCardView[], id: string): ToolCardView => {
   const tool = tools.find((candidate) => candidate.id === id);
-  if (!tool) throw new Error(`no ${id} in the catalog: ${tools.map((t) => t.id).join(", ")}`);
+  if (!tool)
+    throw new Error(
+      `no ${id} in the catalog: ${tools.map((t) => t.id).join(", ")}`,
+    );
   return tool;
 };
 
@@ -83,7 +90,6 @@ async function sessionNewParams(
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
 }
-
 
 /**
  * The complete published shape of each tools response. Anything else on the
@@ -157,16 +163,18 @@ function expectNoCredentials(payload: unknown, allowed: string[]): void {
   for (const [key, value] of Object.entries(record)) {
     if (OPAQUE_ALLOWED.has(key)) continue;
     for (const text of typeof value === "string" ? [value] : []) {
-      expect(credentialShaped(text), `${key} looks like a credential: ${text}`).toBe(
-        false,
-      );
+      expect(
+        credentialShaped(text),
+        `${key} looks like a credential: ${text}`,
+      ).toBe(false);
     }
     if (Array.isArray(value)) {
       for (const item of value) {
         if (typeof item !== "string") continue;
-        expect(credentialShaped(item), `${key}[] looks like a credential: ${item}`).toBe(
-          false,
-        );
+        expect(
+          credentialShaped(item),
+          `${key}[] looks like a credential: ${item}`,
+        ).toBe(false);
       }
     }
   }
@@ -232,7 +240,9 @@ describe("tool catalog", () => {
     expect(started.status).toBe("connecting");
     // RFC 8252: the redirect is a loopback listener on an ephemeral port, not
     // a hosted URL and not a custom scheme another app could claim.
-    expect(started.redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/callback$/);
+    expect(started.redirectUri).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/callback$/,
+    );
     // One Google login covers all three Google chips, and the result says so
     // before the user wonders why Calendar lit up.
     expect(started.affects).toEqual(["gmail", "calendar", "drive"]);
@@ -289,9 +299,14 @@ describe("per-bot allowlist on session/new", () => {
   it("passes only the tools the bot allowlists", async () => {
     const { host, client } = await connected();
 
-    // Research allowlists browser and notion. Notion is a remote server with
-    // no grant, so it is left out; browser is local and needs none.
-    await promptOn(client, "t-research", "rsrch");
+    // Configure the default recruiter with browser and notion. Notion is a
+    // remote server with no grant, so it is left out; browser is local and
+    // needs none.
+    await client.updateBot({
+      botId: "bot-recruiter",
+      tools: ["browser", "notion"],
+    });
+    await promptOn(client, "t-research", "bot-recruiter");
     const params = await sessionNewParams(host, "t-research");
     expect(params.mcpServers.map((server) => server.name)).toEqual(["browser"]);
     expect(JSON.stringify(params.mcpServers)).not.toContain("notion");
@@ -305,14 +320,18 @@ describe("per-bot allowlist on session/new", () => {
   });
 
   /**
-   * The Code bot's chips are `github` and `terminal`. GitHub has no grant, and
-   * Terminal is not a server at all — so a code session is spawned with an
+   * GitHub has no grant, and Terminal is not a server at all — so a session is
+   * spawned with an
    * empty array rather than with a shell behind a tool schema.
    */
   it("never turns Terminal into a server, and never passes an unconnected one", async () => {
     const { host, client } = await connected();
 
-    await promptOn(client, "t-code", "code");
+    await client.updateBot({
+      botId: "bot-recruiter",
+      tools: ["github", "terminal"],
+    });
+    await promptOn(client, "t-code", "bot-recruiter");
     const params = await sessionNewParams(host, "t-code");
     expect(params.mcpServers).toEqual([]);
     expect(params.cwd).toBeTruthy();

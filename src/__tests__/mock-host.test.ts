@@ -41,11 +41,14 @@ describe("sidebarFolders", () => {
 describe("sidebarBots", () => {
   it("previews each bot with the last thing said in its chat", () => {
     const state = initialMockState();
-    const writer = sidebarBots(state).find((bot) => bot.id === "writer");
-
-    expect(writer?.preview).toBe(
-      "Weekly digest draft is 1,240 words in your voice. It is parked until you read it.",
+    state.transcripts["bot-recruiter"] = [
+      { kind: "agent", id: "recruiter-1", text: "I can help build your crew." },
+    ];
+    const recruiter = sidebarBots(state).find(
+      (bot) => bot.id === "bot-recruiter",
     );
+
+    expect(recruiter?.preview).toBe("I can help build your crew.");
   });
 
   /** Derived, never stored beside the transcript: the preview and the chat
@@ -54,12 +57,12 @@ describe("sidebarBots", () => {
     const before = initialMockState();
     const after = mockHostReducer(before, {
       type: "sendMessage",
-      conversationId: "writer",
+      conversationId: "bot-recruiter",
       text: "Ship it.",
     });
 
     expect(
-      sidebarBots(after).find((bot) => bot.id === "writer")?.preview,
+      sidebarBots(after).find((bot) => bot.id === "bot-recruiter")?.preview,
     ).toBe("Ship it.");
   });
 
@@ -74,6 +77,13 @@ describe("sidebarBots", () => {
 });
 
 describe("the seed", () => {
+  it("starts with only Chief and Bot Recruiter", () => {
+    expect(initialMockState().bots.map((bot) => bot.name)).toEqual([
+      "Chief",
+      "Bot Recruiter",
+    ]);
+  });
+
   it("gives every PR the session that opened it", () => {
     const state = initialMockState();
     const threads = new Set(state.threads.map((thread) => thread.id));
@@ -369,7 +379,7 @@ describe("crew", () => {
     const state = initialMockState();
     const edited = mockHostReducer(state, {
       type: "saveBot",
-      botId: "writer",
+      botId: "bot-recruiter",
       draft: {
         name: "Ghostwriter",
         color: "b-pink",
@@ -379,10 +389,12 @@ describe("crew", () => {
       },
     });
 
-    expect(edited.bots.find((bot) => bot.id === "writer")).toMatchObject({
-      name: "Ghostwriter",
-      harnessId: "codex",
-    });
+    expect(edited.bots.find((bot) => bot.id === "bot-recruiter")).toMatchObject(
+      {
+        name: "Ghostwriter",
+        harnessId: "codex",
+      },
+    );
     expect(edited.bots).toHaveLength(state.bots.length);
 
     const added = mockHostReducer(edited, {

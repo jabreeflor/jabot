@@ -567,6 +567,18 @@ mod tests {
             .unwrap_or_else(|| panic!("no bot named {name}"))
     }
 
+    fn add_bot(session: &mut HostSession, name: &str) -> Value {
+        ok(
+            session,
+            CREW_CREATE,
+            json!({
+                "name": name,
+                "harnessId": "claude",
+                "instructions": format!("Draft in my voice as {name}."),
+            }),
+        )
+    }
+
     /// The red dot on a crew blob (#22, #24).
     ///
     /// `Bot.unread` has been a prop since the prototype and `Avatar` has drawn
@@ -576,7 +588,7 @@ mod tests {
     #[test]
     fn a_bot_with_cards_waiting_comes_back_with_a_count() {
         let (mut session, _dir) = host();
-        let writer = find(&bots(&mut session), "Writer")["botId"]
+        let writer = add_bot(&mut session, "Writer")["botId"]
             .as_str()
             .unwrap()
             .to_string();
@@ -626,7 +638,7 @@ mod tests {
     #[test]
     fn a_bot_that_has_been_talked_to_comes_back_with_its_last_line() {
         let (mut session, _dir) = host();
-        let writer = find(&bots(&mut session), "Writer")["botId"]
+        let writer = add_bot(&mut session, "Writer")["botId"]
             .as_str()
             .unwrap()
             .to_string();
@@ -663,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn the_shipped_crew_is_chief_plus_five_workers() {
+    fn an_empty_crew_starts_with_only_chief_and_bot_recruiter() {
         let (mut session, _dir) = host();
         let crew = bots(&mut session);
 
@@ -671,17 +683,7 @@ mod tests {
             .iter()
             .map(|bot| bot["name"].as_str().unwrap())
             .collect();
-        assert_eq!(
-            names,
-            vec![
-                "Chief",
-                "Code",
-                "Inbox Mgr",
-                "Scheduler",
-                "Research",
-                "Writer"
-            ]
-        );
+        assert_eq!(names, vec!["Chief", "Bot Recruiter"]);
         // Chief first, and the only one of them.
         assert_eq!(crew[0]["isChief"], true);
         assert_eq!(crew.iter().filter(|bot| bot["isChief"] == true).count(), 1);
@@ -692,6 +694,7 @@ mod tests {
     #[test]
     fn every_bot_gets_its_own_memory_directory_with_its_persona_in_it() {
         let (mut session, _dir) = host();
+        add_bot(&mut session, "Writer");
         let crew = bots(&mut session);
 
         let mut dirs: Vec<&str> = crew
@@ -788,7 +791,7 @@ mod tests {
         assert!(bad_harness.message.contains("no such harness"));
 
         // Nothing was written by either attempt.
-        assert_eq!(bots(&mut session).len(), 6);
+        assert_eq!(bots(&mut session).len(), 2);
     }
 
     /// A chip the host cannot resolve is a capability that silently never
@@ -843,7 +846,7 @@ mod tests {
     #[test]
     fn a_partial_save_leaves_the_rest_of_the_record_alone() {
         let (mut session, _dir) = host();
-        let writer = find(&bots(&mut session), "Writer").clone();
+        let writer = add_bot(&mut session, "Writer");
 
         let after = ok(
             &mut session,
@@ -860,7 +863,7 @@ mod tests {
     #[test]
     fn saving_a_persona_rewrites_instructions_md_and_never_memory_md() {
         let (mut session, _dir) = host();
-        let writer = find(&bots(&mut session), "Writer").clone();
+        let writer = add_bot(&mut session, "Writer");
         let dir = std::path::PathBuf::from(writer["memoryDir"].as_str().unwrap());
 
         let learned = "# Writer — memory\n\nJabree hates exclamation marks.\n";
@@ -914,7 +917,7 @@ mod tests {
     #[test]
     fn removing_a_bot_detaches_its_threads_and_keeps_its_notes() {
         let (mut session, _dir) = host();
-        let research = find(&bots(&mut session), "Research").clone();
+        let research = add_bot(&mut session, "Research");
         let bot_id = research["botId"].as_str().unwrap().to_string();
         let dir = std::path::PathBuf::from(research["memoryDir"].as_str().unwrap());
 

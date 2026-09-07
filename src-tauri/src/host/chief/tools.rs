@@ -9,12 +9,12 @@
 //! held together by a test, because a chip the grid can name and the session
 //! cannot call is worse than no chip at all.
 //!
-//! The descriptions carry the routing policy decision #6 settled — "Chief does
-//! not call Gmail itself; it hands off to Inbox Mgr" — because that is a
-//! sentence the model has to read at the moment it chooses, not one buried in
-//! a persona file. And `handoff_to_bot` says out loud that the receiving bot
-//! has no repository, since the whole reason `spawn_code_session` exists is
-//! that a worker gets a checkout no other way.
+//! The descriptions carry the routing policy decision #6 settled — Chief
+//! delegates work to an available specialist — because that is a sentence the
+//! model has to read at the moment it chooses, not one buried in a persona
+//! file. And `handoff_to_bot` says out loud that the receiving bot has no
+//! repository, since the whole reason `spawn_code_session` exists is that a
+//! worker gets a checkout no other way.
 
 use serde_json::{json, Value};
 
@@ -32,10 +32,11 @@ pub const SPECS: &[HostToolSpec] = &[
         title: "Hand off to a crew member",
         description: "Give a job to another bot in the crew. The task is put on that bot's \
                       standing thread and it starts work immediately. Use this instead of \
-                      doing a specialist's job yourself — hand mail to Inbox Mgr, calendars \
-                      to Scheduler, drafts to Writer. The receiving bot works in its own \
-                      memory directory and has no repository checkout; for anything that \
-                      needs code, use spawn_code_session.",
+                      doing a specialist's job yourself. Choose a bot reported by \
+                      list_crew_status; if the right specialist is missing, ask the user to \
+                      add one in Crew or hand planning to Bot Recruiter. The receiving bot \
+                      works in its own memory directory and has no repository checkout; for \
+                      anything that needs code, use spawn_code_session.",
         schema: handoff_schema,
     },
     HostToolSpec {
