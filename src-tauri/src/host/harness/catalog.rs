@@ -361,6 +361,9 @@ const PRESETS: &[Compiled] = &[
         ],
         install_hint: "Install Aider (`python -m pip install aider-chat`), then set AIDER_MODEL and a provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, …).",
         install_url: "https://aider.chat/docs/install.html",
+        capability_notes: Some(
+            "JaBot scripting wrapper, not native ACP. No session/request_permission or interactive approvals — `--yes` auto-accepts so a turn cannot hang on a TTY.",
+        ),
         // Version / auth / model are classified in `aider.rs` after `aider` is
         // found. Binary here is only the last-resort "it is on PATH" answer.
         readiness: CompiledReadiness::Binary,
@@ -635,6 +638,15 @@ mod tests {
             Some("false")
         );
         assert!(aider.blurb.contains("not native ACP"), "{}", aider.blurb);
+        assert!(
+            aider
+                .capability_notes
+                .as_deref()
+                .unwrap()
+                .contains("session/request_permission"),
+            "{}",
+            aider.capability_notes.as_deref().unwrap_or("")
+        );
     }
 
     #[test]

@@ -130,6 +130,9 @@ describe("harness/list", () => {
       sessionScope: "thread",
     });
     expect(byId.get("aider")?.blurb).toMatch(/not native ACP/);
+    expect(byId.get("aider")?.capabilityNotes).toMatch(
+      /session\/request_permission/,
+    );
     expect(byId.get("my-agent")).toMatchObject({
       tier: "custom",
       label: "My Agent",
