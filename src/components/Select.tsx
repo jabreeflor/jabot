@@ -50,6 +50,7 @@ export function Select({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const listId = useId();
   const selected = options.find((option) => option.value === value);
@@ -83,6 +84,7 @@ export function Select({
       if (event.key !== "Escape") return;
       event.stopPropagation();
       setOpen(false);
+      triggerRef.current?.focus();
     }
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
@@ -91,6 +93,7 @@ export function Select({
   function choose(chosen: string) {
     onChange(chosen);
     setOpen(false);
+    triggerRef.current?.focus();
   }
 
   function onListKeyDown(event: KeyboardEvent<HTMLUListElement>) {
@@ -130,6 +133,7 @@ export function Select({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((was) => !was)}
+        ref={triggerRef}
       >
         {selected?.icon}
         <span>{selected?.label ?? ""}</span>
