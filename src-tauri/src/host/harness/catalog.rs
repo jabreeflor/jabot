@@ -630,6 +630,6 @@ mod tests {
         assert!(!caps.resume, "sessions die with the process");
         assert!(caps.notes.as_deref().unwrap().contains("process-local"));
         let card = copilot.card();
-        assert_eq!(card.capabilities.as_ref().unwrap().resume, false);
+        assert!(!card.capabilities.as_ref().unwrap().resume);
     }
 }
