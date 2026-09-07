@@ -1,8 +1,13 @@
-/** Solid colour defaults, uploaded pictures, and shared state indicators. */
+/**
+ * The mascot every surface draws, the picture a user can substitute, and the
+ * state chrome shared by both. The colour classes supply the variations; the
+ * mascot atlas supplies one recognizable product identity and real poses.
+ */
 import { cleanup, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { BOT_COLORS, type BotColor } from "../../types";
+import { BOT_ICONS } from "../bots";
 import { Avatar, CrewAvatar } from "../Avatar";
 import type { AvatarState } from "../state";
 
@@ -25,30 +30,32 @@ function avatar(props: Parameters<typeof Avatar>[0]): HTMLElement {
   return container.firstElementChild as HTMLElement;
 }
 
-describe("the solid colour defaults", () => {
-  it("draws a solid colour mark in all eight colours", () => {
+describe("the bot icon collection", () => {
+  it("draws each persisted appearance as a distinct bot icon", () => {
     for (const color of BOT_COLORS) {
       const el = avatar({ name: "Probe", color });
       expect(el).toHaveClass("av", color);
-      expect(el.querySelector(".color-mark")).not.toBeNull();
-      expect(el.querySelector("img")).toBeNull();
+      expect(el.querySelector(".bot-mark")).not.toBeNull();
+      expect(el.querySelector(".bot-mark")).toHaveAttribute("data-character", BOT_ICONS.find(b => b.value === color)!.id);
+      expect(el.querySelectorAll(".bot-antenna circle")).toHaveLength(1);
       cleanup();
     }
   });
 
-  it("draws the colour even when a bot has no usable name", () => {
+  it("draws the mascot even when a bot has no usable name", () => {
     for (const name of ["", "   "]) {
       const el = avatar({ name, color: "b-blue" });
-      expect(el.querySelector(".color-mark")).not.toBeNull();
+      expect(el.querySelector(".bot-mark")).not.toBeNull();
       cleanup();
     }
   });
 
-  it("keeps the solid mark for every runtime state", () => {
+  it("keeps the selected icon while its runtime state changes", () => {
     for (const state of STATES) {
       const el = avatar({ name: "Probe", color: "b-blue", state });
-      expect(el.querySelector(".color-mark")).not.toBeNull();
-      expect(el.querySelector("img")).toBeNull();
+      expect(el.querySelector(".bot-mark")).toHaveAttribute(
+        "data-character", "relay",
+      );
       cleanup();
     }
   });
@@ -59,7 +66,7 @@ describe("the uploaded picture", () => {
     const el = avatar({ name: "Mira", color: "b-pink", image: PIXEL });
     const picture = el.querySelector(".pic");
     expect(picture).toHaveAttribute("src", PIXEL);
-    expect(el.querySelector(".color-mark")).toBeNull();
+    expect(el.querySelector(".bot-mark")).toBeNull();
   });
 
   it("keeps the chrome, so a bot with a picture can still be unread and busy", () => {
@@ -78,7 +85,7 @@ describe("the uploaded picture", () => {
   it("falls back to the mark when the row holds something that is not an icon", () => {
     // The value has been through the host and back, and it goes straight into
     // a `src`. A `javascript:` or an `http:` in that field is either an attack
-    // or a bug, and either way the answer is the solid colour.
+    // or a bug, and either way the answer is the built-in mascot.
     for (const bad of [
       "javascript:alert(1)",
       "http://example.com/avatar.png",
@@ -88,7 +95,7 @@ describe("the uploaded picture", () => {
     ]) {
       const el = avatar({ name: "Mira", color: "b-pink", image: bad });
       expect(el.querySelector(".pic"), bad).toBeNull();
-      expect(el.querySelector(".color-mark"), bad).not.toBeNull();
+      expect(el.querySelector(".bot-mark"), bad).not.toBeNull();
       cleanup();
     }
   });
@@ -144,7 +151,7 @@ describe("the chrome", () => {
     const el = avatar({ ...CREW[0] });
     expect(el).toHaveAttribute("title", "Bot 0");
     expect(el).not.toHaveAttribute("aria-label");
-    expect(el.querySelector(".color-mark")).toHaveAttribute(
+    expect(el.querySelector(".bot-mark")).toHaveAttribute(
       "aria-hidden",
       "true",
     );
@@ -167,7 +174,7 @@ describe("the chrome", () => {
 });
 
 describe("the crew's own avatar", () => {
-  it("draws three colour marks in three slots", () => {
+  it("draws three mascot portraits in three slots", () => {
     const { container } = render(<CrewAvatar />);
     const cluster = container.firstElementChild as HTMLElement;
     expect(cluster).toHaveClass("cluster", "av-cluster");
@@ -192,8 +199,8 @@ describe("the crew's own avatar", () => {
     expect(new Set(colours).size).toBe(3);
   });
 
-  it("draws a solid mark in all three slots", () => {
+  it("draws the mascot in all three slots", () => {
     const { container } = render(<CrewAvatar />);
-    expect(container.querySelectorAll(".color-mark")).toHaveLength(3);
+    expect(container.querySelectorAll(".bot-mark")).toHaveLength(3);
   });
 });

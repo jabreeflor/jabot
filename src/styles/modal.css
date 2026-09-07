@@ -413,30 +413,6 @@
   max-width: 34ch;
 }
 
-.swatches {
-  display: flex;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-}
-
-.swatch {
-  --blob-size: 30px;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-  border-radius: 50%;
-}
-
-.swatch[aria-pressed="true"] .av {
-  border-radius: 50%;
-  box-shadow:
-    0 0 0 2px var(--side),
-    0 0 0 4px var(--ink);
-}
-
 .toolrow {
   display: flex;
   flex-wrap: wrap;
