@@ -186,9 +186,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: actions/setup-node@v4
+        with:
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
+          node-version: 26
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
           prefix-key: macos-clippy
+      # tauri-build fails when bundle.resources matches nothing. This is
+      # still Clippy `--lib`, not a `tauri build`.
+      - name: Stage bundled adapters
+        run: ./scripts/bundle-adapters.sh
       - name: Clippy the jabot lib (-D warnings)
         run: ./scripts/check-macos-clippy.sh

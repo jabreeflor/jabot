@@ -40,6 +40,11 @@ job is the before-merge gate. See docs/macos-lint.md."
 
 command -v cargo >/dev/null 2>&1 || fail "cargo not found"
 
+# tauri-build reads bundle.resources at build-script time. The adapters
+# glob matching nothing fails `cargo clippy --lib` the same way it fails
+# `cargo check` — not only `tauri build`. Stage (or confirm) first.
+./scripts/bundle-adapters.sh || fail "bundled adapters must be staged before clippy (tauri-build reads bundle.resources)"
+
 printf 'clippy --lib -D warnings on %s (%s)\n' "$(uname -sm)" "$(rustc --version 2>/dev/null || echo rustc)"
 cargo clippy \
   --manifest-path src-tauri/Cargo.toml \

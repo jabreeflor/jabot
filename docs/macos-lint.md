@@ -56,8 +56,11 @@ bundle path):
 Both lint jobs use `clippy -- -D warnings`. A warning is a red check.
 
 `macos clippy` is scoped to `cargo clippy --locked --lib` and uses
-`Swatinem/rust-cache`. It is not `npm run tauri build`. A frontend-only or
-docs-only PR does not start a Mac runner.
+`Swatinem/rust-cache`. It is not `npm run tauri build`. It does stage the
+bundled ACP adapters first (`scripts/bundle-adapters.sh`) because
+`tauri-build` reads `bundle.resources` at build-script time and fails when
+the glob matches nothing. A frontend-only or docs-only PR does not start a
+Mac runner.
 
 ## Local reproduction
 
@@ -74,7 +77,8 @@ rustup target add x86_64-apple-darwin
 # same stage, via the existing opt-in:
 ./scripts/verify.sh --check-mac
 
-# Keychain + lib.rs cfg(macos) branches. Needs a Mac.
+# Keychain + lib.rs cfg(macos) branches. Needs a Mac, and stages
+# bundled adapters (tauri-build reads bundle.resources).
 ./scripts/check-macos-clippy.sh
 
 # Planner matches, refusals, and (if the Apple target is installed)
