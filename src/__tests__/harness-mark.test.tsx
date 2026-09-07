@@ -58,11 +58,15 @@ describe("the harness mark", () => {
     const { container: copilot } = render(<HarnessMark harnessId="copilot" />);
     const { container: gemini } = render(<HarnessMark harnessId="gemini" />);
     const { container: cursor } = render(<HarnessMark harnessId="cursor" />);
-    const { container: custom } = render(<HarnessMark harnessId="my-own-agent" />);
+    const { container: custom } = render(
+      <HarnessMark harnessId="my-own-agent" />,
+    );
     expect(marksIn(opencode)[0].innerHTML).not.toBe(
       marksIn(custom)[0].innerHTML,
     );
-    expect(marksIn(copilot)[0].innerHTML).not.toBe(marksIn(custom)[0].innerHTML);
+    expect(marksIn(copilot)[0].innerHTML).not.toBe(
+      marksIn(custom)[0].innerHTML,
+    );
     expect(marksIn(gemini)[0].innerHTML).not.toBe(marksIn(custom)[0].innerHTML);
     expect(marksIn(cursor)[0].innerHTML).not.toBe(marksIn(custom)[0].innerHTML);
   });

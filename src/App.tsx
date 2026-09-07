@@ -119,8 +119,7 @@ import "./App.css";
 const LEAVE_MS = 380;
 
 type EditorState =
-  | { open: false }
-  | { open: true; botId: string | null; draftId?: string };
+  { open: false } | { open: true; botId: string | null; draftId?: string };
 /** Editing only: a *new* schedule is written as a prompt inside the Schedules
     screen (#25), so the modal never opens without a record behind it. */
 type ScheduleEditorState = { open: false } | { open: true; scheduleId: string };
@@ -854,14 +853,27 @@ function AppShell({
             onSend={(conversationId, text) =>
               dispatch({ type: "sendMessage", conversationId, text })
             }
-          }}
-          onEditBot={(botId) => setEditor({ open: true, botId })}
-          onAddBot={() => setEditor({ open: true, botId: null })}
-          onRemoveBot={(botId) => removeBot(botId, false)}
-          drafts={crew.drafts ?? []}
-          onReviewDraft={reviewDraft}
-          onRunSetup={onRunSetup}
-        />
+            onNotice={answerNotice}
+            onOpenInboxThread={openInboxThread}
+            onInboxAction={(cardId, actionId) => {
+              // A host card's buttons reach the host: Archive is `thread/archive`
+              // and an `ask:` button is `permission/reply`. The reducer only ever
+              // knew how to hide a fixture.
+              if (inbox.cards) {
+                void inbox.act(cardId, actionId);
+                return;
+              }
+              if (actionId === "archive") {
+                dispatch({ type: "dismissInboxCard", cardId });
+              }
+            }}
+            onEditBot={(botId) => setEditor({ open: true, botId })}
+            onAddBot={() => setEditor({ open: true, botId: null })}
+            onRemoveBot={(botId) => removeBot(botId, false)}
+            drafts={crew.drafts ?? []}
+            onReviewDraft={reviewDraft}
+            onRunSetup={onRunSetup}
+          />
         )}
       </main>
 

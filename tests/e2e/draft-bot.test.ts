@@ -129,8 +129,7 @@ async function chiefWithBridge(dataDir: string) {
   });
   const params = await sessionNewParams(host, thread.threadId);
   const server = params.mcpServers.find((entry) => entry.name === "jabot") as
-    | HttpMcpServer
-    | undefined;
+    HttpMcpServer | undefined;
   if (!server) {
     throw new Error(
       `no host tool server on session/new: ${JSON.stringify(params.mcpServers)}`,
@@ -230,7 +229,10 @@ describe("prompt composition", () => {
       threadId: researchThread.threadId,
       content: "research this",
     });
-    await client.prompt({ threadId: writerThread.threadId, content: "write this" });
+    await client.prompt({
+      threadId: writerThread.threadId,
+      content: "write this",
+    });
     const researchPrompt = await sessionPromptParams(
       host,
       researchThread.threadId,
@@ -390,7 +392,9 @@ describe("draft_bot over the live bridge", () => {
       instructions: "Too late.",
     });
     expect(revoked.ok).toBe(false);
-    expect(revoked.text.toLowerCase()).toMatch(/not one of this bot's tools|draft_bot/);
+    expect(revoked.text.toLowerCase()).toMatch(
+      /not one of this bot's tools|draft_bot/,
+    );
   });
 
   it("recovers pending drafts after restart and will not Save a dismissed one", async () => {

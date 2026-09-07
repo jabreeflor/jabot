@@ -484,13 +484,13 @@ export class HostClient {
   }
 
   /** Commit a draft through normal crew creation. Never starts a run. */
-  async saveBotDraft(params: CrewDraftSaveParams): Promise<CrewDraftSaveResult> {
+  async saveBotDraft(
+    params: CrewDraftSaveParams,
+  ): Promise<CrewDraftSaveResult> {
     return this.request<CrewDraftSaveResult>(CREW_DRAFT_SAVE, params);
   }
 
-  async dismissBotDraft(
-    params: CrewDraftDismissParams,
-  ): Promise<BotDraftView> {
+  async dismissBotDraft(params: CrewDraftDismissParams): Promise<BotDraftView> {
     return this.request<BotDraftView>(CREW_DRAFT_DISMISS, params);
   }
 

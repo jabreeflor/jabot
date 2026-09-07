@@ -249,14 +249,14 @@ export function BotEditorModal({
     >
       {proposal && (
         <p className="proposal-banner" role="status">
-          Proposed by {proposal.sourceName}. Saving creates a crew member;
-          this does not start a conversation.
+          Proposed by {proposal.sourceName}. Saving creates a crew member; this
+          does not start a conversation.
           {proposal.stale && (
             <>
               {" "}
               This proposal is stale
-              {proposal.staleReason ? ` (${proposal.staleReason})` : ""}.
-              Review it before Save.
+              {proposal.staleReason ? ` (${proposal.staleReason})` : ""}. Review
+              it before Save.
             </>
           )}
           {proposal.nameWarning ? ` ${proposal.nameWarning}` : ""}

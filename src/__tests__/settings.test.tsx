@@ -43,22 +43,28 @@ const minutes = () => screen.getByLabelText(/Go quiet after/);
 describe("SettingsView", () => {
   it("declares Copilot capabilities instead of implying resume works", () => {
     draw({
-      harnesses: [{
-        id: "copilot",
-        label: "GitHub Copilot",
-        accent: "var(--h-copilot)",
-        blurb: "GitHub's coding agent, over ACP",
-        capabilities: {
-          streaming: true,
-          toolEvents: true,
-          permissions: true,
-          cancel: true,
-          resume: false,
-          notes: "Resume after the Copilot process exits is not supported.",
+      harnesses: [
+        {
+          id: "copilot",
+          label: "GitHub Copilot",
+          accent: "var(--h-copilot)",
+          blurb: "GitHub's coding agent, over ACP",
+          capabilities: {
+            streaming: true,
+            toolEvents: true,
+            permissions: true,
+            cancel: true,
+            resume: false,
+            notes: "Resume after the Copilot process exits is not supported.",
+          },
         },
-      }],
+      ],
     });
-    expect(screen.getByText(/Resume after the Copilot process exits is not supported/)).toBeVisible();
+    expect(
+      screen.getByText(
+        /Resume after the Copilot process exits is not supported/,
+      ),
+    ).toBeVisible();
   });
 
   it("declares Gemini capabilities next to the enable toggle", () => {
@@ -107,7 +113,8 @@ describe("SettingsView", () => {
           id: "cursor",
           label: "Cursor Agent",
           accent: "var(--h-cursor)",
-          blurb: "Cursor's coding agent. Permissions stay in JaBot — no --force.",
+          blurb:
+            "Cursor's coding agent. Permissions stay in JaBot — no --force.",
           capabilities: {
             streaming: true,
             toolEvents: true,
@@ -120,10 +127,10 @@ describe("SettingsView", () => {
         },
       ],
     });
-    expect(screen.getByRole("checkbox", { name: /Cursor Agent/ })).toBeChecked();
     expect(
-      screen.getByText(/not isolated per bot/),
-    ).toBeVisible();
+      screen.getByRole("checkbox", { name: /Cursor Agent/ }),
+    ).toBeChecked();
+    expect(screen.getByText(/not isolated per bot/)).toBeVisible();
   });
 
   it("shows the host's values, in the units a person thinks in", () => {

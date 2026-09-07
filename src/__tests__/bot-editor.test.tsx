@@ -186,7 +186,9 @@ describe("BotEditorModal", () => {
       onSaveAndOpen,
     });
 
-    expect(screen.getByRole("heading", { name: "Proposed bot" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Proposed bot" }),
+    ).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Proposed by Chief");
     expect(screen.getByRole("status")).toHaveTextContent("stale");
     expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();

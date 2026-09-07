@@ -12,7 +12,10 @@ import { ESLint } from "eslint";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const root = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 const CASES = [
   {
@@ -63,7 +66,11 @@ const eslint = new ESLint({
 let failed = 0;
 for (const probe of CASES) {
   const results = await eslint.lintText(probe.code, {
-    filePath: path.join(root, "src", `__lint-probe-${probe.name.replace(/\s+/g, "-")}.tsx`),
+    filePath: path.join(
+      root,
+      "src",
+      `__lint-probe-${probe.name.replace(/\s+/g, "-")}.tsx`,
+    ),
   });
   const messages = results.flatMap((result) => result.messages);
   if (messages.some((message) => message.ruleId === probe.rule)) {
@@ -73,7 +80,9 @@ for (const probe of CASES) {
   failed += 1;
   console.error(`  lint probe: ${probe.name} did not report ${probe.rule}`);
   if (messages.length === 0) {
-    console.error("    (no messages — the file was probably ignored or unmatched)");
+    console.error(
+      "    (no messages — the file was probably ignored or unmatched)",
+    );
   } else {
     for (const message of messages) {
       console.error(`    ${message.ruleId ?? "unknown"}: ${message.message}`);
