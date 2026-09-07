@@ -16,8 +16,9 @@ project (TypeScript client ↔ host protocol, no renderer) stays as it is.
 
 ```bash
 npm run host:build                 # once, or whenever the Rust bins move
-npx playwright install chromium    # once per machine (webkit optional)
-npm run test:browser:smoke         # Chromium smoke, no credentials
+npx playwright install chromium webkit
+npm run test:browser:smoke         # Chromium @smoke (journey + axe + keyboard)
+npm run test:browser               # Chromium + WebKit, including visual
 ```
 
 That starts its **own** Vite on a dedicated loopback port with a temp data
@@ -26,18 +27,20 @@ shared `.jabot-dev/data` a developer may be using on port 1420).
 
 | command | what |
 | --- | --- |
-| `npm run test:browser:smoke` | Chromium, `@smoke` only |
-| `npm run test:browser:chromium` | all Chromium journeys — the PR gate (#232 + #233) |
+| `npm run test:browser:smoke` | Chromium, `@smoke` only (journey + axe + keyboard) |
+| `npm run test:browser:chromium` | all Chromium journeys — functional gate without screenshots |
 | `npm run test:browser:repeat` | `@smoke` × 20, retries 0 |
-| `npm run test:browser` | Chromium + WebKit (recovery / workspace / smoke) |
+| `npm run test:browser` | Chromium + WebKit: journeys, visual, axe, keyboard |
+| `npm run test:browser:visual` | Chromium screenshot project |
+| `npm run test:browser:update-snapshots` | refresh visual baselines (never in CI) |
 | `npm run test:browser:ui` | Playwright UI mode |
 | `npm run test:browser:install` | download Chromium and WebKit |
 
 `./scripts/verify.sh` stays offline and display-less. Pass
-`--check-browser` to run the Chromium suite after the usual gates. CI's
-`browser` job is the required PR check (`npx playwright test --project=chromium`).
-`@playwright/test` and `playwright-core` stay pinned together (1.63+); 1.56
-hangs extracting Chromium on Node 26.
+`--check-browser` to run the full suite after the usual gates. CI's
+`browser` job is the required PR check. `@playwright/test` and
+`playwright-core` stay pinned together (1.63+); 1.56 hangs extracting
+Chromium on Node 26. Visual baseline review: [docs/browser-tests.md](../../docs/browser-tests.md).
 
 ## Isolation
 

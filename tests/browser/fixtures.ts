@@ -12,6 +12,9 @@
  * Suites that need Vite/host env before spawn (a fixture `gh` on PATH)
  * use `browserTest(() => ({ pathPrefix }))` so they still share this
  * fixture rather than forking one.
+ *
+ * Visual / axe / keyboard specs also receive `app`, the same host with a
+ * `.url` alias so existing #234 helpers keep working.
  */
 import { test as base, expect } from "@playwright/test";
 
@@ -27,8 +30,11 @@ import {
 const IGNORED_PAGE_ERRORS =
   /dev server connection lost|transport closed|jabot-hostd exited|Host disconnected|Failed to fetch|network error|WebSocket/i;
 
+export type BrowserApp = JabotApp & { url: string };
+
 export type BrowserFixtures = {
   jabot: JabotApp;
+  app: BrowserApp;
   seedChief: boolean;
 };
 
@@ -49,6 +55,10 @@ export function browserTest(start: JabotStartFactory = () => ({})) {
         }
         await app.close();
       }
+    },
+
+    app: async ({ jabot }, provide) => {
+      await provide(Object.assign(jabot, { url: jabot.baseURL }));
     },
 
     page: async ({ page }, provide) => {

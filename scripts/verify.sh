@@ -6,7 +6,7 @@
 #   ./scripts/verify.sh --fast             # skip the e2e project (no Rust binary build)
 #   ./scripts/verify.sh --check-toolchain  # also ask rustup if stable moved (NETWORK)
 #   ./scripts/verify.sh --check-mac        # also lint notify/mac.rs for macOS (NETWORK; CI runs this itself)
-#   ./scripts/verify.sh --check-browser    # also Playwright Chromium smoke (needs browsers)
+#   ./scripts/verify.sh --check-browser    # Playwright visual + axe + smoke (needs browsers)
 #
 # Packaged-app matrix/isolation is a default stage; see
 # docs/macos-acceptance.md (#235).
@@ -17,7 +17,7 @@
 # offline, needs no display, no GitHub token and no macOS — except
 # --check-toolchain, --check-mac, and --check-browser, which are opt-in
 # for exactly that reason. CI still runs the notify cross-check on
-# relevant PRs (see docs/macos-lint.md) and the Playwright smoke as its
+# relevant PRs (see docs/macos-lint.md) and the Playwright suite as its
 # own `browser` job.
 #
 # Stages, cheapest first so failures surface early:
@@ -44,9 +44,10 @@
 #   *. mac notify     — --check-mac only: notify/mac.rs, which is cfg'd out on
 #                      Linux. CI runs the same script automatically on relevant
 #                      PRs; locally it stays opt-in (NETWORK)
-#   *. browser smoke  — --check-browser only: Playwright Chromium against a
-#                      real host. Not in the default gate (browsers are a
-#                      network install). CI's `browser` job is the PR check.
+#   *. browser        — --check-browser only: Playwright visual + axe +
+#                      keyboard + smoke against an isolated real host.
+#                      Not in the default gate (browsers are a network
+#                      install). CI's `browser` job is the PR check.
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -813,15 +814,15 @@ fi
 
 run "renderer build" npx vite build
 
-# Playwright Chromium against a real host. Opt-in: the default gate stays
-# offline and needs no browser download. CI's `browser` job is the required
-# PR check; this flag is the local equivalent after `npx playwright install
-# chromium`.
+# Playwright visual + axe + smoke. Opt-in: the default gate stays offline
+# and needs no browser download. CI's `browser` job is the required PR
+# check; this flag is the local equivalent after `npx playwright install
+# chromium webkit`.
 if [[ $CHECK_BROWSER -eq 1 ]]; then
   if [[ ! -x src-tauri/target/debug/jabot-hostd || ! -x src-tauri/target/debug/fake-acp-agent ]]; then
     run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bins
   fi
-  run "browser (chromium)" npm run test:browser -- --project=chromium
+  run "browser visual + a11y + journeys" npm run test:browser
 fi
 
 # ---------------------------------------------------------------------------

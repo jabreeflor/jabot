@@ -37,7 +37,8 @@
   /* One step up the same system-gray ramp the prototype drew from. The
      original #6e6e73 was 3.4:1 on the card ground — below AA for every size it
      is used at, and the uppercase 11px form labels are its worst case. */
-  --faint: #8e8e93;
+  /* #8e8e93 was 4.39:1 on --raise — just under AA for 12.5px chip labels. */
+  --faint: #95959b;
 
   /* cream — primary chrome (tabs, buttons, chips) */
   --cream: #f1f1ec;

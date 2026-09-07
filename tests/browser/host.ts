@@ -18,6 +18,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -40,6 +41,7 @@ import {
   type ThreadTranscriptResult,
 } from "../../src/host/protocol";
 import { fakeAcpAgentPath, hostdBinaryPath } from "../support/hostd";
+import { FAKE_ACP_ASK_ID } from "./support/constants";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -221,10 +223,29 @@ export async function chiefTranscript(
   });
 }
 
+function writeAskHarness(dataDir: string, fakeAcp: string): void {
+  const dir = path.join(dataDir, "custom_harnesses");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, `${FAKE_ACP_ASK_ID}.json`),
+    `${JSON.stringify(
+      {
+        id: FAKE_ACP_ASK_ID,
+        label: "Fake ACP (permission)",
+        command: fakeAcp,
+        args: ["permission"],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+}
+
 export async function startJabotApp(
   options: StartJabotOptions = {},
 ): Promise<JabotApp> {
   const dataDir = mkdtempSync(path.join(tmpdir(), "jabot-browser-"));
+  writeAskHarness(dataDir, fakeAcpAgentPath());
   const port = await listenFreePort();
   const logPath = path.join(dataDir, "vite.log");
   const spawn = () => spawnVite({ dataDir, port, logPath, options });

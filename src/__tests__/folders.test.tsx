@@ -211,6 +211,26 @@ describe("AddFolderModal", () => {
       "~/code/jabot",
     );
   });
+
+  it("returns focus to the opener when the modal unmounts", async () => {
+    const { rerender } = render(
+      <button type="button">Open folders</button>,
+    );
+    const opener = screen.getByRole("button", { name: "Open folders" });
+    opener.focus();
+    expect(opener).toHaveFocus();
+
+    rerender(
+      <>
+        <button type="button">Open folders</button>
+        <AddFolderModal onRegister={vi.fn()} onCancel={vi.fn()} />
+      </>,
+    );
+    expect(screen.getByLabelText("FOLDER — ONE REPO")).toHaveFocus();
+
+    rerender(<button type="button">Open folders</button>);
+    expect(opener).toHaveFocus();
+  });
 });
 
 describe("App, once the host has answered", () => {
