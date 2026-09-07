@@ -10,7 +10,7 @@
 //! until the turn ends — and a UI that took the text and then said nothing
 //! would be indistinguishable from one that dropped it.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { ArrowUpIcon } from "./Icon";
 import { Composer } from "./Composer";
@@ -54,43 +54,59 @@ export function Conversation({
   notice?: ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  // True while the reader is parked at the end. Default true, because a
-  // conversation opens at its tail.
+  const spacerRef = useRef<HTMLDivElement>(null);
   const stuckRef = useRef(true);
+  const promptRef = useRef<string | null>(null);
   const [stuck, setStuck] = useState(true);
+  const latestUser = [...items].reverse().find((item) => item.kind === "user");
 
-  // End-anchored, not tail-following.
-  //
-  // The effect this replaces set `scrollTop = scrollHeight` on every change to
-  // `items`, and #14's reducer rebuilds `items` on *every streamed chunk* — so
-  // scrolling back through history while an agent was talking was impossible:
-  // the view snapped to the bottom a few times a second. That is the live
-  // defect here; windowing below is the half the record deferred for
-  // performance.
-  //
-  // Stuck is measured rather than remembered, in one place, so the answer
-  // cannot drift from what the element is actually doing.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const scroll = scrollRef.current;
-    if (!scroll) return;
-    if (!stuckRef.current) return;
-    scroll.scrollTop = scroll.scrollHeight;
-  }, [items]);
+    const spacer = spacerRef.current;
+    const transcript = scroll?.querySelector<HTMLElement>(".transcript");
+    if (!scroll || !spacer || !transcript) return;
 
-  // Sending re-sticks. Somebody who scrolled up to check something and then
-  // typed is done reading back — and a reply that arrived off-screen because
-  // the view was still held at the old position would be the worse surprise.
-  const lastId = items[items.length - 1]?.id;
-  useEffect(() => {
-    const last = items[items.length - 1];
-    if (last?.kind !== "user") return;
-    stuckRef.current = true;
-    setStuck(true);
-    const scroll = scrollRef.current;
-    if (scroll) scroll.scrollTop = scroll.scrollHeight;
-    // Keyed on the last item's id rather than the array: this must fire when
-    // a *new* user item lands, not on every chunk of the reply to it.
-  }, [lastId, items]);
+    // Reserve the unused part of a turn so even a one-line prompt can sit at
+    // the top. As the reply grows, it consumes this space instead of pushing
+    // the prompt upward. Measure content, not scrollHeight (which includes it).
+    const measure = () => {
+      const users = transcript.querySelectorAll<HTMLElement>(".msg.me");
+      const prompt = users[users.length - 1];
+      const styles = getComputedStyle(scroll);
+      const top = parseFloat(styles.paddingTop) || 0;
+      const bottom = parseFloat(styles.paddingBottom) || 0;
+      const turnHeight = prompt
+        ? transcript.getBoundingClientRect().bottom - prompt.getBoundingClientRect().top
+        : scroll.clientHeight;
+      spacer.style.height = `${Math.max(0, scroll.clientHeight - top - bottom - turnHeight)}px`;
+      return prompt ? prompt.getBoundingClientRect().top
+        - scroll.getBoundingClientRect().top + scroll.scrollTop - top : null;
+    };
+
+    const promptTop = measure();
+    if (latestUser && latestUser.id !== promptRef.current && promptTop !== null) {
+      promptRef.current = latestUser.id;
+      stuckRef.current = false;
+      scroll.scrollTop = promptTop;
+    } else if (stuckRef.current) {
+      scroll.scrollTop = scroll.scrollHeight;
+    }
+    const updateIndicator = () => setStuck(
+      scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= STICK_THRESHOLD,
+    );
+    updateIndicator();
+
+    // Fonts, window resizing, and expanded transcript rows can change geometry
+    // without a new stream item. They must also release/reserve the blank space.
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      measure();
+      updateIndicator();
+    });
+    observer.observe(scroll);
+    observer.observe(transcript);
+    return () => observer.disconnect();
+  }, [items, latestUser?.id]);
 
   function onScroll() {
     const scroll = scrollRef.current;
@@ -101,7 +117,9 @@ export function Conversation({
     const atEnd =
       scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <=
       STICK_THRESHOLD;
-    stuckRef.current = atEnd;
+    // A prompt remains anchored even when its short reply fits on screen.
+    // Explicitly jumping to latest opts back into following the reply.
+    if (stuckRef.current || !atEnd) stuckRef.current = atEnd;
     setStuck(atEnd);
   }
 
@@ -120,6 +138,7 @@ export function Conversation({
       {header}
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         <Transcript items={items} onAction={onAction} />
+        <div ref={spacerRef} aria-hidden="true" className="turn-space" />
         {/* The way back, and the only sign that the view is deliberately not
             following. Without it a reader who scrolled up during a long turn
             has no idea whether the agent is still talking. */}
