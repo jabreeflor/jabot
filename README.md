@@ -32,6 +32,7 @@ The scaffold (#7) lives at the repo root:
 - **Renderer:** `src/` — React 19 + TypeScript + Vite
 
 ```bash
+# Node 26 (Current). `.nvmrc` / `.node-version` match CI.
 npm install
 npm run tauri dev    # macOS dev (requires Tauri prerequisites)
 npm run build        # frontend-only build (CI / Linux)
@@ -46,6 +47,7 @@ the macOS bundle job no longer runs on pull requests. One command is the gate,
 and it runs on your machine:
 
 ```bash
+# Node 26 (Current) — `.nvmrc` matches CI and release
 npm install                              # deps, and installs the git hooks
 ./scripts/verify.sh                      # the whole gate, ~1.5 min warm
 ./scripts/checkpoint.sh -m "message"     # verify and commit, atomically

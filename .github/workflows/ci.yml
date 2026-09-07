@@ -36,7 +36,8 @@ jobs:
           components: rustfmt, clippy
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
+          node-version: 26
           cache: npm
       - uses: Swatinem/rust-cache@v2
         with:
@@ -85,7 +86,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
+          node-version: 26
           cache: npm
       - uses: Swatinem/rust-cache@v2
         with:
