@@ -204,11 +204,11 @@
   --blob-size: 42px;
 }
 
-/* The ring is round even though an avatar's box is square: what the box holds
-   is a circle, and a square halo would read as a tile around the bot rather
-   than a highlight on it. */
-.bot-row[aria-current="true"] .av,
-.bot-row[aria-current="true"] .cluster {
+/* Highlight the selected avatar once, without outlining each Crew member.
+   Direct children only: a cluster holds three nested `.av`s, and a descendant
+   selector would ring every silhouette instead of the tile. */
+.bot-row[aria-current="true"] > .av,
+.bot-row[aria-current="true"] > .cluster {
   border-radius: 50%;
   box-shadow:
     0 0 0 2px var(--side),
