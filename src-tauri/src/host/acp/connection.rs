@@ -559,7 +559,7 @@ fn parse_capabilities(result: &Value) -> AgentCapabilities {
     }
 }
 
-fn prompt_blocks(content: &Value) -> Result<Value, RpcError> {
+pub(crate) fn prompt_blocks(content: &Value) -> Result<Value, RpcError> {
     if content.is_null() {
         return Err(RpcError::InvalidParams("content is required".into()));
     }

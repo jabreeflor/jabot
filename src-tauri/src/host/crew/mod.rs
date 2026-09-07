@@ -36,9 +36,10 @@
 //! `HERMES_HOME`) are never shared between crew, and a credential never lands
 //! in a bot directory.
 
+pub(crate) mod draft;
 mod memory;
 pub(crate) mod standing;
-mod templates;
+pub(crate) mod templates;
 
 use std::path::PathBuf;
 
@@ -103,6 +104,16 @@ pub const HOST_TOOLS: &[CrewHostTool] = &[
         id: "list_crew_status",
         label: "Crew status",
         blurb: "See what every bot is working on",
+    },
+    CrewHostTool {
+        id: "draft_bot",
+        label: "Draft bot",
+        blurb: "Propose a new crew member for you to review and Save",
+    },
+    CrewHostTool {
+        id: "get_bot_draft",
+        label: "Draft status",
+        blurb: "Check a proposed bot you submitted",
     },
 ];
 
@@ -318,14 +329,14 @@ impl HostSession {
     /// Where this bot's markdown lives, or `None` on a host with no data
     /// directory — an ephemeral host has nowhere to put one, and saying so is
     /// better than naming a path that will never exist.
-    fn memory_dir(&self, bot_id: &str) -> Option<PathBuf> {
+    pub(crate) fn memory_dir(&self, bot_id: &str) -> Option<PathBuf> {
         self.data_dir
             .as_deref()
             .map(|data_dir| memory::dir_for(data_dir, bot_id))
     }
 
     /// Best-effort: the crew is the record, the files are a projection of it.
-    fn ensure_memory(&self, row: &BotRow) {
+    pub(crate) fn ensure_memory(&self, row: &BotRow) {
         let Some(dir) = self.memory_dir(&row.id) else {
             return;
         };
@@ -341,7 +352,7 @@ impl HostSession {
     /// `unread` and `preview` are passed in rather than looked up: this
     /// borrows `&self` for `memory_dir`, and a query per row would make the
     /// grid N+1.
-    fn bot_view(&self, row: BotRow, unread: i64, preview: Option<String>) -> BotView {
+    pub(crate) fn bot_view(&self, row: BotRow, unread: i64, preview: Option<String>) -> BotView {
         // A row whose `tools_json` will not parse is a row nothing wrote —
         // every write here validates it — so an empty allowlist is the safe
         // reading: the bot gets no tools rather than all of them.
@@ -365,7 +376,7 @@ impl HostSession {
         }
     }
 
-    fn checked_color(&self, color: &str) -> Result<String, RpcError> {
+    pub(crate) fn checked_color(&self, color: &str) -> Result<String, RpcError> {
         let color = color.trim();
         if BOT_COLORS.contains(&color) {
             return Ok(color.to_string());
@@ -379,7 +390,7 @@ impl HostSession {
     /// A harness the store does not have is a bot whose first prompt cannot
     /// spawn. `bots.harness_id` is a foreign key, so this would fail anyway —
     /// but as a constraint violation the user cannot read.
-    fn checked_harness(&self, harness_id: &str) -> Result<String, RpcError> {
+    pub(crate) fn checked_harness(&self, harness_id: &str) -> Result<String, RpcError> {
         let harness_id = harness_id.trim();
         if harness_id.is_empty() {
             return Err(RpcError::InvalidParams("harnessId is required".into()));
@@ -396,7 +407,7 @@ impl HostSession {
         }
     }
 
-    fn crew_store(&self) -> Result<&Store, RpcError> {
+    pub(crate) fn crew_store(&self) -> Result<&Store, RpcError> {
         self.store.as_ref().ok_or(RpcError::StoreUnavailable)
     }
 }
@@ -408,7 +419,7 @@ impl HostSession {
 /// order the editor shows back. The duplicate check matters because a session's
 /// `mcpServers` is built from this list and the same server twice is a server
 /// the harness may or may not accept.
-fn checked_tools_json(tools: &[String]) -> Result<String, RpcError> {
+pub(crate) fn checked_tools_json(tools: &[String]) -> Result<String, RpcError> {
     let mut kept: Vec<String> = Vec::with_capacity(tools.len());
     for tool in tools {
         let tool = tool.trim();

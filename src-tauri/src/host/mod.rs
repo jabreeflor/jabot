@@ -62,8 +62,10 @@ pub use protocol::methods::{
 };
 #[allow(unused_imports)]
 pub use protocol::{
-    decode_frame, decode_frames, encode_frame, BotTemplateView, BotView, CrewCreateParams,
-    CrewHostToolView, CrewListResult, CrewRefParams, CrewRemoveResult, CrewUpdateParams,
+    decode_frame, decode_frames, encode_frame, BotDraftView, BotTemplateView, BotView,
+    CrewCreateParams, CrewDraftDismissParams, CrewDraftGetParams, CrewDraftSaveParams,
+    CrewDraftSaveResult, CrewDraftsResult, CrewHostToolView, CrewListResult, CrewRefParams,
+    CrewRemoveResult, CrewUpdateParams,
     DeviceInfo, DeviceRole, Envelope, FolderForgetResult, FolderListResult, FolderOriginView,
     FolderThreadView, FolderView, GithubLoginParams, GithubStatusResult, HandoffView,
     HarnessCardView, HarnessDoctorResult, HarnessListResult, HarnessStatus, HarnessTier,
@@ -75,8 +77,9 @@ pub use protocol::{
     ScheduleRunResult, ScheduleUpdateParams, ScheduleView, StoreStatus, SupervisorStatusResult,
     ThreadResumeResult, ThreadStateResult, ThreadTranscriptParams, ThreadTranscriptResult,
     ToolCardView, ToolConnectResult, ToolConnectionStatus, ToolDisconnectResult, ToolListResult,
-    ToolRefParams, ToolTransport, TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_LIST,
-    CREW_REMOVE, CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
+    ToolRefParams, ToolTransport, TranscriptEventView, CLIENT_METHODS, CREW_CREATE, CREW_DRAFT,
+    CREW_DRAFTS, CREW_DRAFT_DISMISS, CREW_DRAFT_GET, CREW_DRAFT_SAVE, CREW_LIST, CREW_REMOVE,
+    CREW_THREAD, CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER,
     FOLDER_UPDATE, GITHUB_LOGIN, GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH,
     HOST_HELLO, HOST_NOTIFICATIONS, INBOX_LIST, INBOX_RESURFACE, JSONRPC_VERSION, PERMISSION_ASK,
     PERMISSION_PENDING, PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL,
@@ -634,6 +637,14 @@ impl HostSession {
         };
         self.push_logged(thread_id, protocol::INBOX_EVENT, params);
         seq
+    }
+
+    /// A host-wide notification with no thread envelope. Pending bot drafts
+    /// are recovered by `crew/drafts` on reconnect; this is only a hint.
+    fn push_unlogged<T: serde::Serialize>(&mut self, method: &str, params: T) {
+        let params = serde_json::to_value(params).expect("notification params serialize");
+        self.outbound
+            .push_back(JsonRpcNotification::new(method, Some(params)));
     }
 
     fn push_logged<T: serde::Serialize>(&mut self, thread_id: &str, method: &str, params: T) {

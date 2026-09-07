@@ -62,6 +62,35 @@ describe("CrewView", () => {
     expect(within(card("Chief")).getByText("Handoff")).toBeInTheDocument();
   });
 
+  it("lists pending proposals without opening them", async () => {
+    const onReviewDraft = vi.fn();
+    renderCrew({
+      drafts: [
+        {
+          draftId: "d1",
+          requestKey: "k1",
+          status: "pending_review",
+          revision: 1,
+          name: "Researcher",
+          instructions: "Cite sources.",
+          tools: ["browser"],
+          harnessId: "claude",
+          color: "b-green",
+          sourceBotId: "chief",
+          sourceBotName: "Chief",
+          createdAt: "2026-09-07T00:00:00Z",
+          updatedAt: "2026-09-07T00:00:00Z",
+        },
+      ],
+      onReviewDraft,
+    });
+
+    expect(screen.getByLabelText("Pending bot drafts")).toBeInTheDocument();
+    expect(screen.getByText(/proposed by Chief/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Review" }));
+    expect(onReviewDraft).toHaveBeenCalledWith("d1");
+  });
+
   it("edits, removes, and adds by id", async () => {
     const props = renderCrew();
 

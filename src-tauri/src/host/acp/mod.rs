@@ -14,6 +14,7 @@
 
 mod connection;
 mod no_reply;
+mod prompt;
 mod runtime;
 mod spawn;
 mod wake;
@@ -178,10 +179,11 @@ impl HostSession {
         if let Some(store) = &self.store {
             let _ = store.set_thread_acp_session(&thread_id, &session_id);
         }
+        let wire = self.compose_prompt_for_dispatch(&thread_id, &params.content);
         let sent = self.conn_mut(&thread_id).expect("spawned").send_prompt(
             &thread_id,
             &session_id,
-            &params.content,
+            &wire,
         );
         if let Err(err) = sent {
             self.forget_adapter(&thread_id);

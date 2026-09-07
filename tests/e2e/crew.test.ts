@@ -24,6 +24,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { HostClient, HostRpcError } from "../../src/host/client";
 import {
   CREW_CREATE,
+  CREW_DRAFTS,
+  CREW_DRAFT_DISMISS,
+  CREW_DRAFT_GET,
+  CREW_DRAFT_SAVE,
   CREW_LIST,
   CREW_REMOVE,
   CREW_UPDATE,
@@ -84,7 +88,16 @@ describe("the shipped crew", () => {
   it("advertises its methods and starts with only Chief and Bot Recruiter", async () => {
     const { client, hello } = await connected();
 
-    for (const method of [CREW_LIST, CREW_CREATE, CREW_UPDATE, CREW_REMOVE]) {
+    for (const method of [
+      CREW_LIST,
+      CREW_CREATE,
+      CREW_UPDATE,
+      CREW_REMOVE,
+      CREW_DRAFTS,
+      CREW_DRAFT_GET,
+      CREW_DRAFT_SAVE,
+      CREW_DRAFT_DISMISS,
+    ]) {
       expect(hello.methods).toContain(method);
     }
 
@@ -230,9 +243,15 @@ describe("the editor is the record", () => {
    */
   it("what a save writes is what the next session is spawned with", async () => {
     const { host, client } = await connected();
-    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
+    const writer = await client.createBot({
+      name: "Writer",
+      instructions: "Draft in my voice.",
+      tools: [],
+      harnessId: "claude",
+    });
 
-    // Bot Recruiter ships with no tools, so a session gets no servers at all.
+    // A tool-less bot gets no servers at all. Recruiter now ships draft_bot,
+    // so this case uses a created worker rather than the seeded seat.
     await client.openThread({
       threadId: "t-before",
       title: "before",

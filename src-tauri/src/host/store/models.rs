@@ -131,6 +131,66 @@ pub struct NewBot {
     pub image: Option<String>,
 }
 
+/// A conversational bot proposal (#237). Identified by a host-generated id;
+/// retries are keyed by `(source_bot_id, request_key)`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BotDraftRow {
+    pub id: String,
+    pub request_key: String,
+    pub payload_hash: String,
+    pub source_bot_id: String,
+    pub source_thread_id: Option<String>,
+    pub source_run_id: Option<String>,
+    pub name: String,
+    pub instructions: String,
+    pub tools_json: String,
+    pub harness_id: String,
+    pub color: String,
+    pub template_id: Option<String>,
+    pub status: String,
+    pub revision: i64,
+    pub bot_id: Option<String>,
+    pub deciding_device_id: Option<String>,
+    pub stale_reason: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+pub const DRAFT_PENDING: &str = "pending_review";
+pub const DRAFT_SAVED: &str = "saved";
+pub const DRAFT_DISMISSED: &str = "dismissed";
+pub const DRAFT_STALE: &str = "stale";
+
+/// What `draft_bot` writes. Source identity is always derived from the
+/// authenticated bridge thread, never from the model.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct NewBotDraft {
+    pub request_key: String,
+    pub payload_hash: String,
+    pub source_bot_id: String,
+    pub source_thread_id: Option<String>,
+    pub source_run_id: Option<String>,
+    pub name: String,
+    pub instructions: String,
+    pub tools_json: String,
+    pub harness_id: String,
+    pub color: String,
+    pub template_id: Option<String>,
+}
+
+/// Fields the editor may change before Save. `None` leaves the column alone.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BotDraftPatch {
+    pub name: Option<String>,
+    pub instructions: Option<String>,
+    pub tools_json: Option<String>,
+    pub harness_id: Option<String>,
+    pub color: Option<String>,
+}
+
 /// A field-by-field patch: `None` leaves the column alone. There is no
 /// `is_chief` and no `template_id` — one is a seat, the other is history.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]

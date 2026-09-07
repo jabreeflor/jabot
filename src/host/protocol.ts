@@ -56,6 +56,12 @@ export const CREW_CREATE = "crew/create";
 export const CREW_UPDATE = "crew/update";
 export const CREW_REMOVE = "crew/remove";
 export const CREW_THREAD = "crew/thread";
+export const CREW_DRAFTS = "crew/drafts";
+export const CREW_DRAFT_GET = "crew/drafts/get";
+export const CREW_DRAFT_SAVE = "crew/drafts/save";
+export const CREW_DRAFT_DISMISS = "crew/drafts/dismiss";
+/** A draft was submitted, saved, or dismissed. Not a thread envelope. */
+export const CREW_DRAFT = "crew/draft";
 export const SCHEDULE_LIST = "schedule/list";
 export const SCHEDULE_CREATE = "schedule/create";
 export const SCHEDULE_UPDATE = "schedule/update";
@@ -997,6 +1003,70 @@ export interface CrewRefParams {
   botId: string;
 }
 
+/** A reviewable bot proposal (#237). `botId` is present only after Save. */
+export interface BotDraftView {
+  draftId: string;
+  requestKey: string;
+  status: string;
+  revision: number;
+  name: string;
+  instructions: string;
+  tools: string[];
+  harnessId: string;
+  color: string;
+  templateId?: string;
+  sourceBotId: string;
+  sourceBotName?: string;
+  sourceThreadId?: string;
+  botId?: string;
+  nameWarning?: string;
+  staleReason?: string;
+  workspaceWarning?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrewDraftsResult {
+  drafts: BotDraftView[];
+}
+
+export interface CrewDraftGetParams {
+  draftId?: string;
+  requestKey?: string;
+  sourceBotId?: string;
+}
+
+export interface CrewDraftSaveParams {
+  draftId: string;
+  revision: number;
+  name?: string;
+  instructions?: string;
+  tools?: string[];
+  harnessId?: string;
+  color?: string;
+}
+
+export interface CrewDraftDismissParams {
+  draftId: string;
+  revision: number;
+}
+
+export interface CrewDraftSaveResult {
+  draft: BotDraftView;
+  bot: BotView;
+  runStarted: boolean;
+}
+
+export interface CrewDraftEventParams {
+  draftId: string;
+  status: string;
+  name: string;
+  sourceBotId: string;
+  sourceBotName?: string;
+  sourceThreadId?: string;
+  botId?: string;
+}
+
 /** Removing a bot takes the row, never the directory: its markdown memory
     outlives it, the same way forgetting a folder leaves the checkout alone. */
 export interface CrewRemoveResult {
@@ -1242,6 +1312,8 @@ export const RPC_ERROR = {
       this can also appear mid-session after a device is narrowed or revoked.
       `data.role` and `data.method` say which. */
   DEVICE_SCOPE: -32014,
+  /** A draft retry or Save raced another writer (#237). */
+  DRAFT_CONFLICT: -32015,
 } as const;
 
 // ---- Device pairing (#19) --------------------------------------------

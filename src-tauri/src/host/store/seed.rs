@@ -25,14 +25,32 @@ struct SeedBot {
 
 /// The two seats every empty crew starts with. Default harness is `claude`
 /// until the user picks otherwise (#6, #184).
+/// Exact pre-#237 defaults, so an upgrade can recognise an untouched shipped
+/// seat. Customized instructions or tool lists are left alone.
+const LEGACY_CHIEF_INSTRUCTIONS: &str =
+    "Route work across the crew. Fold long tasks away, surface only what matters.";
+const LEGACY_CHIEF_TOOLS: &str =
+    r#"["handoff_to_bot","spawn_code_session","fold_thread","list_crew_status"]"#;
+const LEGACY_RECRUITER_INSTRUCTIONS: &str =
+    "Help me shape and add the right bots for the work I need.";
+const LEGACY_RECRUITER_TOOLS: &str = "[]";
+
+const CHIEF_INSTRUCTIONS: &str =
+    "Route work across the crew. Fold long tasks away, surface only what matters. \
+     When the user asks for a new crew member, propose one with draft_bot; they must Save it.";
+const CHIEF_TOOLS: &str = r#"["handoff_to_bot","spawn_code_session","fold_thread","list_crew_status","draft_bot","get_bot_draft"]"#;
+const RECRUITER_INSTRUCTIONS: &str =
+    "Help me shape and add the right bots for the work I need. When they ask for a new crew member, \
+     propose one with draft_bot. Submitting a draft does not create or launch the bot; the user must Save it.";
+const RECRUITER_TOOLS: &str = r#"["draft_bot","get_bot_draft"]"#;
+
 const SEED_BOTS: &[SeedBot] = &[
     SeedBot {
         id: "chief",
         name: "Chief",
         color: "b-teal",
-        instructions:
-            "Route work across the crew. Fold long tasks away, surface only what matters.",
-        tools_json: r#"["handoff_to_bot","spawn_code_session","fold_thread","list_crew_status"]"#,
+        instructions: CHIEF_INSTRUCTIONS,
+        tools_json: CHIEF_TOOLS,
         is_chief: 1,
         sort_order: 0,
     },
@@ -40,12 +58,14 @@ const SEED_BOTS: &[SeedBot] = &[
         id: "bot-recruiter",
         name: "Bot Recruiter",
         color: "b-purple",
-        instructions: "Help me shape and add the right bots for the work I need.",
-        tools_json: "[]",
+        instructions: RECRUITER_INSTRUCTIONS,
+        tools_json: RECRUITER_TOOLS,
         is_chief: 0,
         sort_order: 1,
     },
 ];
+
+const DRAFT_TOOLS_META: &str = "crew_draft_tools_v1";
 
 pub fn seed(conn: &Connection) -> Result<(), StoreError> {
     seed_harnesses(conn)?;
@@ -120,4 +140,160 @@ fn seed_app_meta(conn: &Connection) -> Result<(), StoreError> {
         [],
     )?;
     Ok(())
+}
+
+/// Grant `draft_bot` / `get_bot_draft` to untouched shipped Chief and Recruiter
+/// rows on an existing install. Customized seats and a deleted Recruiter are
+/// left alone. Receipts are rewritten so the additive grant does not look like
+/// session drift.
+pub fn upgrade_draft_tools(conn: &Connection) -> Result<(), StoreError> {
+    let already: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM app_meta WHERE key = ?1",
+        [DRAFT_TOOLS_META],
+        |row| row.get(0),
+    )?;
+    if already > 0 {
+        return Ok(());
+    }
+    let now = now_utc();
+    grant_untouched(
+        conn,
+        "chief",
+        "Chief",
+        LEGACY_CHIEF_INSTRUCTIONS,
+        LEGACY_CHIEF_TOOLS,
+        CHIEF_INSTRUCTIONS,
+        CHIEF_TOOLS,
+        &now,
+    )?;
+    grant_untouched(
+        conn,
+        "bot-recruiter",
+        "Bot Recruiter",
+        LEGACY_RECRUITER_INSTRUCTIONS,
+        LEGACY_RECRUITER_TOOLS,
+        RECRUITER_INSTRUCTIONS,
+        RECRUITER_TOOLS,
+        &now,
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO app_meta (key, value) VALUES (?1, '1')",
+        [DRAFT_TOOLS_META],
+    )?;
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn grant_untouched(
+    conn: &Connection,
+    id: &str,
+    name: &str,
+    old_instructions: &str,
+    old_tools: &str,
+    new_instructions: &str,
+    new_tools: &str,
+    now: &str,
+) -> Result<(), StoreError> {
+    let changed = conn.execute(
+        "UPDATE bots SET instructions = ?2, tools_json = ?3, updated_at = ?4
+          WHERE id = ?1 AND name = ?5 AND instructions = ?6 AND tools_json = ?7",
+        params![
+            id,
+            new_instructions,
+            new_tools,
+            now,
+            name,
+            old_instructions,
+            old_tools
+        ],
+    )?;
+    if changed > 0 {
+        super::draft::align_receipts_tools(conn, id, new_tools)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::migrate;
+    use rusqlite::Connection;
+
+    fn open_conn() -> (tempfile::TempDir, Connection) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut conn = Connection::open(dir.path().join("jabot.sqlite")).unwrap();
+        migrate::migrate(&mut conn).unwrap();
+        seed(&conn).unwrap();
+        upgrade_draft_tools(&conn).unwrap();
+        (dir, conn)
+    }
+
+    fn tools(conn: &Connection, id: &str) -> String {
+        conn.query_row(
+            "SELECT tools_json FROM bots WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn instructions(conn: &Connection, id: &str) -> String {
+        conn.query_row(
+            "SELECT instructions FROM bots WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_fresh_crew_ships_draft_tools_on_chief_and_recruiter() {
+        let (_dir, conn) = open_conn();
+        assert!(tools(&conn, "chief").contains("draft_bot"));
+        assert!(tools(&conn, "bot-recruiter").contains("draft_bot"));
+        assert!(instructions(&conn, "chief").contains("draft_bot"));
+    }
+
+    #[test]
+    fn upgrade_grants_untouched_defaults_and_skips_customized_or_deleted() {
+        let (_dir, conn) = open_conn();
+        conn.execute("DELETE FROM app_meta WHERE key = ?1", [DRAFT_TOOLS_META])
+            .unwrap();
+        conn.execute(
+            "UPDATE bots SET instructions = ?1, tools_json = ?2 WHERE id = 'chief'",
+            params![LEGACY_CHIEF_INSTRUCTIONS, LEGACY_CHIEF_TOOLS],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE bots SET instructions = 'Custom recruiter.', tools_json = '[]' WHERE id = 'bot-recruiter'",
+            [],
+        )
+        .unwrap();
+        upgrade_draft_tools(&conn).unwrap();
+        assert!(tools(&conn, "chief").contains("draft_bot"));
+        assert_eq!(instructions(&conn, "bot-recruiter"), "Custom recruiter.");
+        assert_eq!(tools(&conn, "bot-recruiter"), "[]");
+
+        conn.execute("DELETE FROM app_meta WHERE key = ?1", [DRAFT_TOOLS_META])
+            .unwrap();
+        conn.execute("DELETE FROM bots WHERE id = 'bot-recruiter'", [])
+            .unwrap();
+        upgrade_draft_tools(&conn).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM bots WHERE id = 'bot-recruiter'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn upgrade_is_idempotent() {
+        let (_dir, conn) = open_conn();
+        upgrade_draft_tools(&conn).unwrap();
+        upgrade_draft_tools(&conn).unwrap();
+        assert!(tools(&conn, "chief").contains("get_bot_draft"));
+    }
 }
