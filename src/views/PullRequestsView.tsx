@@ -41,7 +41,6 @@ export function PullRequestsView({
   unavailable,
   error,
   githubStatus,
-  account,
   onSignIn,
   onRefresh,
   onOpenThread,
@@ -59,10 +58,6 @@ export function PullRequestsView({
       until it has answered — a preview build or a unit test — which draws no
       strip at all rather than an offer to sign in that would go nowhere. */
   githubStatus?: GithubStatusResult | null;
-  /** Who GitHub itself answered as on the last `pr/mine`. Preferred over the
-      `gh` status's account when both are known: it is the login the rows on
-      screen actually belong to. */
-  account?: string | null;
   /** Open the sign-in dialog. Absent means this build cannot sign in. */
   onSignIn?: () => void;
   onRefresh?: () => void;
@@ -160,11 +155,7 @@ export function PullRequestsView({
       </header>
       <div className="page-scroll">
         <div className="page">
-          <GithubStrip
-            status={githubStatus}
-            account={account}
-            onSignIn={onSignIn}
-          />
+          <GithubStrip status={githubStatus} onSignIn={onSignIn} />
 
           {(unavailable || error) && (
             <div className="page-notice" role="status">
@@ -233,38 +224,27 @@ export function PullRequestsView({
 }
 
 /**
- * Who the board is showing, or an offer to make it show more.
+ * An offer to make the board show more when GitHub is signed out.
  *
  * Never a gate. The rows underneath are linkage, they needed no credential to
  * collect, and they are still true for a user who will never sign in — so this
- * is one line above them, not a wall in front of them.
+ * is one line above them, not a wall in front of them. Once signed in, the
+ * board needs no persistent account subtitle.
  *
  * The three states are the three the host reports, because they have three
- * different ways forward: signed in (say as whom), signed out (offer the
+ * different ways forward: signed in (show nothing), signed out (offer the
  * dialog), and no `gh` at all (still offer it — the dialog is where the
  * install line is written, and it is a better place for it than a strip that
  * everybody who *is* signed in would also have to read past).
  */
 function GithubStrip({
   status,
-  account,
   onSignIn,
 }: {
   status?: GithubStatusResult | null;
-  account?: string | null;
   onSignIn?: () => void;
 }) {
-  if (!status) return null;
-
-  if (status.authenticated) {
-    const who = account ?? status.account;
-    return (
-      <div className="page-account">
-        Showing every pull request you have open
-        {who ? ` as @${who}` : ""} on {status.host}.
-      </div>
-    );
-  }
+  if (!status || status.authenticated) return null;
 
   return (
     <div className="page-notice offer" role="status">

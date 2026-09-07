@@ -213,14 +213,6 @@
   color: var(--dim);
 }
 
-/* Who the board belongs to, once it belongs to somebody. Quiet on purpose —
-   it is a caption for the rows, not a control. */
-.page-account {
-  margin-top: var(--sp-4);
-  color: var(--faint);
-  font-size: var(--fs-meta);
-}
-
 /* Settings (#26): the two knobs that already decide something.
  *
  * A stack of labelled sections rather than a form, because each one needs a
