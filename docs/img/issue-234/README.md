@@ -17,7 +17,8 @@ same states.
 | `pr-board-dark.png` | Pull Requests board (signed out) |
 
 The PR explainer is `walkthrough.html`. Open it in a browser, or via the
-htmlpreview link in the PR’s Artifact section.
+htmlpreview link in the PR’s Artifact section. `artifact-full.png` and
+`artifact-section-*.png` are screenshots of that rendered document.
 
 Neither Chromium nor this live Chromium shot is native Tauri / WKWebView
 proof. See `docs/browser-tests.md`.
