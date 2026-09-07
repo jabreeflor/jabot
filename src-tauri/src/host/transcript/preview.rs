@@ -198,7 +198,7 @@ mod tests {
             .insert_thread(&crate::host::store::NewThread {
                 id: thread_id.into(),
                 folder_id: None,
-                bot_id: Some("writer".into()),
+                bot_id: Some("bot-recruiter".into()),
                 harness_id: "claude".into(),
                 cwd: "/tmp".into(),
                 runtime_json: r#"{"command":"claude-agent-acp"}"#.into(),

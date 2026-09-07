@@ -1913,7 +1913,7 @@ mod tests {
         let mut secrets = Secrets::memory();
         let token = "ya29.gmail-refresh-token";
         let row = store
-            .put_secret(&mut secrets, "gmail", "Gmail", token, Some("inboxm"))
+            .put_secret(&mut secrets, "gmail", "Gmail", token, Some("bot-recruiter"))
             .unwrap();
         assert_eq!(row.account, secret_account(&row.id));
         assert_eq!(store.get_secret(&secrets, &row.id).unwrap(), token);

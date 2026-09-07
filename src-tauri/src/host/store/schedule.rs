@@ -326,7 +326,7 @@ mod tests {
     fn a_schedule(store: &Store, due: &str) -> ScheduleRow {
         store
             .insert_schedule(&NewSchedule {
-                bot_id: "writer".into(),
+                bot_id: "bot-recruiter".into(),
                 title: "  Morning triage  ".into(),
                 cron: "0 9 * * *".into(),
                 prompt: "  Summarise overnight mail.  ".into(),
@@ -354,7 +354,7 @@ mod tests {
         let (store, _dir) = open();
         for (title, prompt) in [("", "do it"), ("Nightly", "   ")] {
             let err = store.insert_schedule(&NewSchedule {
-                bot_id: "writer".into(),
+                bot_id: "bot-recruiter".into(),
                 title: title.into(),
                 cron: "0 9 * * *".into(),
                 prompt: prompt.into(),
@@ -466,7 +466,7 @@ mod tests {
     fn removing_the_bot_removes_its_schedules() {
         let (store, _dir) = open();
         let row = a_schedule(&store, "2026-03-04T09:00:00.000Z");
-        store.delete_bot("writer").unwrap();
+        store.delete_bot("bot-recruiter").unwrap();
         assert!(store.get_schedule(&row.id).unwrap().is_none());
     }
 

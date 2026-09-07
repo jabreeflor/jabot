@@ -602,7 +602,7 @@ fn store_error(err: StoreError) -> RpcError {
 mod tests {
     use super::testing::LocalAuthServer;
     use super::*;
-    use crate::host::store::NewThread;
+    use crate::host::store::{NewBot, NewThread};
     use crate::host::HostSession;
     use std::time::{Duration, Instant};
 
@@ -632,6 +632,24 @@ mod tests {
                 repo: Default::default(),
             })
             .expect("thread");
+    }
+
+    /// Specialists are no longer seeded (#184). Tests that need a bot with a
+    /// particular allowlist add it here, the same way a user would.
+    fn add_bot(session: &HostSession, name: &str, tools: &[&str]) -> String {
+        session
+            .store()
+            .expect("store")
+            .insert_bot(&NewBot {
+                name: name.into(),
+                color: "b-teal".into(),
+                instructions: format!("{name} for the allowlist test."),
+                tools_json: serde_json::to_string(tools).expect("tools"),
+                harness_id: "claude".into(),
+                ..Default::default()
+            })
+            .expect("bot")
+            .id
     }
 
     /// Run a whole Google grant through the host: real flow, real consent on a
@@ -768,8 +786,10 @@ mod tests {
 
         // Inbox Mgr allowlists gmail; Scheduler allowlists calendar. Both draw
         // on the one Google grant, so this is enforcement and not just auth.
-        open_thread(&session, "t-inbox", "inboxm");
-        open_thread(&session, "t-sched", "sched");
+        let inboxm = add_bot(&session, "Inbox Mgr", &["gmail"]);
+        let sched = add_bot(&session, "Scheduler", &["calendar"]);
+        open_thread(&session, "t-inbox", &inboxm);
+        open_thread(&session, "t-sched", &sched);
 
         let inbox = session.mcp_servers_for_thread("t-inbox");
         let names: Vec<&str> = inbox
@@ -825,7 +845,8 @@ mod tests {
     #[test]
     fn terminal_is_never_passed_as_a_server() {
         let (mut session, _dir) = host();
-        open_thread(&session, "t-code", "code");
+        let code = add_bot(&session, "Code", &["github", "terminal"]);
+        open_thread(&session, "t-code", &code);
         assert_eq!(
             session.mcp_servers_for_thread("t-code"),
             serde_json::json!([])
@@ -913,12 +934,14 @@ mod tests {
         }
 
         // And the session is denied the server, not given a dead one.
-        open_thread(&session, "t-sched", "sched");
+        let sched = add_bot(&session, "Scheduler", &["calendar"]);
+        let inboxm = add_bot(&session, "Inbox Mgr", &["gmail"]);
+        open_thread(&session, "t-sched", &sched);
         assert_eq!(
             session.mcp_servers_for_thread("t-sched"),
             serde_json::json!([])
         );
-        open_thread(&session, "t-inbox", "inboxm");
+        open_thread(&session, "t-inbox", &inboxm);
         let inbox = session.mcp_servers_for_thread("t-inbox");
         assert_eq!(inbox.as_array().unwrap().len(), 1);
     }
@@ -1008,7 +1031,8 @@ mod tests {
             .unwrap()
             .is_empty());
 
-        open_thread(&session, "t-inbox", "inboxm");
+        let inboxm = add_bot(&session, "Inbox Mgr", &["gmail"]);
+        open_thread(&session, "t-inbox", &inboxm);
         assert_eq!(
             session.mcp_servers_for_thread("t-inbox"),
             serde_json::json!([])
@@ -1034,18 +1058,19 @@ mod tests {
         assert!(detail.contains("oauth_clients.json"), "{detail}");
 
         // And a failed connect grants nothing.
-        open_thread(&session, "t-inbox", "inboxm");
+        let inboxm = add_bot(&session, "Inbox Mgr", &["gmail"]);
+        open_thread(&session, "t-inbox", &inboxm);
         assert_eq!(
             session.mcp_servers_for_thread("t-inbox"),
             serde_json::json!([])
         );
     }
 
-    /// A Chromium `--user-data-dir` takes one process at a time, and three
-    /// seeded bots chip Browser, so two live threads asking for it at once is
-    /// the ordinary case rather than an edge one. The second must be told no
-    /// here, where it becomes a skip with a reason, instead of inside the
-    /// adapter as a profile-lock crash.
+    /// A Chromium `--user-data-dir` takes one process at a time, and more
+    /// than one bot can chip Browser, so two live threads asking for it at
+    /// once is the ordinary case rather than an edge one. The second must be
+    /// told no here, where it becomes a skip with a reason, instead of inside
+    /// the adapter as a profile-lock crash.
     #[test]
     fn one_browser_profile_is_held_by_one_live_thread_at_a_time() {
         let (mut session, _dir) = host();

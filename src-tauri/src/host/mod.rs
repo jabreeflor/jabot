@@ -1115,7 +1115,7 @@ mod tests {
         // two issues landing migrations at once should not both have to edit
         // this line, and what hello promises is "the schema you have".
         assert_eq!(value["store"]["schemaVersion"], schema_head());
-        assert_eq!(value["store"]["botCount"], 6);
+        assert_eq!(value["store"]["botCount"], 2);
         // Three shipped cards plus the two presets, all seeded as rows so a
         // thread can name any of them (#13).
         assert_eq!(value["store"]["harnessCount"], 5);
