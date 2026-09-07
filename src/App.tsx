@@ -1154,7 +1154,9 @@ function hostLine(
   hostError: string | null,
   connecting: boolean,
 ): string {
-  if (hello) return `${hello.hostName} · v${hello.version}`;
+  // A healthy local host does not need a permanent device/version subtitle.
+  // Keep transient connection state visible so failures remain actionable.
+  if (hello) return "";
   if (connecting) return "Connecting to host…";
   return hostError ?? "Host unreachable";
 }

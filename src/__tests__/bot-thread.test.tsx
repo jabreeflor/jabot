@@ -283,7 +283,7 @@ describe("the shell's bot pane", () => {
     vi.mocked(connectHost).mockResolvedValue({ client: host.client, hello: HELLO });
 
     render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
+    await screen.findByRole("button", { name: "Settings" });
 
     // Chief is what the shell opens on, so this is the pane under test.
     await waitFor(() =>
@@ -304,7 +304,7 @@ describe("the shell's bot pane", () => {
     });
 
     render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
+    await screen.findByRole("button", { name: "Settings" });
 
     expect(screen.getByRole("heading", { level: 2, name: "Chief" })).toBeInTheDocument();
     expect(screen.getByLabelText("Message Chief")).toBeInTheDocument();

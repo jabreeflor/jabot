@@ -383,7 +383,7 @@ describe("Chief's card", () => {
     });
 
     render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
+    await screen.findByRole("button", { name: "Settings" });
     await userEvent.click(
       await screen.findByRole("button", { name: "Disappear until done" }),
     );
