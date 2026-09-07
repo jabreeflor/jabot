@@ -38,11 +38,7 @@ export function HarnessPicker({
           onClick={() => onChange(harness.id)}
           style={{ "--dot": harness.accent } as CSSProperties}
         >
-          <b>
-            <HarnessMark harnessId={harness.id} />
-            {harness.label}
-          </b>
-          <p>
+          {(harness.available === false || harness.blurb) && <p>
             {harness.available === false ? (
               <span className="missing">
                 {harness.installHint ?? "Not installed"}
@@ -50,7 +46,11 @@ export function HarnessPicker({
             ) : (
               harness.blurb
             )}
-          </p>
+          </p>}
+          <b>
+            <HarnessMark harnessId={harness.id} />
+            {harness.label}
+          </b>
         </button>
       ))}
     </div>
