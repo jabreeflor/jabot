@@ -234,9 +234,11 @@ export function Onboarding({
         )}
       </main>
 
-      <div className={hostOffline ? "setup-host bad" : "setup-host"}>
-        {hostLine}
-      </div>
+      {hostLine && (
+        <div className={hostOffline ? "setup-host bad" : "setup-host"}>
+          {hostLine}
+        </div>
+      )}
     </div>
   );
 }

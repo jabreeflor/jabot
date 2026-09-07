@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Remove connected host subtitle</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --warn:#f2cc60; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:center; }
+    .state { min-height:176px; padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 18px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .person { display:flex; align-items:center; gap:12px; padding:15px; background:#20252b; border-radius:10px; }
+    .face { display:grid; place-items:center; width:42px; height:42px; flex:0 0 auto; border-radius:50%; background:#7558db; font-weight:750; }
+    .name { font-weight:700; }
+    .subtitle { margin-top:2px; color:#a0a6ad; font-size:13px; }
+    .removed { margin-top:18px; color:var(--accent); font-weight:700; }
+    .arrow { text-align:center; color:var(--accent); font-size:28px; }
+    .decision { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:18px; }
+    .decision div { padding:14px; background:#0f141a; border-radius:9px; }
+    .decision strong { display:block; margin-bottom:5px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .blocked { color:var(--warn); }
+    @media (max-width:700px) { .flow,.decision { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #196 walkthrough</div>
+    <h1>Remove connected host subtitle</h1>
+    <p>The sidebar and onboarding no longer spend permanent space on “This Mac · v0.1.0” after a successful handshake. Connection progress and failures still appear when the user can act on them.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before · healthy host</h3>
+          <div class="person"><div class="face">JF</div><div><div class="name">Jabree Flor</div><div class="subtitle">This Mac · v0.1.0</div></div></div>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After · healthy host</h3>
+          <div class="person"><div class="face">JF</div><div><div class="name">Jabree Flor</div></div></div>
+          <div class="removed">Subtitle element omitted</div>
+        </div>
+      </div>
+      <div class="decision">
+        <div><strong>Connected</strong><code>hostLine() → ""</code><br>No status element renders.</div>
+        <div><strong>Connecting</strong><code>Connecting to host…</code><br>Transient progress remains visible.</div>
+        <div><strong>Failed</strong><code>hostError</code><br>The actionable error remains visible.</div>
+      </div>
+      <p>The same conditional rendering is applied in both the normal sidebar and first-run onboarding, preventing an empty footer or blank second line.</p>
+    </section>
+
+    <section id="review">
+      <h2>What to review</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>src/App.tsx</code></td><td>Maps a healthy handshake to no permanent status text while preserving pending/error messages.</td></tr>
+          <tr><td><code>src/components/Sidebar.tsx</code></td><td>Omits the host-status element when the mapped text is empty.</td></tr>
+          <tr><td><code>src/onboarding/Onboarding.tsx</code></td><td>Uses the same omission during first-run setup.</td></tr>
+          <tr><td><code>src/__tests__/sidebar.test.tsx</code></td><td>Locks both halves of the behavior: no healthy subtitle, retained transient status.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li>Run <code>npx vitest run --project unit</code> and confirm all renderer tests pass.</li>
+        <li>Run <code>./scripts/verify.sh</code> on a machine with the repository's Rust and Linux UI prerequisites.</li>
+        <li>Launch with <code>./scripts/live.sh up</code>; confirm the user name has no device/version subtitle after connection.</li>
+        <li>Confirm a failed host connection still prints its error beneath the user name.</li>
+      </ul>
+      <p class="blocked">Cloud note: this PR remains draft because the current runner cannot install GTK/WebKit or acquire apt's dpkg frontend lock, so the required real-host screenshot and complete Rust/e2e gate could not run here.</p>
+    </section>
+  </main>
+</body>
+</html>

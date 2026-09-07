@@ -256,7 +256,7 @@ describe("App, once the host has answered", () => {
 
   async function renderApp() {
     render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
+    await screen.findByRole("button", { name: "Settings" });
   }
 
   it("opens a real folderless session with the selected harness and no initial message", async () => {
@@ -588,7 +588,7 @@ describe("editing a registered folder", () => {
 
   async function openSettings() {
     render(<App />);
-    await screen.findByText("This Mac · v0.1.0");
+    await screen.findByRole("button", { name: "Settings" });
     await userEvent.click(
       await screen.findByRole("button", { name: "Folder settings for jabot" }),
     );

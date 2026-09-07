@@ -43,13 +43,14 @@ beforeEach(() => {
 
 async function renderApp() {
   render(<App />);
-  await screen.findByText("This Mac · v0.1.0");
+  await screen.findByRole("button", { name: "Settings" });
 }
 
 describe("App", () => {
   it("opens on Chief's chat with the crew and the code rows", async () => {
     await renderApp();
 
+    expect(screen.queryByText("This Mac · v0.1.0")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Chief" })).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /^Inbox —/ }),

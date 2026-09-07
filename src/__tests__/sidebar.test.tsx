@@ -119,6 +119,19 @@ describe("Sidebar", () => {
     );
   });
 
+  it("omits the host subtitle when the connection is healthy", () => {
+    renderSidebar({ hostLine: "" });
+
+    expect(screen.queryByText("This Mac · v0.1.0")).not.toBeInTheDocument();
+    expect(document.querySelector(".me-row .host")).toBeNull();
+  });
+
+  it("keeps transient host status visible", () => {
+    renderSidebar({ hostLine: "Connecting to host…" });
+
+    expect(screen.getByText("Connecting to host…")).toBeInTheDocument();
+  });
+
   it("lists every thread it is given, with what that thread is doing", () => {
     renderSidebar();
 
