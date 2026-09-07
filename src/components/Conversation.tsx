@@ -78,54 +78,91 @@ export function Conversation({
   modelStatus?: ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  // True while the reader is parked at the end. Default true, because a
-  // conversation opens at its tail.
+  const spacerRef = useRef<HTMLDivElement>(null);
   const stuckRef = useRef(true);
+  const promptRef = useRef<string | null>(null);
   const [stuck, setStuck] = useState(true);
   // WebKit delivers `scroll` after a programmatic pin with the *old* offset.
   // Remember that offset so we re-apply the pin instead of treating the echo
   // as the reader leaving.
   const pinEchoTopRef = useRef<number | null>(null);
+  const pinTargetRef = useRef<number | null>(null);
   const lastClientHeightRef = useRef(0);
+  const latestUser = [...items].reverse().find((item) => item.kind === "user");
+
+  function pinTo(top: number) {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    pinEchoTopRef.current = scroll.scrollTop;
+    pinTargetRef.current = top;
+    lastClientHeightRef.current = scroll.clientHeight;
+    scroll.scrollTop = top;
+  }
 
   function pinToEnd() {
     const scroll = scrollRef.current;
     if (!scroll || !stuckRef.current) return;
-    pinEchoTopRef.current = scroll.scrollTop;
-    lastClientHeightRef.current = scroll.clientHeight;
-    scroll.scrollTop = scroll.scrollHeight;
+    pinTo(scroll.scrollHeight);
   }
 
-  // End-anchored, not tail-following.
-  //
-  // The effect this replaces set `scrollTop = scrollHeight` on every change to
-  // `items`, and #14's reducer rebuilds `items` on *every streamed chunk* — so
-  // scrolling back through history while an agent was talking was impossible:
-  // the view snapped to the bottom a few times a second. That is the live
-  // defect here; windowing below is the half the record deferred for
-  // performance.
-  //
-  // Layout, not paint: WebKit can fire `scroll` on a post-paint restick with
-  // stale metrics and treat a reader who never left as having scrolled up.
-  // Stuck is measured rather than remembered, in one place, so the answer
-  // cannot drift from what the element is actually doing.
   useLayoutEffect(() => {
-    pinToEnd();
-  }, [items]);
+    const scroll = scrollRef.current;
+    const spacer = spacerRef.current;
+    const transcript = scroll?.querySelector<HTMLElement>(".transcript");
+    if (!scroll || !spacer || !transcript) return;
 
-  // Sending re-sticks. Somebody who scrolled up to check something and then
-  // typed is done reading back — and a reply that arrived off-screen because
-  // the view was still held at the old position would be the worse surprise.
-  const lastId = items[items.length - 1]?.id;
-  useLayoutEffect(() => {
-    const last = items[items.length - 1];
-    if (last?.kind !== "user") return;
-    stuckRef.current = true;
-    setStuck(true);
-    pinToEnd();
-    // Keyed on the last item's id rather than the array: this must fire when
-    // a *new* user item lands, not on every chunk of the reply to it.
-  }, [lastId, items]);
+    // Reserve the unused part of a turn so even a one-line prompt can sit at
+    // the top. As the reply grows, it consumes this space instead of pushing
+    // the prompt upward. Measure content, not scrollHeight (which includes it).
+    const measure = () => {
+      const users = transcript.querySelectorAll<HTMLElement>(".msg.me");
+      const prompt = users[users.length - 1];
+      const styles = getComputedStyle(scroll);
+      const top = parseFloat(styles.paddingTop) || 0;
+      const bottom = parseFloat(styles.paddingBottom) || 0;
+      const turnHeight = prompt
+        ? transcript.getBoundingClientRect().bottom -
+          prompt.getBoundingClientRect().top
+        : scroll.clientHeight;
+      spacer.style.height = `${Math.max(0, scroll.clientHeight - top - bottom - turnHeight)}px`;
+      return prompt
+        ? prompt.getBoundingClientRect().top -
+            scroll.getBoundingClientRect().top +
+            scroll.scrollTop -
+            top
+        : null;
+    };
+
+    const promptTop = measure();
+    if (
+      latestUser &&
+      latestUser.id !== promptRef.current &&
+      promptTop !== null
+    ) {
+      promptRef.current = latestUser.id;
+      stuckRef.current = false;
+      pinTo(promptTop);
+    } else if (stuckRef.current) {
+      pinToEnd();
+    }
+    const updateIndicator = () =>
+      setStuck(
+        scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <=
+          STICK_THRESHOLD,
+      );
+    updateIndicator();
+
+    // Fonts, window resizing, and expanded transcript rows can change geometry
+    // without a new stream item. They must also release/reserve the blank space.
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      measure();
+      updateIndicator();
+    });
+    observer.observe(scroll);
+    observer.observe(transcript);
+    return () => observer.disconnect();
+  }, [items, latestUser?.id]);
 
   // Composer chrome (the model chip, a status line) lives *outside*
   // `.chat-scroll`. When it mounts, flex shrinks the scroller past
@@ -152,7 +189,7 @@ export function Conversation({
       Math.abs(scroll.scrollTop - pinEchoTopRef.current) <= 1
     ) {
       pinEchoTopRef.current = null;
-      if (stuckRef.current) scroll.scrollTop = scroll.scrollHeight;
+      if (pinTargetRef.current !== null) scroll.scrollTop = pinTargetRef.current;
       return;
     }
     pinEchoTopRef.current = null;
@@ -170,7 +207,9 @@ export function Conversation({
     const atEnd =
       scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <=
       STICK_THRESHOLD;
-    stuckRef.current = atEnd;
+    // A prompt remains anchored even when its short reply fits on screen.
+    // Explicitly jumping to latest opts back into following the reply.
+    if (stuckRef.current || !atEnd) stuckRef.current = atEnd;
     setStuck(atEnd);
   }
 
@@ -196,6 +235,7 @@ export function Conversation({
           onBranch={onBranch}
           branchingSeq={branchingSeq}
         />
+        <div ref={spacerRef} aria-hidden="true" className="turn-space" />
         {/* The way back, and the only sign that the view is deliberately not
             following. Without it a reader who scrolled up during a long turn
             has no idea whether the agent is still talking. */}
