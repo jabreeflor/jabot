@@ -5,8 +5,8 @@
 
 ## What it is
 
-CRUD for "crew": the set of bots (Chief of Staff, Inbox Manager, Writer,
-Code, and user-added bots) a user can start a thread with, each defined
+CRUD for "crew": the set of bots (Chief of Staff, Bot Recruiter, and
+user-added bots) a user can start a thread with, each defined
 as data — persona, tools, memory scope, credentials, and a
 `harness_id` — rather than code.
 
@@ -25,10 +25,10 @@ makes bots user-editable without shipping code changes.
    (name/avatar), persona/system prompt, a `harness_id` referencing the
    harness catalog, an allowlist of tools/MCP servers, and a memory
    scope (`src-tauri/src/host/crew/memory.rs`).
-2. Built-in bots (Chief of Staff, Inbox Manager, Writer, Code) ship as
-   **templates** (`src-tauri/src/host/crew/templates.rs`,
-   `templates/`) — data, not special-cased Rust branches — so a user can
-   fork/edit them the same way as a bot they created from scratch.
+2. A fresh crew starts with only Chief of Staff and Bot Recruiter. Optional
+   roles ship as **templates** (`src-tauri/src/host/crew/templates.rs`,
+   `templates/`) so a user can add and customize more bots without code
+   changes.
 3. Users can create, edit, and delete crew members via
    `BotEditorModal.tsx`; changes persist immediately through the crew
    store and are reflected in `BotStrip.tsx` and the New Chat harness

@@ -202,6 +202,9 @@ const minutesAgo = (minutes: number) =>
 
 export function initialMockState(): MockState {
   return {
+    // Only these two rows are defaults. Prototype threads and transcripts below
+    // retain work from removed bots, matching the store's history-preserving
+    // behavior when a crew member is deleted.
     bots: [
       {
         id: "chief",
@@ -219,51 +222,12 @@ export function initialMockState(): MockState {
         isChief: true,
       },
       {
-        id: "code",
-        name: "Code",
-        color: "b-yellow",
-        instructions:
-          "Run coding sessions in my repos. Open PRs, never push to main.",
-        tools: ["github", "terminal"],
-        harnessId: "claude",
-        isChief: false,
-        unread: true,
-      },
-      {
-        id: "inboxm",
-        name: "Inbox Mgr",
+        id: "bot-recruiter",
+        name: "Bot Recruiter",
         color: "b-purple",
         instructions:
-          "Keep Gmail at zero. Park drafts for anything that needs my voice.",
-        tools: ["gmail"],
-        harnessId: "claude",
-        isChief: false,
-      },
-      {
-        id: "sched",
-        name: "Scheduler",
-        color: "b-violet",
-        instructions:
-          "Guard the calendar. Fix conflicts, protect deep-work mornings.",
-        tools: ["calendar"],
-        harnessId: "claude",
-        isChief: false,
-      },
-      {
-        id: "rsrch",
-        name: "Research",
-        color: "b-blue",
-        instructions: "Dig sources, pull context into GlobNet, brief me short.",
-        tools: ["browser", "notion"],
-        harnessId: "claude",
-        isChief: false,
-      },
-      {
-        id: "writer",
-        name: "Writer",
-        color: "b-orange",
-        instructions: "Draft in my voice: plain, short, no filler.",
-        tools: ["gmail", "notion"],
+          "Help me shape and add the right bots for the work I need.",
+        tools: [],
         harnessId: "claude",
         isChief: false,
       },

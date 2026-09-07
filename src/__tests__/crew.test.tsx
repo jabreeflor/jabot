@@ -8,7 +8,12 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { CrewView } from "../views/CrewView";
-import { HARNESSES, HOST_TOOLS, TOOL_CATALOG, initialMockState } from "../views/mock-host";
+import {
+  HARNESSES,
+  HOST_TOOLS,
+  TOOL_CATALOG,
+  initialMockState,
+} from "../views/mock-host";
 
 function renderCrew(over: Partial<Parameters<typeof CrewView>[0]> = {}) {
   const props = {
@@ -32,13 +37,12 @@ function card(name: string): HTMLElement {
 }
 
 describe("CrewView", () => {
-  it("shows each bot's tools and the harness that runs it", () => {
+  it("shows each bot's configured tools and harness", () => {
     renderCrew();
 
-    const writer = card("Writer");
-    expect(within(writer).getByText("Gmail")).toBeInTheDocument();
-    expect(within(writer).getByText("Notion")).toBeInTheDocument();
-    expect(within(writer).getByText("Claude Code")).toBeInTheDocument();
+    const recruiter = card("Bot Recruiter");
+    expect(within(recruiter).getByText("Claude Code")).toBeInTheDocument();
+    expect(within(card("Chief")).getByText("Handoff")).toBeInTheDocument();
   });
 
   it("labels Chief and gives it no Remove", () => {
@@ -62,14 +66,14 @@ describe("CrewView", () => {
     const props = renderCrew();
 
     await userEvent.click(
-      within(card("Writer")).getByRole("button", { name: "Edit" }),
+      within(card("Bot Recruiter")).getByRole("button", { name: "Edit" }),
     );
-    expect(props.onEdit).toHaveBeenCalledWith("writer");
+    expect(props.onEdit).toHaveBeenCalledWith("bot-recruiter");
 
     await userEvent.click(
-      within(card("Research")).getByRole("button", { name: "Remove" }),
+      within(card("Bot Recruiter")).getByRole("button", { name: "Remove" }),
     );
-    expect(props.onRemove).toHaveBeenCalledWith("rsrch");
+    expect(props.onRemove).toHaveBeenCalledWith("bot-recruiter");
 
     await userEvent.click(screen.getByRole("button", { name: /Add a bot/ }));
     expect(props.onAdd).toHaveBeenCalled();

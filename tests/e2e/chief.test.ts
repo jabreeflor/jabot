@@ -27,7 +27,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { HostClient } from "../../src/host/client";
 import { CREW_THREAD, type BotView } from "../../src/host/protocol";
-import { fakeAcpAgentPath, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpAgentPath,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 const running: HostdProcess[] = [];
 
@@ -159,7 +163,9 @@ async function chiefAtWork(dataDir: string) {
     (entry) => entry.name === "jabot",
   ) as unknown as HttpMcpServer | undefined;
   if (!server) {
-    throw new Error(`no host tool server on session/new: ${JSON.stringify(params.mcpServers)}`);
+    throw new Error(
+      `no host tool server on session/new: ${JSON.stringify(params.mcpServers)}`,
+    );
   }
   return { host, client, chief, thread, server, params };
 }
@@ -174,7 +180,8 @@ async function mcp(
   bearer?: string,
 ): Promise<{ status: number; body: JsonRpcAnswer }> {
   const authorization =
-    bearer ?? server.headers.find((header) => header.name === "Authorization")!.value;
+    bearer ??
+    server.headers.find((header) => header.name === "Authorization")!.value;
   const response = await fetch(server.url, {
     method: "POST",
     headers: {
@@ -186,7 +193,9 @@ async function mcp(
   });
   const text = await response.text();
   // A refusal is plain text; only a JSON-RPC answer is JSON.
-  const isJson = response.headers.get("content-type")?.startsWith("application/json") ?? false;
+  const isJson =
+    response.headers.get("content-type")?.startsWith("application/json") ??
+    false;
   return {
     status: response.status,
     body: isJson && text ? (JSON.parse(text) as JsonRpcAnswer) : {},
@@ -213,7 +222,11 @@ function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+    env: {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_SYSTEM: "/dev/null",
+    },
   }).trim();
 }
 
@@ -234,7 +247,7 @@ describe("a bot's standing thread", () => {
     const { client, hello } = await connected({ dataDir });
     expect(hello.methods).toContain(CREW_THREAD);
 
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
     const thread = await client.botThread({ botId: writer.botId });
 
     // Decision #6: `cwd` is the bot's memory/workspace directory, and a worker
@@ -246,7 +259,9 @@ describe("a bot's standing thread", () => {
 
     // One thread, not one per call — and the same one after a restart, which
     // is what "standing" has to mean for a bot's memory to be worth anything.
-    expect((await client.botThread({ botId: writer.botId })).threadId).toBe(thread.threadId);
+    expect((await client.botThread({ botId: writer.botId })).threadId).toBe(
+      thread.threadId,
+    );
     await running.splice(0)[0].stop();
 
     const second = await connected({ dataDir });
@@ -266,7 +281,8 @@ describe("Chief's host tools reach the session", () => {
     expect(server.headers[0].name).toBe("Authorization");
 
     const initialized = await mcp(server, "initialize", {});
-    const info = initialized.body.result?.serverInfo as { name: string } | undefined;
+    const info = initialized.body.result?.serverInfo as
+      { name: string } | undefined;
     expect(info?.name).toBe("jabot");
 
     const listed = await mcp(server, "tools/list");
@@ -296,22 +312,29 @@ describe("Chief's host tools reach the session", () => {
 describe("handoff_to_bot", () => {
   it("opens the receiving bot's thread, prompts it, and records where the work came from", async () => {
     const dataDir = dataDirWithFakeHarness();
-    const { host, client, thread: chiefThread, server } = await chiefAtWork(dataDir);
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const {
+      host,
+      client,
+      thread: chiefThread,
+      server,
+    } = await chiefAtWork(dataDir);
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
     await client.updateBot({ botId: writer.botId, harnessId: "fake-acp" });
 
     const handed = await callTool<HandoffResult>(server, "handoff_to_bot", {
-      bot: "Writer",
+      bot: "Bot Recruiter",
       task: "Draft the launch note",
       context: "Plain, short, no exclamation marks",
     });
     expect(handed.ok, handed.text).toBe(true);
-    expect(handed.value.bot).toBe("Writer");
+    expect(handed.value.bot).toBe("Bot Recruiter");
     expect(handed.value.dispatched).toBe(true);
 
-    // The receiving thread is Writer's standing thread, in Writer's own
+    // The receiving thread is Bot Recruiter's standing thread, in its own
     // directory — a worker with no repo, exactly as decision #6 has it.
-    const received = await client.threadState({ threadId: handed.value.threadId });
+    const received = await client.threadState({
+      threadId: handed.value.threadId,
+    });
     expect(received.botId).toBe(writer.botId);
     expect(received.cwd).toBe(writer.memoryDir);
     expect(received.worktreePath).toBeUndefined();
@@ -324,34 +347,44 @@ describe("handoff_to_bot", () => {
     expect(received.handoff?.dispatched).toBe(true);
 
     // And an agent really was started and really was told: a `session/new`
-    // reached Writer's adapter, and the task is in Writer's transcript.
+    // reached Bot Recruiter's adapter, and the task is in its transcript.
     await sessionNewParams(host, received.threadId);
-    const transcript = await client.threadTranscript({ threadId: received.threadId });
+    const transcript = await client.threadTranscript({
+      threadId: received.threadId,
+    });
     const said = JSON.stringify(transcript.events);
     expect(said).toContain("Draft the launch note");
     expect(said).toContain("Plain, short, no exclamation marks");
 
     // Chief's own thread is untouched by the handoff — routing is a host
     // action, not a nested conversation.
-    const chiefState = await client.threadState({ threadId: chiefThread.threadId });
+    const chiefState = await client.threadState({
+      threadId: chiefThread.threadId,
+    });
     expect(chiefState.handoff).toBeUndefined();
   });
 
   it("names the crew when asked for a bot nobody has, and writes nothing", async () => {
     const { server } = await chiefAtWork(dataDirWithFakeHarness());
 
-    const refused = await callTool<Record<string, never>>(server, "handoff_to_bot", {
-      bot: "Gardener",
-      task: "water the plants",
-    });
+    const refused = await callTool<Record<string, never>>(
+      server,
+      "handoff_to_bot",
+      {
+        bot: "Gardener",
+        task: "water the plants",
+      },
+    );
     // A refusal has to come back as a readable tool result, not a transport
     // error the model never sees.
     expect(refused.ok).toBe(false);
     expect(refused.text).toContain("Gardener");
-    expect(refused.text).toContain("Inbox Mgr");
+    expect(refused.text).toContain("Bot Recruiter");
 
     const status = await callTool<CrewStatus>(server, "list_crew_status");
-    const working = status.value.crew.filter((bot) => !bot.idle).map((bot) => bot.name);
+    const working = status.value.crew
+      .filter((bot) => !bot.idle)
+      .map((bot) => bot.name);
     expect(working).toEqual(["Chief"]);
   });
 });
@@ -369,7 +402,9 @@ describe("spawn_code_session", () => {
     expect(spawned.ok, spawned.text).toBe(true);
     expect(spawned.value.folderId).toBe(folder.folderId);
 
-    const thread = await client.threadState({ threadId: spawned.value.threadId });
+    const thread = await client.threadState({
+      threadId: spawned.value.threadId,
+    });
     expect(thread.title).toBe("Add a --version flag");
     expect(thread.folderId).toBe(folder.folderId);
     // #23's worktree, not the folder the user has open in their editor.
@@ -378,50 +413,45 @@ describe("spawn_code_session", () => {
     expect(thread.cwd.startsWith(repo)).toBe(false);
     expect(thread.branch).toMatch(/^jabot\//);
     // git agrees, which is the only opinion that counts.
-    expect(git(thread.worktreePath!, "branch", "--show-current")).toBe(thread.branch);
+    expect(git(thread.worktreePath!, "branch", "--show-current")).toBe(
+      thread.branch,
+    );
     // …and the trail says Chief started it, not the user.
     expect(thread.handoff?.kind).toBe("code_session");
     expect(thread.handoff?.fromBotName).toBe("Chief");
 
-    // Folding it is the other half of the gesture: the job disappears from the
-    // sidebar and stays on the roster, so Chief does not double-book the bot.
+    // Folding is the other half of the gesture. The fake fallback harness
+    // ends the turn at once, so wait_for_inbox must resurface instead of
+    // parking a finished job in Still Sleeping (state-machine.md).
     const folded = await callTool<FoldResult>(server, "fold_thread", {
       threadId: thread.threadId,
       policy: "wait_for_inbox",
     });
-    expect(folded.value.state).toBe("folded");
+    expect(folded.value.state).toBe("resurfaced");
     expect(folded.value.foldPolicy).toBe("wait_for_inbox");
     const inbox = await client.inbox();
-    expect(inbox.sleeping.map((row) => row.threadId)).toContain(thread.threadId);
-    // And the row says whose thread it is, so the Inbox can draw that bot's
-    // face instead of the generic code mark. Chief spawned this one onto the
-    // Code bot, and `inbox/list` carried no bot at all until now.
-    expect(
-      inbox.sleeping.find((row) => row.threadId === thread.threadId)?.botId,
-    ).toBe("code");
+    const card = inbox.events.find((row) => row.threadId === thread.threadId);
+    expect(card).toBeDefined();
+    // With no default Code bot, the fallback harness owns no crew seat and the
+    // Inbox uses its generic code-session mark.
+    expect(card?.botId).toBeUndefined();
     const status = await callTool<CrewStatus>(server, "list_crew_status");
     const code = status.value.crew.find((bot) => bot.name === "Code");
-    expect(code?.idle).toBe(false);
-    expect(code?.threads[0].state).toBe("folded");
-    // The distinction `idle` alone cannot draw, and the reason `busy` exists.
-    // Code has a thread, so it is not `idle` — but that thread is asleep with
-    // no open run and no adapter attached, so nothing is actually happening on
-    // it. Before this field, Chief had to re-derive that from `run` and
-    // `acpState` itself, and the tool's own description told it to check
-    // "already busy" against a value that only meant "has any thread at all".
-    expect(code?.threads[0].busy).toBe(false);
-    expect(code?.threads[0].run).toBeNull();
-    expect(code?.threads[0].acpState).toBe("unknown");
+    expect(code).toBeUndefined();
   });
 
   it("says which folders exist when asked for one that does not", async () => {
     const { client, server } = await chiefAtWork(dataDirWithFakeHarness());
     await client.registerFolder({ path: repository(), name: "Project" });
 
-    const refused = await callTool<Record<string, never>>(server, "spawn_code_session", {
-      folder: "Elsewhere",
-      task: "fix it",
-    });
+    const refused = await callTool<Record<string, never>>(
+      server,
+      "spawn_code_session",
+      {
+        folder: "Elsewhere",
+        task: "fix it",
+      },
+    );
     expect(refused.ok).toBe(false);
     expect(refused.text).toContain("Project");
   });

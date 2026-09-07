@@ -6,7 +6,8 @@
  * a live `jabot-hostd`, a real SQLite store on disk and — for the last case —
  * a real ACP subprocess:
  *
- * - the shipped crew is there on a fresh install, with markdown memory on disk;
+ * - a fresh install starts with only Chief and Bot Recruiter, with markdown
+ *   memory on disk;
  * - adding from a template is a **snapshot**, and it survives a restart;
  * - Chief cannot be removed, and removing anyone else keeps their work;
  * - the bot editor **is** the record: what a save writes is what the next
@@ -29,7 +30,11 @@ import {
   RPC_ERROR,
   type BotView,
 } from "../../src/host/protocol";
-import { fakeAcpRuntime, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 const running: HostdProcess[] = [];
 
@@ -48,7 +53,10 @@ afterEach(async () => {
 
 const named = (bots: BotView[], name: string): BotView => {
   const bot = bots.find((candidate) => candidate.name === name);
-  if (!bot) throw new Error(`no bot named ${name}: ${bots.map((b) => b.name).join(", ")}`);
+  if (!bot)
+    throw new Error(
+      `no bot named ${name}: ${bots.map((b) => b.name).join(", ")}`,
+    );
   return bot;
 };
 
@@ -73,7 +81,7 @@ async function sessionNewParams(
 }
 
 describe("the shipped crew", () => {
-  it("advertises its methods and comes with Chief plus five workers", async () => {
+  it("advertises its methods and starts with only Chief and Bot Recruiter", async () => {
     const { client, hello } = await connected();
 
     for (const method of [CREW_LIST, CREW_CREATE, CREW_UPDATE, CREW_REMOVE]) {
@@ -81,14 +89,7 @@ describe("the shipped crew", () => {
     }
 
     const { bots, templates, hostTools } = await client.listCrew();
-    expect(bots.map((bot) => bot.name)).toEqual([
-      "Chief",
-      "Code",
-      "Inbox Mgr",
-      "Scheduler",
-      "Research",
-      "Writer",
-    ]);
+    expect(bots.map((bot) => bot.name)).toEqual(["Chief", "Bot Recruiter"]);
     expect(bots.filter((bot) => bot.isChief)).toHaveLength(1);
     expect(bots[0].isChief).toBe(true);
 
@@ -118,12 +119,12 @@ describe("the shipped crew", () => {
       expect(existsSync(path.join(dir, "MEMORY.md"))).toBe(true);
     }
 
-    const writer = named(bots, "Writer");
+    const recruiter = named(bots, "Bot Recruiter");
     const instructions = readFileSync(
-      path.join(writer.memoryDir!, "instructions.md"),
+      path.join(recruiter.memoryDir!, "instructions.md"),
       "utf8",
     );
-    expect(instructions).toContain(writer.instructions);
+    expect(instructions).toContain(recruiter.instructions);
   });
 });
 
@@ -169,9 +170,9 @@ describe("templates", () => {
     const { client } = await connected();
     const before = (await client.listCrew()).bots.length;
 
-    await expect(client.createBot({ templateId: "unicorn" })).rejects.toBeInstanceOf(
-      HostRpcError,
-    );
+    await expect(
+      client.createBot({ templateId: "unicorn" }),
+    ).rejects.toBeInstanceOf(HostRpcError);
     expect((await client.listCrew()).bots).toHaveLength(before);
   });
 });
@@ -191,7 +192,7 @@ describe("removing a bot", () => {
 
   it("keeps the threads it started and the notes it wrote", async () => {
     const { client } = await connected();
-    const research = named((await client.listCrew()).bots, "Research");
+    const research = named((await client.listCrew()).bots, "Bot Recruiter");
 
     await client.openThread({
       threadId: "t-brief",
@@ -206,9 +207,9 @@ describe("removing a bot", () => {
     expect(removed.detachedThreads).toBe(1);
     expect(removed.memoryDir).toBe(research.memoryDir);
 
-    expect(
-      (await client.listCrew()).bots.map((bot) => bot.name),
-    ).not.toContain("Research");
+    expect((await client.listCrew()).bots.map((bot) => bot.name)).not.toContain(
+      "Bot Recruiter",
+    );
 
     // The work survives with everything it was stamped with at spawn.
     const thread = await client.threadState({ threadId: "t-brief" });
@@ -229,10 +230,9 @@ describe("the editor is the record", () => {
    */
   it("what a save writes is what the next session is spawned with", async () => {
     const { host, client } = await connected();
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
 
-    // Writer ships with Gmail and Notion, neither of which is connected on a
-    // fresh install — so a session gets no servers at all.
+    // Bot Recruiter ships with no tools, so a session gets no servers at all.
     await client.openThread({
       threadId: "t-before",
       title: "before",
@@ -275,7 +275,7 @@ describe("the editor is the record", () => {
 
   it("refuses a tool no catalog knows, before anything is written", async () => {
     const { host, client } = await connected();
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
 
     const refused = await host.call(CREW_UPDATE, {
       botId: writer.botId,
@@ -284,7 +284,7 @@ describe("the editor is the record", () => {
     expect(refused.error?.code).toBe(RPC_ERROR.INVALID_PARAMS);
     expect(refused.error?.message).toContain("telepathy");
 
-    const after = named((await client.listCrew()).bots, "Writer");
+    const after = named((await client.listCrew()).bots, "Bot Recruiter");
     expect(after.tools).toEqual(writer.tools);
   });
 });
@@ -296,7 +296,7 @@ describe("a bot's icon", () => {
 
   it("survives a restart, and clearing it puts the colour mark back", async () => {
     const first = await connected();
-    const writer = named((await first.client.listCrew()).bots, "Writer");
+    const writer = named((await first.client.listCrew()).bots, "Bot Recruiter");
 
     // The shipped crew wears colours and initials, so nothing arrives with a
     // picture — the field is absent rather than null.
@@ -339,7 +339,7 @@ describe("a bot's icon", () => {
 
   it("refuses anything that would fetch or execute, and writes nothing", async () => {
     const { host, client } = await connected();
-    const writer = named((await client.listCrew()).bots, "Writer");
+    const writer = named((await client.listCrew()).bots, "Bot Recruiter");
 
     // The renderer checks these before it sends. This is the check that holds
     // when the caller on the socket is not the renderer.
@@ -357,6 +357,8 @@ describe("a bot's icon", () => {
       expect(refused.error?.code, bad).toBe(RPC_ERROR.INVALID_PARAMS);
     }
 
-    expect(named((await client.listCrew()).bots, "Writer").image).toBeUndefined();
+    expect(
+      named((await client.listCrew()).bots, "Bot Recruiter").image,
+    ).toBeUndefined();
   });
 });

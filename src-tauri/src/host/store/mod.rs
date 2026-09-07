@@ -1401,7 +1401,7 @@ mod tests {
         NewThread {
             id: id.into(),
             folder_id: None,
-            bot_id: Some("code".into()),
+            bot_id: Some("bot-recruiter".into()),
             harness_id: "claude".into(),
             cwd: "/tmp/repo".into(),
             runtime_json: sample_runtime(),
@@ -1474,10 +1474,12 @@ mod tests {
             hermes.env_json
         );
         let bots = store.list_bots().unwrap();
-        assert_eq!(bots.len(), 6);
+        assert_eq!(bots.len(), 2);
         assert_eq!(bots[0].id, "chief");
         assert!(bots[0].is_chief);
         assert_eq!(bots[0].harness_id, "claude");
+        assert_eq!(bots[1].id, "bot-recruiter");
+        assert_eq!(bots[1].name, "Bot Recruiter");
     }
 
     #[test]
@@ -1488,7 +1490,7 @@ mod tests {
             let store = Store::open(&path).unwrap();
             store
                 .conn
-                .execute("DELETE FROM bots WHERE id = 'writer'", [])
+                .execute("DELETE FROM bots WHERE id = 'bot-recruiter'", [])
                 .unwrap();
         }
         let store = Store::open(&path).unwrap();
@@ -1498,8 +1500,8 @@ mod tests {
             .into_iter()
             .map(|b| b.id)
             .collect();
-        assert!(!ids.contains(&"writer".to_string()));
-        assert_eq!(ids.len(), 5);
+        assert!(!ids.contains(&"bot-recruiter".to_string()));
+        assert_eq!(ids, vec!["chief"]);
     }
 
     #[test]
@@ -1718,14 +1720,14 @@ mod tests {
             .unwrap();
         store
             .insert_thread(&NewThread {
-                bot_id: Some("writer".into()),
+                bot_id: Some("bot-recruiter".into()),
                 folder_id: None,
-                ..sample_thread("bot-writer")
+                ..sample_thread("bot-recruiter")
             })
             .unwrap();
         store
             .insert_thread(&NewThread {
-                bot_id: Some("writer".into()),
+                bot_id: Some("bot-recruiter".into()),
                 folder_id: Some(folder.id.clone()),
                 ..sample_thread("t-app")
             })
@@ -1733,14 +1735,14 @@ mod tests {
         // A bot with a thread but nothing said in it yet.
         store
             .insert_thread(&NewThread {
-                bot_id: Some("code".into()),
+                bot_id: Some("chief".into()),
                 folder_id: None,
-                ..sample_thread("bot-code")
+                ..sample_thread("bot-chief")
             })
             .unwrap();
 
         store
-            .set_thread_preview("bot-writer", "Digest is parked for you.")
+            .set_thread_preview("bot-recruiter", "Digest is parked for you.")
             .unwrap();
         store
             .set_thread_preview("t-app", "Rewrote the middleware.")
@@ -1748,12 +1750,12 @@ mod tests {
 
         let previews = store.bot_previews().unwrap();
         assert_eq!(
-            previews.get("writer").map(String::as_str),
+            previews.get("bot-recruiter").map(String::as_str),
             Some("Digest is parked for you.")
         );
         // Absent rather than empty, which is what lets the row show what the
         // bot is *for* instead of a blank line.
-        assert_eq!(previews.get("code"), None);
+        assert_eq!(previews.get("chief"), None);
         assert_eq!(previews.len(), 1);
     }
 
@@ -1762,26 +1764,28 @@ mod tests {
     #[test]
     fn a_deleted_conversation_stops_being_the_preview() {
         let (store, _dir) = open_store();
-        for thread in ["bot-writer", "bot-writer-2"] {
+        for thread in ["bot-recruiter", "bot-recruiter-2"] {
             store
                 .insert_thread(&NewThread {
-                    bot_id: Some("writer".into()),
+                    bot_id: Some("bot-recruiter".into()),
                     folder_id: None,
                     ..sample_thread(thread)
                 })
                 .unwrap();
         }
-        store.set_thread_preview("bot-writer", "Old news.").unwrap();
         store
-            .set_thread_preview("bot-writer-2", "New news.")
+            .set_thread_preview("bot-recruiter", "Old news.")
             .unwrap();
-        store.tombstone_thread("bot-writer").unwrap();
+        store
+            .set_thread_preview("bot-recruiter-2", "New news.")
+            .unwrap();
+        store.tombstone_thread("bot-recruiter").unwrap();
 
         assert_eq!(
             store
                 .bot_previews()
                 .unwrap()
-                .get("writer")
+                .get("bot-recruiter")
                 .map(String::as_str),
             Some("New news.")
         );
@@ -1795,7 +1799,7 @@ mod tests {
     #[test]
     fn counts_what_is_waiting_on_each_bot_and_nothing_else() {
         let (store, _dir) = open_store();
-        for (thread, bot) in [("t-writer", "writer"), ("t-code", "code")] {
+        for (thread, bot) in [("t-recruiter", "bot-recruiter"), ("t-chief", "chief")] {
             store
                 .insert_thread(&NewThread {
                     bot_id: Some(bot.into()),
@@ -1811,7 +1815,7 @@ mod tests {
             })
             .unwrap();
 
-        for thread in ["t-writer", "t-loose"] {
+        for thread in ["t-recruiter", "t-loose"] {
             store.set_thread_state(thread, "folded").unwrap();
             store
                 .resurface_thread(
@@ -1821,16 +1825,16 @@ mod tests {
         }
 
         let counts = store.count_unread_inbox_by_bot().unwrap();
-        assert_eq!(counts.get("writer").copied(), Some(1));
+        assert_eq!(counts.get("bot-recruiter").copied(), Some(1));
         // A bot with nothing waiting is absent rather than zero, and the
         // ownerless thread's card is nobody's dot — though it is still in the
         // sidebar's own count, which is the number beside the Inbox.
-        assert_eq!(counts.get("code"), None);
+        assert_eq!(counts.get("chief"), None);
         assert_eq!(counts.len(), 1);
         assert_eq!(store.count_unread_inbox(None).unwrap(), 2);
 
         // Reading it is what clears the dot, and it clears only that bot's.
-        store.mark_inbox_read("t-writer").unwrap();
+        store.mark_inbox_read("t-recruiter").unwrap();
         assert!(store.count_unread_inbox_by_bot().unwrap().is_empty());
         assert_eq!(store.count_unread_inbox(None).unwrap(), 1);
     }
@@ -1909,7 +1913,7 @@ mod tests {
         let mut secrets = Secrets::memory();
         let token = "ya29.gmail-refresh-token";
         let row = store
-            .put_secret(&mut secrets, "gmail", "Gmail", token, Some("inboxm"))
+            .put_secret(&mut secrets, "gmail", "Gmail", token, Some("bot-recruiter"))
             .unwrap();
         assert_eq!(row.account, secret_account(&row.id));
         assert_eq!(store.get_secret(&secrets, &row.id).unwrap(), token);

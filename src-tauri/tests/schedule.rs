@@ -77,7 +77,7 @@ impl Host {
         };
         host.ok(
             CREW_UPDATE,
-            json!({ "botId": "writer", "harnessId": "fake-acp" }),
+            json!({ "botId": "bot-recruiter", "harnessId": "fake-acp" }),
         );
         host
     }
@@ -106,7 +106,7 @@ impl Host {
         self.ok(
             SCHEDULE_CREATE,
             json!({
-                "botId": "writer",
+                "botId": "bot-recruiter",
                 "name": name,
                 "cron": cron,
                 "prompt": "Summarise overnight mail.",
@@ -190,8 +190,8 @@ fn delivered(row: &Value) -> bool {
 fn a_schedule_is_created_armed_and_listed() {
     let mut host = Host::start();
     let created = host.create("Morning triage", "0 9 * * *");
-    assert_eq!(created["botId"], "writer");
-    assert_eq!(created["botName"], "Writer");
+    assert_eq!(created["botId"], "bot-recruiter");
+    assert_eq!(created["botName"], "Bot Recruiter");
     assert_eq!(created["catchUp"], "once");
     assert_eq!(created["enabled"], true);
     // Armed from now, never from the past: a schedule made at 10am does not
@@ -215,7 +215,7 @@ fn a_cron_that_would_never_run_is_refused_before_the_row_exists() {
     let mut host = Host::start();
     let err = host.err(
         SCHEDULE_CREATE,
-        json!({ "botId": "writer", "name": "Nightly", "cron": "0 99 * * *", "prompt": "go" }),
+        json!({ "botId": "bot-recruiter", "name": "Nightly", "cron": "0 99 * * *", "prompt": "go" }),
     );
     assert_eq!(err.code, INVALID_PARAMS);
     assert!(err.message.contains("hour"), "{}", err.message);
@@ -243,7 +243,7 @@ fn a_fire_runs_as_the_bot_and_delivers_its_result_to_the_inbox() {
     let thread_id = fire["threadId"].as_str().expect("a thread").to_string();
     // Decision #6: the job runs on the bot's standing thread (#24), not on a
     // thread the scheduler invented.
-    assert_eq!(thread_id, "bot-writer");
+    assert_eq!(thread_id, "bot-bot-recruiter");
 
     let settled = host.settle(&schedule_id, delivered);
 
@@ -302,7 +302,7 @@ fn a_backlog_collapses_to_one_run_and_says_how_many_it_dropped() {
         "six days of hourlies is {skipped} occurrences"
     );
 
-    let runs = host.runs("bot-writer");
+    let runs = host.runs("bot-bot-recruiter");
     assert_eq!(
         runs.iter().filter(|run| run.kind == "schedule").count(),
         1,
@@ -340,7 +340,7 @@ fn skip_runs_nothing_it_missed_but_still_records_the_outage() {
         .unwrap()
         .contains("does not catch up"));
     assert!(host
-        .runs("bot-writer")
+        .runs("bot-bot-recruiter")
         .iter()
         .all(|run| run.kind != "schedule"));
 }
@@ -360,7 +360,7 @@ fn ticking_twice_does_not_fire_the_same_occurrence_twice() {
     }
     assert_eq!(host.fires(&schedule_id).len(), 1);
     assert_eq!(
-        host.runs("bot-writer")
+        host.runs("bot-bot-recruiter")
             .iter()
             .filter(|run| run.kind == "schedule")
             .count(),
@@ -417,7 +417,7 @@ fn removing_a_schedule_stops_it_and_removing_a_ghost_is_an_error() {
         host.session.pump_acp();
     }
     assert!(host
-        .runs("bot-writer")
+        .runs("bot-bot-recruiter")
         .iter()
         .all(|run| run.kind != "schedule"));
 

@@ -321,7 +321,7 @@ fn persists_acp_session_id_on_thread() {
         .insert_thread(&NewThread {
             id: "t-store".into(),
             folder_id: None,
-            bot_id: Some("code".into()),
+            bot_id: Some("bot-recruiter".into()),
             harness_id: "claude".into(),
             cwd: dir.path().to_string_lossy().into(),
             runtime_json: runtime,

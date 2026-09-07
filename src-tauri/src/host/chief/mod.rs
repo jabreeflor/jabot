@@ -56,10 +56,11 @@ use super::HostSession;
 
 pub use bridge::{Bridge, MCP_PROTOCOL_VERSION as MCP_VERSION, SERVER_NAME as MCP_SERVER_NAME};
 
-/// The seeded Code bot's id. Folder threads belong to whichever crew member
-/// owns coding work, and on a shipped install that is this row.
+/// The conventional Code bot id. Folder threads use it when the user has added
+/// that specialist; otherwise the coding session is unowned and uses the
+/// requesting thread's harness.
 const CODE_BOT_ID: &str = "code";
-/// …and its name, for an install where the user rebuilt it from scratch.
+/// …and its name, for an install where the user added it with a different id.
 const CODE_BOT_NAME: &str = "code";
 
 impl HostSession {
@@ -602,7 +603,9 @@ mod tests {
     use super::*;
     use crate::host::crew::standing;
     use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
-    use crate::host::protocol::{CREW_LIST, CREW_THREAD, CREW_UPDATE, HOST_HELLO, THREAD_STATE};
+    use crate::host::protocol::{
+        CREW_CREATE, CREW_LIST, CREW_THREAD, CREW_UPDATE, HOST_HELLO, THREAD_STATE,
+    };
     use crate::host::repo::git::testing;
 
     /// A host with a real data directory: bots need memory directories, and a
@@ -650,7 +653,7 @@ mod tests {
     fn a_bot_gets_one_standing_thread_in_its_memory_directory_and_no_worktree() {
         let (mut session, _dir) = host();
         let crew = ok(&mut session, CREW_LIST, json!({}));
-        let writer = bot_named(crew["bots"].as_array().unwrap(), "Writer").clone();
+        let writer = bot_named(crew["bots"].as_array().unwrap(), "Bot Recruiter").clone();
 
         let thread = ok(
             &mut session,
@@ -659,7 +662,7 @@ mod tests {
         );
         assert_eq!(thread["cwd"], writer["memoryDir"]);
         assert_eq!(thread["botId"], writer["botId"]);
-        assert_eq!(thread["title"], "Writer");
+        assert_eq!(thread["title"], "Bot Recruiter");
         assert_eq!(thread["state"], "active");
         // Decision #6: a worker has no repo unless it asks for one.
         assert!(thread["worktreePath"].is_null(), "{thread}");
@@ -693,7 +696,11 @@ mod tests {
     fn a_handoff_to_an_archived_standing_thread_brings_it_back() {
         let (mut session, _dir) = host();
         chief_at_work(&mut session);
-        let writer = ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }));
+        let writer = ok(
+            &mut session,
+            CREW_THREAD,
+            json!({ "botId": "bot-recruiter" }),
+        );
         let thread_id = writer["threadId"].as_str().unwrap().to_string();
         ok(
             &mut session,
@@ -704,7 +711,7 @@ mod tests {
         let handed = call(
             &mut session,
             "handoff_to_bot",
-            json!({ "bot": "Writer", "task": "one more thing" }),
+            json!({ "bot": "Bot Recruiter", "task": "one more thing" }),
         )
         .expect("handoff");
         assert_eq!(handed["threadId"], thread_id);
@@ -720,7 +727,11 @@ mod tests {
     #[test]
     fn a_deleted_standing_thread_is_replaced_rather_than_resurrected() {
         let (mut session, _dir) = host();
-        let first = ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }));
+        let first = ok(
+            &mut session,
+            CREW_THREAD,
+            json!({ "botId": "bot-recruiter" }),
+        );
         let first_id = first["threadId"].as_str().unwrap().to_string();
         ok(
             &mut session,
@@ -728,13 +739,21 @@ mod tests {
             json!({ "threadId": first_id }),
         );
 
-        let second = ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }));
+        let second = ok(
+            &mut session,
+            CREW_THREAD,
+            json!({ "botId": "bot-recruiter" }),
+        );
         assert_ne!(second["threadId"], first["threadId"]);
         assert_eq!(second["state"], "active");
         assert_eq!(second["cwd"], first["cwd"]);
         // And it is stable: asking again is the same live thread, not a third.
         assert_eq!(
-            ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }))["threadId"],
+            ok(
+                &mut session,
+                CREW_THREAD,
+                json!({ "botId": "bot-recruiter" }),
+            )["threadId"],
             second["threadId"]
         );
         // The deleted conversation is still deleted.
@@ -755,15 +774,15 @@ mod tests {
             &mut session,
             "handoff_to_bot",
             json!({
-                "bot": "Writer",
+                "bot": "Bot Recruiter",
                 "task": "Draft the launch note",
                 "context": "Jabree hates exclamation marks",
             }),
         )
         .expect("handoff");
 
-        assert_eq!(result["bot"], "Writer");
-        assert_eq!(result["threadId"], standing::thread_id_for("writer"));
+        assert_eq!(result["bot"], "Bot Recruiter");
+        assert_eq!(result["threadId"], standing::thread_id_for("bot-recruiter"));
 
         let thread = ok(
             &mut session,
@@ -816,7 +835,7 @@ mod tests {
         .expect_err("no such bot");
         assert!(refused.contains("Gardener"), "{refused}");
         // The model has to be able to retry with a real name.
-        assert!(refused.contains("Inbox Mgr"), "{refused}");
+        assert!(refused.contains("Bot Recruiter"), "{refused}");
     }
 
     #[test]
@@ -824,8 +843,12 @@ mod tests {
         let (mut session, _dir) = host();
         chief_at_work(&mut session);
 
-        let taskless =
-            call(&mut session, "handoff_to_bot", json!({ "bot": "Writer" })).expect_err("no task");
+        let taskless = call(
+            &mut session,
+            "handoff_to_bot",
+            json!({ "bot": "Bot Recruiter" }),
+        )
+        .expect_err("no task");
         assert!(taskless.contains("task"), "{taskless}");
 
         let looped = call(
@@ -838,7 +861,7 @@ mod tests {
 
         // Neither attempt wrote a thread or a trail.
         assert!(session
-            .lifecycle_thread(&standing::thread_id_for("writer"))
+            .lifecycle_thread(&standing::thread_id_for("bot-recruiter"))
             .unwrap()
             .is_none());
     }
@@ -850,7 +873,7 @@ mod tests {
     /// are asserted here, because either one alone is a coding session that
     /// cannot work.
     #[test]
-    fn a_code_session_gets_a_registered_folder_a_worktree_and_the_code_bot() {
+    fn a_code_session_gets_a_registered_folder_and_a_worktree_without_a_code_bot() {
         let (mut session, _dir) = host();
         chief_at_work(&mut session);
         let repo = tempfile::tempdir().unwrap();
@@ -876,8 +899,9 @@ mod tests {
             THREAD_STATE,
             json!({ "threadId": result["threadId"] }),
         );
-        // The thread belongs to the crew member that owns folder work…
-        assert_eq!(thread["botId"], "code");
+        // No Code bot is shipped by default, so the fallback harness owns no
+        // crew seat.
+        assert!(thread["botId"].is_null());
         // …it works in a host-owned tree, not the user's checkout (#23)…
         let worktree = thread["worktreePath"].as_str().expect("a worktree");
         assert!(std::path::Path::new(worktree).is_dir(), "{worktree}");
@@ -931,7 +955,11 @@ mod tests {
     fn folding_a_thread_hides_it_and_an_unknown_policy_is_refused() {
         let (mut session, _dir) = host();
         chief_at_work(&mut session);
-        let writer = ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }));
+        let writer = ok(
+            &mut session,
+            CREW_THREAD,
+            json!({ "botId": "bot-recruiter" }),
+        );
         let thread_id = writer["threadId"].as_str().unwrap().to_string();
 
         let folded = call(
@@ -968,36 +996,37 @@ mod tests {
     #[test]
     fn crew_status_reports_every_bot_and_what_it_is_working_on() {
         let (mut session, _dir) = host();
+        ok(
+            &mut session,
+            CREW_CREATE,
+            json!({ "name": "Idle Specialist", "harnessId": "claude" }),
+        );
         chief_at_work(&mut session);
         call(
             &mut session,
             "handoff_to_bot",
-            json!({ "bot": "Inbox Mgr", "task": "clear the overnight mail" }),
+            json!({ "bot": "Bot Recruiter", "task": "build the right crew" }),
         )
         .expect("handoff");
 
         let status = call(&mut session, "list_crew_status", json!({})).expect("status");
         let crew = status["crew"].as_array().expect("crew");
-        assert_eq!(crew.len(), 6);
+        assert_eq!(crew.len(), 3);
 
-        let inbox = crew
+        let recruiter = crew
             .iter()
-            .find(|bot| bot["name"] == "Inbox Mgr")
-            .expect("Inbox Mgr");
-        assert_eq!(inbox["idle"], false);
+            .find(|bot| bot["name"] == "Bot Recruiter")
+            .expect("Bot Recruiter");
+        assert_eq!(recruiter["idle"], false);
         assert_eq!(
-            inbox["threads"][0]["threadId"],
-            standing::thread_id_for("inboxm")
+            recruiter["threads"][0]["threadId"],
+            standing::thread_id_for("bot-recruiter")
         );
-        assert_eq!(inbox["threads"][0]["state"], "active");
+        assert_eq!(recruiter["threads"][0]["state"], "active");
 
-        // A bot nobody has asked for anything is idle, and says so.
-        let research = crew
-            .iter()
-            .find(|bot| bot["name"] == "Research")
-            .expect("Research");
-        assert_eq!(research["idle"], true);
-        assert_eq!(research["threads"].as_array().unwrap().len(), 0);
+        let idle = bot_named(crew, "Idle Specialist");
+        assert_eq!(idle["idle"], true);
+        assert_eq!(idle["threads"], json!([]));
     }
 
     /// Fold hides a thread from the human's sidebar. It must not hide it from
@@ -1009,13 +1038,13 @@ mod tests {
         call(
             &mut session,
             "handoff_to_bot",
-            json!({ "bot": "Writer", "task": "the long one" }),
+            json!({ "bot": "Bot Recruiter", "task": "the long one" }),
         )
         .expect("handoff");
         call(
             &mut session,
             "fold_thread",
-            json!({ "threadId": standing::thread_id_for("writer") }),
+            json!({ "threadId": standing::thread_id_for("bot-recruiter") }),
         )
         .expect("fold");
 
@@ -1024,8 +1053,8 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .find(|bot| bot["name"] == "Writer")
-            .expect("Writer");
+            .find(|bot| bot["name"] == "Bot Recruiter")
+            .expect("Bot Recruiter");
         assert_eq!(writer["idle"], false);
         assert_eq!(writer["threads"][0]["state"], "folded");
     }
@@ -1073,7 +1102,7 @@ mod tests {
         let refused = call(
             &mut session,
             "handoff_to_bot",
-            json!({ "bot": "Writer", "task": "anything" }),
+            json!({ "bot": "Bot Recruiter", "task": "anything" }),
         )
         .expect_err("unchipped");
         assert!(refused.contains("not one of this bot's tools"), "{refused}");
@@ -1085,11 +1114,15 @@ mod tests {
     #[test]
     fn only_a_bot_with_host_tools_is_served_a_host_tool_server() {
         let (mut session, _dir) = host();
-        ok(&mut session, CREW_THREAD, json!({ "botId": "writer" }));
+        ok(
+            &mut session,
+            CREW_THREAD,
+            json!({ "botId": "bot-recruiter" }),
+        );
         ok(&mut session, CREW_THREAD, json!({ "botId": "chief" }));
 
         assert!(session
-            .chief_mcp_server(&standing::thread_id_for("writer"))
+            .chief_mcp_server(&standing::thread_id_for("bot-recruiter"))
             .is_none());
 
         let server = session
