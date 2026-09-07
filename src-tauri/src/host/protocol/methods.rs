@@ -30,6 +30,7 @@ pub const THREAD_RESUME: &str = "thread/resume";
 pub const SUPERVISOR_STATUS: &str = "supervisor/status";
 pub const INBOX_RESURFACE: &str = "inbox/resurface";
 pub const HARNESS_LIST: &str = "harness/list";
+pub const HARNESS_INSTALL: &str = "harness/install";
 pub const HARNESS_DOCTOR: &str = "harness/doctor";
 pub const INBOX_LIST: &str = "inbox/list";
 /// Whether this build and this Mac can put an Inbox card in front of someone
@@ -87,6 +88,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     SYNC_RESUME_FROM,
     HARNESS_LIST,
     HARNESS_DOCTOR,
+    HARNESS_INSTALL,
     TOOLS_LIST,
     TOOLS_CONNECT,
     TOOLS_DISCONNECT,

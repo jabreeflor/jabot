@@ -17,6 +17,7 @@ import {
   GITHUB_LOGIN,
   GITHUB_STATUS,
   HARNESS_DOCTOR,
+  HARNESS_INSTALL,
   HARNESS_LIST,
   HOST_HEALTH,
   HOST_HELLO,
@@ -338,6 +339,14 @@ export class HostClient {
     return this.request<HarnessListResult>(HARNESS_LIST);
   }
 
+  /** Start or poll the host's fixed adapter installer. */
+  async installHarness(
+    harnessId: string,
+    start = false,
+  ): Promise<{ running: boolean; error: string | null }> {
+    return this.request(HARNESS_INSTALL, { harnessId, start });
+  }
+
   /** Why each harness is or is not ready. Probes run concurrently in the host. */
   async harnessDoctor(
     params: HarnessDoctorParams = {},
@@ -421,7 +430,9 @@ export class HostClient {
     return this.request<ScheduleView>(SCHEDULE_UPDATE, params);
   }
 
-  async removeSchedule(params: ScheduleRefParams): Promise<ScheduleRemoveResult> {
+  async removeSchedule(
+    params: ScheduleRefParams,
+  ): Promise<ScheduleRemoveResult> {
     return this.request<ScheduleRemoveResult>(SCHEDULE_REMOVE, params);
   }
 

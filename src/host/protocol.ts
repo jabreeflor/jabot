@@ -33,6 +33,7 @@ export const INBOX_LIST = "inbox/list";
     not looking at JaBot, and whether they have said yes (#27). */
 export const NOTIFY_STATUS = "notify/status";
 export const HARNESS_LIST = "harness/list";
+export const HARNESS_INSTALL = "harness/install";
 export const HARNESS_DOCTOR = "harness/doctor";
 export const TOOLS_LIST = "tools/list";
 export const TOOLS_CONNECT = "tools/connect";

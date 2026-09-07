@@ -16,6 +16,9 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
+import type { HostClient } from "../host";
+import { AdapterSetup } from "./AdapterSetup";
+
 import { Avatar, CrewAvatar } from "../components/avatar";
 import { FieldLabel } from "../components/Modal";
 import { HarnessPicker } from "../components/HarnessPicker";
@@ -29,12 +32,14 @@ import {
 
 export function Onboarding({
   harnesses,
+  client = null,
   profile,
   hostLine,
   hostOffline,
   onFinish,
 }: {
   harnesses: readonly HarnessCard[];
+  client?: HostClient | null;
   /** The record a re-run is editing, absent on a genuine first run. Seeds the
       draft so "Run setup again" can *change* a name rather than only replace
       it — and so Escape or Skip re-persists what was already there. */
@@ -45,6 +50,28 @@ export function Onboarding({
   onFinish: (profile: OnboardingProfile) => void;
 }) {
   const [step, setStep] = useState(0);
+  const [disabled, setDisabled] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    if (client && typeof client.settings === "function") {
+      void client
+        .settings()
+        .then((settings) => {
+          const ids = (settings as { disabledHarnessIds?: unknown })
+            .disabledHarnessIds;
+          if (active && Array.isArray(ids))
+            setDisabled(
+              ids.filter((id): id is string => typeof id === "string"),
+            );
+        })
+        .catch(() => {});
+    }
+    return () => {
+      active = false;
+    };
+  }, [client]);
+  const enabledHarnesses = harnesses.filter((h) => !disabled.includes(h.id));
+  const [preparing, setPreparing] = useState(false);
   // The fallback name is not a name anyone typed, so it seeds as an empty
   // field (the placeholder says what blank means) rather than as literal text.
   const [name, setName] = useState(
@@ -55,6 +82,12 @@ export function Onboarding({
   const [harnessId, setHarnessId] = useState<string | null>(
     profile?.harnessId ?? harnesses[0]?.id ?? null,
   );
+  useEffect(() => {
+    if (harnessId && disabled.includes(harnessId)) {
+      setHarnessId(harnesses.find((h) => !disabled.includes(h.id))?.id ?? null);
+      setPreparing(false);
+    }
+  }, [disabled, harnesses, harnessId]);
   const nameId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -162,11 +195,22 @@ export function Onboarding({
             </p>
             <FieldLabel>HARNESS — BRING YOUR OWN</FieldLabel>
             <HarnessPicker
-              harnesses={harnesses}
+              harnesses={enabledHarnesses}
               value={harnessId ?? ""}
-              onChange={setHarnessId}
+              onChange={(id) => {
+                setHarnessId(id);
+                setPreparing(false);
+              }}
               label="Default harness"
             />
+            {preparing && harnessId && (
+              <AdapterSetup
+                key={harnessId}
+                client={client}
+                harnessId={harnessId}
+                onContinue={() => setStep(2)}
+              />
+            )}
             <div className="setup-foot">
               <button
                 type="button"
@@ -178,13 +222,23 @@ export function Onboarding({
               <button type="button" className="btn" onClick={() => setStep(0)}>
                 Back
               </button>
-              <button
-                type="button"
-                className="btn primary"
-                onClick={() => setStep(2)}
-              >
-                Continue
-              </button>
+              {!preparing && (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => {
+                    if (
+                      harnessId &&
+                      client &&
+                      typeof client.harnessDoctor === "function"
+                    )
+                      setPreparing(true);
+                    else setStep(2);
+                  }}
+                >
+                  Continue
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -12,11 +12,11 @@ use super::protocol::methods::{
     ResumeFromParams, SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
     ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_THREAD,
     CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_LOGIN,
-    GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST,
-    NOTIFY_STATUS, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT,
-    SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
-    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
-    TOOLS_LIST,
+    GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_INSTALL, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
+    INBOX_LIST, NOTIFY_STATUS, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL,
+    SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE,
+    THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT,
+    TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 use super::protocol::methods::{
     DeviceRefParams, PairingClaimParams, PairingConfirmParams, PairingRefParams,
@@ -147,6 +147,11 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
         HARNESS_LIST => {
             session.require_hello()?;
             to_value(session.harness_list()?)
+        }
+        HARNESS_INSTALL => {
+            session.require_hello()?;
+            let params = parse_params(request.params.as_ref())?;
+            to_value(super::harness::install::install(params)?)
         }
         HARNESS_DOCTOR => {
             session.require_hello()?;

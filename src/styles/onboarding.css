@@ -155,3 +155,21 @@
 .page-top .setup-again {
   margin-top: var(--sp-3);
 }
+
+.setup-adapter {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid var(--edge);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.setup-adapter h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+.setup-adapter .setup-foot {
+  flex-wrap: wrap;
+}
+.setup-adapter [role="alert"] {
+  color: var(--red);
+}
