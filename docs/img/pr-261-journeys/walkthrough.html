@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cover onboarding, streaming, fold, and permission journeys with Playwright</title>
+  <style>
+    :root {
+      --bg: #141210;
+      --card: #1e1c19;
+      --ink: #f4efe6;
+      --muted: #b7b0a4;
+      --line: #3a3630;
+      --accent: #4fd1c5;
+      --user: #8b9cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 "Figtree", ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    main { max-width: 860px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 1.8rem; line-height: 1.2; margin: 0 0 8px; }
+    .lede { color: var(--muted); font-size: 1.05rem; margin: 0 0 32px; }
+    h2 {
+      font-size: 1.15rem;
+      margin: 36px 0 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    .muted { color: var(--muted); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin: 12px 0;
+    }
+    .flow {
+      display: grid;
+      gap: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+    }
+    .flow span {
+      display: block;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #2a2722;
+    }
+    .flow span.real { border-left: 3px solid var(--accent); }
+    .flow span.ext { border-left: 3px solid var(--user); }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+      background: #2a2722;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .kicker { color: var(--accent); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; }
+    ul { padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="kicker">PR #261 · issue #232 · based on #231 / PR #256</p>
+    <h1>Cover onboarding, streaming, fold, and permission journeys with Playwright</h1>
+    <p class="lede">
+      Six critical user journeys through the real renderer and Rust host.
+      No second test stack — the #231 fixtures own Vite, <code>jabot-hostd</code>,
+      and a temp data dir. This PR only adds the clicks.
+    </p>
+
+    <h2>How it works</h2>
+    <div class="card flow">
+      <span class="real">Playwright Chromium → visible controls (role/label locators)</span>
+      <span class="real">React renderer → <code>devTransport</code> → Vite host-bridge</span>
+      <span class="real">Real <code>jabot-hostd</code> + SQLite in an owned temp dir</span>
+      <span class="ext">fake-acp-agent modes: echo, pump, gated, permission, empty-reply, cancellable</span>
+    </div>
+    <p>
+      RPC is only for <em>prerequisites</em> (<code>seedCodeThread</code>,
+      <code>crew/update</code>) and independent host assertions (adapter log,
+      <code>inbox/list</code>, <code>permission/pending</code>). The action under
+      test is always a click or composer Enter.
+    </p>
+    <p>
+      <code>pump</code> is the one agent extension. <code>gated</code> already
+      held a turn open; pump <em>consumes</em> the gate file so a test can
+      write <code>chunk:…</code>, wait for the UI, write again, then
+      <code>end_turn</code>. Streaming and scroll need that ordering.
+    </p>
+
+    <h2>What to look at</h2>
+    <table>
+      <tr>
+        <th>File</th>
+        <th>Why</th>
+      </tr>
+      <tr>
+        <td><code>tests/browser/*.spec.ts</code></td>
+        <td>The six journeys + the #231 smoke. Import fixtures from #231; do not spawn Vite themselves.</td>
+      </tr>
+      <tr>
+        <td><code>tests/browser/ui.ts</code> / <code>host.ts</code></td>
+        <td>Exact Settings locator, <code>sendComposer</code> retry, <code>seedCodeThread</code>, committed screenshots.</td>
+      </tr>
+      <tr>
+        <td><code>src-tauri/src/bin/fake_acp_agent.rs</code></td>
+        <td><code>pump</code> + <code>chunk:</code> steps. Existing gated scripts stay the same.</td>
+      </tr>
+      <tr>
+        <td><code>.github/workflows/ci.yml</code></td>
+        <td>The <code>browser</code> job now runs all Chromium journeys, not only <code>@smoke</code>.</td>
+      </tr>
+    </table>
+
+    <h2>How to verify</h2>
+    <div class="card">
+      <ul>
+        <li><code>npx playwright test --project=chromium</code> — 15 journeys, ~1 minute</li>
+        <li><code>npm run test:browser:repeat</code> — <code>@smoke</code> × 20, retries 0</li>
+        <li><code>./scripts/dev/browser-break-demo.sh</code> — comment out <code>onSend</code>; smoke must fail</li>
+        <li><code>./scripts/verify.sh</code> — default gate stays offline; browser is <code>--check-browser</code></li>
+      </ul>
+      <p class="muted">
+        This branch is rebased onto <code>cursor/playwright-browser-infra-32e8</code>.
+        When #256 merges, rebase onto <code>main</code> and the infra commits drop out.
+      </p>
+    </div>
+  </main>
+</body>
+</html>
