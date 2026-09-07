@@ -141,7 +141,7 @@ impl HostSession {
             } else {
                 out.push_str("hostToolsAttached: none (granted tools become callable after the next session start)\n");
             }
-            if granted.iter().any(|id| *id == "draft_bot") {
+            if granted.contains(&"draft_bot") {
                 out.push_str(
                     "You can propose a crew member with draft_bot. The host returns pending_review and saved:false. The user must Save. Do not claim the bot exists until then.\n",
                 );
