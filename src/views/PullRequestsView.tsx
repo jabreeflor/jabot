@@ -143,17 +143,23 @@ export function PullRequestsView({
 
   return (
     <div className="view">
+      <header className="page-top pr-view-chrome">
+        <div>
+          <h1>Pull Requests</h1>
+          <p>
+            {githubStatus?.authenticated
+              ? "Everything you have open, and what your sessions opened"
+              : "Opened by your coding sessions — review, merge, or send back"}
+          </p>
+        </div>
+        {onRefresh && (
+          <button type="button" className="btn" onClick={onRefresh}>
+            Refresh
+          </button>
+        )}
+      </header>
       <div className="page-scroll">
         <div className="page">
-          <div className="page-top">
-            <h1>Pull Requests</h1>
-            <p>
-              {githubStatus?.authenticated
-                ? "Everything you have open, and what your sessions opened"
-                : "Opened by your coding sessions — review, merge, or send back"}
-            </p>
-          </div>
-
           <GithubStrip
             status={githubStatus}
             account={account}
@@ -185,11 +191,6 @@ export function PullRequestsView({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
-            {onRefresh && (
-              <button className="btn" onClick={onRefresh}>
-                Refresh
-              </button>
-            )}
           </div>
           <Tabs
             label="Pull request filter"

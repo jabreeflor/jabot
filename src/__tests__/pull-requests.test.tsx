@@ -115,6 +115,19 @@ function renderPrs(over: Partial<Parameters<typeof PullRequestsView>[0]> = {}) {
 }
 
 describe("PullRequestsView", () => {
+  it("keeps refresh outside the scrolling content and preserves its action", async () => {
+    const onRefresh = vi.fn();
+    renderPrs({ onRefresh });
+
+    const refresh = screen.getByRole("button", { name: "Refresh" });
+    expect(refresh.closest(".pr-view-chrome")).toBeInTheDocument();
+    expect(refresh.closest(".page-scroll")).not.toBeInTheDocument();
+    expect(refresh.closest(".pr-toolbar")).not.toBeInTheDocument();
+
+    await userEvent.click(refresh);
+    expect(onRefresh).toHaveBeenCalledOnce();
+  });
+
   it("counts only open PRs on the Open tab", () => {
     renderPrs();
 
