@@ -63,6 +63,10 @@
   overflow: hidden;
   background: var(--raise2);
 }
+.pr-merge-box {
+  /* The custom listbox extends beyond the card's normal content flow. */
+  overflow: visible;
+}
 .pr-box-heading {
   display: flex;
   align-items: center;
