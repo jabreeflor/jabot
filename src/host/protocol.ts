@@ -925,6 +925,11 @@ export interface BotView {
       grouped by bot, so the two readings cannot disagree. `crew/create` and
       `crew/update` answer 0. */
   unread: number;
+  /** The last thing said in this bot's standing thread, as one line — the
+      second line of its sidebar chat row. Absent for a bot nobody has talked
+      to yet, and absent from an older host, which reads the same: the row
+      falls back to the bot's own persona. */
+  preview?: string;
   createdAt: string;
   updatedAt: string;
 }

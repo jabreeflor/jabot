@@ -39,6 +39,7 @@ const BOTS: Bot[] = [
     harnessId: "claude",
     isChief: false,
     unread: true,
+    preview: "Opened PR #23 — checks are green.",
   },
 ];
 
@@ -141,12 +142,31 @@ describe("Sidebar", () => {
     expect(done).not.toHaveTextContent("done");
   });
 
-  it("shows the crew as faces, with the unread dot where there is news", () => {
+  it("shows the crew as chat rows, with the unread dot where there is news", () => {
     renderSidebar();
 
-    expect(screen.getByRole("button", { name: /Chief/ })).toBeInTheDocument();
-    const code = screen.getByRole("button", { name: /^Code$/ });
+    expect(screen.getByRole("button", { name: /^Chief/ })).toBeInTheDocument();
+    const code = screen.getByRole("button", { name: /^Code/ });
     expect(within(code).getByTestId("unread-dot")).toBeInTheDocument();
+  });
+
+  /** The row's second line is the conversation, which is the whole reason a
+      face became a row. */
+  it("shows the last thing said in each bot's chat", () => {
+    renderSidebar();
+
+    const code = screen.getByRole("button", { name: /^Code/ });
+    expect(code).toHaveTextContent("Opened PR #23 — checks are green.");
+  });
+
+  /** A bot nobody has talked to has no last line. Saying nothing there would
+      leave a blank row; saying what the bot is *for* is the only other true
+      thing about a conversation that has not started. */
+  it("falls back to what a bot is for until it has been talked to", () => {
+    renderSidebar();
+
+    const chief = screen.getByRole("button", { name: /^Chief/ });
+    expect(chief).toHaveTextContent("Route work.");
   });
 
   it("counts what is waiting", () => {
