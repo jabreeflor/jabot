@@ -73,6 +73,7 @@ fn main() {
     // multiplexing from misrouting, which is the only thing such a test is
     // for. First is still `sess-fake-1`, so nothing that asserts on it moves.
     let mut sessions_minted: u32 = 0;
+    let mut prompts_received: u32 = 0;
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -179,6 +180,7 @@ fn main() {
                 reply(&mut stdout, id, serde_json::json!({}));
             }
             "session/prompt" => {
+                prompts_received += 1;
                 // Answer *this* prompt's session, not whichever was created
                 // last. On a shared process those differ, and an agent that
                 // stamped the wrong one would make a misrouting host look
@@ -187,16 +189,36 @@ fn main() {
                     .as_str()
                     .map(str::to_string)
                     .or_else(|| session_id.clone());
-                notify(
-                    &mut stdout,
-                    "session/update",
-                    serde_json::json!({
-                        "sessionId": session_id,
-                        "sessionUpdate": "agent_message_chunk",
-                        "content": { "type": "text", "text": "hello from fake-acp" }
-                    }),
-                );
+                if mode != "empty-reply"
+                    && mode != "empty-reply-v2"
+                    && !(mode == "first-reply-only" && prompts_received > 1)
+                {
+                    notify(
+                        &mut stdout,
+                        "session/update",
+                        serde_json::json!({
+                            "sessionId": session_id,
+                            "sessionUpdate": "agent_message_chunk",
+                            "content": { "type": "text", "text": if mode == "whitespace-reply" { " \n " } else { "hello from fake-acp" } }
+                        }),
+                    );
+                }
                 match mode.as_str() {
+                    "empty-reply-v2" => {
+                        notify(
+                            &mut stdout,
+                            "session/update",
+                            serde_json::json!({
+                                "sessionId": session_id, "sessionUpdate": "state_update",
+                                "sessionState": "idle", "stopReason": "end_turn"
+                            }),
+                        );
+                        reply(
+                            &mut stdout,
+                            id,
+                            serde_json::json!({ "stopReason": "end_turn" }),
+                        );
+                    }
                     // Prose, and nothing else: the agent *says* it opened a
                     // pull request and never prints a URL. `pr-linkage.md` §4
                     // is explicit that this proves nothing — it only raises

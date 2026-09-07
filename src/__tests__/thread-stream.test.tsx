@@ -62,6 +62,12 @@ const text = (value: string) => ({
 });
 
 describe("ACP → transcript", () => {
+  it("shows an actionable diagnostic and failure status for an empty reply", () => {
+    const stream = feed([{ sessionUpdate: "state_update", sessionState: "idle", stopReason: "empty_response" }]);
+    expect(last(stream.items)).toMatchObject({ kind: "sys", text: expect.stringContaining("ended without a reply") });
+    expect(streamStatus(stream, { label: "done", tone: "ok" })).toEqual({ label: "failed: no reply", tone: "bad" });
+  });
+
   it("streams agent chunks into one bubble", () => {
     const stream = feed([text("Reading "), text("the guard"), text(".")]);
     expect(stream.items).toHaveLength(1);
