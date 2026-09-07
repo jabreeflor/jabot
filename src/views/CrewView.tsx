@@ -55,12 +55,14 @@ export function CrewView({
                     image={bot.image}
                     unread={bot.unread}
                   />
-                  <div>
+                  <div className="crew-identity">
+                    {bot.instructions && (
+                      <div className="role">{bot.instructions}</div>
+                    )}
                     <div className="nm">{bot.name}</div>
                   </div>
                   {bot.isChief && <span className="chief-badge">CHIEF</span>}
                 </div>
-                <div className="role">{bot.instructions}</div>
                 <div className="tools">
                   {bot.tools.map((toolId) => (
                     <span className="minichip" key={toolId}>
