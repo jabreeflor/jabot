@@ -538,8 +538,9 @@ describe("a host thread that no folder lists", () => {
 
     // "Disappear until done" sends no policy — the thread keeps the one it
     // has — so this is the whole of the call.
-    await waitFor(() =>
-      expect(fold).toHaveBeenCalledWith({ threadId: STANDING }),
+    await waitFor(
+      () => expect(fold).toHaveBeenCalledWith({ threadId: STANDING }),
+      { timeout: 3_000 },
     );
   });
 });

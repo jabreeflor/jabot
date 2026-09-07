@@ -45,6 +45,13 @@ vi.mock("../host", async (importOriginal) => {
   return { ...actual, connectHost: vi.fn() };
 });
 
+/**
+ * The row animates out for `LEAVE_MS` (380) before the host call runs.
+ * Waiting on the alert immediately after the click raced that timer under
+ * load (default `findBy` budget is 1000ms). Wait for the call first.
+ */
+const FOLD_SETTLE_MS = 3_000;
+
 const HELLO: HelloResult = {
   protocolVersion: 1,
   hostId: "host-1",
@@ -241,11 +248,13 @@ describe("folding a host-owned thread", () => {
       screen.getByRole("menuitem", { name: /Wait for Inbox/ }),
     );
 
-    await waitFor(() =>
-      expect(fold).toHaveBeenCalledWith({
-        threadId: "t-auth",
-        policy: "wait_for_inbox",
-      }),
+    await waitFor(
+      () =>
+        expect(fold).toHaveBeenCalledWith({
+          threadId: "t-auth",
+          policy: "wait_for_inbox",
+        }),
+      { timeout: FOLD_SETTLE_MS },
     );
     await waitFor(() =>
       expect(
@@ -267,7 +276,9 @@ describe("folding a host-owned thread", () => {
     );
 
     // No `policy` key: the plain fold keeps the thread's own policy.
-    await waitFor(() => expect(fold).toHaveBeenCalledWith({ threadId: "t-auth" }));
+    await waitFor(() => expect(fold).toHaveBeenCalledWith({ threadId: "t-auth" }), {
+      timeout: FOLD_SETTLE_MS,
+    });
     // The pane cannot stay on a thread the user just sent away — that is the
     // one screen guaranteed to have nothing to show.
     await waitFor(() =>
@@ -286,8 +297,9 @@ describe("folding a host-owned thread", () => {
     // outstanding permissions, drains the queued prompts, closes the run and
     // releases the worktree — all of which would have kept running behind a
     // row that had quietly stopped being drawn.
-    await waitFor(() =>
-      expect(archiveThread).toHaveBeenCalledWith({ threadId: "t-auth" }),
+    await waitFor(
+      () => expect(archiveThread).toHaveBeenCalledWith({ threadId: "t-auth" }),
+      { timeout: FOLD_SETTLE_MS },
     );
     await waitFor(() =>
       expect(
@@ -301,8 +313,9 @@ describe("folding a host-owned thread", () => {
     await userEvent.pointer({ keys: "[MouseRight]", target: authRow() });
     await userEvent.click(screen.getByRole("menuitem", { name: /Delete/ }));
 
-    await waitFor(() =>
-      expect(deleteThread).toHaveBeenCalledWith({ threadId: "t-auth" }),
+    await waitFor(
+      () => expect(deleteThread).toHaveBeenCalledWith({ threadId: "t-auth" }),
+      { timeout: FOLD_SETTLE_MS },
     );
     await waitFor(() =>
       expect(
@@ -322,6 +335,10 @@ describe("folding a host-owned thread", () => {
     await userEvent.pointer({ keys: "[MouseRight]", target: authRow() });
     await userEvent.click(screen.getByRole("menuitem", { name: /Archive/ }));
 
+    await waitFor(
+      () => expect(archiveThread).toHaveBeenCalledWith({ threadId: "t-auth" }),
+      { timeout: FOLD_SETTLE_MS },
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "That thread is already archived.",
     );
@@ -345,6 +362,10 @@ describe("folding a host-owned thread", () => {
       screen.getByRole("menuitem", { name: /Disappear until done/ }),
     );
 
+    await waitFor(
+      () => expect(fold).toHaveBeenCalledWith({ threadId: "t-auth" }),
+      { timeout: FOLD_SETTLE_MS },
+    );
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "That thread has already come back to you.",
     );
@@ -390,6 +411,8 @@ describe("Chief's card", () => {
 
     // Chief's card is an affordance on a thread, so it has to reach the same
     // host call the sidebar's menu does — and with the same policy rule.
-    await waitFor(() => expect(fold).toHaveBeenCalledWith({ threadId: "auth" }));
+    await waitFor(() => expect(fold).toHaveBeenCalledWith({ threadId: "auth" }), {
+      timeout: FOLD_SETTLE_MS,
+    });
   });
 });

@@ -12,7 +12,7 @@
  * would leave the crop arithmetic — the part that is actually easy to get
  * wrong — checked by nothing.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -89,6 +89,27 @@ beforeEach(() => {
   asked = [];
   encodedBytes = 6;
 
+  // FileReader and Image both complete on a microtask so `act` can flush
+  // them. A real jsdom FileReader under load left `pickImage` resolving
+  // outside the originating event — the unhandled act warning and the
+  // intermittent "Remove image" miss.
+  vi.stubGlobal(
+    "FileReader",
+    class {
+      result: string | ArrayBuffer | null = null;
+      onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => void) | null =
+        null;
+      onerror: ((this: FileReader, ev: ProgressEvent<FileReader>) => void) | null =
+        null;
+      readAsDataURL(_file: Blob) {
+        this.result = PIXEL;
+        queueMicrotask(() =>
+          this.onload?.call(this as unknown as FileReader, {} as ProgressEvent<FileReader>),
+        );
+      }
+    },
+  );
+
   // A decode that always succeeds, on a landscape source so the crop has
   // something to do.
   vi.stubGlobal(
@@ -150,9 +171,19 @@ function fileInput(): HTMLInputElement {
   return screen.getByLabelText("Upload an image") as HTMLInputElement;
 }
 
+async function flushImage() {
+  // FileReader.onload → Image.src → Image.onload → encode → setState.
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 async function upload(file: File) {
-  fireEvent.change(fileInput(), { target: { files: [file] } });
-  // The read and the encode are both async; the preview appears a tick later.
+  await act(async () => {
+    fireEvent.change(fileInput(), { target: { files: [file] } });
+  });
+  await flushImage();
   await screen.findByRole("button", { name: "Remove image" });
 }
 
@@ -195,7 +226,10 @@ describe("uploading an icon", () => {
 
     encodedBytes = MAX_IMAGE_BYTES * 2;
     await userEvent.click(screen.getByRole("button", { name: "Remove image" }));
-    fireEvent.change(fileInput(), { target: { files: [png("big.png")] } });
+    await act(async () => {
+      fireEvent.change(fileInput(), { target: { files: [png("big.png")] } });
+    });
+    await flushImage();
     expect(
       await screen.findByText(/too detailed to store/),
     ).toBeInTheDocument();
@@ -207,10 +241,12 @@ describe("uploading an icon", () => {
   it("says which file it could not use, and keeps the icon it had", async () => {
     renderEditor({ bot: { ...WRITER, image: PIXEL } });
 
-    fireEvent.change(fileInput(), {
-      target: {
-        files: [new File(["hi"], "notes.txt", { type: "text/plain" })],
-      },
+    await act(async () => {
+      fireEvent.change(fileInput(), {
+        target: {
+          files: [new File(["hi"], "notes.txt", { type: "text/plain" })],
+        },
+      });
     });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
