@@ -25,6 +25,8 @@
     "test:e2e": "vitest run --project e2e",
     "test:browser": "playwright test",
     "test:browser:smoke": "playwright test --project=chromium --grep @smoke",
+    "test:browser:chromium": "playwright test --project=chromium",
+    "test:browser:repeat": "playwright test --project=chromium --grep @smoke --repeat-each 20 --retries 0",
     "test:browser:ui": "playwright test --ui",
     "test:browser:install": "playwright install chromium webkit",
     "typecheck": "tsc --noEmit",

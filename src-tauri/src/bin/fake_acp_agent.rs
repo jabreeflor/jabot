@@ -43,6 +43,12 @@
 //!   the thread has to still be *running* at the moment it is folded, and then
 //!   go on running, and only then end. A sleep would make that a race; a gate
 //!   makes it an ordering. See [`wait_for_gate`] for the script it reads.
+//!   A `chunk:…` step streams that text and continues, so a scroll test can
+//!   grow the transcript without inventing a second agent.
+//! - `pump`: like `gated`, but the gate file is consumed and can be written
+//!   again. Each pulse is more `chunk:…` steps and/or a stop reason. Browser
+//!   scroll and streaming tests use this so chunks arrive only when the
+//!   test releases them.
 //! - `empty-reply`: end the turn with `end_turn` and no agent text — the host
 //!   must rewrite that as `empty_response`, not a silent success
 //! - `auth-fail`: reject `session/new` with an authentication error
@@ -506,18 +512,35 @@ fn main() {
                     // session and then watch it keep running.
                     "gated" => {
                         steps = wait_for_gate(std::env::args().nth(2).as_deref());
-                        match next_step(&mut steps) {
-                            Some(step) if is_tool_kind(&step) => {
-                                ask_permission(&mut stdout, &session_id, &step, &mut ask_seq);
-                                pending_prompt_id = id;
-                            }
-                            step => reply(
+                        apply_script(
+                            &mut stdout,
+                            &session_id,
+                            id,
+                            &mut pending_prompt_id,
+                            &mut steps,
+                            &mut ask_seq,
+                            true,
+                        );
+                    }
+                    // Deterministic multi-chunk delivery: each gate pulse is
+                    // consumed so a test can stream, wait, stream again.
+                    "pump" => {
+                        pending_prompt_id = id.clone();
+                        let gate = std::env::args().nth(2);
+                        loop {
+                            let mut pulse = wait_for_gate_pulse(gate.as_deref());
+                            let finished = apply_script(
                                 &mut stdout,
-                                id,
-                                serde_json::json!({
-                                    "stopReason": step.unwrap_or_else(|| "end_turn".into())
-                                }),
-                            ),
+                                &session_id,
+                                id.clone(),
+                                &mut pending_prompt_id,
+                                &mut pulse,
+                                &mut ask_seq,
+                                false,
+                            );
+                            if finished {
+                                break;
+                            }
                         }
                     }
                     // Holds the turn open, but ends it when told to.
@@ -672,14 +695,25 @@ fn notify(stdout: &mut io::Stdout, method: &str, params: serde_json::Value) {
 
 /// Block until the gate file exists, then read the turn's script out of it.
 ///
-/// The file's contents are a comma-separated list: an ACP tool `kind`
-/// (`read`, `execute`, `delete`) asks for that permission and waits; anything
-/// else is the stop reason the turn ends with. An empty file means `end_turn`.
+/// The file's contents are a comma-separated list: `chunk:text` streams that
+/// text and continues; an ACP tool `kind` (`read`, `execute`, `delete`) asks
+/// for that permission and waits; anything else is the stop reason the turn
+/// ends with. An empty file means `end_turn`.
 ///
 /// A gate that never opens replies `gate_timeout`, which the host classifies
 /// as a failure — a test that forgot to open its gate should fail loudly
 /// rather than hang until the suite's own timeout.
 fn wait_for_gate(path: Option<&str>) -> Vec<String> {
+    wait_for_gate_inner(path, false)
+}
+
+/// Like [`wait_for_gate`], but deletes the file after a successful read so
+/// the test can write the next pulse to the same path (`pump` mode).
+fn wait_for_gate_pulse(path: Option<&str>) -> Vec<String> {
+    wait_for_gate_inner(path, true)
+}
+
+fn wait_for_gate_inner(path: Option<&str>, consume: bool) -> Vec<String> {
     let Some(path) = path else {
         return vec!["gate_timeout".into()];
     };
@@ -688,17 +722,81 @@ fn wait_for_gate(path: Option<&str>) -> Vec<String> {
         // Written whole by `rename`, so a read that sees the file sees all of
         // it; a partial read would turn into a stop reason nobody wrote.
         if let Ok(body) = std::fs::read_to_string(path) {
-            let steps: Vec<String> = body
-                .split(',')
-                .map(|step| step.trim().to_string())
-                .filter(|step| !step.is_empty())
-                .collect();
-            return steps;
+            if consume {
+                let _ = std::fs::remove_file(path);
+            }
+            return parse_gate_script(&body);
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     eprintln!("fake-acp: gate {path} never opened");
     vec!["gate_timeout".into()]
+}
+
+fn parse_gate_script(body: &str) -> Vec<String> {
+    body.split(',')
+        .map(|step| step.trim().to_string())
+        .filter(|step| !step.is_empty())
+        .collect()
+}
+
+/// Run a gate script. Returns true when the prompt is finished (stop reason
+/// or a permission ask that now owns `pending_prompt_id`).
+///
+/// `end_when_exhausted` is `gated`: an empty remainder is `end_turn`.
+/// `pump` passes false so a pulse of only `chunk:` steps waits for the next
+/// write; an empty pulse still ends the turn.
+fn apply_script(
+    stdout: &mut io::Stdout,
+    session_id: &Option<String>,
+    prompt_id: Option<serde_json::Value>,
+    pending_prompt_id: &mut Option<serde_json::Value>,
+    steps: &mut Vec<String>,
+    ask_seq: &mut i64,
+    end_when_exhausted: bool,
+) -> bool {
+    let mut did_chunk = false;
+    loop {
+        match next_step(steps) {
+            Some(step) if step.starts_with("chunk:") => {
+                let text = step[6..].to_string();
+                notify(
+                    stdout,
+                    "session/update",
+                    serde_json::json!({
+                        "sessionId": session_id,
+                        "sessionUpdate": "agent_message_chunk",
+                        "content": { "type": "text", "text": text }
+                    }),
+                );
+                did_chunk = true;
+            }
+            Some(step) if is_tool_kind(&step) => {
+                ask_permission(stdout, session_id, &step, ask_seq);
+                *pending_prompt_id = prompt_id;
+                return true;
+            }
+            Some(step) => {
+                if let Some(id) = prompt_id.clone().or_else(|| pending_prompt_id.take()) {
+                    reply(stdout, Some(id), serde_json::json!({ "stopReason": step }));
+                }
+                *pending_prompt_id = None;
+                return true;
+            }
+            None if did_chunk && !end_when_exhausted => return false,
+            None => {
+                if let Some(id) = prompt_id.clone().or_else(|| pending_prompt_id.take()) {
+                    reply(
+                        stdout,
+                        Some(id),
+                        serde_json::json!({ "stopReason": "end_turn" }),
+                    );
+                }
+                *pending_prompt_id = None;
+                return true;
+            }
+        }
+    }
 }
 
 fn next_step(steps: &mut Vec<String>) -> Option<String> {

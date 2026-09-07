@@ -232,6 +232,8 @@ and a dedicated port — it does not call `live.sh smoke` or `reset`. Details:
 npm run host:build
 npx playwright install chromium
 npm run test:browser:smoke          # Chromium @smoke — the documented local command
+npm run test:browser:chromium       # all Chromium journeys — CI's browser job
+npm run test:browser:repeat         # @smoke × 20, no retries
 npm run test:browser                # Chromium + WebKit (recovery / workspace)
 ./scripts/verify.sh --check-browser # Chromium suite, after the usual gates
 ```

@@ -13,7 +13,9 @@ import { type ChildProcess, spawn } from "node:child_process";
 import {
   createWriteStream,
   existsSync,
+  mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
 } from "node:fs";
@@ -27,10 +29,13 @@ import type { TestInfo } from "@playwright/test";
 import {
   CREW_THREAD,
   CREW_UPDATE,
+  FOLDER_REGISTER,
   HOST_HEALTH,
   JSONRPC_VERSION,
+  THREAD_OPEN,
   THREAD_TRANSCRIPT,
   type JsonRpcResponse,
+  type RuntimeSpec,
   type ThreadStateResult,
   type ThreadTranscriptResult,
 } from "../../src/host/protocol";
@@ -68,6 +73,7 @@ export interface JabotApp {
   logPath: string;
   rpc: <T = unknown>(method: string, params?: unknown) => Promise<T>;
   hostStatus: () => Promise<HostStatus>;
+  adapterLog: (threadId: string) => string;
   /** Kill Vite + host and start them again on the same port and data dir. */
   restart: () => Promise<void>;
   /**
@@ -158,12 +164,50 @@ export async function hostRpc<T = unknown>(
   return json.result as T;
 }
 
-/** Prerequisite only — put Chief on the scriptable agent before the page loads. */
-export async function seedChiefOnFakeAcp(baseURL: string): Promise<void> {
-  await hostRpc(baseURL, CREW_UPDATE, {
+/** Prerequisite only — put Chief on a scriptable agent before the page loads. */
+export async function seedChiefOnFakeAcp(
+  baseURL: string,
+  harnessId = "fake-acp",
+): Promise<void> {
+  await hostRpc(baseURL, CREW_UPDATE, { botId: "chief", harnessId });
+}
+
+export async function chiefThreadId(baseURL: string): Promise<string> {
+  const thread = await hostRpc<ThreadStateResult>(baseURL, CREW_THREAD, {
     botId: "chief",
-    harnessId: "fake-acp",
   });
+  return thread.threadId;
+}
+
+/** Register a repo folder and open a code thread. RPC prerequisite only. */
+export async function seedCodeThread(
+  app: JabotApp,
+  spec: {
+    threadId: string;
+    title: string;
+    folderName?: string;
+    harnessId?: string;
+    runtime?: RuntimeSpec;
+  },
+): Promise<{ folderId: string; cwd: string }> {
+  const cwd = path.join(app.dataDir, "repos", spec.threadId);
+  mkdirSync(cwd, { recursive: true });
+  const folder = await app.rpc<{ folderId: string; cwd: string }>(
+    FOLDER_REGISTER,
+    {
+      path: cwd,
+      name: spec.folderName ?? spec.title,
+    },
+  );
+  await app.rpc(THREAD_OPEN, {
+    threadId: spec.threadId,
+    title: spec.title,
+    cwd: folder.cwd,
+    folderId: folder.folderId,
+    harnessId: spec.harnessId ?? "fake-acp",
+    runtime: spec.runtime,
+  });
+  return folder;
 }
 
 export async function chiefTranscript(
@@ -198,6 +242,10 @@ export async function startJabotApp(
       fetch(new URL("/__jabot/host", baseURL)).then(
         (r) => r.json() as Promise<HostStatus>,
       ),
+    adapterLog: (threadId) => {
+      const file = path.join(dataDir, "adapter-logs", `${threadId}.stderr.log`);
+      return existsSync(file) ? readFileSync(file, "utf8") : "";
+    },
     async restart() {
       await stopVite(child);
       child = spawn();
