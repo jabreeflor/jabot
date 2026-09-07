@@ -57,7 +57,10 @@ Both lint jobs use `clippy -- -D warnings`. A warning is a red check.
 
 `macos clippy` is scoped to `cargo clippy --locked --lib` and uses
 `Swatinem/rust-cache`. It is not `npm run tauri build`. A frontend-only or
-docs-only PR does not start a Mac runner.
+docs-only PR does not start a Mac runner. If the vendored ACP adapters are
+not staged, the script writes a stub file so `tauri-build` can resolve the
+`bundle.resources` glob; that is not a substitute for `npm run bundle:adapters`
+on a real bundle.
 
 ## Local reproduction
 
