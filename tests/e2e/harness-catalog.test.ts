@@ -114,6 +114,22 @@ describe("harness/list", () => {
       sessionScope: "thread",
       supportsModels: true,
     });
+    expect(byId.get("copilot")).toMatchObject({
+      tier: "shipped",
+      label: "GitHub Copilot",
+      reserved: true,
+      sessionScope: "thread",
+      command: "copilot",
+      args: ["--acp"],
+    });
+    expect(byId.get("copilot")?.capabilities).toMatchObject({
+      streaming: true,
+      toolEvents: true,
+      permissions: true,
+      cancel: true,
+      resume: false,
+    });
+    expect(byId.get("copilot")?.capabilities?.notes).toMatch(/process-local/);
     expect(byId.get("gemini")).toMatchObject({
       tier: "shipped",
       label: "Gemini CLI",

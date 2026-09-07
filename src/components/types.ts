@@ -205,6 +205,15 @@ export interface HarnessCard {
   models?: string[];
   declaredCapabilities?: string[];
   accountIsolation?: string;
+  /** Catalog-declared capabilities. Absent means unverified. */
+  capabilities?: {
+    streaming: boolean;
+    toolEvents: boolean;
+    permissions: boolean;
+    cancel: boolean;
+    resume: boolean;
+    notes?: string;
+  };
   /** What the harness supports, including verbs it does not advertise. */
   capabilityNotes?: string;
 }

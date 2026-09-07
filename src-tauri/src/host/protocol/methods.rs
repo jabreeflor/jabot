@@ -1278,6 +1278,23 @@ pub struct HarnessCardView {
     /// Why concurrent account profiles cannot isolate this harness.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_isolation: Option<String>,
+    /// What this card is willing to claim. Absent means unverified — do not
+    /// treat a missing object as "everything works".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<HarnessCapabilitiesView>,
+}
+
+/// Declared harness capabilities, as the catalog is willing to advertise them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessCapabilitiesView {
+    pub streaming: bool,
+    pub tool_events: bool,
+    pub permissions: bool,
+    pub cancel: bool,
+    pub resume: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 /// A tier-3 file that did not make it into the catalog, and why. Surfaced

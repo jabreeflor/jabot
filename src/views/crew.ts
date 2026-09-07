@@ -113,6 +113,7 @@ export function harnessCard(card: HarnessCardView): HarnessCard {
     supportsModels: card.supportsModels,
     declaredCapabilities: card.declaredCapabilities,
     accountIsolation: card.accountIsolation,
+    capabilities: card.capabilities,
     capabilityNotes: card.capabilityNotes,
   };
 }

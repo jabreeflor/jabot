@@ -645,6 +645,18 @@ export interface HarnessCardView {
   declaredCapabilities?: string[];
   /** Why concurrent account profiles cannot isolate this harness. */
   accountIsolation?: string;
+  /** What this card is willing to claim. Absent means unverified. */
+  capabilities?: HarnessCapabilitiesView;
+}
+
+/** Declared harness capabilities, as the catalog is willing to advertise them. */
+export interface HarnessCapabilitiesView {
+  streaming: boolean;
+  toolEvents: boolean;
+  permissions: boolean;
+  cancel: boolean;
+  resume: boolean;
+  notes?: string;
 }
 
 /** A tier-3 file that did not make it into the catalog, and why. */

@@ -179,6 +179,7 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
             supports_models: false,
             declared_capabilities: Vec::new(),
             account_isolation: None,
+            capabilities: None,
             id,
             label,
         },

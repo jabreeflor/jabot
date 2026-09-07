@@ -21,7 +21,14 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type { Repository } from "./components/WorkspacePicker";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 
 import {
   connectHost,
@@ -121,7 +128,7 @@ type HostSession = ReturnType<typeof useHost>;
  */
 function App() {
   const host = useHost();
-  // The first harness a user ever picks came from `mock-host.ts` — the three
+  // The first harness a user ever picks came from `mock-host.ts` — the
   // compiled-in defaults — so a fresh install never saw a tier-2 preset or the
   // user's own tier-3 JSON on the one screen that asks them to choose, and
   // could pick an engine the host would refuse at thread start. The connection
@@ -253,7 +260,10 @@ function AppShell({
     folderSettings === null
       ? null
       : (folders.find((f) => f.id === folderSettings) ?? null);
-  const hostThreads = registered.folders ? allThreads(registered.folders) : [];
+  const hostThreads = useMemo(
+    () => (registered.folders ? allThreads(registered.folders) : []),
+    [registered.folders],
+  );
   // A thread the host owns that no folder lists — a bot's standing thread,
   // whose `folder_id` is null. `folder/list` walks folder rows, so those are
   // invisible to `hostThreads`, and the shell used to treat them as fixtures:
@@ -326,11 +336,12 @@ function AppShell({
   // folded out of the sidebar until a moment ago. A thread that really is gone
   // falls through to the existing "check the Inbox" pane, which is the honest
   // answer rather than an error.
+  const reloadFolders = registered.reload;
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
     void onNotificationActivated(({ threadId }) => {
-      registered.reload();
+      reloadFolders();
       setSelection({ view: "thread", threadId });
     }).then((off) => {
       if (cancelled) off();
@@ -340,7 +351,7 @@ function AppShell({
       cancelled = true;
       unlisten?.();
     };
-  }, [registered.reload]);
+  }, [reloadFolders]);
 
   /** Run the data change once the exit transition has finished. */
   function afterLeaving(then: () => void) {

@@ -104,7 +104,9 @@ export function AddFolderModal({
           type="button"
           className="btn primary"
           disabled={!path.trim() || busy}
-          onClick={submit}
+          onClick={() => {
+            void submit();
+          }}
         >
           {busy ? "Checking…" : "Add folder"}
         </button>

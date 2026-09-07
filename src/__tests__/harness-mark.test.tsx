@@ -53,15 +53,16 @@ describe("the harness mark", () => {
     expect(screen.getByText("Codex")).toBeInTheDocument();
   });
 
-  it("draws OpenCode and Gemini as their own marks, not the custom terminal", () => {
+  it("draws OpenCode, Copilot, and Gemini as their own marks, not the custom terminal", () => {
     const { container: opencode } = render(<HarnessMark harnessId="opencode" />);
+    const { container: copilot } = render(<HarnessMark harnessId="copilot" />);
     const { container: gemini } = render(<HarnessMark harnessId="gemini" />);
     const { container: custom } = render(<HarnessMark harnessId="my-own-agent" />);
     expect(marksIn(opencode)[0].innerHTML).not.toBe(
       marksIn(custom)[0].innerHTML,
     );
+    expect(marksIn(copilot)[0].innerHTML).not.toBe(marksIn(custom)[0].innerHTML);
     expect(marksIn(gemini)[0].innerHTML).not.toBe(marksIn(custom)[0].innerHTML);
-    expect(marksIn(opencode)[0].innerHTML).not.toBe(marksIn(gemini)[0].innerHTML);
   });
 
   it("still draws something for a harness it has never heard of", () => {
