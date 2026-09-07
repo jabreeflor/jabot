@@ -1116,9 +1116,9 @@ mod tests {
         // this line, and what hello promises is "the schema you have".
         assert_eq!(value["store"]["schemaVersion"], schema_head());
         assert_eq!(value["store"]["botCount"], 2);
-        // Three shipped cards plus the two presets, all seeded as rows so a
+        // Three shipped cards plus the three presets, all seeded as rows so a
         // thread can name any of them (#13).
-        assert_eq!(value["store"]["harnessCount"], 5);
+        assert_eq!(value["store"]["harnessCount"], 6);
         let backend = value["store"]["secretsBackend"].as_str().unwrap();
         assert!(
             backend == "keychain" || backend == "unavailable",

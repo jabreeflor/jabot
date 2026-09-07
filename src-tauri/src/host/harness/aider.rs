@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn the_catalog_floor_matches_the_adapter_policy() {
-        let env: Vec<_> = ENV_FLOOR.iter().copied().collect();
+        let env = ENV_FLOOR.to_vec();
         assert!(env.contains(&("AIDER_AUTO_COMMITS", "false")));
         assert!(env.contains(&("AIDER_DIRTY_COMMITS", "false")));
         assert!(env.contains(&("AIDER_YES", "true")));
