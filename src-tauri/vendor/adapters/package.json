@@ -1,0 +1,9 @@
+{
+  "name": "jabot-bundled-adapters",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.75.1"
+  }
+}

@@ -22,6 +22,7 @@
 //!
 //! Steer-vs-redispatch lives in [`queue`].
 
+pub(crate) mod preview;
 pub(crate) mod queue;
 
 use serde_json::{json, Value};
@@ -136,6 +137,10 @@ impl HostSession {
             acp["jabot"] = json!({ "event": PROMPT_DISPATCHED });
         }
         let seq = self.persist_transcript_event(thread_id, "session/update", &acp);
+        // The user's own half of the conversation counts: a chat row whose
+        // preview only ever quoted the agent would go stale the moment you
+        // asked a question.
+        self.observe_preview(thread_id, &acp);
         self.notify_session_update_at(thread_id, acp, seq);
     }
 
@@ -189,7 +194,7 @@ pub(crate) fn prompt_text(content: &Value) -> String {
     }
 }
 
-fn block_text(block: &Value) -> String {
+pub(crate) fn block_text(block: &Value) -> String {
     if let Some(text) = block.as_str() {
         return text.to_string();
     }

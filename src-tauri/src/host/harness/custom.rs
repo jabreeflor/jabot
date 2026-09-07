@@ -159,6 +159,11 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
                 command,
                 args: file.args,
                 downloads_on_first_run: false,
+                // Nothing is bundled for a tier-3 harness: the app ships
+                // adapters for cards it knows, and a user file names a command
+                // on their own machine.
+                bundled: false,
+                env: BTreeMap::new(),
             }],
             // A custom binary is whatever the user pointed at; there is no
             // vendor CLI behind it to blame for being missing.

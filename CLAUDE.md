@@ -6,11 +6,18 @@ is the one required gate before anything lands on `main`.
 
 ## Plugin: jabstack
 
-`.claude/settings.json` enables the [jabstack](https://github.com/jabreeflor/jabstack)
-plugin (marketplace `jabstack`, plugin `jabstack@jabstack`). Claude Code offers to
-install it on session start; accept. It provides `/create-pr-artifact`,
-`/gauntlet-loop` and the `gauntlet-critic` subagent. If the skill is not
-loaded, the plugin is not installed — run `/plugin install jabstack@jabstack`
+This repo vendors [jabstack](https://github.com/jabreeflor/jabstack) at
+`plugins/jabstack/` (snapshot noted in `plugins/jabstack/SOURCE.md`). It
+provides `/create-pr-artifact`, `/gauntlet-loop`, and the `gauntlet-critic`
+subagent.
+
+| Harness | How it loads |
+| --- | --- |
+| **Cursor** | `.cursor-plugin/marketplace.json` lists the plugin; `.cursor/settings.json` enables `jabstack@jabot`. Reload the window if skills are missing. Local fallback: symlink `plugins/jabstack` to `~/.cursor/plugins/local/jabstack`. |
+| **Codex / ChatGPT Work** | `.agents/plugins/marketplace.json` installs `jabstack` from `./plugins/jabstack` by default. Start a new conversation after changing the plugin. |
+| **Claude Code** | `.claude/settings.json` still pins the GitHub marketplace (`jabstack@jabstack`). Accept the install prompt on session start, or run `/plugin install jabstack@jabstack`. |
+
+If the skill is not loaded, install or enable the plugin for that harness
 rather than working around it.
 
 ## Rule: every PR gets a PR artifact

@@ -359,7 +359,19 @@ describe("handoff_to_bot", () => {
 describe("spawn_code_session", () => {
   it("is how a worker gets a repo: its own worktree, on its own branch", async () => {
     const repo = repository();
-    const { client, server } = await chiefAtWork(dataDirWithFakeHarness());
+    const dataDir = dataDirWithFakeHarness();
+    // This case exercises a folded thread with no running adapter, regardless
+    // of whether the developer has the bundled Claude adapter installed.
+    writeFileSync(
+      path.join(dataDir, "custom_harnesses", "unavailable.json"),
+      JSON.stringify({
+        id: "unavailable",
+        label: "Unavailable test harness",
+        command: path.join(dataDir, "missing-adapter"),
+      }),
+    );
+    const { client, server } = await chiefAtWork(dataDir);
+    await client.updateBot({ botId: "code", harnessId: "unavailable" });
     const folder = await client.registerFolder({ path: repo, name: "Project" });
 
     const spawned = await callTool<SpawnResult>(server, "spawn_code_session", {

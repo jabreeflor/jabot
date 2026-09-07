@@ -38,7 +38,7 @@ import { ScheduleEditorModal } from "./components/ScheduleEditorModal";
 import { NewChatModal } from "./components/NewChatModal";
 import { hostErrorText } from "./views/errors";
 import { SettingsView } from "./views/SettingsView";
-import { Sidebar } from "./components/Sidebar";
+import { Sidebar, loadSidebarOpen, saveSidebarOpen } from "./components/Sidebar";
 import {
   ThreadContextMenu,
   type MenuPosition,
@@ -93,6 +93,7 @@ import {
   nextThreadId,
   noticeThreadId,
   openPrCount,
+  sidebarBots,
   sidebarFolders,
   type MockState,
 } from "./views/mock-host";
@@ -192,6 +193,7 @@ function AppShell({
     open: false,
   });
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
   const { client, hello, hostError, connecting } = hostSession;
   // Whether the fixtures may stand in for a host answer that has not arrived.
   // Only where no host exists to ask — see `hostedByApp`. Read once: the
@@ -223,7 +225,7 @@ function AppShell({
   // inside the app the pane stays empty until the answer lands — a real answer
   // always has Chief in it. The catalogs below are compiled-in constants that
   // mirror the host's seed, not user data, so they stand in everywhere.
-  const bots = crew.bots ?? (fixtures ? state.bots : []);
+  const bots = crew.bots ?? (fixtures ? sidebarBots(state) : []);
   const templates = crew.templates ?? BOT_TEMPLATES;
   const toolChips = crew.tools ?? TOOL_CATALOG;
   const hostToolChips = crew.hostTools ?? HOST_TOOLS;
@@ -288,6 +290,32 @@ function AppShell({
     const pending = timers.current;
     return () => pending.forEach((id) => window.clearTimeout(id));
   }, []);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((open) => {
+      const next = !open;
+      saveSidebarOpen(next);
+      return next;
+    });
+  }, []);
+
+  // ⌘B / Ctrl+B is the same chord the rest of the desktop uses for this
+  // split. A modal already owns the keyboard (Escape, Tab trap), so the
+  // chord is silent while one is up — hiding the rail under a dialog is
+  // not a gesture anyone can see the result of.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) {
+        return;
+      }
+      if (event.key !== "b" && event.key !== "B") return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      event.preventDefault();
+      toggleSidebar();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [toggleSidebar]);
 
   // Clicking a native notification opens the thread it named (#27). The Tauri
   // layer has already brought the window back by the time this arrives, so the
@@ -592,6 +620,8 @@ function AppShell({
           client && registered.folders ? setFolderSettings : undefined
         }
         selection={selection}
+        open={sidebarOpen}
+        onToggle={toggleSidebar}
         // The host's own count, not a second classification of the rows this
         // renderer happens to be holding: `count_unread_inbox` is the badge
         // `resurface.md` specifies, and it is the number the phone already

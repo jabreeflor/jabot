@@ -8,7 +8,7 @@
  * this port's; what is asserted here is that the shell reports the host's
  * answer, including when there isn't one.
  */
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, cleanup } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -204,7 +204,13 @@ describe("App", () => {
       "Fold the migration{Enter}",
     );
 
-    expect(screen.getByText("Fold the migration")).toBeInTheDocument();
+    // Twice, and both are the point: the bubble in the chat, and the sidebar
+    // row's second line, which is Chief's conversation saying what it is now
+    // about.
+    expect(screen.getAllByText("Fold the migration")).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: /^Chief/ }),
+    ).toHaveTextContent("Fold the migration");
     expect(screen.getByLabelText("Message Chief")).toHaveValue("");
   });
 
@@ -229,11 +235,11 @@ describe("App", () => {
     await renderApp();
 
     await userEvent.type(screen.getByLabelText("Message Chief"), "rm -rf prod");
-    await userEvent.click(screen.getByRole("button", { name: "Writer" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Writer/ }));
 
     expect(screen.getByLabelText("Message Writer")).toHaveValue("");
 
-    await userEvent.click(screen.getByRole("button", { name: "Chief" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Chief/ }));
     expect(screen.getByLabelText("Message Chief")).toHaveValue("");
   });
 
@@ -248,10 +254,10 @@ describe("App", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    // Once as a crew card, once as a face in the sidebar strip.
+    // Once as a crew card, once as a chat row in the sidebar.
     expect(screen.getAllByText("Expense Manager")).toHaveLength(2);
     expect(
-      screen.getByRole("button", { name: "Expense Manager" }),
+      screen.getByRole("button", { name: /^Expense Manager/ }),
     ).toBeInTheDocument();
   });
 
@@ -318,7 +324,7 @@ describe("App", () => {
       // The host's own answer fills the pane in.
       answerCrew?.();
       expect(
-        await screen.findByRole("button", { name: "Chief" }),
+        await screen.findByRole("button", { name: /^Chief/ }),
       ).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Inbox Mgr" })).toBeNull();
     } finally {
@@ -333,5 +339,56 @@ describe("App", () => {
     expect(await screen.findByText(/no Tauri bridge/)).toBeInTheDocument();
     // The rest of the shell still renders — the views do not depend on it yet.
     expect(screen.getByRole("heading", { name: "Chief" })).toBeInTheDocument();
+  });
+
+  it("hides the rail and keeps the chat", async () => {
+    await renderApp();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+
+    expect(screen.queryByRole("button", { name: /Auth migration/ })).toBeNull();
+    expect(screen.queryByLabelText("Search threads")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Chief" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Message Chief")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+    expect(
+      screen.getByRole("button", { name: /Auth migration/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("remembers a closed rail across a remount", async () => {
+    await renderApp();
+    await userEvent.click(screen.getByRole("button", { name: "Hide sidebar" }));
+    cleanup();
+    // The host line lives in the me-row, which is gone while the rail is
+    // shut, so this remount cannot wait on it the way `renderApp` does.
+    render(<App />);
+    expect(
+      await screen.findByRole("button", { name: "Show sidebar" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Auth migration/ })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Chief" })).toBeInTheDocument();
+  });
+
+  it("toggles the rail with Ctrl+B, except while a dialog is up", async () => {
+    await renderApp();
+
+    await userEvent.keyboard("{Control>}b{/Control}");
+    expect(
+      screen.getByRole("button", { name: "Show sidebar" }),
+    ).toBeInTheDocument();
+
+    await userEvent.keyboard("{Control>}b{/Control}");
+    expect(
+      screen.getByRole("button", { name: "Hide sidebar" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await userEvent.keyboard("{Control>}b{/Control}");
+    expect(
+      screen.getByRole("button", { name: "Hide sidebar" }),
+    ).toBeInTheDocument();
   });
 });

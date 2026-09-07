@@ -28,8 +28,10 @@ import type {
   HarnessCardView,
   HarnessReport,
   HostClient,
+  SessionUpdateParams,
   ToolCardView,
 } from "../host";
+import { SESSION_UPDATE } from "../host";
 import {
   BOT_COLORS,
   type Bot,
@@ -56,6 +58,10 @@ export function botRow(bot: BotView): Bot {
     // the field answers `undefined`, which draws no dot — the honest reading,
     // and the one the app has been living with.
     unread: bot.unread > 0,
+    // Absent stays absent rather than becoming an empty string: the row draws
+    // the persona for a bot with no conversation yet, and "" would draw a
+    // blank line that looks like a chat with nothing in it.
+    preview: bot.preview,
   };
 }
 
@@ -358,6 +364,35 @@ export function useCrew(client: HostClient | null): Crew {
     },
     [client, reload],
   );
+
+  // A turn ending is the only thing that changes what a chat row says.
+  //
+  // The preview is `crew/list`'s answer, so without this a row would keep
+  // quoting whatever was last said at the moment the app started: a handoff
+  // Chief made, a schedule that fired, or the conversation in the pane right
+  // beside it. Listed on the turn's *end* and not on its chunks — a listing
+  // per token would be a listing per token, and a row that streams a sentence
+  // one word at a time in the corner of your eye is worse than one that
+  // arrives finished.
+  useEffect(() => {
+    if (!client) return;
+    try {
+      return client.onNotification((notification) => {
+        if (notification.method !== SESSION_UPDATE) return;
+        const params = notification.params as SessionUpdateParams | undefined;
+        const acp = params?.acp;
+        if (!acp || typeof acp !== "object") return;
+        const update = (acp as { sessionUpdate?: unknown }).sessionUpdate;
+        // ACP's own end-of-turn, and the host's synthesized one: both arrive
+        // as `state_update`, and nothing else here is worth a round trip.
+        if (update === "state_update") reload();
+      });
+    } catch {
+      // A transport with no notification channel — an older host, a test's
+      // stub. The crew still lists; it just does not re-list on its own.
+      return;
+    }
+  }, [client, reload]);
 
   // The substitute for a notification, and not an optional one.
   //
