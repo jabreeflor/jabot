@@ -17,12 +17,9 @@ pub fn fake_agent() -> String {
     if let Some(path) = option_env!("CARGO_BIN_EXE_fake_acp_agent") {
         candidates.push(PathBuf::from(path));
     }
-    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        candidates.push(PathBuf::from(dir).join("debug/fake-acp-agent"));
-    }
-    candidates.push(manifest.join("target/llvm-cov-target/debug/fake-acp-agent"));
-    candidates.push(manifest.join("target/debug/fake-acp-agent"));
-    candidates.push(manifest.join("../target/debug/fake-acp-agent"));
+    // Same target dir that built *this* test. Prefer it over a leftover
+    // `llvm-cov-target` binary from an earlier coverage run — that stale
+    // copy may not speak the modes the current suite asks for.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join("fake-acp-agent"));
@@ -31,6 +28,12 @@ pub fn fake_agent() -> String {
             }
         }
     }
+    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
+        candidates.push(PathBuf::from(dir).join("debug/fake-acp-agent"));
+    }
+    candidates.push(manifest.join("target/llvm-cov-target/debug/fake-acp-agent"));
+    candidates.push(manifest.join("target/debug/fake-acp-agent"));
+    candidates.push(manifest.join("../target/debug/fake-acp-agent"));
 
     candidates
         .into_iter()

@@ -64,10 +64,12 @@ passes; test / plugin / worktree files do not appear in the JSON.
 | Functions | 80 | 81.16 (audit: 81.2) |
 
 Originally reproduced on Node v22.14.0 at the audit commit: **11122 /
-11963 lines**, 2571 / 3006 branches, 573 / 706 functions. CI and
-`engines.node` are now **26**. `main.tsx` (entry), `src/mobile/index.ts`
-(barrel), and the type-only `src/host/prWorkspace.ts` sit at 0% on
-purpose — they count, they are not excluded to flatter the number.
+11963 lines**, 2571 / 3006 branches, 573 / 706 functions. Re-measured
+on this branch after rebasing onto current `main` (Node 22 locally;
+CI/`engines.node` are **26**): **93.1 / 85.63 / 81.64**. `main.tsx`
+(entry), `src/mobile/index.ts` (barrel), and the type-only
+`src/host/prWorkspace.ts` sit at 0% on purpose — they count, they are
+not excluded to flatter the number.
 
 The proposed 90/85/80 start is a **hold-the-line** floor under the same
 include policy, not a target to climb. A few points of headroom absorb
