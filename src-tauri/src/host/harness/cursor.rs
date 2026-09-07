@@ -80,7 +80,7 @@ pub fn parse_version(text: &str) -> Option<CursorVersion> {
     while i < bytes.len() {
         if bytes[i].is_ascii_digit() {
             if let Some((version, consumed)) = parse_version_at(&text[i..]) {
-                return Some(version).filter(|_| consumed > 0);
+                return (consumed > 0).then_some(version);
             }
         }
         i += 1;

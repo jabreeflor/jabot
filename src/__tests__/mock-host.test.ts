@@ -155,21 +155,21 @@ describe("the seed", () => {
       "src-tauri/src/host/harness/catalog.rs",
       "utf8",
     );
-    const shipped = catalog.slice(
+    const compiled = catalog.slice(
       catalog.indexOf("const SHIPPED:"),
-      catalog.indexOf("const PRESETS:"),
+      catalog.indexOf("fn build("),
     );
     const cards = [
-      ...shipped.matchAll(
+      ...compiled.matchAll(
         /id: "([^"]+)",\s*\n\s*label: "([^"]+)",\s*\n\s*blurb: "([^"]+)",\s*\n\s*accent: "([^"]+)"/g,
       ),
     ].map(([, id, label, blurb, accent]) => ({ id, label, blurb, accent }));
 
     expect(cards.map((card) => card.id)).toContain("claude");
     for (const harness of HARNESSES) {
-      // Presets and custom harnesses reach the UI at runtime through
-      // `harness/list`; the seeded cards are the ones the mock may hard-code,
-      // and every word of them has to be the host's.
+      // Compiled-in cards (shipped + presets) may be hard-coded in the mock;
+      // custom harnesses still arrive only through `harness/list`. Every
+      // word of a mock card has to be the host's.
       expect(cards).toContainEqual({
         id: harness.id,
         label: harness.label,
