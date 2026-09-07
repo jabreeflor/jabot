@@ -26,7 +26,7 @@
 use std::collections::BTreeMap;
 
 use super::super::protocol::methods::{
-    HarnessCardView, HarnessStatus, HarnessTier, RuntimeSpec, SessionScope,
+    HarnessCapabilitiesView, HarnessCardView, HarnessStatus, HarnessTier, RuntimeSpec, SessionScope,
 };
 
 /// One way to start a harness, tried in order.
@@ -91,6 +91,7 @@ pub enum Readiness {
 /// Extra classification a binary-on-PATH answer cannot give.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InspectKind {
+    Copilot,
     Gemini,
 }
 
@@ -118,6 +119,24 @@ pub struct HarnessDescriptor {
     pub capability_notes: Option<String>,
     pub readiness: Readiness,
     pub session_scope: SessionScope,
+    /// What we are willing to advertise after reading upstream docs — not a
+    /// guess from the binary being present. Absent means unverified.
+    pub capabilities: Option<HarnessCapabilities>,
+}
+
+/// Capabilities a catalog card is willing to claim.
+///
+/// Every flag is an opt-in. Advertising `resume` for an adapter whose
+/// sessions die with the process is how a user gets told a thread was
+/// restored when `session/resume` cannot work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HarnessCapabilities {
+    pub streaming: bool,
+    pub tool_events: bool,
+    pub permissions: bool,
+    pub cancel: bool,
+    pub resume: bool,
+    pub notes: Option<String>,
 }
 
 impl HarnessDescriptor {
@@ -173,6 +192,7 @@ impl HarnessDescriptor {
             capability_notes: self.capability_notes.clone(),
             session_scope: self.session_scope,
             reserved: is_reserved(&self.id),
+            capabilities: self.capabilities.clone().map(Into::into),
         }
     }
 
@@ -290,6 +310,24 @@ const SHIPPED: &[Compiled] = &[
         // Pi resolves credentials per provider at run time and has no
         // login-status command to ask; claiming otherwise would be a guess.
         readiness: CompiledReadiness::Binary,
+        session_scope: SessionScope::Thread,
+    },
+    Compiled {
+        id: "copilot",
+        label: "GitHub Copilot",
+        blurb: "GitHub's coding agent, over ACP",
+        accent: "var(--h-copilot)",
+        tier: HarnessTier::Shipped,
+        // The vendor CLI *is* the adapter. `--acp` defaults to stdio; the
+        // explicit flag is what older builds lack, and what the Doctor looks
+        // for before it will call this ready.
+        launches: &[("copilot", &["--acp"], false)],
+        cli: Some("copilot"),
+        env: &[],
+        install_hint: "Install GitHub Copilot CLI (`npm i -g @github/copilot`), then run `copilot login`. Requires a Copilot subscription with CLI enabled in your organization policy.",
+        install_url: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
+        capability_notes: None,
+        readiness: CompiledReadiness::Inspect(InspectKind::Copilot),
         session_scope: SessionScope::Thread,
     },
     Compiled {
@@ -431,6 +469,39 @@ fn build(compiled: &Compiled) -> HarnessDescriptor {
             CompiledReadiness::Inspect(kind) => Readiness::Inspect { kind: kind.clone() },
         },
         session_scope: compiled.session_scope,
+        capabilities: capabilities_for(compiled.id),
+    }
+}
+
+impl From<HarnessCapabilities> for HarnessCapabilitiesView {
+    fn from(caps: HarnessCapabilities) -> Self {
+        Self {
+            streaming: caps.streaming,
+            tool_events: caps.tool_events,
+            permissions: caps.permissions,
+            cancel: caps.cancel,
+            resume: caps.resume,
+            notes: caps.notes,
+        }
+    }
+}
+
+fn capabilities_for(id: &str) -> Option<HarnessCapabilities> {
+    match id {
+        "copilot" => Some(HarnessCapabilities {
+            streaming: true,
+            tool_events: true,
+            permissions: true,
+            cancel: true,
+            // Sessions are process-local. `loadSession` is advertised but a
+            // new `copilot --acp` cannot see the previous process's sessions
+            // (github/copilot-cli#1767). Advertising resume would lie.
+            resume: false,
+            notes: Some(
+                "Streaming, tool events, permission prompts, and cancel work over `copilot --acp`. Resume after the Copilot process exits is not supported — sessions are process-local, and `session/close` is unimplemented upstream. JaBot starts a new ACP session instead of claiming a restore.".into(),
+            ),
+        }),
+        _ => None,
     }
 }
 
@@ -458,7 +529,7 @@ mod tests {
     #[test]
     fn shipped_ids_are_the_reserved_cards() {
         let ids: Vec<_> = SHIPPED.iter().map(|c| c.id).collect();
-        assert_eq!(ids, ["claude", "codex", "pi", "gemini"]);
+        assert_eq!(ids, ["claude", "codex", "pi", "copilot", "gemini"]);
         for id in ids {
             assert!(is_reserved(id), "{id} must be reserved");
         }
@@ -656,5 +727,33 @@ mod tests {
             .find(|d| d.id == "openclaw")
             .unwrap();
         assert!(matches!(openclaw.readiness, Readiness::Daemon { .. }));
+    }
+
+    /// Copilot's CLI is the ACP server. Advertising a second adapter package
+    /// would send people to install something that does not exist.
+    #[test]
+    fn copilot_is_a_shipped_card_that_launches_acp_and_does_not_claim_resume() {
+        let copilot = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "copilot")
+            .unwrap();
+        assert!(is_reserved("copilot"));
+        assert_eq!(copilot.primary().command, "copilot");
+        assert_eq!(copilot.primary().args, ["--acp"]);
+        assert!(matches!(
+            copilot.readiness,
+            Readiness::Inspect {
+                kind: InspectKind::Copilot
+            }
+        ));
+        let caps = copilot
+            .capabilities
+            .as_ref()
+            .expect("declared after reading ACP docs");
+        assert!(caps.streaming && caps.tool_events && caps.permissions && caps.cancel);
+        assert!(!caps.resume, "sessions die with the process");
+        assert!(caps.notes.as_deref().unwrap().contains("process-local"));
+        let card = copilot.card();
+        assert!(!card.capabilities.as_ref().unwrap().resume);
     }
 }

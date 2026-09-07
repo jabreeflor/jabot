@@ -93,6 +93,12 @@ export const HARNESSES: readonly HarnessCard[] = [
     accent: "var(--h-pi)",
   },
   {
+    id: "copilot",
+    label: "GitHub Copilot",
+    blurb: "GitHub's coding agent, over ACP",
+    accent: "var(--h-copilot)",
+  },
+  {
     id: "gemini",
     label: "Gemini CLI",
     blurb: "Google's Gemini CLI over its documented ACP mode",

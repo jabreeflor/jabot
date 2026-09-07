@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add type-aware lint checks for unhandled and misused promises</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .rules { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .rules div { padding:14px; background:#0f141a; border-radius:9px; }
+    .rules strong { display:block; margin-bottom:6px; }
+    .fail { color:var(--bad); }
+    .pass { color:var(--ok); }
+    .note { color:var(--warn); }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .path { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+    .path span { padding:8px 10px; background:#0f141a; border:1px solid var(--line); border-radius:8px; font-size:13px; font-weight:650; }
+    @media (max-width:700px) { .flow,.rules { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #242 walkthrough</div>
+    <h1>Add type-aware lint checks for unhandled and misused promises</h1>
+    <p>One shared ESLint config now sits in the same verification gate as <code>tsc</code>. Official React Hooks rules are the foundation (#224 had no PR). Type-aware <code>no-floating-promises</code> and <code>no-misused-promises</code> are the #225 extension. There is no second linter.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>Strict TypeScript allowed discarded promises and async functions where a void callback was expected.</li>
+            <li>A rejected <code>onClick={async () =&gt; …}</code> never failed a gate.</li>
+            <li>No frontend lint command existed for later issues to extend.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li><code>eslint.config.js</code> is the one config. Hooks come from the official plugin; promise rules are type-aware via <code>projectService</code>.</li>
+            <li><code>npm run lint</code> is the same command <code>verify.sh</code> runs, including <code>--fast</code>.</li>
+            <li>Probes in <code>scripts/tests/lint-rules.mjs</code> prove the rules fire, then disappear — they never live in the tree.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="path">
+        <span>src/</span>
+        <span>tests/</span>
+        <span>scripts/dev/</span>
+        <span>vite.config.ts</span>
+        <span>vitest.config.ts</span>
+      </div>
+      <div class="rules">
+        <div>
+          <strong class="fail">Fails the run</strong>
+          <code>Promise.resolve()</code> with no await / return / <code>void</code>. An <code>async</code> function assigned to <code>() =&gt; void</code> or a JSX <code>onClick</code>. A conditional hook. A missing effect dependency.
+        </div>
+        <div>
+          <strong class="pass">Passes</strong>
+          <code>await</code>ed work, a returned promise, or <code>void work.catch(…)</code>. Event handlers that return <code>void</code> and start work whose callee already reports the failure.
+        </div>
+      </div>
+      <p style="margin-top:16px">JSX event-handler attributes stay checked. There is no <code>checksVoidReturn.attributes: false</code> exemption — that would hide the exact rejected-promise bug this issue asked to catch. <code>void</code> marks deliberate background work; the error strategy is either the callee or a <code>.catch</code> on the same expression.</p>
+    </section>
+
+    <section id="review">
+      <h2>What to look at</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>eslint.config.js</code></td><td>The shared config. Later issues (#226 no-any, #227 format) extend this file.</td></tr>
+          <tr><td><code>scripts/tests/lint-rules.mjs</code></td><td>Discarded promise, misused async callback, async JSX handler, conditional hook, missing dep must fail; handled flow must pass.</td></tr>
+          <tr><td><code>scripts/verify.sh</code> + <code>package.json</code></td><td><code>npm run lint</code> is a first-class gate after typecheck, including <code>--fast</code>.</td></tr>
+          <tr><td><code>src/components/GithubSignInModal.tsx</code> / <code>AddFolderModal.tsx</code></td><td><code>onClick</code> no longer takes an async function. The dialog still owns the refusal.</td></tr>
+          <tr><td><code>src/views/schedules.ts</code></td><td>Toggle and run-now no longer throw from a <code>void</code> call; refusals land on <code>error</code>.</td></tr>
+        </tbody>
+      </table>
+      <p class="note" style="margin-top:16px">One narrow Hooks exception: <code>installing</code> is omitted from the <code>AdapterSetup</code> effect deps. Listing it would re-enter the effect and wipe a failed install’s error. The disable sits on that line and is named in CONTRIBUTING.md.</p>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>npm run lint</code> — ESLint over the tree, then the probe script. Offline after <code>npm install</code>.</li>
+        <li>Break a probe: comment out <code>no-floating-promises</code> in <code>eslint.config.js</code> and watch <code>scripts/tests/lint-rules.mjs</code> fail.</li>
+        <li>Put <code>onClick={async () =&gt; { await Promise.resolve(); }}</code> on a first-party button and watch <code>no-misused-promises</code> fail. Do not add <code>checksVoidReturn.attributes: false</code> to silence it.</li>
+        <li><code>./scripts/verify.sh --fast</code> includes the same <code>npm run lint</code> command.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

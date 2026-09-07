@@ -176,6 +176,7 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
             readiness: Readiness::Binary,
             capability_notes: None,
             session_scope: SessionScope::Thread,
+            capabilities: None,
             id,
             label,
         },
