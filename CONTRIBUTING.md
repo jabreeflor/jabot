@@ -65,6 +65,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
+| `npm run test:browser:smoke` | Playwright Chromium against a real host — not in the default gate |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
@@ -132,6 +133,7 @@ one run tells you everything that is wrong.
 | `build jabot-hostd` | the NDJSON host the e2e suite drives still links | not run under `--fast` |
 | `e2e (ts to rust host)` | 123 cases over 17 suites: the production TypeScript client against a live `jabot-hostd` over real NDJSON | `npx vitest run --project e2e -t "<name>"`. Needs the binary, so build it first or run the full `verify.sh`. Not run under `--fast`. |
 | `renderer build` | `vite build` produces a bundle | usually an import that typechecks but does not resolve |
+| `browser smoke (chromium)` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd`. CI's `browser` job is the required PR check | `npx playwright install chromium`, then `npm run test:browser:smoke`. Needs the host binaries (`npm run host:build`). |
 | `mac notify cross-check` | opt-in, `--check-mac` only: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
@@ -154,6 +156,27 @@ npx vitest run --project unit src/__tests__/a11y.test.tsx
 `npm test` and `./scripts/verify.sh` already include them — there is no extra
 CI job. To add a view, render it the way the existing unit test does and call
 `expectNoSeriousA11yViolations(container)` from `tests/support/a11y.ts`.
+
+## Browser tests (Playwright + real host)
+
+The renderer against a live `jabot-hostd`, not jsdom and not the protocol-only
+Vitest `e2e` project. Each test owns a Vite process, a temp data directory,
+and a dedicated port — it does not call `live.sh smoke` or `reset`. Details:
+[`tests/browser/README.md`](tests/browser/README.md).
+
+```bash
+npm run host:build
+npx playwright install chromium
+npm run test:browser:smoke          # Chromium @smoke — the documented local command
+npm run test:browser                # Chromium + WebKit
+./scripts/verify.sh --check-browser # same smoke, after the usual gates
+```
+
+The default `./scripts/verify.sh` does **not** run these: the gate stays
+offline and display-less. CI's `browser` job is the required PR check and
+uploads the Playwright report on failure. WebKit is a local compatibility
+project, not proof of native WKWebView/Tauri. Node is whatever
+`.github/workflows/ci.yml` uses (coordinate with #215 if that major moves).
 
 ## Committing: `scripts/checkpoint.sh`
 
@@ -265,8 +288,8 @@ filing or "fixing" a gap.
 - TypeScript: strict, no `any`.
 - Anything added to `verify.sh` must run offline, need no display, no macOS and
   no GitHub token, and be fast enough that people still run it. If a check
-  needs any of those, it goes behind a flag — `--check-toolchain` and
-  `--check-mac` are the precedents.
+  needs any of those, it goes behind a flag — `--check-toolchain`,
+  `--check-mac`, and `--check-browser` are the precedents.
 - `src-tauri/src/notify/mac.rs` is `cfg(target_os = "macos")`, so the default
   gate compiles straight past it and CI's macOS `bundle` job does not run on
   pull requests. **If you touch `src-tauri/src/notify/`, run

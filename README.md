@@ -58,6 +58,14 @@ that gate can read. **[CONTRIBUTING.md](CONTRIBUTING.md)** has the
 whole local workflow: what every gate proves, what to do when each one fails,
 and the escape hatches.
 
+The renderer-against-real-host suite is Playwright, not the default gate:
+
+```bash
+npm run test:browser:smoke    # Chromium, one smoke journey, no credentials
+```
+
+See [`tests/browser/README.md`](tests/browser/README.md).
+
 ## Prototypes
 
 Open `prototypes/jabot-classic.html` in a browser — the main MVP (chat, Inbox, Pull Requests, thread sessions, New Chat with harness picker, Crew management).

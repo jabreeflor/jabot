@@ -6,6 +6,7 @@
 #   ./scripts/verify.sh --fast             # skip the e2e project (no Rust binary build)
 #   ./scripts/verify.sh --check-toolchain  # also ask rustup if stable moved (NETWORK)
 #   ./scripts/verify.sh --check-mac        # also lint notify/mac.rs for macOS (NETWORK)
+#   ./scripts/verify.sh --check-browser    # also Playwright Chromium smoke (needs browsers)
 #
 # This is the only gate. CI's `verify` job is `npm ci` + this script, and the
 # macOS `bundle` job does not run on pull requests (.github/workflows/ci.yml
@@ -31,6 +32,9 @@
 #   *. mac notify     — --check-mac only: notify/mac.rs, which is cfg'd out on
 #                      Linux and so is linted by nothing else, cross-checked
 #                      against x86_64-apple-darwin (NETWORK)
+#   *. browser smoke  — --check-browser only: Playwright Chromium against a
+#                      real host. Not in the default gate (browsers are a
+#                      network install). CI's `browser` job is the PR check.
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -42,12 +46,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 FAST=0
 CHECK_TOOLCHAIN=0
 CHECK_MAC=0
+CHECK_BROWSER=0
 for arg in "$@"; do
   case "$arg" in
     --fast)            FAST=1 ;;
     --check-toolchain) CHECK_TOOLCHAIN=1 ;;
     --check-mac)       CHECK_MAC=1 ;;
-    -h|--help)         sed -n '3,8p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --check-browser)   CHECK_BROWSER=1 ;;
+    -h|--help)         sed -n '3,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) printf 'unknown flag: %s (try --help)\n' "$arg" >&2; exit 2 ;;
   esac
 done
@@ -691,6 +697,17 @@ if [[ $FAST -eq 0 ]]; then
 fi
 
 run "renderer build" npx vite build
+
+# Playwright Chromium against a real host. Opt-in: the default gate stays
+# offline and needs no browser download. CI's `browser` job is the required
+# PR check; this flag is the local equivalent after `npx playwright install
+# chromium`.
+if [[ $CHECK_BROWSER -eq 1 ]]; then
+  if [[ ! -x src-tauri/target/debug/jabot-hostd || ! -x src-tauri/target/debug/fake-acp-agent ]]; then
+    run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bins
+  fi
+  run "browser smoke (chromium)" npm run test:browser:smoke
+fi
 
 # ---------------------------------------------------------------------------
 # Did the thing being checked hold still while it was checked?

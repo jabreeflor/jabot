@@ -135,6 +135,24 @@ setup_host() {
 }
 
 setup_browser() {
+  # Prefer the @playwright/test CLI when present so shot.mjs (playwright-core)
+  # and `npm run test:browser` share one cache — the two packages are pinned
+  # to the same version in package.json.
+  if [[ -x node_modules/.bin/playwright ]]; then
+    local exe
+    if exe=$(node -e '
+      const { chromium } = require("playwright-core");
+      const p = chromium.executablePath();
+      require("fs").accessSync(p);
+      console.log(p);' 2>/dev/null); then
+      ok "browser: $exe"
+      return 0
+    fi
+    printf '  no Chromium for Playwright; downloading (network)\n'
+    npx --no-install playwright install chromium >/dev/null 2>&1 || die "playwright install chromium failed"
+    ok "browser installed"
+    return 0
+  fi
   local exe
   if exe=$(node -e '
     const { chromium } = require("playwright-core");

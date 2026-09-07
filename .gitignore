@@ -28,3 +28,9 @@ src-tauri/target
 
 # The live loop's dev host: SQLite, logs, pid (scripts/live.sh)
 .jabot-dev
+
+# Playwright browser suite (tests/browser)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
