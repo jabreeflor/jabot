@@ -13,7 +13,12 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { ConversationSummary } from "../components/ConversationSummary";
 import { ThreadView } from "../views/ThreadView";
-import type { HostClient, ThreadSummaryResult } from "../host";
+import {
+  JSONRPC_VERSION,
+  type HostClient,
+  type JsonRpcNotification,
+  type ThreadSummaryResult,
+} from "../host";
 import type { HarnessCard, HostTarget, ThreadSummary } from "../components/types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -458,9 +463,9 @@ describe("ConversationSummary", () => {
   });
 
   it("reloads when the session updates and closes on an outside click", async () => {
-    let notify: ((note: { method: string }) => void) | undefined;
+    let notify: ((note: JsonRpcNotification) => void) | undefined;
     const host = client();
-    host.onNotification = (listener: (note: { method: string }) => void) => {
+    host.onNotification = (listener) => {
       notify = listener;
       return () => {
         notify = undefined;
@@ -473,7 +478,7 @@ describe("ConversationSummary", () => {
     expect(await screen.findByRole("dialog", { name: "Conversation summary" })).toBeInTheDocument();
     const before = vi.mocked(host.threadSummary).mock.calls.length;
     await act(async () => {
-      notify?.({ method: "session/update" });
+      notify?.({ jsonrpc: JSONRPC_VERSION, method: "session/update" });
     });
     await waitFor(() =>
       expect(vi.mocked(host.threadSummary).mock.calls.length).toBeGreaterThan(before),
