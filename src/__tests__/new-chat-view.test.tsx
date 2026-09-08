@@ -126,7 +126,9 @@ describe("NewChatView", () => {
     await userEvent.click(
       screen.getByRole("option", { name: "anthropic/claude-sonnet-4-5" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
     expect(props.onStart).toHaveBeenCalledWith(
       expect.objectContaining({
         harnessId: "opencode",

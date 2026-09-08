@@ -54,7 +54,9 @@ describe("the harness mark", () => {
   });
 
   it("draws OpenCode, Copilot, Gemini, and Cursor as their own marks, not the custom terminal", () => {
-    const { container: opencode } = render(<HarnessMark harnessId="opencode" />);
+    const { container: opencode } = render(
+      <HarnessMark harnessId="opencode" />,
+    );
     const { container: copilot } = render(<HarnessMark harnessId="copilot" />);
     const { container: gemini } = render(<HarnessMark harnessId="gemini" />);
     const { container: cursor } = render(<HarnessMark harnessId="cursor" />);

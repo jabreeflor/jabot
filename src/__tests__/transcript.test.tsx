@@ -405,40 +405,47 @@ describe("copy response", () => {
   it("announces a brief success after a write", async () => {
     stubClipboard(vi.fn().mockResolvedValue(undefined));
 
-    render(<Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />);
-    await userEvent.click(screen.getByRole("button", { name: "Copy response" }));
+    render(
+      <Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Copy response" }),
+    );
 
     expect(screen.getByRole("status")).toHaveTextContent("Copied");
-    expect(screen.getByRole("button", { name: "Copy response" })).toHaveAttribute(
-      "data-state",
-      "copied",
-    );
-    expect(screen.getByRole("button", { name: "Copy response" })).toHaveAttribute(
-      "data-tooltip",
-      "Copied",
-    );
+    expect(
+      screen.getByRole("button", { name: "Copy response" }),
+    ).toHaveAttribute("data-state", "copied");
+    expect(
+      screen.getByRole("button", { name: "Copy response" }),
+    ).toHaveAttribute("data-tooltip", "Copied");
   });
 
   it("says so when the clipboard refuses", async () => {
     stubClipboard(vi.fn().mockRejectedValue(new Error("denied")));
 
-    render(<Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />);
-    await userEvent.click(screen.getByRole("button", { name: "Copy response" }));
+    render(
+      <Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Copy response" }),
+    );
 
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Couldn't copy to the clipboard",
     );
-    expect(screen.getByRole("button", { name: "Copy response" })).toHaveAttribute(
-      "data-state",
-      "failed",
-    );
+    expect(
+      screen.getByRole("button", { name: "Copy response" }),
+    ).toHaveAttribute("data-state", "failed");
   });
 
   it("is a real button, so Enter copies", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     stubClipboard(writeText);
 
-    render(<Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />);
+    render(
+      <Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />,
+    );
     const button = screen.getByRole("button", { name: "Copy response" });
     button.focus();
     expect(button).toHaveFocus();
@@ -449,7 +456,9 @@ describe("copy response", () => {
 
   it("does not draw a copy action on an empty streaming bubble", () => {
     render(
-      <Transcript items={[{ kind: "agent", id: "a1", text: "", streaming: true }]} />,
+      <Transcript
+        items={[{ kind: "agent", id: "a1", text: "", streaming: true }]}
+      />,
     );
     expect(screen.queryByRole("button", { name: "Copy response" })).toBeNull();
   });

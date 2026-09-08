@@ -235,14 +235,16 @@ export function NewChatView({
             {selectedHarness.installHint ?? "Not installed"}
           </p>
         )}
-        {selectedHarness?.supportsModels && selectedHarness.available !== false && (
-          <p className="workspace-hint" role="status">
-            Model follows the project `opencode.json` unless you pick one here.
-            {selectedHarness.accountIsolation
-              ? ` ${selectedHarness.accountIsolation}`
-              : ""}
-          </p>
-        )}
+        {selectedHarness?.supportsModels &&
+          selectedHarness.available !== false && (
+            <p className="workspace-hint" role="status">
+              Model follows the project `opencode.json` unless you pick one
+              here.
+              {selectedHarness.accountIsolation
+                ? ` ${selectedHarness.accountIsolation}`
+                : ""}
+            </p>
+          )}
 
         {(workspaceError || error) && (
           <p className="modal-error" role="alert">
