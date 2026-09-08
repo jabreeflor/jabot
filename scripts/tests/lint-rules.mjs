@@ -4,7 +4,8 @@
 // `npm run lint` already runs eslint over the tree. That only shows the
 // tree is clean. This feeds representative probes on stdin (so they
 // never land in the tree) and expects discarded promises, a misused
-// async callback, and a JSX async handler to fail, and a handled flow
+// async callback, a JSX async handler, a conditional hook, a missing
+// effect dependency, and both `any` forms to fail, and a handled flow
 // to pass. A rule rename or a `checksVoidReturn.attributes: false`
 // exemption makes this fail.
 import { spawnSync } from "node:child_process";
@@ -109,6 +110,22 @@ export function Broken({ n }: { n: number }): null {
 });
 
 check({
+  name: "explicit-any-bad",
+  source: `export const probe: any = 1;
+`,
+  expect: "fail",
+  rule: "no-explicit-any",
+});
+
+check({
+  name: "as-any-bad",
+  source: `export const probe = 1 as any;
+`,
+  expect: "fail",
+  rule: "no-explicit-any",
+});
+
+check({
   name: "handled-good",
   source: `export async function awaited(): Promise<void> {
   await Promise.resolve();
@@ -125,5 +142,5 @@ export function background(): void {
 });
 
 console.log(
-  "  lint-rules: discarded promises and misused async callbacks fail; handled flows pass",
+  "  lint-rules: discarded promises, misused async callbacks, hook mistakes, and explicit any fail; handled flows pass",
 );
