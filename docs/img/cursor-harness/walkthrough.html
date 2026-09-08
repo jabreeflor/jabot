@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add Cursor Agent CLI as a first-class ACP harness</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#7c6af7; --ok:#3fb950; --bad:#f85149; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 36px 1fr 36px 1fr; gap:10px; align-items:stretch; }
+    .state { padding:16px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 10px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:26px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .no { color:var(--bad); font-weight:650; }
+    .yes { color:var(--ok); font-weight:650; }
+    .maybe { color:var(--warn); font-weight:650; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    @media (max-width:800px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); height:28px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR walkthrough · #222</div>
+    <h1>Cursor Agent talks ACP. JaBot never passes --force.</h1>
+    <p>Cursor is a reserved catalog preset. The host launches <code>agent acp</code> (or the older <code>cursor-agent acp</code>) and maps the session into the same transcript, permission broker, and Doctor the other engines already use.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Catalog</h3>
+          <ul>
+            <li>Id <code>cursor</code>, tier 2, thread-scoped.</li>
+            <li>Launch args are only <code>acp</code>.</li>
+            <li>Onboarding, Settings, New Chat, and the bot editor read the same list.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>Doctor</h3>
+          <ul>
+            <li>No <code>agent</code> / <code>cursor-agent</code> → CLI missing.</li>
+            <li>Old <code>--version</code> → outdated.</li>
+            <li><code>status</code> fails and no API key → logged out.</li>
+            <li><code>models</code> fails → invalid config.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>ACP session</h3>
+          <ul>
+            <li><code>authenticate</code> when Cursor advertises <code>cursor_login</code>.</li>
+            <li>Permissions stay in JaBot.</li>
+            <li><code>cursor/ask_question</code> and <code>create_plan</code> are declined so the turn cannot hang.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="capabilities">
+      <h2>What is supported — and what is declared missing</h2>
+      <table>
+        <tr><th>Capability</th><th>Status</th></tr>
+        <tr><td>Streaming, tool events, permission asks, cancel</td><td class="yes">ACP, same as Claude/Codex</td></tr>
+        <tr><td>Resume / continuation</td><td class="maybe">Only if <code>initialize</code> advertises load or resume</td></tr>
+        <tr><td><code>--force</code> / <code>--yolo</code> / <code>--approve-mcps</code> / <code>--trust</code></td><td class="no">Never passed</td></tr>
+        <tr><td>Per-bot Cursor account</td><td class="no">One machine login or <code>CURSOR_API_KEY</code></td></tr>
+        <tr><td>In-app npm install</td><td class="no">The CLI <em>is</em> the adapter</td></tr>
+      </table>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <table>
+        <tr><th>File</th><th>Why</th></tr>
+        <tr><td><code>src-tauri/src/host/harness/catalog.rs</code></td><td>The <code>cursor</code> preset and launch table.</td></tr>
+        <tr><td><code>src-tauri/src/host/harness/doctor.rs</code></td><td>Version / login / models probes and the env-key seam.</td></tr>
+        <tr><td><code>src-tauri/src/host/acp/connection.rs</code></td><td>Authenticate + decline blocking Cursor extensions.</td></tr>
+        <tr><td><code>src-tauri/tests/cursor_adapter.rs</code></td><td>Success, auth fail, cancel, empty reply, ask-question.</td></tr>
+        <tr><td><code>docs/setup/cursor-agent.md</code></td><td>Install, login, isolation limit.</td></tr>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>./scripts/verify.sh</code> — already green on this branch.</li>
+        <li><code>cargo test --features dev-bins --test cursor_adapter</code></li>
+        <li>Settings → Harnesses → Cursor Agent shows the isolation note.</li>
+        <li>New Chat / onboarding offer the card. A real prompt needs <code>agent login</code> or <code>CURSOR_API_KEY</code>.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
