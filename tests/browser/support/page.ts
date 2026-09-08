@@ -91,7 +91,9 @@ export async function openApp(
       page.getByRole("heading", { name: /What should the crew call you/ }),
     ).toBeVisible();
   } else {
-    await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Settings", exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("Connecting to host…")).toHaveCount(0);
     await expect(page.locator(".host.bad")).toHaveCount(0);
   }

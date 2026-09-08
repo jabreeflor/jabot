@@ -232,7 +232,7 @@ export async function startFolderSession(
   await page.getByRole("button", { name: "New Chat" }).click();
   await expect(page.getByRole("region", { name: "New Chat" })).toBeVisible();
   await chooseSelectOption(page, /Workspace:/, folderName);
-  await chooseSelectOption(page, /Harness:/, /Fake ACP/);
+  await chooseSelectOption(page, /Harness:/, /^Fake ACP Custom/);
   await page.getByLabel("Plan, build, or describe a change").fill(task);
   await page.getByRole("button", { name: "Send" }).click();
 }
