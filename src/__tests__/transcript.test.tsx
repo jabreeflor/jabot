@@ -5,7 +5,7 @@
  */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Transcript } from "../components/Transcript";
 import type { ToolStatus, TranscriptItem } from "../components/types";
@@ -325,5 +325,125 @@ describe("a transcript long enough to window", () => {
     expect(container.querySelector(".toolblock")).toBe(toolBefore);
     expect(container.querySelector(".msg.bot")).toBe(neighbour);
     expect(container.textContent).toContain("typing");
+  });
+});
+
+/**
+ * Copy response (#267).
+ *
+ * The control sits under the assistant bubble and writes *that* item's
+ * source text — markdown, fences, line breaks — not the rendered DOM and
+ * not the stamp, the user bubble, or the action chrome. Confirmation and
+ * refusal are announced from the same control.
+ */
+describe("copy response", () => {
+  const markdown = "Here:\n```ts\nconst x = 1;\n```\nDone.";
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function stubClipboard(writeText: ReturnType<typeof vi.fn>) {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+  }
+
+  it("puts a copy action on each assistant reply, and only those", () => {
+    render(
+      <Transcript
+        items={[
+          { kind: "stamp", id: "s1", text: "Today" },
+          { kind: "user", id: "u1", text: "Fold it." },
+          { kind: "agent", id: "a1", text: "First." },
+          { kind: "agent", id: "a2", text: "Second." },
+          { kind: "sys", id: "y1", text: "Turn ended." },
+        ]}
+      />,
+    );
+
+    const copies = screen.getAllByRole("button", { name: "Copy response" });
+    expect(copies).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /Fold/ })).toBeNull();
+  });
+
+  it("copies this reply's markdown, not the rendered bubble or its neighbours", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+
+    render(
+      <Transcript
+        items={[
+          { kind: "stamp", id: "s1", text: "Today" },
+          { kind: "user", id: "u1", text: "Please fold it." },
+          { kind: "agent", id: "a1", text: markdown },
+          { kind: "agent", id: "a2", text: "A later reply." },
+        ]}
+      />,
+    );
+
+    const [first] = screen.getAllByRole("button", { name: "Copy response" });
+    await userEvent.click(first);
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(markdown);
+    expect(writeText.mock.calls[0][0]).toContain("```ts");
+    expect(writeText.mock.calls[0][0]).not.toContain("Today");
+    expect(writeText.mock.calls[0][0]).not.toContain("Please fold");
+    expect(writeText.mock.calls[0][0]).not.toContain("A later reply");
+    expect(writeText.mock.calls[0][0]).not.toContain("Copy response");
+  });
+
+  it("announces a brief success after a write", async () => {
+    stubClipboard(vi.fn().mockResolvedValue(undefined));
+
+    render(<Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Copy response" }));
+
+    expect(screen.getByRole("status")).toHaveTextContent("Copied");
+    expect(screen.getByRole("button", { name: "Copy response" })).toHaveAttribute(
+      "data-state",
+      "copied",
+    );
+    expect(screen.getByRole("button", { name: "Copy response" })).toHaveAttribute(
+      "data-tooltip",
+      "Copied",
+    );
+  });
+
+  it("says so when the clipboard refuses", async () => {
+    stubClipboard(vi.fn().mockRejectedValue(new Error("denied")));
+
+    render(<Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />);
+    await userEvent.click(screen.getByRole("button", { name: "Copy response" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Couldn't copy to the clipboard",
+    );
+    expect(screen.getByRole("button", { name: "Copy response" })).toHaveAttribute(
+      "data-state",
+      "failed",
+    );
+  });
+
+  it("is a real button, so Enter copies", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    stubClipboard(writeText);
+
+    render(<Transcript items={[{ kind: "agent", id: "a1", text: markdown }]} />);
+    const button = screen.getByRole("button", { name: "Copy response" });
+    button.focus();
+    expect(button).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+
+    expect(writeText).toHaveBeenCalledWith(markdown);
+  });
+
+  it("does not draw a copy action on an empty streaming bubble", () => {
+    render(
+      <Transcript items={[{ kind: "agent", id: "a1", text: "", streaming: true }]} />,
+    );
+    expect(screen.queryByRole("button", { name: "Copy response" })).toBeNull();
   });
 });

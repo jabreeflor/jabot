@@ -157,8 +157,87 @@
   display: flex;
 }
 
+.msg.bot {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
 .msg.me {
   justify-content: flex-end;
+}
+
+/* The row under an assistant reply. Copy lives here today; reactions (#265)
+   and branch (#266) join the same group so the chrome stays one strip. */
+.msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: var(--sp-1);
+}
+
+.msg-action {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.msg-action:hover,
+.msg-action:focus-visible {
+  color: var(--ink);
+  background: var(--raise);
+}
+
+.msg-action svg {
+  width: 15px;
+  height: 15px;
+}
+
+.msg-action::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--raise-hover);
+  color: var(--ink);
+  font: var(--fs-meta) / 1 var(--font-ui);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.msg-action:hover::after,
+.msg-action:focus-visible::after,
+.msg-action[data-state="copied"]::after,
+.msg-action[data-state="failed"]::after {
+  opacity: 1;
+}
+
+.msg-action[data-state="copied"] {
+  color: var(--ok);
+}
+
+.msg-action[data-state="failed"] {
+  color: var(--danger);
+}
+
+.msg-action-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
 .bubble {
