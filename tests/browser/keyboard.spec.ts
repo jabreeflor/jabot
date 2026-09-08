@@ -19,7 +19,9 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
       await expect(name).toBeFocused();
       await expect(name).toHaveAccessibleName(/YOUR NAME/i);
       await opened.page.keyboard.press("Escape");
-      await expect(opened.page.getByRole("button", { name: "Settings" })).toBeVisible();
+      await expect(
+        opened.page.getByRole("button", { name: "Settings" }),
+      ).toBeVisible();
     } finally {
       await opened.close();
     }

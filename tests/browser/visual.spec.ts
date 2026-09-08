@@ -5,11 +5,7 @@
  * updates them — see docs/browser-tests.md. Masks cover only relative
  * clocks; content and layout stay in the picture.
  */
-import {
-  expect,
-  type Locator,
-  type Page,
-} from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 import { test } from "./fixtures";
 import {
@@ -75,7 +71,9 @@ test.describe("stable states @visual", () => {
           const page = opened.page;
           await page.getByRole("button", { name: /^Chief/ }).click();
           await expect(page.getByText(FAKE_ACP_REPLY)).toBeVisible();
-          await expect(page.getByText("hello from the visual suite")).toBeVisible();
+          await expect(
+            page.getByText("hello from the visual suite"),
+          ).toBeVisible();
           await shot(page, `sidebar-stream-${theme}-${windowSize}`);
         } finally {
           await opened.close();
@@ -87,10 +85,15 @@ test.describe("stable states @visual", () => {
   test("inbox permission card @chromium-only", async ({ app, browser }) => {
     await seedPermissionAsk(app.url);
     for (const theme of THEMES) {
-      const opened = await openApp(browser, app, { theme, windowSize: "desktop" });
+      const opened = await openApp(browser, app, {
+        theme,
+        windowSize: "desktop",
+      });
       try {
         await opened.page.getByRole("button", { name: /^Inbox/ }).click();
-        await expect(opened.page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+        await expect(
+          opened.page.getByRole("heading", { name: "Inbox" }),
+        ).toBeVisible();
         await expect(opened.page.getByText("PERMISSION")).toBeVisible();
         const allow = opened.page.getByRole("button", { name: "Allow" });
         if (!(await allow.isVisible())) {
@@ -107,7 +110,10 @@ test.describe("stable states @visual", () => {
   test("new chat @chromium-only", async ({ app, browser }) => {
     await putChiefOnFakeAcp(app.url);
     for (const theme of THEMES) {
-      const opened = await openApp(browser, app, { theme, windowSize: "desktop" });
+      const opened = await openApp(browser, app, {
+        theme,
+        windowSize: "desktop",
+      });
       try {
         await opened.page.getByRole("button", { name: "New Chat" }).click();
         await expect(
@@ -144,15 +150,22 @@ test.describe("stable states @visual", () => {
   test("schedules @chromium-only", async ({ app, browser }) => {
     await seedSchedule(app.url);
     for (const theme of THEMES) {
-      const opened = await openApp(browser, app, { theme, windowSize: "desktop" });
+      const opened = await openApp(browser, app, {
+        theme,
+        windowSize: "desktop",
+      });
       try {
         await opened.page.getByRole("button", { name: "Schedules" }).click();
         await expect(
           opened.page.getByRole("heading", { name: "Schedules" }),
         ).toBeVisible();
         await expect(opened.page.getByText("Morning triage")).toBeVisible();
-        await opened.page.getByRole("button", { name: /Morning triage/ }).click();
-        await expect(opened.page.getByRole("button", { name: "Run now" })).toBeVisible();
+        await opened.page
+          .getByRole("button", { name: /Morning triage/ })
+          .click();
+        await expect(
+          opened.page.getByRole("button", { name: "Run now" }),
+        ).toBeVisible();
         await shot(opened.page, `schedules-${theme}-desktop`);
       } finally {
         await opened.close();
@@ -162,9 +175,14 @@ test.describe("stable states @visual", () => {
 
   test("pr workspace @chromium-only", async ({ app, browser }) => {
     for (const theme of THEMES) {
-      const opened = await openApp(browser, app, { theme, windowSize: "desktop" });
+      const opened = await openApp(browser, app, {
+        theme,
+        windowSize: "desktop",
+      });
       try {
-        await opened.page.getByRole("button", { name: /^Pull Requests/ }).click();
+        await opened.page
+          .getByRole("button", { name: /^Pull Requests/ })
+          .click();
         await expect(
           opened.page.getByRole("heading", { name: "Pull Requests" }),
         ).toBeVisible();

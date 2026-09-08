@@ -46,7 +46,9 @@ export async function rpc<T = unknown>(
     error?: { code: number; message: string };
   };
   if (body.error) {
-    throw new Error(`rpc ${method}: ${body.error.message} (${body.error.code})`);
+    throw new Error(
+      `rpc ${method}: ${body.error.message} (${body.error.code})`,
+    );
   }
   return body.result as T;
 }

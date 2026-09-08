@@ -56,7 +56,10 @@ export async function expectNoSeriousBrowserA11yViolations(
   return results;
 }
 
-function formatViolations(label: string, violations: readonly Result[]): string {
+function formatViolations(
+  label: string,
+  violations: readonly Result[],
+): string {
   if (violations.length === 0) return `${label}: no blocking axe violations`;
   const body = violations
     .map((violation) => {

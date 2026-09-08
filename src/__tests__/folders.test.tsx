@@ -213,9 +213,7 @@ describe("AddFolderModal", () => {
   });
 
   it("returns focus to the opener when the modal unmounts", async () => {
-    const { rerender } = render(
-      <button type="button">Open folders</button>,
-    );
+    const { rerender } = render(<button type="button">Open folders</button>);
     const opener = screen.getByRole("button", { name: "Open folders" });
     opener.focus();
     expect(opener).toHaveFocus();

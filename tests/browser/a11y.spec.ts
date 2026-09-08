@@ -8,10 +8,7 @@
 import { expect } from "@playwright/test";
 
 import { test } from "./fixtures";
-import {
-  expectNoSeriousBrowserA11yViolations,
-  scanA11y,
-} from "./support/a11y";
+import { expectNoSeriousBrowserA11yViolations, scanA11y } from "./support/a11y";
 import { openApp } from "./support/page";
 import {
   putChiefOnFakeAcp,

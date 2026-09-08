@@ -64,16 +64,13 @@ export async function seedPermissionAsk(baseUrl: string): Promise<void> {
     threadId: RECRUITER_THREAD_ID,
     content: "rm -rf",
   });
-  await until(
-    async () => {
-      const pending = await rpc<PermissionPendingResult>(
-        baseUrl,
-        PERMISSION_PENDING,
-      );
-      return pending.requests.length > 0;
-    },
-    "permission ask never arrived",
-  );
+  await until(async () => {
+    const pending = await rpc<PermissionPendingResult>(
+      baseUrl,
+      PERMISSION_PENDING,
+    );
+    return pending.requests.length > 0;
+  }, "permission ask never arrived");
   await rpc(baseUrl, THREAD_FOLD, { threadId: RECRUITER_THREAD_ID });
 }
 
@@ -105,4 +102,3 @@ async function until(
   }
   throw new Error(message);
 }
-
