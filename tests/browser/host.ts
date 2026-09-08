@@ -27,6 +27,7 @@ import type { TestInfo } from "@playwright/test";
 import {
   CREW_THREAD,
   CREW_UPDATE,
+  HOST_HEALTH,
   JSONRPC_VERSION,
   THREAD_TRANSCRIPT,
   type JsonRpcResponse,
@@ -54,6 +55,12 @@ export interface HostStatus {
   stderr: string[];
 }
 
+export interface StartJabotOptions {
+  /** Directories prepended to PATH (a fixture `gh`, never a real token). */
+  pathPrefix?: string[];
+  extraEnv?: Record<string, string>;
+}
+
 export interface JabotApp {
   baseURL: string;
   port: number;
@@ -63,6 +70,13 @@ export interface JabotApp {
   hostStatus: () => Promise<HostStatus>;
   /** Kill Vite + host and start them again on the same port and data dir. */
   restart: () => Promise<void>;
+  /**
+   * SIGKILL the owned jabot-hostd only. Vite stays up. The bridge will not
+   * spawn a replacement until the next RPC (Reconnect, a poll, or `startHost`).
+   */
+  stopHost: () => Promise<void>;
+  /** Trigger the bridge to spawn a new host on the same data directory. */
+  startHost: () => Promise<void>;
   close: () => Promise<void>;
 }
 
@@ -163,11 +177,12 @@ export async function chiefTranscript(
   });
 }
 
-export async function startJabotApp(): Promise<JabotApp> {
+export async function startJabotApp(options: StartJabotOptions = {}): Promise<JabotApp> {
   const dataDir = mkdtempSync(path.join(tmpdir(), "jabot-browser-"));
   const port = await listenFreePort();
   const logPath = path.join(dataDir, "vite.log");
-  let child = spawnVite({ dataDir, port, logPath });
+  const spawn = () => spawnVite({ dataDir, port, logPath, options });
+  let child = spawn();
   const baseURL = `http://127.0.0.1:${port}`;
   await waitForProcessAndHost(child, baseURL, logPath);
 
@@ -183,8 +198,24 @@ export async function startJabotApp(): Promise<JabotApp> {
       ),
     async restart() {
       await stopVite(child);
-      child = spawnVite({ dataDir, port, logPath });
+      child = spawn();
       await waitForProcessAndHost(child, baseURL, logPath);
+    },
+    async stopHost() {
+      const status = await app.hostStatus();
+      if (!status.pid) throw new Error("no host pid to stop");
+      process.kill(status.pid, "SIGKILL");
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const next = await app.hostStatus();
+        if (!next.running) return;
+        await sleep(50);
+      }
+      throw new Error("host pid did not exit after SIGKILL");
+    },
+    async startHost() {
+      await hostRpc(baseURL, HOST_HEALTH, {});
+      await waitForHostReady(baseURL);
     },
     async close() {
       await stopVite(child);
@@ -214,10 +245,11 @@ export async function attachHostLogs(
   }
 }
 
-function spawnVite(options: {
+function spawnVite(args: {
   dataDir: string;
   port: number;
   logPath: string;
+  options: StartJabotOptions;
 }): ChildProcess {
   const viteJs = path.join(repoRoot, "node_modules", "vite", "bin", "vite.js");
   if (!existsSync(viteJs)) {
@@ -229,13 +261,17 @@ function spawnVite(options: {
     throw new Error(`${hostd} is not built — run npm run host:build`);
   }
 
-  const log = createWriteStream(options.logPath, { flags: "a" });
+  const pathValue = [...(args.options.pathPrefix ?? []), process.env.PATH ?? ""]
+    .filter(Boolean)
+    .join(path.delimiter);
+
+  const log = createWriteStream(args.logPath, { flags: "a" });
   const child = spawn(
     process.execPath,
     [
       viteJs,
       "--port",
-      String(options.port),
+      String(args.port),
       "--strictPort",
       "--host",
       "127.0.0.1",
@@ -244,12 +280,16 @@ function spawnVite(options: {
       cwd: repoRoot,
       env: {
         ...process.env,
-        JABOT_DEV_DATA_DIR: options.dataDir,
+        ...args.options.extraEnv,
+        PATH: pathValue,
+        JABOT_DEV_DATA_DIR: args.dataDir,
         JABOT_SECRETS_BACKEND: "memory",
         JABOT_HOSTD_BIN: hostd,
         JABOT_FAKE_ACP_BIN: fake,
         // Never inherit a live.sh disable, and never share the developer port.
         JABOT_LIVE_HOST: "1",
+        // Default off so a fixture `gh` is not polled in the background.
+        JABOT_PR_POLL_MS: args.options.extraEnv?.JABOT_PR_POLL_MS ?? "0",
       },
       stdio: ["ignore", "pipe", "pipe"],
       detached: process.platform !== "win32",

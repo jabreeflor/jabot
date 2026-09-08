@@ -69,6 +69,7 @@ The renderer-against-real-host suite is Playwright, not the default gate:
 
 ```bash
 npm run test:browser:smoke    # Chromium, one smoke journey, no credentials
+npm run test:browser          # Chromium + WebKit (recovery / workspace)
 ```
 
 See [`tests/browser/README.md`](tests/browser/README.md).

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Add Playwright coverage for host recovery, worktrees, schedules, and PR workspace</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #12141a;
+      --panel: #1b1e27;
+      --ink: #e8e6e1;
+      --muted: #9a958c;
+      --line: #2a2e38;
+      --accent: #7dd3a8;
+      --warn: #e8b86d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    main { max-width: 820px; margin: 0 auto; padding: 40px 24px 72px; }
+    h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 8px; }
+    h2 { font-size: 1.15rem; margin: 36px 0 10px; }
+    p, li { color: var(--ink); }
+    .lede { color: var(--muted); margin: 0 0 28px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin: 12px 0;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .flow { display: grid; gap: 8px; }
+    .step { padding: 10px 12px; border-left: 3px solid var(--accent); background: #161920; }
+    .warn { border-left-color: var(--warn); }
+    .files { margin: 0; padding-left: 1.2em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Playwright coverage for host recovery, worktrees, schedules, and PR workspace</h1>
+    <p class="lede">
+      Issue #233 on top of the shared real-host fixture from #256.
+      Chromium drives the React renderer; a dedicated Vite + <code>jabot-hostd</code>
+      owns a temp data directory. No forked harness.
+    </p>
+
+    <h2>How it works</h2>
+    <div class="panel flow">
+      <div class="step">Each test calls <code>startJabotApp()</code> — own port, own SQLite dir, never port 1420.</div>
+      <div class="step"><code>jabot.stopHost()</code> SIGKILLs only <code>jabot-hostd</code>. Vite stays up. The bridge emits <code>host/disconnected</code>; the sidebar shows the error and <strong>Reconnect</strong>.</div>
+      <div class="step"><code>jabot.restart()</code> is a Vite restart. <code>page.reload()</code> is a browser reload. Test titles name which one they exercise.</div>
+      <div class="step">PR tests prepend a fixture <code>gh</code> to PATH before Vite starts. Tokens never leave the fixture; GraphQL/REST answers are files.</div>
+    </div>
+
+    <h2>Reload vs Vite restart vs host restart</h2>
+    <div class="panel">
+      <table>
+        <thead>
+          <tr><th>Mechanism</th><th>What dies</th><th>Recovery</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Browser reload</td><td>The tab / HostClient</td><td><code>useHost()</code> runs again</td></tr>
+          <tr><td>Host restart</td><td><code>jabot-hostd</code> only</td><td>Reconnect (or a later RPC) respawns on the same data dir</td></tr>
+          <tr><td>Vite restart</td><td>Vite, HMR, and the host</td><td>New Vite; the page must navigate again</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>What to look at</h2>
+    <ul class="files">
+      <li><code>tests/browser/host.ts</code> — <code>stopHost</code> / <code>startHost</code> / PATH prefix on the shared app helper.</li>
+      <li><code>tests/browser/fixtures.ts</code> — <code>browserTest()</code> for env-before-spawn; pageerror filter for host death.</li>
+      <li><code>tests/browser/{recovery,worktree,schedules,pr-workspace,host-refusal}.spec.ts</code> — the journeys.</li>
+      <li><code>src/App.tsx</code> + <code>scripts/dev/host-bridge.ts</code> — truthful disconnect / Reconnect (product fix, not a mocked green).</li>
+      <li><code>docs/browser-e2e.md</code> — web-renderer+host limits (not Keychain, native dialogs, Tauri IPC, WKWebView, or mobile).</li>
+    </ul>
+
+    <h2>How to verify</h2>
+    <div class="panel">
+      <p><code>npm run host:build && npx playwright install chromium</code></p>
+      <p><code>npx playwright test --project=chromium</code></p>
+      <p>CI <code>browser</code> job runs that same Chromium suite. <code>./scripts/verify.sh</code> stays offline; <code>--check-browser</code> is the local opt-in.</p>
+    </div>
+
+    <h2>What this does not prove</h2>
+    <div class="panel step warn">
+      Native dialogs, macOS Keychain, Tauri IPC, packaged WKWebView, and mobile browsers
+      remain #235. Fixture <code>gh</code> does not claim GitHub API compatibility.
+    </div>
+  </main>
+</body>
+</html>

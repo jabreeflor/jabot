@@ -69,9 +69,10 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
-| `npm run test:browser:smoke` | Playwright Chromium against a real host — not in the default gate |
 | `npm run lint` / `npm run lint:fix` | frontend lint (hooks + no-explicit-any + promises; same command `verify.sh` runs, including `--fast`) |
 | `npm run format:check` / `npm run format` | frontend layout — after lint; check is in `verify.sh`; format rewrites |
+| `npm run test:browser:smoke` | Playwright Chromium smoke against a real host — not in the default gate |
+| `npm run test:browser` | Playwright Chromium + WebKit (host recovery / workspace journeys) |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
@@ -223,21 +224,24 @@ CI job. To add a view, render it the way the existing unit test does and call
 The renderer against a live `jabot-hostd`, not jsdom and not the protocol-only
 Vitest `e2e` project. Each test owns a Vite process, a temp data directory,
 and a dedicated port — it does not call `live.sh smoke` or `reset`. Details:
-[`tests/browser/README.md`](tests/browser/README.md).
+[`tests/browser/README.md`](tests/browser/README.md). Web-renderer+host limits
+(not native dialogs, Keychain, Tauri IPC, or WKWebView) live in
+[`docs/browser-e2e.md`](docs/browser-e2e.md).
 
 ```bash
 npm run host:build
 npx playwright install chromium
 npm run test:browser:smoke          # Chromium @smoke — the documented local command
-npm run test:browser                # Chromium + WebKit
-./scripts/verify.sh --check-browser # same smoke, after the usual gates
+npm run test:browser                # Chromium + WebKit (recovery / workspace)
+./scripts/verify.sh --check-browser # Chromium suite, after the usual gates
 ```
 
 The default `./scripts/verify.sh` does **not** run these: the gate stays
 offline and display-less. CI's `browser` job is the required PR check and
 uploads the Playwright report on failure. WebKit is a local compatibility
 project, not proof of native WKWebView/Tauri. The `browser` job uses the
-same Node major as `verify` (Node 26 / `.nvmrc`).
+same Node major as `verify` (Node 26 / `.nvmrc`). Playwright is pinned at
+1.63+ because 1.56 hangs extracting Chromium on Node 26.
 
 ## Committing: `scripts/checkpoint.sh`
 

@@ -11,6 +11,13 @@ export const NOTIFICATION_ACTIVATED_EVENT = "notification-activated";
 
 export const HOST_HELLO = "host/hello";
 export const HOST_HEALTH = "host/health";
+/**
+ * Synthesized by the Vite live bridge (`scripts/dev/host-bridge.ts`) when the
+ * owned `jabot-hostd` process exits or comes back. The in-process Tauri host
+ * never emits these — native lifecycle is a different surface (#235).
+ */
+export const HOST_DISCONNECTED = "host/disconnected";
+export const HOST_RECONNECTED = "host/reconnected";
 export const SESSION_PROMPT = "session/prompt";
 export const SESSION_CANCEL = "session/cancel";
 export const SESSION_UPDATE = "session/update";

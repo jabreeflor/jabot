@@ -42,7 +42,10 @@ const connected = vi.mocked(connectHost);
 
 beforeEach(() => {
   connected.mockResolvedValue({
-    client: { disconnect: vi.fn() } as unknown as HostClient,
+    client: {
+      disconnect: vi.fn(),
+      onNotification: vi.fn(() => () => {}),
+    } as unknown as HostClient,
     hello: HELLO,
   });
 });
@@ -286,6 +289,7 @@ describe("App", () => {
     let answerCrew: (() => void) | undefined;
     const client = {
       disconnect: vi.fn(),
+      onNotification: vi.fn(() => () => {}),
       listFolders: vi.fn(() => new Promise(() => {})),
       listCrew: vi.fn(
         () =>
