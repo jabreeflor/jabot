@@ -34,3 +34,6 @@ src-tauri/target
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+# Isolated packaged-app acceptance evidence copied out of /tmp on CI (#235)
+.macos-acceptance-evidence

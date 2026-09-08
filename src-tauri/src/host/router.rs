@@ -6,17 +6,19 @@ use serde_json::Value;
 use super::protocol::error::RpcError;
 use super::protocol::jsonrpc::{JsonRpcRequest, JsonRpcResponse};
 use super::protocol::methods::{
-    CrewCreateParams, CrewRefParams, CrewUpdateParams, FolderRefParams, FolderRegisterParams,
-    FolderUpdateParams, GithubLoginParams, GithubStatusParams, HarnessDoctorParams, HelloParams,
-    InboxListParams, PermissionPendingParams, PermissionReplyParams, PromptParams,
-    ResumeFromParams, SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
-    ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_LIST, CREW_REMOVE, CREW_THREAD,
-    CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_LOGIN,
-    GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_INSTALL, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
-    INBOX_LIST, NOTIFY_STATUS, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL,
-    SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE,
-    THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT,
-    TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+    CrewCreateParams, CrewDraftDismissParams, CrewDraftGetParams, CrewDraftSaveParams,
+    CrewRefParams, CrewUpdateParams, FolderRefParams, FolderRegisterParams, FolderUpdateParams,
+    GithubLoginParams, GithubStatusParams, HarnessDoctorParams, HelloParams, InboxListParams,
+    PermissionPendingParams, PermissionReplyParams, PromptParams, ResumeFromParams,
+    SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
+    ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_DRAFTS, CREW_DRAFT_DISMISS,
+    CREW_DRAFT_GET, CREW_DRAFT_SAVE, CREW_LIST, CREW_REMOVE, CREW_THREAD, CREW_UPDATE,
+    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_LOGIN, GITHUB_STATUS,
+    HARNESS_DOCTOR, HARNESS_INSTALL, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST,
+    NOTIFY_STATUS, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT,
+    SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
+    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
+    TOOLS_LIST,
 };
 use super::protocol::methods::{
     DeviceRefParams, PairingClaimParams, PairingConfirmParams, PairingRefParams,
@@ -232,6 +234,28 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: CrewRefParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.crew_thread(params)?)
+        }
+        CREW_DRAFTS => {
+            session.require_hello()?;
+            to_value(session.crew_drafts()?)
+        }
+        CREW_DRAFT_GET => {
+            session.require_hello()?;
+            let params: CrewDraftGetParams = parse_params_or_default(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.crew_draft_get(params)?)
+        }
+        CREW_DRAFT_SAVE => {
+            session.require_hello()?;
+            let params: CrewDraftSaveParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.crew_draft_save(params)?)
+        }
+        CREW_DRAFT_DISMISS => {
+            session.require_hello()?;
+            let params: CrewDraftDismissParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.crew_draft_dismiss(params)?)
         }
         GITHUB_STATUS => {
             session.require_hello()?;

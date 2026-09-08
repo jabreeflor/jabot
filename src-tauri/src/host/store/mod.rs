@@ -4,6 +4,7 @@
 //! (`docs/research/data-and-persistence/store.md`).
 
 mod catalog;
+mod draft;
 mod error;
 mod handoff;
 mod migrate;
@@ -46,7 +47,7 @@ pub use pr::{
 pub use schedule::{
     CATCH_UP_ONCE, CATCH_UP_SKIP, FIRE_DELIVERED, FIRE_DISPATCHED, FIRE_FAILED, FIRE_SKIPPED,
 };
-pub use secrets::{Secrets, SecretsBackend};
+pub use secrets::{keychain_service, Secrets, SecretsBackend, KEYCHAIN_SERVICE};
 pub use settings::{
     is_fold_policy, DEFAULT_FOLD_POLICY, KEY_DEFAULT_FOLD_POLICY, KEY_IDLE_TIMEOUT_MS,
 };
@@ -85,6 +86,7 @@ impl Store {
         std::fs::write(&marker, b"open")?;
         migrate::migrate(&mut conn)?;
         seed::seed(&conn)?;
+        seed::upgrade_draft_tools(&conn)?;
         Ok(Self { conn, path })
     }
 
@@ -212,6 +214,51 @@ impl Store {
     /// how many live threads lost their owner.
     pub fn delete_bot(&self, id: &str) -> Result<usize, StoreError> {
         catalog::delete_bot(&self.conn, id)
+    }
+
+    pub fn get_bot_draft(&self, id: &str) -> Result<Option<BotDraftRow>, StoreError> {
+        draft::get_draft(&self.conn, id)
+    }
+
+    pub fn get_bot_draft_by_request(
+        &self,
+        source_bot_id: &str,
+        request_key: &str,
+    ) -> Result<Option<BotDraftRow>, StoreError> {
+        draft::get_draft_by_request(&self.conn, source_bot_id, request_key)
+    }
+
+    pub fn list_reviewable_drafts(&self) -> Result<Vec<BotDraftRow>, StoreError> {
+        draft::list_reviewable_drafts(&self.conn)
+    }
+
+    pub fn list_drafts_for_source(
+        &self,
+        source_bot_id: &str,
+    ) -> Result<Vec<BotDraftRow>, StoreError> {
+        draft::list_drafts_for_source(&self.conn, source_bot_id)
+    }
+
+    pub fn insert_bot_draft(&self, new: &NewBotDraft) -> Result<BotDraftRow, StoreError> {
+        draft::insert_draft(&self.conn, new)
+    }
+
+    pub fn mark_bot_draft_stale(&self, id: &str, reason: &str) -> Result<BotDraftRow, StoreError> {
+        draft::mark_draft_stale(&self.conn, id, reason)
+    }
+
+    pub fn dismiss_bot_draft(&self, id: &str, revision: i64) -> Result<BotDraftRow, StoreError> {
+        draft::dismiss_draft(&self.conn, id, revision)
+    }
+
+    pub fn save_bot_draft(
+        &self,
+        id: &str,
+        revision: i64,
+        patch: &BotDraftPatch,
+        deciding_device_id: Option<&str>,
+    ) -> Result<(BotDraftRow, BotRow), StoreError> {
+        draft::save_draft(&self.conn, id, revision, patch, deciding_device_id, None)
     }
 
     pub fn insert_thread(&self, new: &NewThread) -> Result<ThreadRow, StoreError> {

@@ -42,7 +42,7 @@
 //! is un-removable (#17), not the capability.
 
 mod bridge;
-mod tools;
+pub(crate) mod tools;
 
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -150,7 +150,7 @@ impl HostSession {
 
     // ---- the four tools --------------------------------------------------
 
-    fn chief_tool_call(
+    pub(crate) fn chief_tool_call(
         &mut self,
         thread_id: &str,
         tool: &str,
@@ -174,6 +174,8 @@ impl HostSession {
             "spawn_code_session" => self.tool_spawn_code_session(thread_id, args),
             "fold_thread" => self.tool_fold_thread(thread_id, args),
             "list_crew_status" => self.tool_list_crew_status(),
+            "draft_bot" => self.tool_draft_bot(thread_id, args),
+            "get_bot_draft" => self.tool_get_bot_draft(thread_id, args),
             other => Err(format!("no such tool: {other}")),
         }
     }
@@ -540,7 +542,7 @@ impl HostSession {
             .cloned()
     }
 
-    fn thread_bot(&self, thread_id: &str) -> Option<String> {
+    pub(crate) fn thread_bot(&self, thread_id: &str) -> Option<String> {
         self.store
             .as_ref()?
             .get_thread(thread_id)
@@ -1119,7 +1121,9 @@ mod tests {
                 "handoff_to_bot",
                 "spawn_code_session",
                 "fold_thread",
-                "list_crew_status"
+                "list_crew_status",
+                "draft_bot",
+                "get_bot_draft"
             ]
         );
 
@@ -1151,20 +1155,22 @@ mod tests {
     #[test]
     fn only_a_bot_with_host_tools_is_served_a_host_tool_server() {
         let (mut session, _dir) = host();
-        ok(
+        let worker = ok(
             &mut session,
-            CREW_THREAD,
-            json!({ "botId": "bot-recruiter" }),
+            CREW_CREATE,
+            json!({ "name": "Writer", "instructions": "Draft.", "tools": [], "harnessId": "claude" }),
         );
+        let worker_id = worker["botId"].as_str().unwrap();
+        ok(&mut session, CREW_THREAD, json!({ "botId": worker_id }));
         ok(&mut session, CREW_THREAD, json!({ "botId": "chief" }));
 
         assert!(session
-            .chief_mcp_server(&standing::thread_id_for("bot-recruiter"))
+            .chief_mcp_server(&standing::thread_id_for(worker_id))
             .is_none());
 
         let server = session
             .chief_mcp_server(&standing::thread_id_for("chief"))
-            .expect("Chief carries all four host tools");
+            .expect("Chief carries host tools");
         assert_eq!(server["type"], "http");
         assert_eq!(server["name"], MCP_SERVER_NAME);
         // Loopback and nothing else: the port is known only to this process

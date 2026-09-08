@@ -26,8 +26,10 @@ bot is a harness" rule.
    requirement 2 of [crew-management.md](crew-management.md)) — it is
    not hardcoded outside the crew/template system.
 2. `tools.rs` defines the Chief-specific host tools: at minimum,
-   handing off a task to another crew bot, spawning a new thread, and
-   querying the status of a run/thread.
+   handing off a task to another crew bot, spawning a new thread,
+   querying the status of a run/thread, and proposing a new crew member
+   with `draft_bot` (#237). Bot Recruiter ships the draft tools too.
+   Submitting a draft does not create or launch a bot.
 3. `bridge.rs` connects those host tools into the Chief's ACP session as
    MCP-style tool calls the harness can invoke mid-conversation, using
    the same tool-catalog mechanism as any other tool grant (see

@@ -295,6 +295,8 @@ describe("Chief's host tools reach the session", () => {
       "spawn_code_session",
       "fold_thread",
       "list_crew_status",
+      "draft_bot",
+      "get_bot_draft",
     ]);
   });
 

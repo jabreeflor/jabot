@@ -3,6 +3,7 @@
 //! The webview talks JSON-RPC to these commands and events, never to ACP
 //! stdio. The message types are the future Unix-socket / WebSocket frames.
 
+pub mod acceptance;
 pub mod host;
 pub mod notify;
 pub mod window;
@@ -14,13 +15,13 @@ pub use host::{
     SESSION_UPDATE,
 };
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use host::AdapterWake;
 use tauri::{Emitter, Manager, State, WindowEvent};
 
-struct HostState(Mutex<HostSession>);
+struct HostState(Arc<Mutex<HostSession>>);
 
 /// JSON-RPC 2.0 request/response. Same payload a socket transport will frame.
 #[tauri::command]
@@ -29,6 +30,9 @@ fn host_rpc(
     state: State<HostState>,
     request: JsonRpcRequest,
 ) -> JsonRpcResponse {
+    // The probe talks to HostSession directly. This command is the webview's
+    // only path, so the first call here is the Tauri IPC cell (#235).
+    acceptance::record_ipc(&request.method);
     let mut session = state.0.lock().unwrap_or_else(|e| e.into_inner());
     let response = session.handle_request(request);
     session.pump_acp();
@@ -97,6 +101,25 @@ fn point_at_bundled_adapters(app: &tauri::AppHandle) {
 }
 
 fn load_session(app: &tauri::AppHandle) -> HostSession {
+    match acceptance::isolated_data_dir() {
+        Ok(Some(dir)) => {
+            if let Err(err) = std::fs::create_dir_all(&dir) {
+                eprintln!(
+                    "failed to create isolated app data dir {}: {err}",
+                    dir.display()
+                );
+                return HostSession::ephemeral();
+            }
+            return HostSession::load(&dir);
+        }
+        Ok(None) => {}
+        Err(err) => {
+            // Isolation failed closed: do not fall through to the user's
+            // production app-support directory (#235).
+            eprintln!("acceptance isolation refused: {err}");
+            std::process::exit(2);
+        }
+    }
     match app.path().app_data_dir() {
         Ok(dir) => {
             if let Err(err) = std::fs::create_dir_all(&dir) {
@@ -149,7 +172,26 @@ pub fn run() {
             point_at_bundled_adapters(app.handle());
             let session = load_session(app.handle());
             let wake = session.adapter_wake();
-            app.manage(HostState(Mutex::new(session)));
+            let state = Arc::new(Mutex::new(session));
+            if acceptance::requested() {
+                let data_dir = acceptance::isolated_data_dir()
+                    .ok()
+                    .flatten()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_default();
+                acceptance::record_launch(acceptance::LaunchInfo {
+                    bundle_id: app.config().identifier.clone(),
+                    version: app.package_info().version.to_string(),
+                    data_dir,
+                    resource_dir: app
+                        .path()
+                        .resource_dir()
+                        .ok()
+                        .map(|p| p.display().to_string()),
+                });
+                acceptance::spawn_host_probe(Arc::clone(&state));
+            }
+            app.manage(HostState(Arc::clone(&state)));
             spawn_acp_pump(app.handle().clone(), wake);
             // Ask for notification permission and start listening for clicks
             // (#27). A refusal is not an error: the Inbox is the record and

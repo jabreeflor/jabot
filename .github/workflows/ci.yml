@@ -124,6 +124,10 @@ jobs:
   # default-run is set, and every binary under src-tauri/src/bin is still
   # gated behind `dev-bins`. D-005 is the cautionary case — a `bundle.targets`
   # edit that still builds and still ships a release with no updater archive.
+  #
+  # Native-sensitive PRs get a Linux `--check-mac` + matrix job in
+  # macos-native.yml (not this 10x runner). Packaged launch is opt-in via the
+  # `macos-acceptance` label, tags, or workflow_dispatch. See #235.
   bundle:
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
@@ -141,6 +145,11 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npm run tauri build
+      # Identity + staged adapter only. This job is still not a launch, not
+      # Dock, not notifications (D-019). Updater archives are a release
+      # --config and are checked there (#235).
+      - name: Package identity
+        run: ./scripts/macos-acceptance.sh package
 
   # Before-merge lint for cfg(target_os = "macos") Rust. The default verify
   # job is Linux and compiles straight past those modules; the bundle job

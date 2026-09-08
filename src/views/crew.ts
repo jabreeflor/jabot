@@ -27,11 +27,13 @@ import type {
   CrewListResult,
   HarnessCardView,
   HarnessReport,
+  BotDraftView,
+  CrewDraftSaveResult,
   HostClient,
   SessionUpdateParams,
   ToolCardView,
 } from "../host";
-import { SESSION_UPDATE } from "../host";
+import { CREW_DRAFT, SESSION_UPDATE } from "../host";
 import {
   BOT_COLORS,
   type Bot,
@@ -196,6 +198,15 @@ export interface Crew {
       next `tools/list`, which the poll below is for. */
   connectTool: (toolId: string) => Promise<void>;
   disconnectTool: (toolId: string) => Promise<void>;
+  /** Pending/stale conversational drafts. `null` until the host answers. */
+  drafts: BotDraftView[] | null;
+  reloadDrafts: () => void;
+  saveDraft: (
+    draftId: string,
+    revision: number,
+    draft: BotDraft,
+  ) => Promise<CrewDraftSaveResult>;
+  dismissDraft: (draftId: string, revision: number) => Promise<void>;
 }
 
 /**
@@ -270,6 +281,8 @@ export function useCrew(client: HostClient | null): Crew {
   // Bumped to re-run the load: a save or a remove changes the crew, and both
   // happen outside this effect.
   const [generation, setGeneration] = useState(0);
+  const [drafts, setDrafts] = useState<BotDraftView[] | null>(null);
+  const [draftGeneration, setDraftGeneration] = useState(0);
 
   useEffect(() => {
     if (!client) return;
@@ -316,7 +329,24 @@ export function useCrew(client: HostClient | null): Crew {
     };
   }, [client, generation]);
 
+  useEffect(() => {
+    if (!client || typeof client.listBotDrafts !== "function") return;
+    let cancelled = false;
+    client
+      .listBotDrafts()
+      .then((listed) => {
+        if (!cancelled) setDrafts(listed.drafts);
+      })
+      .catch(() => {
+        if (!cancelled) setDrafts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, draftGeneration]);
+
   const reload = useCallback(() => setGeneration((n) => n + 1), []);
+  const reloadDrafts = useCallback(() => setDraftGeneration((n) => n + 1), []);
 
   const save = useCallback(
     async (botId: string | null, draft: BotDraft) => {
@@ -367,6 +397,34 @@ export function useCrew(client: HostClient | null): Crew {
     [client, reload],
   );
 
+  const saveDraft = useCallback(
+    async (draftId: string, revision: number, draft: BotDraft) => {
+      if (!client) throw new Error("No host connection.");
+      const saved = await client.saveBotDraft({
+        draftId,
+        revision,
+        name: draft.name,
+        instructions: draft.instructions,
+        tools: draft.tools,
+        harnessId: draft.harnessId,
+        color: draft.color,
+      });
+      reload();
+      reloadDrafts();
+      return saved;
+    },
+    [client, reload, reloadDrafts],
+  );
+
+  const dismissDraft = useCallback(
+    async (draftId: string, revision: number) => {
+      if (!client) throw new Error("No host connection.");
+      await client.dismissBotDraft({ draftId, revision });
+      reloadDrafts();
+    },
+    [client, reloadDrafts],
+  );
+
   // A turn ending is the only thing that changes what a chat row says.
   //
   // The preview is `crew/list`'s answer, so without this a row would keep
@@ -395,6 +453,19 @@ export function useCrew(client: HostClient | null): Crew {
       return;
     }
   }, [client, reload]);
+
+  useEffect(() => {
+    if (!client) return;
+    try {
+      return client.onNotification((notification) => {
+        if (notification.method !== CREW_DRAFT) return;
+        reloadDrafts();
+        reload();
+      });
+    } catch {
+      return;
+    }
+  }, [client, reload, reloadDrafts]);
 
   // The substitute for a notification, and not an optional one.
   //
@@ -435,5 +506,9 @@ export function useCrew(client: HostClient | null): Crew {
     remove,
     connectTool,
     disconnectTool,
+    drafts,
+    reloadDrafts,
+    saveDraft,
+    dismissDraft,
   };
 }
