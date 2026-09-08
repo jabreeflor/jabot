@@ -45,10 +45,10 @@ export function hostdBinaryPath(): string {
 /**
  * The scriptable ACP agent from `src-tauri/src/bin/fake_acp_agent.rs`.
  *
- * `src-tauri/tests/acp_adapter.rs` reaches it through `CARGO_BIN_EXE_*`; from
- * TypeScript the equivalent is the same `target/debug` path. `cargo test` and
- * `cargo build --bins` both produce it, so a missing binary means a stale tree
- * rather than a broken test — say so instead of failing on `ENOENT` later.
+ * `src-tauri/tests/acp_adapter.rs` reaches it through `CARGO_BIN_EXE_*`. From
+ * TypeScript the usual answer is `target/debug`, but `cargo llvm-cov` (CI's
+ * rust-tests stage) writes bins under `target/llvm-cov-target/debug` and
+ * leaves `target/debug` empty until verify builds `jabot-hostd` again.
  */
 export function fakeAcpAgentPath(): string {
   const override = process.env.JABOT_FAKE_ACP_BIN;
@@ -64,12 +64,33 @@ export function fakeAcpAgentPath(): string {
 
 /** Directory the Rust bins land in — also what a PATH-probe test prepends. */
 export function cargoDebugDir(): string {
+  const hostd = process.platform === "win32" ? "jabot-hostd.exe" : "jabot-hostd";
+  const fake = process.platform === "win32" ? "fake-acp-agent.exe" : "fake-acp-agent";
+  for (const dir of cargoDebugCandidates()) {
+    if (existsSync(path.join(dir, hostd)) || existsSync(path.join(dir, fake))) {
+      return dir;
+    }
+  }
   return path.join(repoRoot, "src-tauri", "target", "debug");
+}
+
+function cargoDebugCandidates(): string[] {
+  const dirs: string[] = [];
+  if (process.env.CARGO_TARGET_DIR) {
+    dirs.push(path.join(process.env.CARGO_TARGET_DIR, "debug"));
+  }
+  dirs.push(path.join(repoRoot, "src-tauri", "target", "debug"));
+  dirs.push(path.join(repoRoot, "src-tauri", "target", "llvm-cov-target", "debug"));
+  return dirs;
 }
 
 function cargoBinaryPath(name: string): string {
   const exe = process.platform === "win32" ? `${name}.exe` : name;
-  return path.join(cargoDebugDir(), exe);
+  for (const dir of cargoDebugCandidates()) {
+    const candidate = path.join(dir, exe);
+    if (existsSync(candidate)) return candidate;
+  }
+  return path.join(repoRoot, "src-tauri", "target", "debug", exe);
 }
 
 /**

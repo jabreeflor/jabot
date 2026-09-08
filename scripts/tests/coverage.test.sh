@@ -285,6 +285,13 @@ case_rust_tests_find_llvm_cov_bins() {
     fail "a suite still defines its own fake_agent; use tests/common so llvm-cov can find the bin"
     return 1
   fi
+  local hostd v
+  hostd=$(cat "$REPO_ROOT/tests/support/hostd.ts")
+  v=$(cat "$REPO_ROOT/scripts/verify.sh")
+  assert_contains "$hostd" 'llvm-cov-target' \
+    "e2e hostd helper must search cargo-llvm-cov's target dir" || return 1
+  assert_contains "$v" '--bin fake-acp-agent' \
+    "verify must rebuild fake-acp-agent for e2e after llvm-cov" || return 1
   pass
 }
 

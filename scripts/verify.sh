@@ -768,7 +768,11 @@ fi
 run "rust tests"     rust_tests
 
 if [[ $FAST -eq 0 ]]; then
-  run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bin jabot-hostd
+  # After `cargo llvm-cov` the bins live under llvm-cov-target/. e2e still
+  # looks in target/debug (and PATH-probes that directory), so rebuild both
+  # host binaries there. `--bin jabot-hostd` alone left fake-acp-agent missing
+  # and every suite that spawns an agent failed with the same ENOENT.
+  run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bin jabot-hostd --bin fake-acp-agent
   # Only meaningful if the binary exists; a failed build would make every e2e
   # case fail with the same confusing spawn error.
   if [[ -x src-tauri/target/debug/jabot-hostd ]]; then
