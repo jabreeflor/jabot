@@ -36,6 +36,9 @@ export const THREAD_SOURCE_OPEN = "thread/source/open";
 export const THREAD_GIT_DIFF = "thread/git/diff";
 export const THREAD_GIT_COMMIT = "thread/git/commit";
 export const THREAD_GIT_PUSH = "thread/git/push";
+/** Fork a Code conversation at a message (#266). Idempotent for a given
+    `(thread, throughSeq)` — a second click returns the existing child. */
+export const THREAD_BRANCH = "thread/branch";
 export const SUPERVISOR_STATUS = "supervisor/status";
 export const INBOX_RESURFACE = "inbox/resurface";
 export const INBOX_LIST = "inbox/list";
@@ -360,6 +363,21 @@ export interface ThreadRefParams {
   threadId: string;
 }
 
+/** Fork a Code conversation at a message (#266). */
+export interface ThreadBranchParams {
+  threadId: string;
+  /** Inclusive cut: the child's transcript is the source's log through this
+      seq, and nothing after it. */
+  throughSeq: number;
+}
+
+/** The conversation this thread was forked from (#266). */
+export interface BranchedFromView {
+  threadId: string;
+  title: string;
+  throughSeq: number;
+}
+
 /** New Chat: the edge into the state machine. Idempotent. */
 export interface ThreadOpenParams {
   threadId?: string;
@@ -541,6 +559,9 @@ export interface ThreadStateResult {
   /** The most recent handoff onto this thread (#24). Absent for every thread
       the human started themselves, which is most of them. */
   handoff?: HandoffView;
+  /** Where this conversation was forked from (#266). Absent unless this
+      thread is a branch of another Code chat. */
+  branchedFrom?: BranchedFromView;
   /** The pull requests this thread opened (#28). Absent when it opened none,
       which is every thread that is not a code thread and most that are. */
   pullRequests?: PullRequestView[];

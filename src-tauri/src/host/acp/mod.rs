@@ -158,6 +158,7 @@ impl HostSession {
             return Err(RpcError::CwdMissing { thread_id, cwd });
         }
         self.ensure_connection(&params)?;
+        let new_session = existing.is_none();
         let session_id = match existing {
             Some(id) => id,
             None => {
@@ -176,10 +177,14 @@ impl HostSession {
                 }
             }
         };
+        // A branch copies history for the UI; the ACP session is still empty.
+        // The first prompt on a child that has never had a session carries
+        // that history so the agent can continue from the cut (#266).
+        let prompt = self.branch_first_prompt(&thread_id, &params.content, new_session);
         if let Some(store) = &self.store {
             let _ = store.set_thread_acp_session(&thread_id, &session_id);
         }
-        let wire = self.compose_prompt_for_dispatch(&thread_id, &params.content);
+        let wire = self.compose_prompt_for_dispatch(&thread_id, &prompt);
         let sent =
             self.conn_mut(&thread_id)
                 .expect("spawned")

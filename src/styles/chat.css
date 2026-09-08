@@ -35,6 +35,34 @@
   color: var(--ink);
 }
 
+/* A conversation forked from another (#266). Same slot as a handoff: one
+   line under the title, naming the source so you can get back. */
+.chat-head .chat-branch {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--fs-meta);
+  color: var(--dim);
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-head .chat-branch:hover,
+.chat-head .chat-branch:focus-visible {
+  color: var(--ink);
+}
+
+.chat-head .chat-branch .from {
+  font-weight: 600;
+  color: var(--ink);
+}
+
 /* A handoff nobody picked up. The task was really sent and the thread really
    exists, so this is not an error state for the thread — but a line that said
    only "Handed off by Chief" would be describing work that is not happening. */
@@ -155,6 +183,8 @@
 
 .msg {
   display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .msg.bot {
@@ -163,16 +193,28 @@
 }
 
 .msg.me {
-  justify-content: flex-end;
+  align-items: flex-end;
 }
 
-/* The row under an assistant reply. Copy lives here today; reactions (#265)
-   and branch (#266) join the same group so the chrome stays one strip. */
+.msg.bot {
+  align-items: flex-start;
+}
+
+/* The row under a bubble. Copy (#274), branch (#266), and reactions (#265)
+   share one strip so the chrome stays one group. */
 .msg-actions {
   display: flex;
   align-items: center;
   gap: 2px;
   margin-top: var(--sp-1);
+}
+
+.msg.me .msg-actions {
+  justify-content: flex-end;
+}
+
+.msg.bot .msg-actions {
+  justify-content: flex-start;
 }
 
 .msg-action {
@@ -198,6 +240,16 @@
 .msg-action svg {
   width: 15px;
   height: 15px;
+}
+
+.msg-action:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+
+.msg-action:focus-visible {
+  outline: 2px solid var(--accent, var(--ink));
+  outline-offset: 1px;
 }
 
 .msg-action::after {

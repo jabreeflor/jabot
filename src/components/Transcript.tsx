@@ -9,6 +9,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 
 import { copyText } from "./copyText";
 import {
+  BranchIcon,
   CaretRightIcon,
   CheckIcon,
   CopyIcon,
@@ -34,10 +35,16 @@ const WINDOW = 80;
 export function Transcript({
   items,
   onAction,
+  onBranch,
+  branchingSeq,
 }: {
   items: readonly TranscriptItem[];
   /** A notice card's button — a fold offer today, a permission reply in #20. */
   onAction?: (itemId: string, actionId: string) => void;
+  /** Code chats only (#266): fork the conversation through this message. */
+  onBranch?: (itemId: string, seq: number) => void;
+  /** Seq currently being forked, so the control can show a loading state. */
+  branchingSeq?: number | null;
 }) {
   // Streaming is why this is memoized rather than recomputed. #14's reducer
   // returns a new array whose *other elements are the same objects*, so with
@@ -81,6 +88,8 @@ export function Transcript({
             key={entry.item.id}
             item={entry.item}
             onAction={onAction}
+            onBranch={onBranch}
+            branchingSeq={branchingSeq}
           />
         ),
       )}
@@ -125,8 +134,12 @@ const ToolBlock = memo(ToolBlockRow, (before, after) =>
  */
 function AgentBubble({
   item,
+  onBranch,
+  branchingSeq,
 }: {
   item: Extract<TranscriptItem, { kind: "agent" }>;
+  onBranch?: (itemId: string, seq: number) => void;
+  branchingSeq?: number | null;
 }) {
   const nodes = useMemo(() => renderMarkdown(item.text), [item.text]);
   return (
@@ -134,11 +147,14 @@ function AgentBubble({
       <div className="bubble" data-streaming={item.streaming || undefined}>
         {nodes}
       </div>
-      {item.text.length > 0 && (
-        <div className="msg-actions" role="group" aria-label="Message actions">
-          <CopyResponseButton text={item.text} />
-        </div>
-      )}
+      <MessageActions
+        itemId={item.id}
+        seq={item.seq}
+        streaming={item.streaming}
+        onBranch={onBranch}
+        branchingSeq={branchingSeq}
+        copyText={item.text}
+      />
     </div>
   );
 }
@@ -206,9 +222,13 @@ const TranscriptEntry = memo(TranscriptRow);
 function TranscriptRow({
   item,
   onAction,
+  onBranch,
+  branchingSeq,
 }: {
   item: Exclude<TranscriptItem, { kind: "tool" }>;
   onAction?: (itemId: string, actionId: string) => void;
+  onBranch?: (itemId: string, seq: number) => void;
+  branchingSeq?: number | null;
 }) {
   switch (item.kind) {
     case "stamp":
@@ -223,10 +243,22 @@ function TranscriptRow({
       return (
         <div className="msg me">
           <div className="bubble">{item.text}</div>
+          <MessageActions
+            itemId={item.id}
+            seq={item.seq}
+            onBranch={onBranch}
+            branchingSeq={branchingSeq}
+          />
         </div>
       );
     case "agent":
-      return <AgentBubble item={item} />;
+      return (
+        <AgentBubble
+          item={item}
+          onBranch={onBranch}
+          branchingSeq={branchingSeq}
+        />
+      );
     case "notice":
       return <Notice item={item} onAction={onAction} />;
     // Unreachable through the reducer, which only ever builds the kinds above.
@@ -235,6 +267,55 @@ function TranscriptRow({
     default:
       return null;
   }
+}
+
+/**
+ * Compact actions under a chat bubble.
+ *
+ * Copy (#267 / #274) sits on assistant replies. Branch (#266) sits on every
+ * user and assistant Code message. Reactions (#265) join this same row.
+ */
+function MessageActions({
+  itemId,
+  seq,
+  streaming,
+  onBranch,
+  branchingSeq,
+  copyText: copySource,
+}: {
+  itemId: string;
+  seq?: number;
+  streaming?: boolean;
+  onBranch?: (itemId: string, seq: number) => void;
+  branchingSeq?: number | null;
+  copyText?: string;
+}) {
+  const canCopy = Boolean(copySource && copySource.length > 0);
+  const canBranch =
+    Boolean(onBranch) && seq !== undefined && seq >= 1 && !streaming;
+  if (!canCopy && !canBranch) return null;
+  const busy = branchingSeq === seq;
+  const branchLabel = busy ? "Branching…" : "Branch in new chat";
+  return (
+    <div className="msg-actions" role="group" aria-label="Message actions">
+      {canCopy && copySource ? <CopyResponseButton text={copySource} /> : null}
+      {canBranch ? (
+        <button
+          type="button"
+          className="msg-action"
+          aria-label={branchLabel}
+          data-tooltip={branchLabel}
+          aria-busy={busy || undefined}
+          disabled={branchingSeq != null}
+          onClick={() => {
+            if (seq !== undefined) onBranch?.(itemId, seq);
+          }}
+        >
+          <BranchIcon />
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function Notice({

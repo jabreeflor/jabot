@@ -92,8 +92,8 @@ const THREAD: ThreadSummary = {
 
 const THREAD_ITEMS: TranscriptItem[] = [
   { kind: "stamp", id: "s1", text: "Today" },
-  { kind: "user", id: "u1", text: "Start the auth migration." },
-  { kind: "agent", id: "a1", text: "Reading the session store first." },
+  { kind: "user", id: "u1", text: "Start the auth migration.", seq: 1 },
+  { kind: "agent", id: "a1", text: "Reading the session store first.", seq: 2 },
   {
     kind: "tool",
     id: "t1",
@@ -239,6 +239,7 @@ describe("primary views", () => {
         items={THREAD_ITEMS}
         onSend={vi.fn()}
         onAction={vi.fn()}
+        onBranch={vi.fn()}
         onPickHost={vi.fn()}
         onFold={vi.fn()}
         busy

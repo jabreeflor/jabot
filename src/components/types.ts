@@ -235,8 +235,8 @@ export interface ToolCall {
 export type TranscriptItem =
   | { kind: "stamp"; id: string; text: string }
   | { kind: "sys"; id: string; text: string }
-  | { kind: "user"; id: string; text: string }
-  | { kind: "agent"; id: string; text: string; streaming?: boolean }
+  | { kind: "user"; id: string; text: string; seq?: number }
+  | { kind: "agent"; id: string; text: string; streaming?: boolean; seq?: number }
   | { kind: "tool"; id: string; call: ToolCall }
   | {
       kind: "notice";

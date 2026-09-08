@@ -10,18 +10,18 @@ use super::protocol::methods::{
     CrewRefParams, CrewUpdateParams, FolderRefParams, FolderRegisterParams, FolderUpdateParams,
     GithubLoginParams, GithubStatusParams, HarnessDoctorParams, HelloParams, InboxListParams,
     PermissionPendingParams, PermissionReplyParams, PromptParams, ResumeFromParams,
-    SessionCancelParams, ThreadFoldParams, ThreadGitCommitParams, ThreadGitParams,
-    ThreadOpenParams, ThreadRefParams, ThreadRepoParams, ThreadSourceAddParams,
+    SessionCancelParams, ThreadBranchParams, ThreadFoldParams, ThreadGitCommitParams,
+    ThreadGitParams, ThreadOpenParams, ThreadRefParams, ThreadRepoParams, ThreadSourceAddParams,
     ThreadSourceRefParams, ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_DRAFTS,
     CREW_DRAFT_DISMISS, CREW_DRAFT_GET, CREW_DRAFT_SAVE, CREW_LIST, CREW_REMOVE, CREW_THREAD,
     CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_LOGIN,
     GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_INSTALL, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
     INBOX_LIST, NOTIFY_STATUS, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL,
-    SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE,
-    THREAD_FOLD, THREAD_GIT_COMMIT, THREAD_GIT_DIFF, THREAD_GIT_PUSH, THREAD_OPEN, THREAD_REOPEN,
-    THREAD_REPO_ATTACH, THREAD_REPO_DETACH, THREAD_RESUME, THREAD_SOURCE_ADD, THREAD_SOURCE_OPEN,
-    THREAD_SOURCE_REMOVE, THREAD_STATE, THREAD_SUMMARY, THREAD_TRANSCRIPT, TOOLS_CONNECT,
-    TOOLS_DISCONNECT, TOOLS_LIST,
+    SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_BRANCH,
+    THREAD_DELETE, THREAD_FOLD, THREAD_GIT_COMMIT, THREAD_GIT_DIFF, THREAD_GIT_PUSH, THREAD_OPEN,
+    THREAD_REOPEN, THREAD_REPO_ATTACH, THREAD_REPO_DETACH, THREAD_RESUME, THREAD_SOURCE_ADD,
+    THREAD_SOURCE_OPEN, THREAD_SOURCE_REMOVE, THREAD_STATE, THREAD_SUMMARY, THREAD_TRANSCRIPT,
+    TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
 };
 use super::protocol::methods::{
     DeviceRefParams, PairingClaimParams, PairingConfirmParams, PairingRefParams,
@@ -181,6 +181,12 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: ThreadGitParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.thread_git_push(params)?)
+        }
+        THREAD_BRANCH => {
+            session.require_hello()?;
+            let params: ThreadBranchParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_branch(params)?)
         }
         SUPERVISOR_STATUS => {
             session.require_hello()?;

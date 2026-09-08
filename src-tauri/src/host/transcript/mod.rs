@@ -194,6 +194,77 @@ pub(crate) fn prompt_text(content: &Value) -> String {
     }
 }
 
+/// Conversation so far, as the agent on a fresh branch session should see it.
+///
+/// A branched thread copies the source log for the UI; the ACP session is
+/// still new. The first prompt on that session carries this block so the
+/// agent can continue from the cut rather than from an empty chat.
+pub(crate) fn branch_history_text(events: &[crate::host::store::TranscriptEventRow]) -> String {
+    let payloads: Vec<Value> = events
+        .iter()
+        .filter_map(|row| serde_json::from_str(&row.payload_json).ok())
+        .collect();
+    branch_history_from_payloads(&payloads)
+}
+
+pub(crate) fn branch_history_from_payloads(payloads: &[Value]) -> String {
+    let mut turns: Vec<(Speaker, String)> = Vec::new();
+    for payload in payloads {
+        let Some(kind) = payload.get("sessionUpdate").and_then(Value::as_str) else {
+            continue;
+        };
+        let speaker = match kind {
+            USER_MESSAGE_CHUNK => Speaker::User,
+            "agent_message_chunk" => Speaker::Agent,
+            _ => continue,
+        };
+        let text = block_text(payload.get("content").unwrap_or(&Value::Null));
+        if text.is_empty() {
+            continue;
+        }
+        match turns.last_mut() {
+            Some((last, body)) if *last == speaker => body.push_str(&text),
+            _ => turns.push((speaker, text)),
+        }
+    }
+    turns
+        .into_iter()
+        .map(|(speaker, text)| match speaker {
+            Speaker::User => format!("User:\n{text}"),
+            Speaker::Agent => format!("Assistant:\n{text}"),
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Speaker {
+    User,
+    Agent,
+}
+
+/// Put the copied history in front of the first prompt of a branch session.
+pub(crate) fn prepend_branch_history(content: &Value, history: &str) -> Value {
+    if history.trim().is_empty() {
+        return content.clone();
+    }
+    let preface = format!(
+        "This conversation is a branch of another Code chat. Continue from the following history. Do not retell it unless asked.\n\n{history}\n\nThe user's next message follows."
+    );
+    match content {
+        Value::String(text) => Value::String(format!("{preface}\n\n{text}")),
+        Value::Array(blocks) => {
+            let mut out = vec![json!({ "type": "text", "text": preface })];
+            out.extend(blocks.iter().cloned());
+            Value::Array(out)
+        }
+        other => json!([
+            { "type": "text", "text": preface },
+            other
+        ]),
+    }
+}
+
 pub(crate) fn block_text(block: &Value) -> String {
     if let Some(text) = block.as_str() {
         return text.to_string();
@@ -460,5 +531,60 @@ mod tests {
         let value = response.result.expect("transcript");
         assert_eq!(value["headSeq"], 1);
         assert_eq!(value["events"][0]["method"], "session/update");
+    }
+
+    #[test]
+    fn branch_history_joins_chunks_and_skips_tools() {
+        let (_dir, mut session) = persistent_host();
+        open_thread(&mut session, "t-hist");
+        session.record_user_prompt("t-hist", &json!("do the thing"));
+        session.persist_transcript_event(
+            "t-hist",
+            "session/update",
+            &json!({
+                "sessionUpdate": "tool_call",
+                "toolCallId": "c1",
+                "kind": "read",
+            }),
+        );
+        session.persist_transcript_event(
+            "t-hist",
+            "session/update",
+            &json!({
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": "half" },
+            }),
+        );
+        session.persist_transcript_event(
+            "t-hist",
+            "session/update",
+            &json!({
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": " done" },
+            }),
+        );
+        let replay = session
+            .thread_transcript(ThreadTranscriptParams {
+                thread_id: "t-hist".into(),
+                after_seq: None,
+                limit: None,
+            })
+            .unwrap();
+        let payloads: Vec<Value> = replay
+            .events
+            .into_iter()
+            .map(|event| event.payload)
+            .collect();
+        let history = branch_history_from_payloads(&payloads);
+        assert_eq!(history, "User:\ndo the thing\n\nAssistant:\nhalf done");
+        assert!(!history.contains("tool"));
+    }
+
+    #[test]
+    fn prepend_history_leaves_the_user_text_last() {
+        let out = prepend_branch_history(&json!("and now this"), "User:\nhi");
+        let text = out.as_str().unwrap();
+        assert!(text.contains("User:\nhi"));
+        assert!(text.ends_with("and now this"));
     }
 }

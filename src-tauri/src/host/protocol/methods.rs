@@ -37,6 +37,9 @@ pub const THREAD_SOURCE_OPEN: &str = "thread/source/open";
 pub const THREAD_GIT_DIFF: &str = "thread/git/diff";
 pub const THREAD_GIT_COMMIT: &str = "thread/git/commit";
 pub const THREAD_GIT_PUSH: &str = "thread/git/push";
+/// Fork a Code conversation at a message (#266). Idempotent for a given
+/// `(thread, throughSeq)` — a second click returns the existing child.
+pub const THREAD_BRANCH: &str = "thread/branch";
 pub const SUPERVISOR_STATUS: &str = "supervisor/status";
 pub const INBOX_RESURFACE: &str = "inbox/resurface";
 pub const HARNESS_LIST: &str = "harness/list";
@@ -136,6 +139,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     THREAD_GIT_DIFF,
     THREAD_GIT_COMMIT,
     THREAD_GIT_PUSH,
+    THREAD_BRANCH,
     SUPERVISOR_STATUS,
     SCHEDULE_LIST,
     SCHEDULE_CREATE,
@@ -541,6 +545,25 @@ pub struct ThreadRefParams {
     pub thread_id: String,
 }
 
+/// Fork a Code conversation at a message (#266).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadBranchParams {
+    pub thread_id: String,
+    /// Inclusive cut: the child's transcript is the source's log through this
+    /// seq, and nothing after it.
+    pub through_seq: i64,
+}
+
+/// The conversation this thread was forked from (#266).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BranchedFromView {
+    pub thread_id: String,
+    pub title: String,
+    pub through_seq: i64,
+}
+
 /// New Chat: the edge into the state machine. Idempotent — opening a thread
 /// that already exists returns it rather than starting a second one.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -843,6 +866,10 @@ pub struct ThreadStateResult {
     /// the human started themselves, which is most of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub handoff: Option<HandoffView>,
+    /// Where this conversation was forked from (#266). Absent unless this
+    /// thread is a branch of another Code chat.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branched_from: Option<BranchedFromView>,
     /// The pull requests this thread opened (#28). Almost always none or one;
     /// a stacked or follow-up PR makes it two. Served here as well as on
     /// `pr/list` so a thread view can say "this produced PR #23" without
@@ -2305,6 +2332,18 @@ impl ThreadGitCommitParams {
     pub fn validate(&self) -> Result<(), super::error::RpcError> {
         require_non_empty(&self.thread_id, "threadId")?;
         require_non_empty(&self.message, "message")
+    }
+}
+
+impl ThreadBranchParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")?;
+        if self.through_seq < 1 {
+            return Err(super::error::RpcError::InvalidParams(
+                "throughSeq must be at least 1".into(),
+            ));
+        }
+        Ok(())
     }
 }
 

@@ -685,3 +685,15 @@ pub struct PrSnapshot {
     pub pr_updated_at: Option<String>,
     pub url: Option<String>,
 }
+
+/// One conversation branch (#266): a Code thread forked from another through
+/// a specific transcript seq. The pair `(source_thread_id, through_seq)` is
+/// unique so a second click on the same message cannot mint a second child.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadBranchRow {
+    pub source_thread_id: String,
+    pub through_seq: i64,
+    pub branch_thread_id: String,
+    pub created_at: String,
+}
