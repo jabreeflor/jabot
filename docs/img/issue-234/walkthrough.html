@@ -90,7 +90,7 @@
       </div>
 
       <p style="margin-top:16px">CI never auto-approves. <code>updateSnapshots: "none"</code> and the <code>browser</code> job does not pass <code>--update-snapshots</code>. A changed pixel fails and uploads expected / actual / diff. Default <code>verify.sh</code> stays offline; opt in with <code>--check-browser</code>.</p>
-      <p class="note">#231 / #232 / #233 were not on main. This PR ships the isolated host fixture #234 needs. Native packaged-app acceptance stays #235.</p>
+      <p class="note">#231 / #256 is now on main. This PR layers visual, axe, and keyboard checks on that shared <code>jabot</code> fixture. Native packaged-app acceptance stays #235.</p>
     </section>
 
     <section id="review">
@@ -99,7 +99,7 @@
         <thead><tr><th>File</th><th>Why it matters</th></tr></thead>
         <tbody>
           <tr><td><code>playwright.config.ts</code></td><td>Workers 1, retries 0, pinned env, per-project snapshot paths, <code>updateSnapshots: "none"</code>.</td></tr>
-          <tr><td><code>tests/browser/support/server.ts</code></td><td>Isolated Vite + host. This is the contract that keeps the suite off <code>.jabot-dev/</code>.</td></tr>
+          <tr><td><code>tests/browser/host.ts</code> + <code>fixtures.ts</code></td><td>Shared isolated Vite + host from #256. Visual/axe/keyboard use the same <code>jabot</code> fixture.</td></tr>
           <tr><td><code>tests/browser/visual.spec.ts</code></td><td>The seven stable states and which ones are <code>@chromium-only</code>.</td></tr>
           <tr><td><code>tests/browser/support/a11y.ts</code></td><td>Painted axe. Contrast on. Exceptions must be named, not global.</td></tr>
           <tr><td><code>src/styles/tokens.css</code> + <code>Modal.tsx</code></td><td>Product fixes the painted gate found: <code>--faint</code> AA, selected-detail contrast, focus restore on unmount.</td></tr>
@@ -116,7 +116,7 @@
         <li>Default gate stays clean: <code>./scripts/verify.sh --fast</code> (no display, no browsers).</li>
         <li>Opt-in after the usual gates: <code>./scripts/verify.sh --check-browser</code></li>
       </ul>
-      <p>Refresh baselines only on the baseline environment (Linux, Playwright 1.56, those Chromium/WebKit builds, <code>en-US</code> / <code>UTC</code>, 1180×780 and 900×600). Review every PNG under <code>tests/browser/__screenshots__/</code> before committing. Do not raise <code>maxDiffPixels</code>.</p>
+      <p>Refresh baselines only on the baseline environment (Linux, Playwright 1.63, those Chromium/WebKit builds, <code>en-US</code> / <code>UTC</code>, 1180×780 and 900×600). Review every PNG under <code>tests/browser/__screenshots__/</code> before committing. Do not raise <code>maxDiffPixels</code>.</p>
       <pre>npm run test:browser:update-snapshots</pre>
     </section>
   </main>
