@@ -83,6 +83,7 @@ impl HostSession {
             fold_policy: Some(FoldPolicy::parse(&source.fold_policy)),
             use_checkout: None,
             base_ref: None,
+            model: None,
         })?;
         let child_id = opened.thread_id.clone();
 
@@ -245,6 +246,7 @@ mod tests {
                 fold_policy: None,
                 use_checkout: None,
                 base_ref: None,
+                model: None,
             })
             .unwrap();
     }
