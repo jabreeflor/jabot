@@ -11,7 +11,7 @@ Buzz already ships. Do not PTY-wrap interactive TUIs for MVP.
 
 | Question | Short answer | Detail |
 |---|---|---|
-| 1. Integration mode | Headless + SDK + ACP adapters exist for all three. OpenCode later added first-party `opencode acp`. Cursor uses first-party `agent acp`. No TUI scraping. | [claude-code.md](claude-code.md), [codex.md](codex.md), [pi.md](pi.md), [opencode.md](opencode.md), [cursor.md](cursor.md) |
+| 1. Integration mode | Headless + SDK + ACP adapters exist for Claude Code, Codex, Pi, OpenCode (`opencode acp`), Gemini CLI, and Cursor (`agent acp`). No TUI scraping. Aider is a later preset: scripting CLI behind a JaBot-owned ACP wrapper, not native ACP. | [claude-code.md](claude-code.md), [codex.md](codex.md), [pi.md](pi.md), [opencode.md](opencode.md), [gemini.md](gemini.md), [aider.md](aider.md), [cursor.md](cursor.md) |
 | 2. Standard protocol | Yes: ACP. Cover the chat/toolblock/permission UX we need. | [acp.md](acp.md) |
 | 3. How Buzz does it | ACP over stdio. Tiered runtimes + BYOH JSON. | [buzz.md](buzz.md) |
 | 4. Event model | Structured events for text, tools, permissions, completion, errors. | [adapter-design.md](adapter-design.md) |

@@ -479,6 +479,33 @@ const PRESETS: &[Compiled] = &[
         declared_capabilities: &[],
         account_isolation: None,
     },
+    // Honest: Aider does not speak ACP. JaBot wraps the scripting CLI.
+    Compiled {
+        id: "aider",
+        label: "Aider",
+        blurb: "Paired programming via Aider's scripting CLI — not native ACP",
+        accent: "var(--h-aider)",
+        tier: HarnessTier::Preset,
+        launches: &[("jabot-aider-acp", &[], false)],
+        cli: &["aider"],
+        env: &[
+            ("AIDER_AUTO_COMMITS", "false"),
+            ("AIDER_DIRTY_COMMITS", "false"),
+            ("AIDER_YES", "true"),
+        ],
+        install_hint: "Install Aider (`python -m pip install aider-chat`), then set AIDER_MODEL and a provider key (OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, …).",
+        install_url: "https://aider.chat/docs/install.html",
+        capability_notes: Some(
+            "JaBot scripting wrapper, not native ACP. No session/request_permission or interactive approvals — `--yes` auto-accepts so a turn cannot hang on a TTY.",
+        ),
+        // Version / auth / model are classified in `aider.rs` after `aider` is
+        // found. Binary here is only the last-resort "it is on PATH" answer.
+        readiness: CompiledReadiness::Binary,
+        session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
+    },
     Compiled {
         id: "openclaw",
         label: "OpenClaw",
@@ -668,6 +695,7 @@ mod tests {
             assert!(is_reserved(id), "{id} must be reserved");
         }
         assert!(is_reserved("hermes"), "presets are reserved too");
+        assert!(is_reserved("aider"), "presets are reserved too");
         assert!(is_reserved("cursor"), "Cursor is a reserved preset");
         assert!(!is_reserved("my-agent"));
     }
@@ -880,6 +908,32 @@ mod tests {
             .find(|d| d.id == "claude")
             .unwrap();
         assert_ne!(claude.profile_key("t1"), claude.profile_key("t2"));
+    }
+
+    #[test]
+    fn aider_is_a_preset_that_disables_auto_commits() {
+        let aider = compiled_in().into_iter().find(|d| d.id == "aider").unwrap();
+        assert_eq!(aider.tier, HarnessTier::Preset);
+        assert_eq!(aider.session_scope, SessionScope::Thread);
+        assert_eq!(aider.cli, ["aider"]);
+        assert_eq!(
+            aider.env.get("AIDER_AUTO_COMMITS").map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            aider.env.get("AIDER_DIRTY_COMMITS").map(String::as_str),
+            Some("false")
+        );
+        assert!(aider.blurb.contains("not native ACP"), "{}", aider.blurb);
+        assert!(
+            aider
+                .capability_notes
+                .as_deref()
+                .unwrap()
+                .contains("session/request_permission"),
+            "{}",
+            aider.capability_notes.as_deref().unwrap_or("")
+        );
     }
 
     #[test]

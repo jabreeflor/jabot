@@ -147,7 +147,8 @@ pub struct HostSession {
     store_error: Option<String>,
     /// Live adapter processes, keyed by **connection key**, not by thread.
     ///
-    /// For every `SessionScope::Thread` harness — claude, codex, cursor — the
+    /// For every `SessionScope::Thread` harness — claude, codex, gemini,
+    /// aider, cursor — the
     /// key embeds the thread id, so this stays one process per thread exactly
     /// as it always was. For a `SessionScope::Profile` harness the key is the
     /// profile, and several threads share the entry (#13, #21).

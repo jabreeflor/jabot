@@ -15,6 +15,11 @@ pub use host::{
     SESSION_UPDATE,
 };
 
+/// stdio ACP adapter that drives Aider's scripting CLI (`jabot --aider-acp`).
+pub fn run_aider_acp() -> i32 {
+    host::harness::aider_acp::run()
+}
+
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 

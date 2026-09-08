@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 
 use super::super::procgroup;
 use super::super::protocol::methods::HarnessStatus;
+use super::aider::AiderFacts;
 use super::catalog::{HarnessDescriptor, InspectKind, Launch, Readiness};
 use super::gemini;
 
@@ -58,6 +59,10 @@ pub trait ProbeHost: Sync {
         }
     }
     fn listening(&self, addr: &str) -> bool;
+    /// Capture stdout of a short probe. Used when the exit code is not enough
+    /// (Aider's `--version`, for example). Failed / timed-out runs stay
+    /// [`ProbeRun`].
+    fn output(&self, command: &str, args: &[String]) -> Result<String, ProbeRun>;
 
     /// Combined stdout+stderr of a short probe. Default is the exit only —
     /// most readiness commands are classified by status, not by what they
@@ -156,6 +161,14 @@ pub fn diagnose_all(descriptors: &[HarnessDescriptor], probe: &dyn ProbeHost) ->
 }
 
 pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagnosis {
+    diagnose_with(descriptor, probe, &super::aider::SystemFacts)
+}
+
+fn diagnose_with(
+    descriptor: &HarnessDescriptor,
+    probe: &dyn ProbeHost,
+    facts: &dyn AiderFacts,
+) -> Diagnosis {
     let started = Instant::now();
     let finish = |status: HarnessStatus,
                   detail: String,
@@ -204,6 +217,17 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
             None,
             Vec::new(),
         );
+    }
+
+    // Aider's interesting failures (old version, no API key, no model) are
+    // properties of the vendor CLI, not of the JaBot adapter, so they are
+    // asked here — after `aider` is known to exist and before a missing
+    // `jabot-aider-acp` would hide them.
+    if descriptor.id == "aider" {
+        if let Some(report) = super::aider::classify(descriptor, probe, facts, None, None, started)
+        {
+            return report;
+        }
     }
 
     let resolved = descriptor
@@ -780,6 +804,61 @@ impl SystemProbe {
             text,
         }
     }
+
+    fn output_until(
+        &self,
+        command: &str,
+        args: &[String],
+        timeout: Duration,
+    ) -> Result<String, ProbeRun> {
+        let Some(path) = self.resolve(command) else {
+            return Err(ProbeRun::Failed(format!("{command} is not on PATH")));
+        };
+        let mut cmd = Command::new(path);
+        cmd.args(args)
+            .env("PATH", super::path::joined())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        procgroup::own_group(&mut cmd);
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(err) => return Err(ProbeRun::Failed(err.to_string())),
+        };
+        let mut stdout = child.stdout.take();
+        let collected = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(mut pipe) = stdout.take() {
+                use std::io::Read;
+                let _ = pipe.read_to_string(&mut buf);
+            }
+            buf
+        });
+        let deadline = Instant::now() + timeout;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+                Ok(None) => {
+                    procgroup::terminate(&mut child);
+                    let _ = collected.join();
+                    return Err(ProbeRun::TimedOut);
+                }
+                Err(err) => {
+                    let _ = collected.join();
+                    return Err(ProbeRun::Failed(err.to_string()));
+                }
+            }
+        };
+        let text = collected.join().unwrap_or_default();
+        if status.success() {
+            Ok(text)
+        } else {
+            Err(ProbeRun::Exit(status.code().unwrap_or(-1)))
+        }
+    }
 }
 
 impl ProbeHost for SystemProbe {
@@ -793,6 +872,10 @@ impl ProbeHost for SystemProbe {
 
     fn run_capture(&self, command: &str, args: &[String]) -> ProbeOutput {
         self.run_captured(command, args, PROBE_TIMEOUT, true)
+    }
+
+    fn output(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
+        self.output_until(command, args, PROBE_TIMEOUT)
     }
 
     fn run_text(&self, command: &str, args: &[String]) -> ProbeOutput {
@@ -854,8 +937,8 @@ mod tests {
             self
         }
 
-        fn printing(mut self, command: &str, text: &str) -> Self {
-            self.outputs.insert(command.to_string(), text.to_string());
+        fn printing(mut self, command: &str, text: impl Into<String>) -> Self {
+            self.outputs.insert(command.to_string(), text.into());
             self
         }
 
@@ -940,6 +1023,13 @@ mod tests {
             self.open_ports.iter().any(|open| open == addr)
         }
 
+        fn output(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
+            match self.run(command, args) {
+                ProbeRun::Exit(0) => Ok(self.outputs.get(command).cloned().unwrap_or_default()),
+                other => Err(other),
+            }
+        }
+
         fn env(&self, key: &str) -> Option<String> {
             self.env.get(key).cloned().filter(|value| !value.is_empty())
         }
@@ -960,6 +1050,66 @@ mod tests {
         assert_eq!(report.status, HarnessStatus::CliMissing);
         assert!(report.detail.contains("claude"), "{}", report.detail);
         assert!(report.remedy.is_some());
+    }
+
+    #[test]
+    fn aider_without_the_cli_is_missing_aider_not_an_adapter() {
+        let report = diagnose(&descriptor("aider"), &FakeMachine::default());
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+        assert!(report.detail.contains("aider"), "{}", report.detail);
+    }
+
+    struct FakeAiderFacts {
+        env: HashMap<String, String>,
+        config: Option<String>,
+    }
+
+    impl AiderFacts for FakeAiderFacts {
+        fn env(&self, key: &str) -> Option<String> {
+            self.env.get(key).cloned()
+        }
+        fn home_config(&self) -> Option<String> {
+            self.config.clone()
+        }
+    }
+
+    fn aider_facts_with_key() -> FakeAiderFacts {
+        FakeAiderFacts {
+            env: HashMap::from([("OPENAI_API_KEY".into(), "sk-test".into())]),
+            config: None,
+        }
+    }
+
+    #[test]
+    fn aider_without_a_key_is_logged_out_not_ready() {
+        let machine =
+            FakeMachine::with(&["aider", "jabot-aider-acp"]).printing("aider", "aider 0.82.2");
+        let facts = FakeAiderFacts {
+            env: HashMap::new(),
+            config: None,
+        };
+        let report = diagnose_with(&descriptor("aider"), &machine, &facts);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("OPENAI_API_KEY"));
+    }
+
+    #[test]
+    fn aider_with_cli_adapter_version_and_key_is_ready() {
+        let machine =
+            FakeMachine::with(&["aider", "jabot-aider-acp"]).printing("aider", "aider 0.82.2");
+        let report = diagnose_with(&descriptor("aider"), &machine, &aider_facts_with_key());
+        assert_eq!(report.status, HarnessStatus::Ready);
+    }
+
+    #[test]
+    fn aider_auth_failure_is_named_before_a_missing_adapter() {
+        let machine = FakeMachine::with(&["aider"]).printing("aider", "aider 0.82.2");
+        let facts = FakeAiderFacts {
+            env: HashMap::new(),
+            config: None,
+        };
+        let report = diagnose_with(&descriptor("aider"), &machine, &facts);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
     }
 
     #[test]

@@ -70,8 +70,29 @@ const CLAUDE_EXECUTABLE_ENV: &str = "CLAUDE_CODE_EXECUTABLE";
 pub fn launches_for(id: &str) -> Vec<Launch> {
     match id {
         "claude" => claude_launch().cloned().into_iter().collect(),
+        "aider" => aider_self_launch().into_iter().collect(),
         _ => Vec::new(),
     }
+}
+
+/// Re-exec this process as the Aider ACP adapter. Only offered when the
+/// running binary actually handles `--aider-acp` (`jabot`, `jabot-hostd`,
+/// `JaBot`). A `cargo test` binary must not pretend to be the adapter.
+pub fn aider_self_launch() -> Option<Launch> {
+    aider_self_launch_with(std::env::current_exe().ok().as_deref())
+}
+
+pub fn aider_self_launch_with(exe: Option<&Path>) -> Option<Launch> {
+    let exe = exe?;
+    let name = exe.file_name()?.to_string_lossy();
+    if !matches!(name.as_ref(), "jabot" | "jabot-hostd" | "JaBot") {
+        return None;
+    }
+    Some(Launch::bundled(
+        &exe.display().to_string(),
+        &["--aider-acp"],
+        BTreeMap::new(),
+    ))
 }
 
 /// The bundled Claude adapter, if this build has one and the machine can run
@@ -227,6 +248,18 @@ mod tests {
     /// Each of the three is a different reason this machine cannot run the
     /// bundled copy, and every one of them means "offer nothing" rather than
     /// "offer a command that will fail".
+    #[test]
+    fn aider_reexecs_only_from_a_host_binary() {
+        let hostd = PathBuf::from("/usr/local/bin/jabot-hostd");
+        let launch = aider_self_launch_with(Some(&hostd)).expect("hostd speaks --aider-acp");
+        assert_eq!(launch.command, hostd.display().to_string());
+        assert_eq!(launch.args, vec!["--aider-acp"]);
+        assert!(launch.bundled);
+
+        assert!(aider_self_launch_with(Some(Path::new("/tmp/deps/catalog-test"))).is_none());
+        assert!(aider_self_launch_with(None).is_none());
+    }
+
     #[test]
     fn a_missing_piece_offers_nothing() {
         let (entry, node, claude) = paths();

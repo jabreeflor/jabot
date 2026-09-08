@@ -20,6 +20,7 @@
 //! | `opencode` | the OpenCode window | `@lobehub/icons` `OpenCode` | opencode.ai |
 //! | `copilot` | GitHub Copilot | `simple-icons/githubcopilot` | github.com/features/copilot |
 //! | `gemini` | Google Gemini's sparkle | `simple-icons/googlegemini` | geminicli.com |
+//! | `aider` | a geometric A | JaBot stand-in — Aider has no published SVG kit in simple-icons / `@lobehub/icons` | aider.chat |
 //! | `cursor` | Cursor's gem | `simple-icons/cursor` | cursor.com |
 //!
 //! Each source URL is the one the harness catalog already points at for the
@@ -97,6 +98,8 @@ export function HarnessMark({
       return <CopilotMark className={className} />;
     case "gemini":
       return <GeminiMark className={className} />;
+    case "aider":
+      return <AiderMark className={className} />;
     case "cursor":
       return <CursorMark className={className} />;
     default:
@@ -179,6 +182,16 @@ function OpenCodeMark({ className }: MarkProps) {
   return (
     <Mark className={className}>
       <path d="M16 6H8v12h8V6zm4 16H4V2h16v20z" />
+    </Mark>
+  );
+}
+
+/** Aider: a geometric A. Aider publishes raster assets on aider.chat but no
+    SVG icon kit, so this is JaBot's stand-in — not a traced vendor logo. */
+function AiderMark({ className }: MarkProps) {
+  return (
+    <Mark className={className}>
+      <path d="M12 2.2 21.5 21h-3.4l-1.6-3.4H7.5L5.9 21H2.5L12 2.2zm0 5.3L8.9 14.4h6.2L12 7.5z" />
     </Mark>
   );
 }
