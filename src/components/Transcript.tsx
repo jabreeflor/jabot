@@ -5,7 +5,7 @@
 //! One agent turn that read six files and ran the tests is one thing that
 //! happened, and six stacked cards would read as six turns.
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { copyText } from "./copyText";
 import {
@@ -15,9 +15,11 @@ import {
   CrossIcon,
   DotIcon,
   RingIcon,
+  SmileIcon,
   SparkIcon,
 } from "./Icon";
 import { renderMarkdown } from "./markdown";
+import { REACTION_CHOICES, reactionName } from "./reactions";
 import type { ToolCall, ToolKind, TranscriptItem } from "./types";
 
 /**
@@ -34,10 +36,13 @@ const WINDOW = 80;
 export function Transcript({
   items,
   onAction,
+  onReact,
 }: {
   items: readonly TranscriptItem[];
   /** A notice card's button — a fold offer today, a permission reply in #20. */
   onAction?: (itemId: string, actionId: string) => void;
+  /** Toggle an emoji on an agent bubble (#265). */
+  onReact?: (itemId: string, emoji: string) => void;
 }) {
   // Streaming is why this is memoized rather than recomputed. #14's reducer
   // returns a new array whose *other elements are the same objects*, so with
@@ -81,6 +86,7 @@ export function Transcript({
             key={entry.item.id}
             item={entry.item}
             onAction={onAction}
+            onReact={onReact}
           />
         ),
       )}
@@ -125,18 +131,31 @@ const ToolBlock = memo(ToolBlockRow, (before, after) =>
  */
 function AgentBubble({
   item,
+  onReact,
 }: {
   item: Extract<TranscriptItem, { kind: "agent" }>;
+  onReact?: (itemId: string, emoji: string) => void;
 }) {
   const nodes = useMemo(() => renderMarkdown(item.text), [item.text]);
+  const reactions = item.reactions ?? [];
+  const canReact = onReact !== undefined;
   return (
     <div className="msg bot">
-      <div className="bubble" data-streaming={item.streaming || undefined}>
-        {nodes}
+      <div className="bot-turn">
+        <div className="bubble" data-streaming={item.streaming || undefined}>
+          {nodes}
+        </div>
       </div>
-      {item.text.length > 0 && (
+      {(item.text.length > 0 || canReact || reactions.length > 0) && (
         <div className="msg-actions" role="group" aria-label="Message actions">
-          <CopyResponseButton text={item.text} />
+          {item.text.length > 0 && <CopyResponseButton text={item.text} />}
+          {(canReact || reactions.length > 0) && (
+            <ReactionBar
+              itemId={item.id}
+              reactions={reactions}
+              onReact={onReact}
+            />
+          )}
         </div>
       )}
     </div>
@@ -195,6 +214,128 @@ function CopyResponseButton({ text }: { text: string }) {
   );
 }
 
+function ReactionBar({
+  itemId,
+  reactions,
+  onReact,
+}: {
+  itemId: string;
+  reactions: readonly string[];
+  onReact?: (itemId: string, emoji: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        addRef.current?.focus();
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    rootRef.current
+      ?.querySelector<HTMLButtonElement>("[role='menuitem']")
+      ?.focus();
+  }, [open]);
+
+  function choose(emoji: string) {
+    setOpen(false);
+    onReact?.(itemId, emoji);
+    addRef.current?.focus();
+  }
+
+  return (
+    <div className="react-bar" ref={rootRef}>
+      {reactions.length > 0 && (
+        <ul className="react-marks" aria-label="Reactions">
+          {reactions.map((emoji) => {
+            const name = reactionName(emoji);
+            return (
+              <li key={emoji}>
+                {onReact ? (
+                  <button
+                    type="button"
+                    className="react-badge"
+                    aria-pressed="true"
+                    aria-label={`Remove ${name} reaction`}
+                    onClick={() => onReact(itemId, emoji)}
+                  >
+                    {emoji}
+                  </button>
+                ) : (
+                  <span className="react-badge" aria-label={`${name} reaction`}>
+                    {emoji}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {onReact && (
+        <div className="react-add-wrap">
+          <button
+            ref={addRef}
+            type="button"
+            className="react-add"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            aria-controls={open ? menuId : undefined}
+            aria-label="Add reaction"
+            onClick={() => setOpen((was) => !was)}
+          >
+            <SmileIcon />
+          </button>
+          {open && (
+            <div
+              className="react-pick"
+              id={menuId}
+              role="menu"
+              aria-label="Choose a reaction"
+            >
+              {REACTION_CHOICES.map((choice) => {
+                const selected = reactions.includes(choice.emoji);
+                return (
+                  <button
+                    key={choice.emoji}
+                    type="button"
+                    role="menuitem"
+                    aria-label={
+                      selected
+                        ? `Remove ${choice.name} reaction`
+                        : `React with ${choice.name}`
+                    }
+                    data-selected={selected || undefined}
+                    onClick={() => choose(choice.emoji)}
+                  >
+                    {choice.emoji}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Identity, not deep equality: the reducer replaces exactly the call it
     changed, so a per-element `===` is both correct and O(n) on pointers. */
 function sameCalls(a: readonly ToolCall[], b: readonly ToolCall[]): boolean {
@@ -206,9 +347,11 @@ const TranscriptEntry = memo(TranscriptRow);
 function TranscriptRow({
   item,
   onAction,
+  onReact,
 }: {
   item: Exclude<TranscriptItem, { kind: "tool" }>;
   onAction?: (itemId: string, actionId: string) => void;
+  onReact?: (itemId: string, emoji: string) => void;
 }) {
   switch (item.kind) {
     case "stamp":
@@ -226,7 +369,7 @@ function TranscriptRow({
         </div>
       );
     case "agent":
-      return <AgentBubble item={item} />;
+      return <AgentBubble item={item} onReact={onReact} />;
     case "notice":
       return <Notice item={item} onAction={onAction} />;
     // Unreachable through the reducer, which only ever builds the kinds above.

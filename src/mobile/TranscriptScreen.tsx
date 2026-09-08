@@ -106,7 +106,16 @@ function Line({ item }: { item: TranscriptItem }) {
     case "user":
       return <li className="jm-line user">{item.text}</li>;
     case "agent":
-      return <li className="jm-line agent">{item.text}</li>;
+      return (
+        <li className="jm-line agent">
+          {item.text}
+          {item.reactions && item.reactions.length > 0 && (
+            <span className="jm-reactions" aria-label="Reactions">
+              {item.reactions.join(" ")}
+            </span>
+          )}
+        </li>
+      );
     case "tool":
       // One line each, and the target rather than the output: a phone is not
       // where somebody reads a diff, and a screen that tried would bury the

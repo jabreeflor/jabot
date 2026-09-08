@@ -208,6 +208,13 @@ button.jm-card-title:focus-visible {
   background: rgba(128, 128, 128, 0.1);
 }
 
+.jm-reactions {
+  display: block;
+  margin-top: 6px;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
 /* Not a bubble: a tool call is a thing that happened, not a thing that was
    said, and giving it the same shape as speech reads as the agent talking. */
 .jm-line.tool {

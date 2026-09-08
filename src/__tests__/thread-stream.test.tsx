@@ -38,6 +38,7 @@ import {
   markPromptQueued,
   markPromptSent,
   streamStatus,
+  toggleItemReaction,
   type ThreadStream,
 } from "../views/transcript";
 import type {
@@ -574,6 +575,38 @@ describe("hydrate", () => {
     );
     expect(hydrated.busy).toBe(true);
   });
+
+  it("pins persisted reactions onto the agent bubble they belong to", () => {
+    const hydrated = hydrate({
+      threadId: "t1",
+      headSeq: 2,
+      events: [
+        {
+          seq: 1,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: "go" },
+          },
+        },
+        { seq: 2, method: SESSION_UPDATE, createdAt: "", payload: text("Done.") },
+      ],
+      truncated: false,
+      queued: [],
+      reactions: [{ itemId: "e2-1", emoji: "👍" }],
+    });
+    const agent = hydrated.items.find((item) => item.kind === "agent");
+    expect(agent).toMatchObject({ text: "Done.", reactions: ["👍"] });
+    const again = toggleItemReaction(hydrated, agent!.id, "👍");
+    expect(again.items.find((item) => item.kind === "agent")).toMatchObject({
+      reactions: [],
+    });
+    const onceMore = toggleItemReaction(again, agent!.id, "👍");
+    expect(onceMore.items.find((item) => item.kind === "agent")).toMatchObject({
+      reactions: ["👍"],
+    });
+  });
 });
 
 // ---- the live view --------------------------------------------------------
@@ -621,6 +654,7 @@ function stubHost(
   const stale = new Set(
     pending.filter((request) => request.stale).map((r) => r.requestId),
   );
+  const marks = new Map<string, string[]>();
 
   const client = {
     onNotification: (handler: (n: JsonRpcNotification) => void) => {
@@ -702,6 +736,14 @@ function stubHost(
       };
     }),
     cancel,
+    react: vi.fn(async ({ itemId, emoji }: { itemId: string; emoji: string }) => {
+      const current = marks.get(itemId) ?? [];
+      const next = current.includes(emoji)
+        ? current.filter((item) => item !== emoji)
+        : [...current, emoji];
+      marks.set(itemId, next);
+      return { threadId: THREAD.id, itemId, reactions: next };
+    }),
   } as unknown as HostClient;
 
   function notify(method: string, params: unknown) {
@@ -786,6 +828,38 @@ describe("LiveThreadView", () => {
       3,
     );
     expect(await screen.findByText(/npm test/)).toBeInTheDocument();
+  });
+
+  it("lets a reader react to a bot reply and toggle the mark off", async () => {
+    const host = stubHost();
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    await screen.findByText("start the migration");
+    host.emit(text("Done."), 2);
+    expect(await screen.findByText("Done.")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Add reaction" }));
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "React with thumbs up" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Remove thumbs up reaction" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove thumbs up reaction" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Remove thumbs up reaction" }),
+      ).toBeNull(),
+    );
   });
 
   /**

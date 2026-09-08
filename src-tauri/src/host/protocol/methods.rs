@@ -26,6 +26,8 @@ pub const THREAD_ARCHIVE: &str = "thread/archive";
 pub const THREAD_DELETE: &str = "thread/delete";
 pub const THREAD_STATE: &str = "thread/state";
 pub const THREAD_TRANSCRIPT: &str = "thread/transcript";
+/// Toggle an emoji reaction on a rendered transcript item (#265).
+pub const THREAD_REACT: &str = "thread/react";
 pub const THREAD_RESUME: &str = "thread/resume";
 /// Repositories, Git state, and attached sources for a Code conversation (#269).
 pub const THREAD_SUMMARY: &str = "thread/summary";
@@ -126,6 +128,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     CREW_DRAFT_SAVE,
     CREW_DRAFT_DISMISS,
     THREAD_TRANSCRIPT,
+    THREAD_REACT,
     THREAD_RESUME,
     THREAD_SUMMARY,
     THREAD_REPO_ATTACH,
@@ -415,6 +418,37 @@ pub struct ThreadTranscriptResult {
     /// reopened thread offers Stop for work that is genuinely still running.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_state: Option<String>,
+    /// Emoji the user left on rendered items (#265). Overlay, not transcript
+    /// events: a reaction is not something the harness said.
+    #[serde(default)]
+    pub reactions: Vec<MessageReactionView>,
+}
+
+/// One persisted mark on a rendered transcript item.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageReactionView {
+    pub item_id: String,
+    pub emoji: String,
+}
+
+/// Toggle `emoji` on `itemId` in `threadId`. A second call with the same
+/// triple removes the mark — that is how a click does not mint a duplicate.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadReactParams {
+    pub thread_id: String,
+    pub item_id: String,
+    pub emoji: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadReactResult {
+    pub thread_id: String,
+    pub item_id: String,
+    /// The item's marks after the toggle, in the order they were added.
+    pub reactions: Vec<String>,
 }
 
 /// A prompt the user has sent that the agent has not been given yet.
@@ -2341,6 +2375,14 @@ impl PermissionReplyParams {
 impl ThreadTranscriptParams {
     pub fn validate(&self) -> Result<(), super::error::RpcError> {
         require_non_empty(&self.thread_id, "threadId")
+    }
+}
+
+impl ThreadReactParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")?;
+        require_non_empty(&self.item_id, "itemId")?;
+        require_non_empty(&self.emoji, "emoji")
     }
 }
 

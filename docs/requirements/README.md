@@ -21,6 +21,7 @@ the issue number is noted so it can be cross-referenced against
 | [ui-shell.md](ui-shell.md) | React/TS UI shell ported from the HTML prototype | #11 |
 | [packaging-distribution.md](packaging-distribution.md) | macOS signing, notarization, updater | #12 |
 | [chat-transcript.md](chat-transcript.md) | Chat transcript renderer + persisted overlay | #14 |
+| [message-reactions.md](message-reactions.md) | Emoji reactions on agent replies | #265 |
 | [thread-state-and-runs.md](thread-state-and-runs.md) | Thread overlay states + run ledger | #5, #15 |
 | [folder-repo-registration.md](folder-repo-registration.md) | Folder/repo registration | #16 |
 | [crew-management.md](crew-management.md) | Crew store, bot templates, "every bot is a harness" | #6, #17 |

@@ -25,6 +25,7 @@ export function ChatView({
   items,
   onSend,
   onAction,
+  onReact,
   onPickHost,
   busy,
   queued,
@@ -37,6 +38,7 @@ export function ChatView({
   items: readonly TranscriptItem[];
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
+  onReact?: (itemId: string, emoji: string) => void;
   onPickHost?: (hostId: string) => void;
   /** A turn is in flight on this bot's standing thread (#24). */
   busy?: boolean;
@@ -71,6 +73,7 @@ export function ChatView({
       composerPlaceholder={`Message ${bot.name}`}
       onSend={onSend}
       onAction={onAction}
+      onReact={onReact}
       busy={busy}
       queued={queued}
       onCancel={onCancel}
@@ -133,7 +136,7 @@ export function LiveChatView({
     };
   }, [client, bot.id]);
 
-  const { stream, error, send, cancel, answer } = useThreadTranscript(
+  const { stream, error, send, cancel, answer, react } = useThreadTranscript(
     client,
     threadId,
   );
@@ -147,6 +150,7 @@ export function LiveChatView({
       // The buttons on a permission card are the agent's own ACP options, and
       // this is what carries the one the user pressed back to it (#20).
       onAction={answer}
+      onReact={react}
       onPickHost={onPickHost}
       busy={stream.busy}
       queued={stream.queued}

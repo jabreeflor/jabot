@@ -260,6 +260,125 @@
   white-space: normal;
 }
 
+/* The bot writes on the page; reactions sit under the prose as quiet marks,
+   not as a second bubble (#265). */
+.msg.bot .bot-turn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  max-width: 100%;
+}
+
+.react-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.react-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.react-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 var(--sp-3);
+  background: var(--raise);
+  border: 1px solid var(--sunk-edge);
+  border-radius: var(--r-pill);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1;
+  cursor: default;
+}
+
+button.react-badge {
+  cursor: pointer;
+}
+
+button.react-badge:hover,
+button.react-badge:focus-visible {
+  background: var(--raise-hover);
+}
+
+.react-add-wrap {
+  position: relative;
+}
+
+.react-add {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.react-add:hover,
+.react-add:focus-visible,
+.react-add[aria-expanded="true"] {
+  color: var(--ink);
+  background: var(--raise);
+  border-color: var(--sunk-edge);
+}
+
+.react-add svg {
+  width: 15px;
+  height: 15px;
+}
+
+.react-pick {
+  position: absolute;
+  z-index: 300;
+  top: calc(100% + var(--sp-2));
+  left: 0;
+  display: flex;
+  gap: 2px;
+  background: var(--raise2);
+  border: 1px solid var(--edge-menu);
+  border-radius: 13px;
+  padding: 5px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+.react-pick button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: none;
+  border: 0;
+  border-radius: 9px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.react-pick button:hover,
+.react-pick button:focus-visible {
+  background: var(--raise);
+}
+
+.react-add:focus-visible,
+.react-badge:focus-visible,
+.react-pick button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
 .msg.me .bubble {
   max-width: 72%;
   padding: 11px var(--sp-5);

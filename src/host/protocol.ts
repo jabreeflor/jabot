@@ -25,6 +25,8 @@ export const THREAD_ARCHIVE = "thread/archive";
 export const THREAD_DELETE = "thread/delete";
 export const THREAD_STATE = "thread/state";
 export const THREAD_TRANSCRIPT = "thread/transcript";
+/** Toggle an emoji reaction on a rendered transcript item (#265). */
+export const THREAD_REACT = "thread/react";
 export const THREAD_RESUME = "thread/resume";
 /** Repositories, Git state, and attached sources for a Code conversation (#269). */
 export const THREAD_SUMMARY = "thread/summary";
@@ -293,6 +295,28 @@ export interface ThreadTranscriptResult {
       the ledger's answer travels with it — that is what lets a view mounted
       mid-turn offer Stop instead of reporting the previous turn's outcome. */
   runState?: RunLedgerState;
+  /** Emoji the user left on rendered items (#265). Overlay, not events. */
+  reactions?: MessageReactionView[];
+}
+
+/** One persisted mark on a rendered transcript item. */
+export interface MessageReactionView {
+  itemId: string;
+  emoji: string;
+}
+
+/** Toggle `emoji` on `itemId`. A second call with the same triple removes it. */
+export interface ThreadReactParams {
+  threadId: string;
+  itemId: string;
+  emoji: string;
+}
+
+export interface ThreadReactResult {
+  threadId: string;
+  itemId: string;
+  /** The item's marks after the toggle, in the order they were added. */
+  reactions: string[];
 }
 
 export interface SessionCancelResult {
