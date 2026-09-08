@@ -8,8 +8,8 @@
 The layer that turns "a bot" into a real subprocess speaking the Agent
 Client Protocol (ACP) over stdio: spawning, connection setup, wake/idle
 signaling, and a catalog of known harnesses (Claude Code, Codex, Pi,
-OpenCode, Hermes, OpenClaw, custom JSON) with a "Doctor" that checks
-whether each is actually installed and usable.
+OpenCode, Copilot, Gemini, Hermes, OpenClaw, Cursor Agent, custom JSON)
+with a "Doctor" that checks whether each is actually installed and usable.
 
 ## Why
 
@@ -51,7 +51,10 @@ host-owned "thin LLM + MCP" runtime. This module is that one runtime.
      Gemini CLI is first-party ACP (`gemini --acp`). See
      [setup/gemini-cli.md](../setup/gemini-cli.md).
    - **Tier 2 — presets**: PATH-probed, not user-editable (Hermes,
-     OpenClaw, Cursor, …), resolved via `path.rs`.
+     OpenClaw, Cursor Agent via `agent acp`, …), resolved via `path.rs`.
+     Cursor never gets `--force` / `--approve-mcps`; see
+     [cursor-agent setup](../setup/cursor-agent.md) and
+     [cursor.md](../research/harness-integration/cursor.md).
    - **Tier 3 — user JSON**: user-supplied custom harness definitions
      (`custom.rs`) under settings / `custom_harnesses/`, validated
      against the Buzz schema (`id`, `label`, `command`, `args`, `env`,

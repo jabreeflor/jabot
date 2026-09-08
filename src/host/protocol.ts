@@ -695,6 +695,7 @@ export interface HarnessReport {
   elapsedMs: number;
   /** `provider/model` lines the Doctor's models probe printed. */
   models?: string[];
+  capabilities?: HarnessCapabilitiesView;
 }
 
 export interface HarnessDoctorResult {

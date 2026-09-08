@@ -11,7 +11,7 @@ Buzz already ships. Do not PTY-wrap interactive TUIs for MVP.
 
 | Question | Short answer | Detail |
 |---|---|---|
-| 1. Integration mode | Headless + SDK + ACP adapters exist for all three. OpenCode later added first-party `opencode acp`. No TUI scraping. | [claude-code.md](claude-code.md), [codex.md](codex.md), [pi.md](pi.md), [opencode.md](opencode.md) |
+| 1. Integration mode | Headless + SDK + ACP adapters exist for all three. OpenCode later added first-party `opencode acp`. Cursor uses first-party `agent acp`. No TUI scraping. | [claude-code.md](claude-code.md), [codex.md](codex.md), [pi.md](pi.md), [opencode.md](opencode.md), [cursor.md](cursor.md) |
 | 2. Standard protocol | Yes: ACP. Cover the chat/toolblock/permission UX we need. | [acp.md](acp.md) |
 | 3. How Buzz does it | ACP over stdio. Tiered runtimes + BYOH JSON. | [buzz.md](buzz.md) |
 | 4. Event model | Structured events for text, tools, permissions, completion, errors. | [adapter-design.md](adapter-design.md) |
@@ -28,7 +28,8 @@ The brief's "What this blocks" list can become issues:
 2. **Shipped adapters** — Claude via `claude-agent-acp` / `@zed-industries/claude-code-acp`;
    Codex via `codex-acp` / `@zed-industries/codex-acp`; Pi via `pi-acp`;
    Copilot via `copilot --acp` (the vendor CLI *is* the adapter; see
-   [copilot.md](copilot.md)).
+   [copilot.md](copilot.md)); Cursor Agent via first-party `agent acp`
+   ([cursor.md](cursor.md)).
 3. **Chat transcript renderer** — consume ACP `session/update` (agent message
    chunks, `tool_call_update` with kinds `read` / `edit` / `execute`, diffs,
    plans). Maps 1:1 onto the prototype's bubbles + toolblocks.

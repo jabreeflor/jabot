@@ -167,7 +167,7 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
             }],
             // A custom binary is whatever the user pointed at; there is no
             // vendor CLI behind it to blame for being missing.
-            cli: None,
+            cli: Vec::new(),
             env,
             install_hint: file.install_hint.filter(|h| !h.trim().is_empty()),
             install_url: file

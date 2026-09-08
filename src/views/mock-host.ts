@@ -111,6 +111,21 @@ export const HARNESSES: readonly HarnessCard[] = [
     blurb: "Google's Gemini CLI over its documented ACP mode",
     accent: "var(--h-gemini)",
   },
+  {
+    id: "cursor",
+    label: "Cursor Agent",
+    blurb: "Cursor's coding agent. Permissions stay in JaBot — no --force.",
+    accent: "var(--h-cursor)",
+    capabilities: {
+      streaming: true,
+      toolEvents: true,
+      permissions: true,
+      cancel: true,
+      resume: false,
+      notes:
+        "Auth uses this machine's Cursor account or CURSOR_API_KEY — not isolated per bot.",
+    },
+  },
 ];
 
 /**
