@@ -34,6 +34,7 @@ So cfg(macos) lint is a pair of scoped PR checks, not a new default
 | `src-tauri/src/host/store/secrets.rs` (`os_put` / `os_get` / `os_delete`) | macOS Keychain via `keyring` | **macos clippy** (native) | `keyring` / Security.framework are not in the notify scratch crate. |
 | `src-tauri/src/lib.rs` (updater `.plugin()`, hide-to-Dock, Dock Reopen) | Tauri + `tauri-plugin-updater` | **macos clippy** (native) | Pulls `tauri`, which pulls `objc2-exception-helper`'s Apple `cc` build script. Linux cross-check of the whole crate fails; that is D-019, not a gap to close. |
 | `src-tauri/src/host/harness/path.rs` (`login_shell_path`) | Login-shell `PATH` probe | Linux `verify` clippy | Uses `cfg!(target_os = "macos")` (a boolean), not `#[cfg]`. Both branches type-check on Linux. **Not** a native-job trigger. |
+| `src-tauri/src/window.rs` | Under-window vibrancy (#250) | Linux `verify` clippy | Same `cfg!` pattern. `set_effects` type-checks on every desktop target and is a no-op off macOS. **Not** a native-job trigger. The call site in `lib.rs` still starts macos clippy when that file changes. |
 
 Shared inputs that turn the relevant job(s) on: `src-tauri/Cargo.toml`,
 `src-tauri/Cargo.lock`, `src-tauri/clippy.toml`, `rust-toolchain.toml`,
@@ -57,7 +58,10 @@ Both lint jobs use `clippy -- -D warnings`. A warning is a red check.
 
 `macos clippy` is scoped to `cargo clippy --locked --lib` and uses
 `Swatinem/rust-cache`. It is not `npm run tauri build`. A frontend-only or
-docs-only PR does not start a Mac runner.
+docs-only PR does not start a Mac runner. If the vendored ACP adapters are
+not staged, the script writes a stub file so `tauri-build` can resolve the
+`bundle.resources` glob; that is not a substitute for `npm run bundle:adapters`
+on a real bundle.
 
 ## Local reproduction
 

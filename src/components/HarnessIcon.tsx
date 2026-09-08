@@ -17,7 +17,9 @@
 //! | `pi` | pi.dev's blocked π | `@lobehub/icons` `Pi` | pi.dev |
 //! | `hermes` | Nous Research's Hermes art | `@lobehub/icons` `HermesAgent` | hermes-agent.nousresearch.com |
 //! | `openclaw` | the OpenClaw crab | `@lobehub/icons` `OpenClaw` | openclaw.dev |
+//! | `copilot` | GitHub Copilot | `simple-icons/githubcopilot` | github.com/features/copilot |
 //! | `gemini` | Google Gemini's sparkle | `simple-icons/googlegemini` | geminicli.com |
+//! | `cursor` | Cursor's gem | `simple-icons/cursor` | cursor.com |
 //!
 //! Each source URL is the one the harness catalog already points at for the
 //! install hint (`harness/catalog.rs`), which is how the mark and the thing it
@@ -29,7 +31,7 @@
 //! which is what makes the *paths* copyable; the marks themselves stay their
 //! owners' trademarks, used here to name third-party products in a picker that
 //! exists to choose between them. They are inlined rather than depended on:
-//! six glyphs do not earn a package on the critical path, and a brand kit
+//! these glyphs do not earn a package on the critical path, and a brand kit
 //! that renames an export should not be able to blank a card.
 //!
 //! **An unknown id still gets a glyph.** Tier-3 harnesses are whatever a user
@@ -88,8 +90,12 @@ export function HarnessMark({
       return <HermesMark className={className} />;
     case "openclaw":
       return <OpenClawMark className={className} />;
+    case "copilot":
+      return <CopilotMark className={className} />;
     case "gemini":
       return <GeminiMark className={className} />;
+    case "cursor":
+      return <CursorMark className={className} />;
     default:
       return <CustomHarnessMark className={className} />;
   }
@@ -134,6 +140,15 @@ function HermesMark({ className }: MarkProps) {
   );
 }
 
+/** GitHub Copilot: the vendor mark from simple-icons (CC0-1.0). */
+function CopilotMark({ className }: MarkProps) {
+  return (
+    <Mark className={className}>
+      <path d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z" />
+    </Mark>
+  );
+}
+
 /** Gemini CLI: Google Gemini's sparkle. */
 function GeminiMark({ className }: MarkProps) {
   return (
@@ -152,6 +167,15 @@ function OpenClawMark({ className }: MarkProps) {
       <path d="M16.877 1.912c.58-.27 1.14-.323 1.616-.037a.317.317 0 01-.326.542c-.227-.136-.547-.153-1.022.068-.352.165-.765.45-1.234.866 2.683 1.17 4.4 3.5 5.148 5.921a6.421 6.421 0 00-.704.184c-.578.016-1.174.204-1.502.735-.338.55-.268 1.276.072 2.069l.005.012.007.014c.523 1.045 1.318 1.91 2.2 2.284-.912 3.274-3.44 6.144-5.972 6.988v2.109h-2.11v-2.11c-1.043.417-2.086.01-2.11 0v2.11h-2.11v-2.11c-2.531-.843-5.061-3.713-5.973-6.987.882-.373 1.678-1.238 2.2-2.284l.007-.014.006-.012c.34-.793.41-1.518.071-2.069-.327-.531-.923-.719-1.503-.735a6.409 6.409 0 00-.704-.183c.749-2.421 2.466-4.751 5.149-5.922-.47-.416-.88-.701-1.234-.866-.474-.221-.794-.204-1.021-.068a.318.318 0 01-.435-.109.317.317 0 01.109-.433c.476-.286 1.036-.233 1.615.037.49.229 1.031.628 1.621 1.182A9.924 9.924 0 0112 2.568c1.199 0 2.284.19 3.256.526.59-.554 1.13-.953 1.62-1.182zM8.835 6.577a1.266 1.266 0 100 2.532 1.266 1.266 0 000-2.532zm6.33 0a1.267 1.267 0 100 2.533 1.267 1.267 0 000-2.533z" />
       <path d="M.395 13.118c-.966-1.932-.163-3.863 2.41-3.365v-.001l.05.01c.084.018.17.038.26.06.033.009.067.017.1.027.084.022.168.048.255.076l.09.027c.528 0 .95.158 1.16.501.212.343.212.87-.105 1.61-.085.17-.178.333-.276.489l-.01.017a4.967 4.967 0 01-.62.791l-.019.02c-1.092 1.117-2.496 1.336-3.295-.262z" />
       <path d="M21.193 9.753c2.574-.5 3.378 1.433 2.411 3.365-.58 1.159-1.476 1.361-2.342.96l-.011-.005a2.419 2.419 0 01-.114-.056l-.019-.01a2.751 2.751 0 01-.115-.067l-.023-.014c-.035-.022-.071-.044-.106-.068l-.05-.035c-.55-.388-1.062-1.007-1.44-1.76-.276-.647-.311-1.132-.174-1.472.176-.439.636-.639 1.23-.639.032-.011.066-.02.099-.03.08-.026.16-.05.238-.072l.117-.03a5.502 5.502 0 01.3-.067z" />
+    </Mark>
+  );
+}
+
+/** Cursor: the vendor gem from simple-icons/cursor (CC0-1.0). */
+function CursorMark({ className }: MarkProps) {
+  return (
+    <Mark className={className}>
+      <path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23" />
     </Mark>
   );
 }

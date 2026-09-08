@@ -15,6 +15,8 @@
 
 pub mod bundled;
 pub mod catalog;
+pub mod copilot;
+pub mod cursor;
 pub mod custom;
 pub mod doctor;
 pub mod gemini;
@@ -300,6 +302,16 @@ impl HostSession {
                     diagnosis.remedy = Some("Update the ACP adapter.".into());
                 }
                 Err(err) => {
+                    if descriptors.get(index).is_some_and(|d| d.id == "copilot") {
+                        if let Some(classified) =
+                            crate::host::harness::copilot::classify_handshake_error(&err)
+                        {
+                            diagnosis.status = classified.status;
+                            diagnosis.detail = classified.detail;
+                            diagnosis.remedy = classified.remedy;
+                            continue;
+                        }
+                    }
                     diagnosis.status = HarnessStatus::Unknown;
                     diagnosis.detail = format!("the adapter did not complete a handshake: {err}");
                 }

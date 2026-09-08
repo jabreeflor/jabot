@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Add Gemini CLI as a first-class ACP harness</title>
+<style>
+  body { background: #101214; color: #edf3f5; font: 18px/1.65 system-ui, sans-serif; margin: 0; }
+  main { max-width: 1080px; margin: 0 auto; padding: 64px; }
+  h1 { font-size: 48px; line-height: 1.12; margin: 16px 0 12px; }
+  h2 { font-size: 28px; color: #c4b5e0; }
+  section { margin: 32px 0; padding: 24px; background: #1d2428; border: 1px solid #34454c; border-radius: 18px; }
+  code { color: #a2c9f0; }
+  p, li { color: #bfccd3; }
+  .lede { font-size: 20px; color: #f0f5f8; }
+  .flow { font-size: 22px; color: #f0f5f8; }
+  .pill { color: #1b1424; background: #c4b5e0; border-radius: 30px; padding: 6px 15px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; color: #bfccd3; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #34454c; vertical-align: top; }
+  th { color: #edf3f5; }
+</style>
+<main>
+  <span class="pill">JaBot · issue 219 · PR 243</span>
+  <h1>Add Gemini CLI as a first-class ACP harness</h1>
+  <p class="lede">Gemini CLI is a shipped New Chat / Settings card. JaBot talks to the vendor binary over documented ACP — <code>gemini --acp</code> — not a wrapper package.</p>
+
+  <section id="flow">
+    <h2>How it works</h2>
+    <p>Claude, Codex, and Pi each have an ACP adapter on PATH. Gemini does not: the CLI <em>is</em> the adapter. Official docs (updated 2026-04-10) start that mode with <code>gemini --acp</code>. Older builds only advertised <code>--experimental-acp</code>.</p>
+    <div class="flow">Catalog card → Doctor inspect → snapshot the flag <code>--help</code> lists → ACP session in the thread worktree</div>
+    <p>Doctor answers four questions from the same binary: is <code>gemini</code> installed, does this build speak ACP, is anyone signed in (env / <code>~/.gemini</code> profile / Vertex ADC), and is the selected model/project usable. Missing install, outdated flags, logged-out, and empty <code>model.name</code> each get a status plus a remedy — never a silent ready.</p>
+    <p>An empty <code>end_turn</code> is <code>empty_response</code>, same as #203. Cancel, streaming, tools, and permission asks ride the existing ACP client. Gemini advertises <code>session/load</code>, not resume or close; the supervisor already falls back.</p>
+  </section>
+
+  <section id="auth">
+    <h2>Auth and isolation</h2>
+    <p>Gemini owns one OS-user profile under <code>~/.gemini</code>. JaBot’s Google MCP grant (Gmail / Calendar / Drive) is a different OAuth client and is not copied across. Every Gemini thread on the machine shares that profile. ACP <code>authenticate</code> can persist <code>security.auth.selectedType</code>.</p>
+    <p>Onboarding can pin <code>@google/gemini-cli@0.58.0</code> into <code>~/.local</code>. Sign-in stays separate: run <code>gemini</code> once, or export <code>GEMINI_API_KEY</code>.</p>
+  </section>
+
+  <section id="review">
+    <h2>What to look at</h2>
+    <table>
+      <tr><th>File</th><th>Why</th></tr>
+      <tr><td><code>src-tauri/src/host/harness/catalog.rs</code></td><td>Shipped <code>gemini</code> card, launches, capability notes.</td></tr>
+      <tr><td><code>src-tauri/src/host/harness/gemini.rs</code></td><td>Flag selection + auth/model inspect.</td></tr>
+      <tr><td><code>src-tauri/src/host/harness/doctor.rs</code></td><td>Inspect kind + home/env probes.</td></tr>
+      <tr><td><code>src-tauri/tests/gemini.rs</code></td><td>Persist, missing binary, cancel, empty reply.</td></tr>
+      <tr><td><code>docs/setup/gemini-cli.md</code></td><td>Setup + isolation limits.</td></tr>
+    </table>
+  </section>
+
+  <section id="verify">
+    <h2>How to verify</h2>
+    <p>Run <code>./scripts/verify.sh</code>. Adapter cases: <code>cargo test --manifest-path src-tauri/Cargo.toml --test gemini --features dev-bins</code>.</p>
+    <p>In the live app: New Chat harness menu lists Gemini CLI; Settings shows the enable toggle and capability notes; first-run onboarding Doctor reports a missing CLI with an install path.</p>
+    <p>Real-host evidence: <code>new-chat-picker.png</code>, <code>settings-harnesses.png</code>, <code>onboarding-engine.png</code>. This machine had no <code>gemini</code> on PATH — onboarding shows that failure honestly.</p>
+  </section>
+</main>

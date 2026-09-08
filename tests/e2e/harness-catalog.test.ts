@@ -107,6 +107,22 @@ describe("harness/list", () => {
       reserved: true,
       sessionScope: "thread",
     });
+    expect(byId.get("copilot")).toMatchObject({
+      tier: "shipped",
+      label: "GitHub Copilot",
+      reserved: true,
+      sessionScope: "thread",
+      command: "copilot",
+      args: ["--acp"],
+    });
+    expect(byId.get("copilot")?.capabilities).toMatchObject({
+      streaming: true,
+      toolEvents: true,
+      permissions: true,
+      cancel: true,
+      resume: false,
+    });
+    expect(byId.get("copilot")?.capabilities?.notes).toMatch(/process-local/);
     expect(byId.get("gemini")).toMatchObject({
       tier: "shipped",
       label: "Gemini CLI",
@@ -123,6 +139,22 @@ describe("harness/list", () => {
       reserved: true,
       sessionScope: "profile",
     });
+    expect(byId.get("cursor")).toMatchObject({
+      tier: "preset",
+      label: "Cursor Agent",
+      reserved: true,
+      sessionScope: "thread",
+      command: "agent",
+      args: ["acp"],
+    });
+    expect(byId.get("cursor")?.capabilities).toMatchObject({
+      streaming: true,
+      toolEvents: true,
+      permissions: true,
+      cancel: true,
+      resume: false,
+    });
+    expect(byId.get("cursor")?.capabilities?.notes).toMatch(/--force/);
     expect(byId.get("my-agent")).toMatchObject({
       tier: "custom",
       label: "My Agent",

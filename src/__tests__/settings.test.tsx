@@ -41,6 +41,26 @@ function draw(over: Partial<Parameters<typeof SettingsView>[0]> = {}) {
 const minutes = () => screen.getByLabelText(/Go quiet after/);
 
 describe("SettingsView", () => {
+  it("declares Copilot capabilities instead of implying resume works", () => {
+    draw({
+      harnesses: [{
+        id: "copilot",
+        label: "GitHub Copilot",
+        accent: "var(--h-copilot)",
+        blurb: "GitHub's coding agent, over ACP",
+        capabilities: {
+          streaming: true,
+          toolEvents: true,
+          permissions: true,
+          cancel: true,
+          resume: false,
+          notes: "Resume after the Copilot process exits is not supported.",
+        },
+      }],
+    });
+    expect(screen.getByText(/Resume after the Copilot process exits is not supported/)).toBeVisible();
+  });
+
   it("declares Gemini capabilities next to the enable toggle", () => {
     draw({
       harnesses: [{
@@ -64,6 +84,32 @@ describe("SettingsView", () => {
     expect(screen.getByText("Install Pi adapter")).toBeVisible();
     await userEvent.click(screen.getByRole("checkbox", { name: /Pi/ }));
     expect(props.onSave).toHaveBeenCalledWith({ disabledHarnessIds: ["custom"] });
+  });
+
+  it("shows Cursor account-isolation notes on the enable row", () => {
+    draw({
+      harnesses: [
+        {
+          id: "cursor",
+          label: "Cursor Agent",
+          accent: "var(--h-cursor)",
+          blurb: "Cursor's coding agent. Permissions stay in JaBot — no --force.",
+          capabilities: {
+            streaming: true,
+            toolEvents: true,
+            permissions: true,
+            cancel: true,
+            resume: false,
+            notes:
+              "Auth uses this machine's Cursor account or CURSOR_API_KEY — not isolated per bot.",
+          },
+        },
+      ],
+    });
+    expect(screen.getByRole("checkbox", { name: /Cursor Agent/ })).toBeChecked();
+    expect(
+      screen.getByText(/not isolated per bot/),
+    ).toBeVisible();
   });
 
   it("shows the host's values, in the units a person thinks in", () => {

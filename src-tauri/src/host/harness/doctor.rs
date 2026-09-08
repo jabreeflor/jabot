@@ -35,12 +35,47 @@ pub enum ProbeRun {
     TimedOut,
 }
 
+/// A readiness command plus whatever it printed. Copilot's Doctor reads
+/// `--help` / `--version` rather than trusting the exit code alone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbeOutput {
+    pub run: ProbeRun,
+    pub text: String,
+}
+
 /// Everything the classifier needs from the machine, behind a seam so the
 /// classification rules can be tested without installing five vendor CLIs.
 pub trait ProbeHost: Sync {
     fn resolve(&self, command: &str) -> Option<PathBuf>;
     fn run(&self, command: &str, args: &[String]) -> ProbeRun;
     fn listening(&self, addr: &str) -> bool;
+
+    /// Combined stdout+stderr of a short probe. Default is the exit only —
+    /// most readiness commands are classified by status, not by what they
+    /// printed. Copilot is the exception (`--help` must mention `--acp`).
+    fn run_text(&self, command: &str, args: &[String]) -> ProbeOutput {
+        ProbeOutput {
+            run: self.run(command, args),
+            text: String::new(),
+        }
+    }
+
+    /// A non-empty environment value. Empty and unset are the same here:
+    /// Copilot treats a blank token as missing.
+    fn env_value(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok().filter(|value| !value.is_empty())
+    }
+
+    /// An exported value including the empty string. `COPILOT_MODEL=` is a
+    /// misconfiguration, not "use the default".
+    fn env_raw(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok()
+    }
+
+    fn read_file(&self, path: &str) -> Option<String> {
+        std::fs::read_to_string(path).ok()
+    }
+
     /// Captured stdout+stderr of a short probe. Used when the exit code is
     /// not the diagnosis (`gemini --help` lists flags; `gemini --version`
     /// names the build).
@@ -125,19 +160,28 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
     // readiness command whose binary is absent (`claude auth status` with no
     // `claude`) would come back as an unanswered question with a login remedy
     // the user cannot follow, when the answer was knowable up front.
-    if let Some(cli) = descriptor.cli.as_deref() {
-        if probe.resolve(cli).is_none() {
-            return finish(
-                HarnessStatus::CliMissing,
-                format!(
-                    "{} is not installed — no `{cli}` on PATH.",
-                    descriptor.label
-                ),
-                descriptor.install_hint.clone(),
-                None,
-                None,
-            );
-        }
+    if !descriptor.cli.is_empty()
+        && descriptor
+            .cli
+            .iter()
+            .all(|cli| probe.resolve(cli).is_none())
+    {
+        let names = descriptor
+            .cli
+            .iter()
+            .map(|cli| format!("`{cli}`"))
+            .collect::<Vec<_>>()
+            .join(" or ");
+        return finish(
+            HarnessStatus::CliMissing,
+            format!(
+                "{} is not installed — no {names} on PATH.",
+                descriptor.label
+            ),
+            descriptor.install_hint.clone(),
+            None,
+            None,
+        );
     }
 
     let resolved = descriptor
@@ -155,7 +199,7 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
         // Which of the two sentences the user gets decides which page they go
         // read: install the product, or install its ACP adapter. The CLI is
         // known to be here by now, so this can only be the adapter.
-        return match descriptor.cli.as_deref() {
+        return match descriptor.cli.first() {
             Some(cli) => finish(
                 HarnessStatus::AdapterMissing,
                 format!("`{cli}` is installed but its ACP adapter is not (looked for {commands})."),
@@ -175,6 +219,21 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
 
     match &descriptor.readiness {
         Readiness::Binary => {}
+        Readiness::Inspect {
+            kind: InspectKind::Copilot,
+        } => {
+            // Copilot's CLI *is* the adapter, so reaching here means
+            // `copilot` resolved; what is left is version, login, policy,
+            // and model.
+            let report = super::copilot::classify(&super::copilot::gather(probe));
+            return finish(
+                report.status,
+                report.detail,
+                report.remedy,
+                Some(launch.clone()),
+                Some(path),
+            );
+        }
         Readiness::Daemon { addr, remedy } => {
             if !probe.listening(addr) {
                 return finish(
@@ -254,6 +313,17 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
                 Some(path),
             );
         }
+        Readiness::Inspect {
+            kind: InspectKind::Cursor,
+        } => {
+            let cli = descriptor
+                .cli
+                .iter()
+                .find(|name| probe.resolve(name).is_some())
+                .cloned()
+                .unwrap_or_else(|| launch.command.clone());
+            return diagnose_cursor(descriptor, probe, &cli, launch, path, started);
+        }
     }
 
     let detail = if launch.downloads_on_first_run {
@@ -287,6 +357,123 @@ pub fn diagnose(descriptor: &HarnessDescriptor, probe: &dyn ProbeHost) -> Diagno
     )
 }
 
+fn diagnose_cursor(
+    descriptor: &HarnessDescriptor,
+    probe: &dyn ProbeHost,
+    cli: &str,
+    launch: &Launch,
+    path: PathBuf,
+    started: Instant,
+) -> Diagnosis {
+    let finish = |status: HarnessStatus, detail: String, remedy: Option<String>| Diagnosis {
+        id: descriptor.id.clone(),
+        status,
+        detail,
+        remedy,
+        launch: Some(launch.clone()),
+        resolved_path: Some(path.clone()),
+        elapsed_ms: started.elapsed().as_millis() as u64,
+    };
+
+    let captured = probe.run_text(cli, &["--version".into()]);
+    let version_detail = match &captured.run {
+        ProbeRun::Exit(0) => String::new(),
+        ProbeRun::Exit(code) => format!("`{cli} --version` exited {code}."),
+        ProbeRun::TimedOut => format!("`{cli} --version` did not answer in time."),
+        ProbeRun::Failed(err) => format!("could not run `{cli} --version`: {err}"),
+    };
+    let printed_version = match super::cursor::classify_version(
+        matches!(captured.run, ProbeRun::Exit(0)),
+        &captured.text,
+        version_detail,
+    ) {
+        super::cursor::VersionCheck::Unsupported { printed, parsed } => {
+            return finish(
+                HarnessStatus::AdapterOutdated,
+                format!(
+                    "`{cli}` reports {printed} (parsed {parsed}), which is older than JaBot's Cursor Agent floor."
+                ),
+                Some("Update the Cursor Agent CLI (`agent update`) and try again.".into()),
+            );
+        }
+        super::cursor::VersionCheck::Unknown(detail) => {
+            return finish(
+                HarnessStatus::Unknown,
+                detail,
+                Some("Update the Cursor Agent CLI (`agent update`) so `agent --version` and `agent acp` both work.".into()),
+            );
+        }
+        super::cursor::VersionCheck::Ok(version) => Some(version.to_string()),
+        super::cursor::VersionCheck::Unparseable => None,
+    };
+
+    if !super::cursor::env_has_cursor_credentials(|key| probe.env(key).is_some()) {
+        match probe.run(cli, &["status".into()]) {
+            ProbeRun::Exit(0) => {}
+            ProbeRun::Exit(code) => {
+                return finish(
+                    HarnessStatus::LoggedOut,
+                    format!("`{cli} status` exited {code}."),
+                    Some(
+                        "Run `agent login`, or export CURSOR_API_KEY (or CURSOR_AUTH_TOKEN) for this process.".into(),
+                    ),
+                );
+            }
+            ProbeRun::TimedOut => {
+                return finish(
+                    HarnessStatus::Unknown,
+                    format!("`{cli} status` did not answer in time."),
+                    Some("Run `agent login`, or export CURSOR_API_KEY.".into()),
+                );
+            }
+            ProbeRun::Failed(err) => {
+                return finish(
+                    HarnessStatus::Unknown,
+                    format!("could not run `{cli} status`: {err}"),
+                    Some("Run `agent login`, or export CURSOR_API_KEY.".into()),
+                );
+            }
+        }
+    }
+
+    match probe.run(cli, &["models".into()]) {
+        ProbeRun::Exit(0) => {}
+        ProbeRun::Exit(code) => {
+            return finish(
+                HarnessStatus::InvalidConfig,
+                format!("`{cli} models` exited {code} — no usable model for this account."),
+                Some(
+                    "Pick a model in Cursor (`agent models`) or confirm this account has one available.".into(),
+                ),
+            );
+        }
+        ProbeRun::TimedOut => {
+            return finish(
+                HarnessStatus::Unknown,
+                format!("`{cli} models` did not answer in time."),
+                Some("Confirm `agent models` lists a model, then retry.".into()),
+            );
+        }
+        ProbeRun::Failed(err) => {
+            return finish(
+                HarnessStatus::Unknown,
+                format!("could not run `{cli} models`: {err}"),
+                Some("Confirm `agent models` lists a model, then retry.".into()),
+            );
+        }
+    }
+
+    let version_bit = printed_version.map(|v| format!(" {v}")).unwrap_or_default();
+    finish(
+        HarnessStatus::Ready,
+        format!(
+            "Ready{version_bit} — {}. Permissions stay in JaBot (ACP); --force is not passed.",
+            path.display()
+        ),
+        None,
+    )
+}
+
 /// The real machine: the augmented PATH, real subprocesses, real sockets.
 #[derive(Debug, Default)]
 pub struct SystemProbe;
@@ -295,24 +482,24 @@ impl SystemProbe {
     /// The deadline is a parameter so the kill path can be tested without
     /// waiting out the real one.
     fn run_until(&self, command: &str, args: &[String], timeout: Duration) -> ProbeRun {
-        match self.run_until_output(command, args, timeout, false) {
-            Ok(_) => ProbeRun::Exit(0),
-            Err(run) => run,
-        }
+        self.run_captured(command, args, timeout, false).run
     }
 
-    fn run_until_output(
+    fn run_captured(
         &self,
         command: &str,
         args: &[String],
         timeout: Duration,
         capture: bool,
-    ) -> Result<String, ProbeRun> {
+    ) -> ProbeOutput {
         // Resolve first so the child is exec'd from the same augmented PATH
         // the probe searched, and inherit that PATH so a CLI that shells out
         // to `node` finds the same one the terminal would.
         let Some(path) = self.resolve(command) else {
-            return Err(ProbeRun::Failed(format!("{command} is not on PATH")));
+            return ProbeOutput {
+                run: ProbeRun::Failed(format!("{command} is not on PATH")),
+                text: String::new(),
+            };
         };
         let mut cmd = Command::new(path);
         cmd.args(args)
@@ -330,47 +517,49 @@ impl SystemProbe {
         procgroup::own_group(&mut cmd);
         let mut child = match cmd.spawn() {
             Ok(child) => child,
-            Err(err) => return Err(ProbeRun::Failed(err.to_string())),
+            Err(err) => {
+                return ProbeOutput {
+                    run: ProbeRun::Failed(err.to_string()),
+                    text: String::new(),
+                }
+            }
         };
         let deadline = Instant::now() + timeout;
-        loop {
+        let run = loop {
             match child.try_wait() {
-                Ok(Some(status)) => {
-                    let output = if capture {
-                        let mut buf = String::new();
-                        if let Some(mut stdout) = child.stdout.take() {
-                            let _ = std::io::Read::read_to_string(&mut stdout, &mut buf);
-                        }
-                        if let Some(mut stderr) = child.stderr.take() {
-                            let _ = std::io::Read::read_to_string(&mut stderr, &mut buf);
-                        }
-                        buf
-                    } else {
-                        String::new()
-                    };
-                    return if status.success() || capture {
-                        // Help/version still count when the CLI prints to
-                        // stderr and exits 0 *or* when it exits non-zero
-                        // after writing the text we needed.
-                        if capture {
-                            Ok(output)
-                        } else {
-                            Ok(String::new())
-                        }
-                    } else {
-                        Err(ProbeRun::Exit(status.code().unwrap_or(-1)))
-                    };
-                }
+                Ok(Some(status)) => break ProbeRun::Exit(status.code().unwrap_or(-1)),
                 Ok(None) if Instant::now() < deadline => {
                     std::thread::sleep(Duration::from_millis(25));
                 }
                 Ok(None) => {
                     procgroup::terminate(&mut child);
-                    return Err(ProbeRun::TimedOut);
+                    break ProbeRun::TimedOut;
                 }
-                Err(err) => return Err(ProbeRun::Failed(err.to_string())),
+                Err(err) => break ProbeRun::Failed(err.to_string()),
             }
-        }
+        };
+        let text = if capture {
+            let mut combined = String::new();
+            if let Some(mut stdout) = child.stdout.take() {
+                use std::io::Read;
+                let mut buf = String::new();
+                let _ = stdout.read_to_string(&mut buf);
+                combined.push_str(&buf);
+            }
+            if let Some(mut stderr) = child.stderr.take() {
+                use std::io::Read;
+                let mut buf = String::new();
+                let _ = stderr.read_to_string(&mut buf);
+                if !combined.is_empty() && !buf.is_empty() {
+                    combined.push('\n');
+                }
+                combined.push_str(&buf);
+            }
+            combined
+        } else {
+            String::new()
+        };
+        ProbeOutput { run, text }
     }
 }
 
@@ -383,8 +572,16 @@ impl ProbeHost for SystemProbe {
         self.run_until(command, args, PROBE_TIMEOUT)
     }
 
+    fn run_text(&self, command: &str, args: &[String]) -> ProbeOutput {
+        self.run_captured(command, args, PROBE_TIMEOUT, true)
+    }
+
     fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
-        self.run_until_output(command, args, PROBE_TIMEOUT, true)
+        let output = self.run_captured(command, args, PROBE_TIMEOUT, true);
+        match output.run {
+            ProbeRun::Exit(_) => Ok(output.text),
+            other => Err(other),
+        }
     }
 
     fn env(&self, key: &str) -> Option<String> {
@@ -418,7 +615,7 @@ mod tests {
     struct FakeMachine {
         installed: HashMap<String, PathBuf>,
         exits: HashMap<String, ProbeRun>,
-        stdout: HashMap<String, String>,
+        outputs: HashMap<String, String>,
         env: HashMap<String, String>,
         files: HashMap<String, String>,
         open_ports: Vec<String>,
@@ -442,8 +639,8 @@ mod tests {
             self
         }
 
-        fn printing(mut self, command: &str, stdout: &str) -> Self {
-            self.stdout.insert(command.to_string(), stdout.to_string());
+        fn printing(mut self, command: &str, text: &str) -> Self {
+            self.outputs.insert(command.to_string(), text.to_string());
             self
         }
 
@@ -452,9 +649,8 @@ mod tests {
             self
         }
 
-        fn with_file(mut self, relative: &str, contents: &str) -> Self {
-            self.files
-                .insert(relative.to_string(), contents.to_string());
+        fn with_file(mut self, path: &str, body: &str) -> Self {
+            self.files.insert(path.to_string(), body.to_string());
             self
         }
     }
@@ -478,10 +674,37 @@ mod tests {
             if !self.installed.contains_key(command) {
                 return ProbeRun::Failed(format!("{command} is not on PATH"));
             }
+            let keyed = format!("{command} {}", args.join(" "));
             self.exits
-                .get(command)
+                .get(&keyed)
+                .or_else(|| self.exits.get(command))
                 .cloned()
                 .unwrap_or(ProbeRun::Exit(0))
+        }
+
+        fn run_text(&self, command: &str, args: &[String]) -> ProbeOutput {
+            let keyed = format!("{command} {}", args.join(" "));
+            ProbeOutput {
+                run: self.run(command, args),
+                text: self
+                    .outputs
+                    .get(&keyed)
+                    .or_else(|| self.outputs.get(command))
+                    .cloned()
+                    .unwrap_or_default(),
+            }
+        }
+
+        fn env_value(&self, key: &str) -> Option<String> {
+            self.env.get(key).cloned().filter(|value| !value.is_empty())
+        }
+
+        fn env_raw(&self, key: &str) -> Option<String> {
+            self.env.get(key).cloned()
+        }
+
+        fn read_file(&self, path: &str) -> Option<String> {
+            self.files.get(path).cloned()
         }
 
         fn listening(&self, addr: &str) -> bool {
@@ -493,8 +716,8 @@ mod tests {
 
         fn stdout(&self, command: &str, args: &[String]) -> Result<String, ProbeRun> {
             match self.run(command, args) {
-                ProbeRun::Exit(0) | ProbeRun::Exit(_) => self
-                    .stdout
+                ProbeRun::Exit(_) => self
+                    .outputs
                     .get(command)
                     .cloned()
                     .ok_or_else(|| ProbeRun::Failed(format!("{command} printed nothing"))),
@@ -503,7 +726,7 @@ mod tests {
         }
 
         fn env(&self, key: &str) -> Option<String> {
-            self.env.get(key).cloned()
+            self.env.get(key).cloned().filter(|value| !value.is_empty())
         }
 
         fn home_file(&self, relative: &str) -> Option<String> {
@@ -779,6 +1002,117 @@ mod tests {
             "sweep took {elapsed:?}; serial would be at least {:?}",
             delay * probing.len() as u32
         );
+    }
+
+    #[test]
+    fn copilot_without_acp_in_help_is_outdated() {
+        let machine = FakeMachine::with(&["copilot"]).printing("copilot", "Usage: copilot login");
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::AdapterOutdated);
+        assert!(report.remedy.unwrap().contains("--acp"));
+    }
+
+    #[test]
+    fn copilot_with_acp_but_no_login_is_logged_out() {
+        let machine = FakeMachine::with(&["copilot"])
+            .printing("copilot", "Usage:\n  --acp  Start ACP server\n");
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("copilot login"));
+    }
+
+    #[test]
+    fn copilot_token_env_makes_it_ready() {
+        let machine = FakeMachine::with(&["copilot"])
+            .printing("copilot", "  --acp\n")
+            .with_env("GH_TOKEN", "gho_test");
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert!(report.detail.contains("GH_TOKEN"), "{}", report.detail);
+    }
+
+    #[test]
+    fn copilot_stored_login_makes_it_ready_without_a_token() {
+        let machine = FakeMachine::with(&["copilot"])
+            .printing("copilot", "  --acp\n")
+            .with_env("HOME", "/home/octo")
+            .with_file(
+                "/home/octo/.copilot/config.json",
+                r#"{"loggedInUsers":[{"login":"octocat"}]}"#,
+            );
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert!(report.detail.contains("octocat"), "{}", report.detail);
+    }
+
+    #[test]
+    fn copilot_empty_model_env_is_invalid_config() {
+        let machine = FakeMachine::with(&["copilot"])
+            .printing("copilot", "  --acp\n")
+            .with_env("GH_TOKEN", "gho_test")
+            .with_env("COPILOT_MODEL", "");
+        let report = diagnose(&descriptor("copilot"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.detail.contains("COPILOT_MODEL"), "{}", report.detail);
+    }
+
+    #[test]
+    fn cursor_missing_blames_the_cli() {
+        let report = diagnose(&descriptor("cursor"), &FakeMachine::default());
+        assert_eq!(report.status, HarnessStatus::CliMissing);
+        assert!(report.detail.contains("agent"), "{}", report.detail);
+        assert!(report.remedy.unwrap().contains("cursor.com/install"));
+    }
+
+    #[test]
+    fn cursor_legacy_binary_name_still_resolves() {
+        let machine = FakeMachine::with(&["cursor-agent"])
+            .printing("cursor-agent --version", "2026.08.09")
+            .with_env("CURSOR_API_KEY", "test");
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        let launch = report.launch.unwrap();
+        assert_eq!(launch.command, "cursor-agent");
+        assert_eq!(launch.args, ["acp"]);
+    }
+
+    #[test]
+    fn cursor_old_version_is_outdated_not_ready() {
+        let machine = FakeMachine::with(&["agent"]).printing("agent --version", "0.49.0");
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::AdapterOutdated);
+        assert!(report.remedy.unwrap().contains("agent update"));
+    }
+
+    #[test]
+    fn cursor_signed_out_without_an_api_key_says_so() {
+        let machine = FakeMachine::with(&["agent"])
+            .printing("agent --version", "2026.08.09")
+            .answering("agent status", ProbeRun::Exit(1));
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::LoggedOut);
+        assert!(report.remedy.unwrap().contains("agent login"));
+    }
+
+    #[test]
+    fn cursor_api_key_counts_as_the_account_profile() {
+        let machine = FakeMachine::with(&["agent"])
+            .printing("agent --version", "2026.08.09")
+            .answering("agent status", ProbeRun::Exit(1))
+            .with_env("CURSOR_API_KEY", "test-key");
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready, "{}", report.detail);
+    }
+
+    #[test]
+    fn cursor_without_models_is_a_config_problem() {
+        let machine = FakeMachine::with(&["agent"])
+            .printing("agent --version", "2026.08.09")
+            .with_env("CURSOR_API_KEY", "test-key")
+            .answering("agent models", ProbeRun::Exit(2));
+        let report = diagnose(&descriptor("cursor"), &machine);
+        assert_eq!(report.status, HarnessStatus::InvalidConfig);
+        assert!(report.remedy.unwrap().contains("agent models"));
     }
 
     #[test]

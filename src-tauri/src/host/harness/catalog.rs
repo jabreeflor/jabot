@@ -26,8 +26,9 @@
 use std::collections::BTreeMap;
 
 use super::super::protocol::methods::{
-    HarnessCardView, HarnessStatus, HarnessTier, RuntimeSpec, SessionScope,
+    HarnessCapabilitiesView, HarnessCardView, HarnessStatus, HarnessTier, RuntimeSpec, SessionScope,
 };
+use super::cursor;
 
 /// One way to start a harness, tried in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,7 +92,12 @@ pub enum Readiness {
 /// Extra classification a binary-on-PATH answer cannot give.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InspectKind {
+    Copilot,
     Gemini,
+    /// Cursor Agent CLI: version, login / API key, then models. The vendor
+    /// CLI *is* the ACP adapter (`agent acp`), so a single `Command` probe
+    /// cannot tell "old binary" from "logged out" from "no model".
+    Cursor,
 }
 
 /// A catalog entry, whatever tier it came from.
@@ -103,9 +109,10 @@ pub struct HarnessDescriptor {
     pub accent: String,
     pub tier: HarnessTier,
     pub launches: Vec<Launch>,
-    /// The vendor CLI behind the adapter. Its absence is `CliMissing` — a
-    /// different sentence to the user than "the ACP adapter is missing".
-    pub cli: Option<String>,
+    /// Vendor CLI names, tried in order. Absence of every name is
+    /// `CliMissing` — a different sentence than "the ACP adapter is missing".
+    /// Cursor answers to both `agent` and the older `cursor-agent`.
+    pub cli: Vec<String>,
     /// Floor, not override: a value the user already exported wins. Resolved
     /// in [`HarnessDescriptor::runtime_spec`], so what a thread snapshots is
     /// what the supervisor will apply.
@@ -118,6 +125,24 @@ pub struct HarnessDescriptor {
     pub capability_notes: Option<String>,
     pub readiness: Readiness,
     pub session_scope: SessionScope,
+    /// What we are willing to advertise after reading upstream docs — not a
+    /// guess from the binary being present. Absent means unverified.
+    pub capabilities: Option<HarnessCapabilities>,
+}
+
+/// Capabilities a catalog card is willing to claim.
+///
+/// Every flag is an opt-in. Advertising `resume` for an adapter whose
+/// sessions die with the process is how a user gets told a thread was
+/// restored when `session/resume` cannot work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HarnessCapabilities {
+    pub streaming: bool,
+    pub tool_events: bool,
+    pub permissions: bool,
+    pub cancel: bool,
+    pub resume: bool,
+    pub notes: Option<String>,
 }
 
 impl HarnessDescriptor {
@@ -173,6 +198,7 @@ impl HarnessDescriptor {
             capability_notes: self.capability_notes.clone(),
             session_scope: self.session_scope,
             reserved: is_reserved(&self.id),
+            capabilities: self.capabilities.clone().map(Into::into),
         }
     }
 
@@ -200,7 +226,7 @@ struct Compiled {
     accent: &'static str,
     tier: HarnessTier,
     launches: &'static [(&'static str, &'static [&'static str], bool)],
-    cli: Option<&'static str>,
+    cli: &'static [&'static str],
     env: &'static [(&'static str, &'static str)],
     install_hint: &'static str,
     install_url: &'static str,
@@ -234,7 +260,7 @@ const SHIPPED: &[Compiled] = &[
             ("claude-agent-acp", &[], false),
             ("claude-code-acp", &[], false),
         ],
-        cli: Some("claude"),
+        cli: &["claude"],
         env: &[],
         // JaBot ships the adapter, so the only install left is Claude Code
         // itself — and Node, which the bundled adapter runs on. The npm line
@@ -258,7 +284,7 @@ const SHIPPED: &[Compiled] = &[
         accent: "var(--h-codex)",
         tier: HarnessTier::Shipped,
         launches: &[("codex-acp", &[], false)],
-        cli: Some("codex"),
+        cli: &["codex"],
         env: &[],
         install_hint: "Install Codex, then `npm i -g @zed-industries/codex-acp`.",
         install_url: "https://github.com/agentclientprotocol/codex-acp",
@@ -282,7 +308,7 @@ const SHIPPED: &[Compiled] = &[
             ("omp", &["acp"], false),
             ("npx", &["-y", "pi-acp"], true),
         ],
-        cli: Some("pi"),
+        cli: &["pi"],
         env: &[],
         install_hint: "Install Pi (pi.dev), then `npm i -g pi-acp`.",
         install_url: "https://pi.dev/",
@@ -290,6 +316,24 @@ const SHIPPED: &[Compiled] = &[
         // Pi resolves credentials per provider at run time and has no
         // login-status command to ask; claiming otherwise would be a guess.
         readiness: CompiledReadiness::Binary,
+        session_scope: SessionScope::Thread,
+    },
+    Compiled {
+        id: "copilot",
+        label: "GitHub Copilot",
+        blurb: "GitHub's coding agent, over ACP",
+        accent: "var(--h-copilot)",
+        tier: HarnessTier::Shipped,
+        // The vendor CLI *is* the adapter. `--acp` defaults to stdio; the
+        // explicit flag is what older builds lack, and what the Doctor looks
+        // for before it will call this ready.
+        launches: &[("copilot", &["--acp"], false)],
+        cli: &["copilot"],
+        env: &[],
+        install_hint: "Install GitHub Copilot CLI (`npm i -g @github/copilot`), then run `copilot login`. Requires a Copilot subscription with CLI enabled in your organization policy.",
+        install_url: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
+        capability_notes: None,
+        readiness: CompiledReadiness::Inspect(InspectKind::Copilot),
         session_scope: SessionScope::Thread,
     },
     Compiled {
@@ -306,7 +350,7 @@ const SHIPPED: &[Compiled] = &[
             ("gemini", &["--acp"], false),
             ("gemini", &["--experimental-acp"], false),
         ],
-        cli: Some("gemini"),
+        cli: &["gemini"],
         env: &[],
         install_hint: "Install Gemini CLI (`npm i -g @google/gemini-cli`), then run `gemini` once to sign in or export GEMINI_API_KEY.",
         install_url: "https://geminicli.com/docs/cli/acp-mode/",
@@ -327,7 +371,7 @@ const PRESETS: &[Compiled] = &[
         accent: "var(--h-hermes)",
         tier: HarnessTier::Preset,
         launches: &[("hermes", &["acp"], false), ("hermes-acp", &[], false)],
-        cli: Some("hermes"),
+        cli: &["hermes"],
         // Host-selected MCP has to win over Hermes' own config.yaml servers
         // (decision #6: skip ambient harness MCP as a general rule).
         env: &[("HERMES_ACP_SKIP_CONFIGURED_MCP", "1")],
@@ -352,7 +396,7 @@ const PRESETS: &[Compiled] = &[
         accent: "var(--h-openclaw)",
         tier: HarnessTier::Preset,
         launches: &[("openclaw", &["acp"], false)],
-        cli: Some("openclaw"),
+        cli: &["openclaw"],
         env: &[],
         install_hint: "Install OpenClaw and run `openclaw onboard --install-daemon`.",
         install_url: "https://docs.openclaw.ai/tools/acp-agents",
@@ -365,6 +409,30 @@ const PRESETS: &[Compiled] = &[
             "Start the Gateway (`openclaw gateway status` shows whether it is up).",
         ),
         session_scope: SessionScope::Profile,
+    },
+    Compiled {
+        id: "cursor",
+        label: "Cursor Agent",
+        blurb: "Cursor's coding agent. Permissions stay in JaBot — no --force.",
+        accent: "var(--h-cursor)",
+        tier: HarnessTier::Preset,
+        // Official current name is `agent`; Buzz and older installs still
+        // ship `cursor-agent`. Both speak `acp` over stdio. Never `--force`,
+        // `--yolo`, `--approve-mcps`, or `--trust` — those skip the permission
+        // broker this card exists to use (#222).
+        launches: &[
+            ("agent", &["acp"], false),
+            ("cursor-agent", &["acp"], false),
+        ],
+        cli: &["agent", "cursor-agent"],
+        env: &[],
+        install_hint: cursor::INSTALL_HINT,
+        install_url: cursor::INSTALL_URL,
+        capability_notes: Some(
+            "Permissions stay in JaBot (no --force). Auth uses this machine's Cursor account or CURSOR_API_KEY — not isolated per bot. Resume only if the CLI advertises loadSession. cursor/ask_question and cursor/create_plan are declined so a turn cannot hang.",
+        ),
+        readiness: CompiledReadiness::Inspect(InspectKind::Cursor),
+        session_scope: SessionScope::Thread,
     },
 ];
 
@@ -383,7 +451,11 @@ fn build(compiled: &Compiled) -> HarnessDescriptor {
             .map(|(command, args, downloads)| Launch::new(command, args, *downloads))
             .chain(super::bundled::launches_for(compiled.id))
             .collect(),
-        cli: compiled.cli.map(str::to_string),
+        cli: compiled
+            .cli
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect(),
         env: compiled
             .env
             .iter()
@@ -407,6 +479,40 @@ fn build(compiled: &Compiled) -> HarnessDescriptor {
             CompiledReadiness::Inspect(kind) => Readiness::Inspect { kind: kind.clone() },
         },
         session_scope: compiled.session_scope,
+        capabilities: capabilities_for(compiled.id),
+    }
+}
+
+impl From<HarnessCapabilities> for HarnessCapabilitiesView {
+    fn from(caps: HarnessCapabilities) -> Self {
+        Self {
+            streaming: caps.streaming,
+            tool_events: caps.tool_events,
+            permissions: caps.permissions,
+            cancel: caps.cancel,
+            resume: caps.resume,
+            notes: caps.notes,
+        }
+    }
+}
+
+fn capabilities_for(id: &str) -> Option<HarnessCapabilities> {
+    match id {
+        "copilot" => Some(HarnessCapabilities {
+            streaming: true,
+            tool_events: true,
+            permissions: true,
+            cancel: true,
+            // Sessions are process-local. `loadSession` is advertised but a
+            // new `copilot --acp` cannot see the previous process's sessions
+            // (github/copilot-cli#1767). Advertising resume would lie.
+            resume: false,
+            notes: Some(
+                "Streaming, tool events, permission prompts, and cancel work over `copilot --acp`. Resume after the Copilot process exits is not supported — sessions are process-local, and `session/close` is unimplemented upstream. JaBot starts a new ACP session instead of claiming a restore.".into(),
+            ),
+        }),
+        "cursor" => Some(cursor::capabilities()),
+        _ => None,
     }
 }
 
@@ -434,11 +540,12 @@ mod tests {
     #[test]
     fn shipped_ids_are_the_reserved_cards() {
         let ids: Vec<_> = SHIPPED.iter().map(|c| c.id).collect();
-        assert_eq!(ids, ["claude", "codex", "pi", "gemini"]);
+        assert_eq!(ids, ["claude", "codex", "pi", "copilot", "gemini"]);
         for id in ids {
             assert!(is_reserved(id), "{id} must be reserved");
         }
         assert!(is_reserved("hermes"), "presets are reserved too");
+        assert!(is_reserved("cursor"), "Cursor is a reserved preset");
         assert!(!is_reserved("my-agent"));
     }
 
@@ -450,7 +557,7 @@ mod tests {
             .unwrap();
         assert_eq!(gemini.tier, HarnessTier::Shipped);
         assert_eq!(gemini.session_scope, SessionScope::Thread);
-        assert_eq!(gemini.cli.as_deref(), Some("gemini"));
+        assert_eq!(gemini.cli, ["gemini"]);
         assert_eq!(gemini.primary().command, "gemini");
         assert_eq!(gemini.primary().args, ["--acp"]);
         assert!(gemini
@@ -468,6 +575,42 @@ mod tests {
                 kind: InspectKind::Gemini
             }
         ));
+    }
+
+    #[test]
+    fn cursor_is_acp_without_force_flags() {
+        let cursor = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "cursor")
+            .unwrap();
+        assert_eq!(cursor.tier, HarnessTier::Preset);
+        assert_eq!(cursor.session_scope, SessionScope::Thread);
+        assert_eq!(cursor.cli, ["agent", "cursor-agent"]);
+        assert_eq!(cursor.primary().command, "agent");
+        assert_eq!(cursor.primary().args, ["acp"]);
+        for launch in &cursor.launches {
+            for flag in super::cursor::forbidden_launch_flags() {
+                assert!(
+                    !launch.args.iter().any(|arg| arg == flag),
+                    "{} must not pass {flag}",
+                    launch.command
+                );
+            }
+        }
+        assert!(matches!(
+            cursor.readiness,
+            Readiness::Inspect {
+                kind: InspectKind::Cursor
+            }
+        ));
+        let caps = cursor
+            .capabilities
+            .as_ref()
+            .expect("declared after reading ACP docs");
+        assert!(caps.streaming && caps.tool_events && caps.permissions && caps.cancel);
+        assert!(!caps.resume, "resume is only if initialize advertises it");
+        assert!(caps.notes.as_deref().unwrap().contains("--force"));
+        assert!(caps.notes.as_deref().unwrap().contains("CURSOR_API_KEY"));
     }
 
     /// Both adapter names are tried, current one first, and whatever this
@@ -605,5 +748,33 @@ mod tests {
             .find(|d| d.id == "openclaw")
             .unwrap();
         assert!(matches!(openclaw.readiness, Readiness::Daemon { .. }));
+    }
+
+    /// Copilot's CLI is the ACP server. Advertising a second adapter package
+    /// would send people to install something that does not exist.
+    #[test]
+    fn copilot_is_a_shipped_card_that_launches_acp_and_does_not_claim_resume() {
+        let copilot = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "copilot")
+            .unwrap();
+        assert!(is_reserved("copilot"));
+        assert_eq!(copilot.primary().command, "copilot");
+        assert_eq!(copilot.primary().args, ["--acp"]);
+        assert!(matches!(
+            copilot.readiness,
+            Readiness::Inspect {
+                kind: InspectKind::Copilot
+            }
+        ));
+        let caps = copilot
+            .capabilities
+            .as_ref()
+            .expect("declared after reading ACP docs");
+        assert!(caps.streaming && caps.tool_events && caps.permissions && caps.cancel);
+        assert!(!caps.resume, "sessions die with the process");
+        assert!(caps.notes.as_deref().unwrap().contains("process-local"));
+        let card = copilot.card();
+        assert!(!card.capabilities.as_ref().unwrap().resume);
     }
 }

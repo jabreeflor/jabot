@@ -212,9 +212,37 @@ impl AcpConnection {
             }),
             INITIALIZE_TIMEOUT,
         )?;
+        // Cursor (and any adapter that advertises a method) expects
+        // `authenticate` before `session/new`. Skip when the list is empty so
+        // Claude/Codex/Pi keep the handshake they already pass.
+        self.authenticate_if_needed(&result)?;
         self.initialized = true;
         self.capabilities = parse_capabilities(&result);
         Ok(result)
+    }
+
+    fn authenticate_if_needed(&mut self, init: &Value) -> Result<(), RpcError> {
+        let methods = match init.get("authMethods").and_then(Value::as_array) {
+            Some(methods) if !methods.is_empty() => methods,
+            _ => return Ok(()),
+        };
+        let method_id = methods
+            .iter()
+            .find_map(|method| {
+                method
+                    .get("id")
+                    .or_else(|| method.get("methodId"))
+                    .and_then(Value::as_str)
+            })
+            .ok_or_else(|| {
+                RpcError::Internal("adapter advertised authMethods without an id".into())
+            })?;
+        self.request(
+            "authenticate",
+            json!({ "methodId": method_id }),
+            INITIALIZE_TIMEOUT,
+        )?;
+        Ok(())
     }
 
     pub fn new_session(
@@ -622,6 +650,27 @@ fn read_loop(
     }
 }
 
+/// Cursor ACP extension methods that block the turn. JaBot does not implement
+/// the UX; answering `cancelled` is what lets the session continue.
+fn decline_cursor_extension(method: &str) -> Option<Value> {
+    match method {
+        "cursor/ask_question" | "cursor/create_plan" => {
+            Some(json!({ "outcome": { "outcome": "cancelled" } }))
+        }
+        _ => None,
+    }
+}
+
+fn write_result(stdin: &Arc<Mutex<std::process::ChildStdin>>, id: RequestId, result: Value) {
+    let response = JsonRpcResponse::success(id, result);
+    if let Ok(frame) = encode_frame(&JsonRpcMessage::Response(response)) {
+        if let Ok(mut out) = stdin.lock() {
+            let _ = out.write_all(frame.as_bytes());
+            let _ = out.flush();
+        }
+    }
+}
+
 fn dispatch_message(
     message: JsonRpcMessage,
     stdin: &Arc<Mutex<std::process::ChildStdin>>,
@@ -669,6 +718,11 @@ fn dispatch_message(
                     params: request.params.unwrap_or(Value::Null),
                 });
                 wake.ping();
+            } else if let Some(result) = decline_cursor_extension(&request.method) {
+                // Cursor's blocking extensions wait for a JSON-RPC result.
+                // Declining is the honest answer: JaBot does not implement
+                // them, and method-not-found would leave the turn hung.
+                write_result(stdin, request.id, result);
             } else {
                 let error = JsonRpcError {
                     code: -32601,
@@ -732,5 +786,19 @@ mod tests {
             "agentCapabilities": { "loadSession": "yes" }
         }));
         assert!(!lying.load_session);
+    }
+
+    #[test]
+    fn cursor_blocking_extensions_are_declined_not_method_not_found() {
+        assert_eq!(
+            decline_cursor_extension("cursor/ask_question"),
+            Some(json!({ "outcome": { "outcome": "cancelled" } }))
+        );
+        assert_eq!(
+            decline_cursor_extension("cursor/create_plan"),
+            Some(json!({ "outcome": { "outcome": "cancelled" } }))
+        );
+        assert!(decline_cursor_extension("cursor/update_todos").is_none());
+        assert!(decline_cursor_extension("session/request_permission").is_none());
     }
 }

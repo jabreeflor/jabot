@@ -8,6 +8,7 @@ output into our message/toolblock format.
 **Findings (2026-08):** questions below are answered in
 [findings.md](findings.md). Deep dives: [acp.md](acp.md),
 [claude-code.md](claude-code.md), [codex.md](codex.md), [pi.md](pi.md),
+[copilot.md](copilot.md), [cursor.md](cursor.md),
 [buzz.md](buzz.md), [adapter-design.md](adapter-design.md). Headline:
 speak ACP; do not PTY-wrap TUIs. Broader setup to port from OpenClaw,
 Hermes, and Buzz: [setup-porting](../setup-porting/findings.md).

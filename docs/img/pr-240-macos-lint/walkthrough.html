@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lint macOS-only Rust on relevant PRs without a per-PR bundle</title>
+  <style>
+    :root {
+      --ink: #1a1f24;
+      --muted: #5b6773;
+      --line: #d7dde3;
+      --bg: #f7f5f0;
+      --card: #fff;
+      --linux: #2f6fed;
+      --mac: #c45c26;
+      --skip: #6b7280;
+      --ok: #1f7a4d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 8px; }
+    h2 { font-size: 1.15rem; margin: 2.2rem 0 0.6rem; }
+    p.lede { color: var(--muted); font-size: 1.05rem; margin: 0 0 1.5rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin: 12px 0;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 28px 1fr 28px 1fr;
+      gap: 0;
+      align-items: stretch;
+      margin: 16px 0;
+    }
+    .flow .box {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.92rem;
+    }
+    .flow .box strong { display: block; margin-bottom: 4px; }
+    .flow .arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 1.4rem; }
+    .tag {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 999px;
+      margin-bottom: 6px;
+    }
+    .tag.linux { background: #e4edff; color: var(--linux); }
+    .tag.mac { background: #fde8d8; color: var(--mac); }
+    .tag.skip { background: #eceff2; color: var(--skip); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86em; background: #efece4; padding: 1px 5px; border-radius: 4px; }
+    ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+    li { margin: 0.25rem 0; }
+    .note { color: var(--muted); font-size: 0.92rem; }
+    @media (max-width: 720px) {
+      .flow { grid-template-columns: 1fr; }
+      .flow .arrow { transform: rotate(90deg); height: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Lint macOS-only Rust on relevant PRs without a per-PR bundle</h1>
+    <p class="lede">
+      Linux Clippy never sees <code>cfg(target_os = "macos")</code> code, and the
+      macOS bundle job is post-merge packaging. This PR turns the existing
+      notify scratch-crate into an automatic PR check and adds a path-filtered
+      native Clippy job only where Linux cannot reach.
+    </p>
+
+    <h2>How it works</h2>
+    <div class="flow">
+      <div class="box">
+        <span class="tag linux">Every PR · Linux</span>
+        <strong>macos lint plan</strong>
+        Diff against the PR base. Match the lists in
+        <code>scripts/macos-lint-needed.sh</code>. Write <code>notify=0|1</code>
+        and <code>native=0|1</code>. No Mac runner starts yet.
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <span class="tag linux">If notify=1 · Linux</span>
+        <strong>mac notify cross-check</strong>
+        Same script as <code>./scripts/verify.sh --check-mac</code>: scratch
+        crate, <code>objc2*</code> only, Clippy <code>-D warnings</code> for
+        <code>x86_64-apple-darwin</code>. Then inject a lint into a copy of
+        <code>mac.rs</code> and prove it fails.
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <span class="tag mac">If native=1 · macOS</span>
+        <strong>macos clippy</strong>
+        <code>cargo clippy --locked --lib -- -D warnings</code> on a real Mac.
+        Covers Keychain and the updater / hide-to-Dock / Reopen branches.
+        Cached. Not <code>tauri build</code>.
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>Why not one Linux command for everything?</strong>
+      <p class="note" style="margin:8px 0 0">
+        Decision #73 / #109 already recorded this: cross-checking the whole
+        Tauri crate fails because <code>objc2-exception-helper</code> needs an
+        Apple <code>cc</code>. The notify scratch crate avoids that graph.
+        Keychain and <code>lib.rs</code> do not, so they get the scoped Mac
+        job instead of a per-PR bundle.
+      </p>
+    </div>
+
+    <h2>What to look at</h2>
+    <table>
+      <thead>
+        <tr><th>File</th><th>Why it matters</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>scripts/macos-lint-needed.sh</code></td>
+          <td>Single inventory of which paths turn which job on. Shared Cargo/lock/toolchain/CI files turn both on.</td>
+        </tr>
+        <tr>
+          <td><code>scripts/check-mac-notify.sh</code></td>
+          <td>Unchanged recipe from #109; CI now calls it. <code>JABOT_NOTIFY_DIR</code> lets the injected-lint proof use a copy.</td>
+        </tr>
+        <tr>
+          <td><code>scripts/check-macos-clippy.sh</code></td>
+          <td>Native wrapper. Refuses to run on Linux so nobody mistakes a skip for coverage.</td>
+        </tr>
+        <tr>
+          <td><code>.github/workflows/ci.yml</code></td>
+          <td>Named PR checks. Plan always runs; the 10x runner starts only when <code>native=1</code>.</td>
+        </tr>
+        <tr>
+          <td><code>docs/macos-lint.md</code></td>
+          <td>Module inventory, local repro commands, deliberate exclusions.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>How to verify</h2>
+    <div class="card">
+      <ul>
+        <li>Default offline gate: <code>./scripts/verify.sh</code> — includes the planner tests, not the network cross-check.</li>
+        <li>Which jobs would this branch start: <code>./scripts/macos-lint-needed.sh --base origin/main</code></li>
+        <li>Notify, from Linux: <code>rustup target add x86_64-apple-darwin && ./scripts/check-mac-notify.sh</code></li>
+        <li>Native, on a Mac: <code>./scripts/check-macos-clippy.sh</code></li>
+        <li>Proof on <a href="https://github.com/jabreeflor/jabot/actions/runs/34170052336">CI run 34170052336</a>: a <code>ptr_arg</code> in <code>notify/mac.rs</code> failed <code>mac notify cross-check</code>. That function is gone from this tree.</li>
+      </ul>
+    </div>
+  </main>
+</body>
+</html>

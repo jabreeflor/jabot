@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HostClient } from "../host";
 import type { HarnessReport } from "../host/protocol";
 
@@ -17,6 +17,10 @@ export function AdapterSetup({
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [installing, setInstalling] = useState(false);
+  // Sampled when `attempt` changes — not a trigger. Adding it to the effect
+  // deps would re-run the doctor check the moment install finishes (or
+  // fails), which clears a just-shown install error.
+  const installingRef = useRef(false);
   const supported = ["claude", "codex", "pi", "gemini"].includes(harnessId);
   useEffect(() => {
     let active = true;
@@ -27,13 +31,14 @@ export function AdapterSetup({
       try {
         if (!client || typeof client.harnessDoctor !== "function")
           throw new Error("Connect to the host, then retry the adapter check.");
-        if (installing) {
+        if (installingRef.current) {
           const status = await client.installHarness(harnessId);
           if (!active) return;
           if (status.running) {
             timer = setTimeout(() => void check(), 1000);
             return;
           }
+          installingRef.current = false;
           setInstalling(false);
           if (status.error) throw new Error(status.error);
         }
@@ -47,6 +52,7 @@ export function AdapterSetup({
         setReport(next);
       } catch (cause) {
         if (active) {
+          installingRef.current = false;
           setInstalling(false);
           setError(cause instanceof Error ? cause.message : String(cause));
         }
@@ -59,6 +65,9 @@ export function AdapterSetup({
       active = false;
       if (timer) clearTimeout(timer);
     };
+    // `installing` is sampled via installingRef, not listed: adding it
+    // would re-enter when a failed install clears the flag and wipe the
+    // error that run just showed.
   }, [client, harnessId, attempt]);
   async function install() {
     if (!client) return;
@@ -66,6 +75,7 @@ export function AdapterSetup({
     setError(null);
     try {
       await client.installHarness(harnessId, true);
+      installingRef.current = true;
       setInstalling(true);
       setAttempt((n) => n + 1);
     } catch (cause) {

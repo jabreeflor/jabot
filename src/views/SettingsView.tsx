@@ -238,7 +238,10 @@ function GeneralSettings({
               }} />
             <span><b>{harness.label}</b><small>{harness.available === false
               ? harness.installHint ?? "Not installed" : harness.blurb}
-              {harness.capabilityNotes ? ` ${harness.capabilityNotes}` : ""}</small></span>
+              {harness.capabilityNotes ? ` ${harness.capabilityNotes}` : ""}</small>
+              {harness.capabilities?.notes && (
+                <small className="settings-harness-caps">{harness.capabilities.notes}</small>
+              )}</span>
           </label>
         ))}
       </section>

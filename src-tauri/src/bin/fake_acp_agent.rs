@@ -2,6 +2,9 @@
 //!
 //! Modes (first arg):
 //! - `echo` (default): initialize, session/new, stream one agent chunk, return
+//! - `cursor-login`: advertise `cursor_login` and require `authenticate`
+//! - `cursor-auth-fail`: `authenticate` fails — startup must not look like success
+//! - `cursor-ask`: send blocking `cursor/ask_question` and wait for the decline
 //! - `permission`: request `session/request_permission` before completing
 //! - `read-permission`: same, but a `read` tool call — the one kind Wait for
 //!   Inbox is allowed to answer on the user's behalf
@@ -44,6 +47,9 @@
 //!   turn — prose with no tool call and no URL. What an agent that only
 //!   *claims* to have opened a pull request looks like, which is what arms the
 //!   host's post-turn `gh` probe without proving anything (#28).
+//! - `auth-fail`: refuse `initialize` the way Copilot CLI does when no GitHub
+//!   credentials are present — a startup failure that must never look like a
+//!   successful prompt (#221).
 //! - `empty-reply-logged-out`: empty `end_turn` after writing a sign-in error
 //!   to stderr — the Claude Code "failed: no reply" path with a known cause
 //! - `empty-reply-model`: empty `end_turn` after writing an unsupported-model
@@ -80,6 +86,7 @@ fn main() {
     // for. First is still `sess-fake-1`, so nothing that asserts on it moves.
     let mut sessions_minted: u32 = 0;
     let mut prompts_received: u32 = 0;
+    let mut authenticated = !matches!(mode.as_str(), "cursor-login" | "cursor-auth-fail");
 
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -129,6 +136,12 @@ fn main() {
         let method = msg["method"].as_str().unwrap_or("");
         let id = msg.get("id").cloned();
         match method {
+            "initialize" if mode == "auth-fail" => reply_error(
+                &mut stdout,
+                id,
+                -32000,
+                "not authenticated: no authentication information found",
+            ),
             "initialize" => reply(
                 &mut stdout,
                 id,
@@ -142,13 +155,40 @@ fn main() {
                         }
                     },
                     "agentInfo": { "name": "fake-acp-agent", "version": "0.0.0" },
-                    "authMethods": []
+                    "authMethods": if mode.starts_with("cursor-") {
+                        serde_json::json!([{ "id": "cursor_login", "name": "Cursor" }])
+                    } else {
+                        serde_json::json!([])
+                    }
                 }),
             ),
+            "authenticate" => {
+                eprintln!("authenticate={}", msg["params"]);
+                if mode == "cursor-auth-fail" {
+                    error(
+                        &mut stdout,
+                        id,
+                        -32000,
+                        "Not authenticated. Run `agent login` or set CURSOR_API_KEY.",
+                    );
+                } else {
+                    authenticated = true;
+                    reply(&mut stdout, id, serde_json::json!({}));
+                }
+            }
             "session/new" => {
                 // Echo the params the host sent. The host decides which MCP
                 // servers a session sees (#18), and the only honest place to
                 // check that from a test is the agent's side of the wire.
+                if !authenticated {
+                    error(
+                        &mut stdout,
+                        id,
+                        -32000,
+                        "Not authenticated. Run `agent login` or set CURSOR_API_KEY.",
+                    );
+                    continue;
+                }
                 eprintln!("session_new={}", msg["params"]);
                 sessions_minted += 1;
                 let minted = format!("sess-fake-{sessions_minted}");
@@ -397,6 +437,26 @@ fn main() {
                             serde_json::json!({ "stopReason": "end_turn" }),
                         );
                     }
+                    "cursor-ask" => {
+                        request(
+                            &mut stdout,
+                            serde_json::json!(9100),
+                            "cursor/ask_question",
+                            serde_json::json!({
+                                "toolCallId": "call-ask",
+                                "title": "Need input",
+                                "questions": [{
+                                    "id": "q1",
+                                    "prompt": "Which mode?",
+                                    "options": [
+                                        { "id": "agent", "label": "Agent" },
+                                        { "id": "plan", "label": "Plan" }
+                                    ]
+                                }]
+                            }),
+                        );
+                        pending_prompt_id = id;
+                    }
                     "permission" | "read-permission" => {
                         let (title, kind) = if mode == "read-permission" {
                             ("Read src/auth.ts", "read")
@@ -558,12 +618,34 @@ fn prompt_text(prompt: &serde_json::Value) -> String {
     }
 }
 
+fn error(stdout: &mut io::Stdout, id: Option<serde_json::Value>, code: i64, message: &str) {
+    let Some(id) = id else { return };
+    let msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": code, "message": message }
+    });
+    writeln!(stdout, "{msg}").ok();
+    stdout.flush().ok();
+}
+
 fn reply(stdout: &mut io::Stdout, id: Option<serde_json::Value>, result: serde_json::Value) {
     let Some(id) = id else { return };
     let msg = serde_json::json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": result
+    });
+    writeln!(stdout, "{msg}").ok();
+    stdout.flush().ok();
+}
+
+fn reply_error(stdout: &mut io::Stdout, id: Option<serde_json::Value>, code: i64, message: &str) {
+    let Some(id) = id else { return };
+    let msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": code, "message": message }
     });
     writeln!(stdout, "{msg}").ok();
     stdout.flush().ok();
