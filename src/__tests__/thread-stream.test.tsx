@@ -26,6 +26,7 @@ import type {
   PermissionReplyParams,
   PromptParams,
   ThreadResumeResult,
+  ThreadStateResult,
   ThreadTranscriptResult,
 } from "../host";
 import { PERMISSION_ASK, PERMISSION_RESOLVED, SESSION_UPDATE } from "../host";
@@ -576,6 +577,51 @@ describe("hydrate", () => {
     expect(hydrated.busy).toBe(true);
   });
 
+  it("stamps each bubble with the last seq that wrote it", () => {
+    const stream = hydrate({
+      threadId: "t1",
+      headSeq: 3,
+      events: [
+        {
+          seq: 1,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: {
+            sessionUpdate: "user_message_chunk",
+            content: { type: "text", text: "go" },
+          },
+        },
+        {
+          seq: 2,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: text("half"),
+        },
+        {
+          seq: 3,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: text(" done"),
+        },
+      ],
+      truncated: false,
+      queued: [],
+    });
+    expect(stream.items[0]).toMatchObject({ kind: "user", seq: 1 });
+    expect(stream.items[1]).toMatchObject({ kind: "agent", seq: 3 });
+  });
+
+  it("draws a stamp for a conversation that was forked", () => {
+    const stream = applyAcpEvent(EMPTY_STREAM, {
+      sessionUpdate: "state_update",
+      jabot: { event: "branched_from", title: "Auth migration" },
+    });
+    expect(last(stream.items)).toMatchObject({
+      kind: "stamp",
+      text: "Branched from Auth migration",
+    });
+  });
+
   it("pins persisted reactions onto the agent bubble they belong to", () => {
     const hydrated = hydrate({
       threadId: "t1",
@@ -728,6 +774,10 @@ function stubHost(
         cancelled: params.cancelled === true,
       };
     }),
+    branchThread: vi.fn(async () => ({
+      threadId: "t-branch",
+      title: "Branch of Auth migration",
+    })),
     prompt: vi.fn(async (params: PromptParams) => {
       prompts.push(params);
       const queued = busy;
@@ -1636,5 +1686,108 @@ describe("LiveThreadView resume", () => {
 
     expect(await screen.findByText("start the migration")).toBeInTheDocument();
     expect(document.querySelector(".chat-resume")).toBeNull();
+  });
+});
+
+describe("LiveThreadView branch in new chat", () => {
+  it("forks through the selected message and opens the child", async () => {
+    const host = stubHost();
+    const onOpenThread = vi.fn();
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+        onOpenThread={onOpenThread}
+      />,
+    );
+    await screen.findByText("start the migration");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Branch in new chat" }),
+    );
+
+    await waitFor(() =>
+      expect(host.client.branchThread).toHaveBeenCalledWith({
+        threadId: THREAD.id,
+        throughSeq: 1,
+      }),
+    );
+    expect(onOpenThread).toHaveBeenCalledWith("t-branch");
+  });
+
+  it("does not send a second fork while the first is in flight", async () => {
+    let release: (value: ThreadStateResult) => void = () => {};
+    const host = stubHost();
+    host.client.branchThread = vi.fn(
+      () =>
+        new Promise<ThreadStateResult>((resolve) => {
+          release = resolve;
+        }),
+    );
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    await screen.findByText("start the migration");
+    const button = screen.getByRole("button", { name: "Branch in new chat" });
+    await userEvent.click(button);
+    await userEvent.click(button);
+    expect(host.client.branchThread).toHaveBeenCalledTimes(1);
+    release({ threadId: "t-branch" } as ThreadStateResult);
+    await waitFor(() => expect(button).not.toBeDisabled());
+  });
+
+  it("says so when the host refuses the fork", async () => {
+    const host = stubHost();
+    host.client.branchThread = vi.fn(async () => {
+      throw new Error("throughSeq 9 is past the end of this conversation");
+    });
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    await screen.findByText("start the migration");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Branch in new chat" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "past the end of this conversation",
+    );
+  });
+
+  it("links back to the source conversation", async () => {
+    const onOpenThread = vi.fn();
+    const host = stubHost({}, [], undefined, undefined, {
+      branchedFrom: {
+        threadId: "t-src",
+        title: "Auth migration",
+        throughSeq: 2,
+      },
+    });
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+        onOpenThread={onOpenThread}
+      />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: /Branched from Auth migration/,
+      }),
+    );
+    expect(onOpenThread).toHaveBeenCalledWith("t-src");
   });
 });

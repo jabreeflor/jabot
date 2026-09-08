@@ -19,6 +19,7 @@
 //! × running — disappeared and still working — is the product's whole premise,
 //! and it is only representable because the two are not one enum.
 
+pub mod branch;
 pub mod ledger;
 pub mod process;
 pub mod receipt;
@@ -351,6 +352,7 @@ impl HostSession {
             runs,
             receipt,
             handoff,
+            branched_from: self.branched_from_view(&row.id),
             pull_requests,
             unread,
         })

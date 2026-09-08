@@ -9,6 +9,7 @@ import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { copyText } from "./copyText";
 import {
+  BranchIcon,
   CaretRightIcon,
   CheckIcon,
   CopyIcon,
@@ -37,12 +38,18 @@ export function Transcript({
   items,
   onAction,
   onReact,
+  onBranch,
+  branchingSeq,
 }: {
   items: readonly TranscriptItem[];
   /** A notice card's button — a fold offer today, a permission reply in #20. */
   onAction?: (itemId: string, actionId: string) => void;
   /** Toggle an emoji on an agent bubble (#265). */
   onReact?: (itemId: string, emoji: string) => void;
+  /** Code chats only (#266): fork the conversation through this message. */
+  onBranch?: (itemId: string, seq: number) => void;
+  /** Seq currently being forked, so the control can show a loading state. */
+  branchingSeq?: number | null;
 }) {
   // Streaming is why this is memoized rather than recomputed. #14's reducer
   // returns a new array whose *other elements are the same objects*, so with
@@ -87,6 +94,8 @@ export function Transcript({
             item={entry.item}
             onAction={onAction}
             onReact={onReact}
+            onBranch={onBranch}
+            branchingSeq={branchingSeq}
           />
         ),
       )}
@@ -132,13 +141,18 @@ const ToolBlock = memo(ToolBlockRow, (before, after) =>
 function AgentBubble({
   item,
   onReact,
+  onBranch,
+  branchingSeq,
 }: {
   item: Extract<TranscriptItem, { kind: "agent" }>;
   onReact?: (itemId: string, emoji: string) => void;
+  onBranch?: (itemId: string, seq: number) => void;
+  branchingSeq?: number | null;
 }) {
   const nodes = useMemo(() => renderMarkdown(item.text), [item.text]);
   const reactions = item.reactions ?? [];
   const canReact = onReact !== undefined;
+  const showBranch = canOfferBranch(onBranch, item.seq, item.streaming);
   return (
     <div className="msg bot">
       <div className="bot-turn">
@@ -146,9 +160,20 @@ function AgentBubble({
           {nodes}
         </div>
       </div>
-      {(item.text.length > 0 || canReact || reactions.length > 0) && (
+      {(item.text.length > 0 ||
+        showBranch ||
+        canReact ||
+        reactions.length > 0) && (
         <div className="msg-actions" role="group" aria-label="Message actions">
           {item.text.length > 0 && <CopyResponseButton text={item.text} />}
+          {showBranch && onBranch && item.seq !== undefined && (
+            <BranchButton
+              itemId={item.id}
+              seq={item.seq}
+              onBranch={onBranch}
+              branchingSeq={branchingSeq}
+            />
+          )}
           {(canReact || reactions.length > 0) && (
             <ReactionBar
               itemId={item.id}
@@ -348,10 +373,14 @@ function TranscriptRow({
   item,
   onAction,
   onReact,
+  onBranch,
+  branchingSeq,
 }: {
   item: Exclude<TranscriptItem, { kind: "tool" }>;
   onAction?: (itemId: string, actionId: string) => void;
   onReact?: (itemId: string, emoji: string) => void;
+  onBranch?: (itemId: string, seq: number) => void;
+  branchingSeq?: number | null;
 }) {
   switch (item.kind) {
     case "stamp":
@@ -366,10 +395,33 @@ function TranscriptRow({
       return (
         <div className="msg me">
           <div className="bubble">{item.text}</div>
+          {canOfferBranch(onBranch, item.seq) &&
+            onBranch &&
+            item.seq !== undefined && (
+              <div
+                className="msg-actions"
+                role="group"
+                aria-label="Message actions"
+              >
+                <BranchButton
+                  itemId={item.id}
+                  seq={item.seq}
+                  onBranch={onBranch}
+                  branchingSeq={branchingSeq}
+                />
+              </div>
+            )}
         </div>
       );
     case "agent":
-      return <AgentBubble item={item} onReact={onReact} />;
+      return (
+        <AgentBubble
+          item={item}
+          onReact={onReact}
+          onBranch={onBranch}
+          branchingSeq={branchingSeq}
+        />
+      );
     case "notice":
       return <Notice item={item} onAction={onAction} />;
     // Unreachable through the reducer, which only ever builds the kinds above.
@@ -378,6 +430,44 @@ function TranscriptRow({
     default:
       return null;
   }
+}
+
+/** Fork through this bubble's last transcript seq (#266). Hidden while the
+    reply is still streaming — a cut mid-token is not a conversation. */
+function canOfferBranch(
+  onBranch: ((itemId: string, seq: number) => void) | undefined,
+  seq: number | undefined,
+  streaming?: boolean,
+): boolean {
+  return Boolean(onBranch) && seq !== undefined && seq >= 1 && !streaming;
+}
+
+function BranchButton({
+  itemId,
+  seq,
+  onBranch,
+  branchingSeq,
+}: {
+  itemId: string;
+  seq: number;
+  onBranch: (itemId: string, seq: number) => void;
+  branchingSeq?: number | null;
+}) {
+  const busy = branchingSeq === seq;
+  const branchLabel = busy ? "Branching…" : "Branch in new chat";
+  return (
+    <button
+      type="button"
+      className="msg-action"
+      aria-label={branchLabel}
+      data-tooltip={branchLabel}
+      aria-busy={busy || undefined}
+      disabled={branchingSeq != null}
+      onClick={() => onBranch(itemId, seq)}
+    >
+      <BranchIcon />
+    </button>
+  );
 }
 
 function Notice({

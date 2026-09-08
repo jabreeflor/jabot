@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add Branch in new chat to Code messages</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .steps { display:grid; gap:10px; margin-top:16px; }
+    .steps div { padding:14px 16px; background:#0f141a; border-radius:9px; }
+    .steps strong { color:var(--accent); margin-right:8px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .note { color:var(--warn); }
+    @media (max-width:700px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #277 walkthrough</div>
+    <h1>Add Branch in new chat to Code messages</h1>
+    <p>Every user and assistant bubble in a Code thread can fork the conversation. The child gets history through that message; the original stays put. This is conversation branching, not a Git branch — worktrees follow New Chat (a fresh checkout, never a shared one).</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>A Code thread was one linear log. The only new conversation was New Chat, which starts empty.</li>
+            <li>Trying a different follow-up meant either overwriting the current thread or losing the earlier turns.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li><code>thread/branch { threadId, throughSeq }</code> opens a sibling whose transcript is the source log through that seq.</li>
+            <li>The unique pair <code>(source, throughSeq)</code> is the child. A second click returns it; a deleted child can be replaced.</li>
+            <li>The header on the child links back. The original is not rewritten.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="steps">
+        <div><strong>1.</strong> The renderer stamps each bubble with the last <code>transcript_events.seq</code> that wrote it.</div>
+        <div><strong>2.</strong> The action row under a Code bubble calls <code>thread/branch</code>. Bot standing chats never get the row.</div>
+        <div><strong>3.</strong> The host copies rows with the same seq numbers, appends a <code>branched_from</code> stamp, and opens the child via <code>thread/open</code> (same folder / harness / runtime; no <code>useCheckout</code>).</div>
+        <div><strong>4.</strong> The child’s first ACP prompt prepends the copied user/agent text so the new session can continue from the cut. The UI already has the copied log.</div>
+      </div>
+    </section>
+
+    <section id="review">
+      <h2>What to look at</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>src-tauri/src/host/lifecycle/branch.rs</code></td><td>The method: refuse standing threads, copy through the cut, persist the mapping, race-safe insert.</td></tr>
+          <tr><td><code>src-tauri/src/host/store/migrations/0012_thread_branches.sql</code></td><td>One live child per <code>(source_thread_id, through_seq)</code>.</td></tr>
+          <tr><td><code>src/components/Transcript.tsx</code></td><td>Shared message action row — #267 copy and #265 reactions add siblings here.</td></tr>
+          <tr><td><code>src/views/ThreadView.tsx</code></td><td>Loading, failure, and the “Branched from …” header that opens the source.</td></tr>
+          <tr><td><code>src/views/transcript.ts</code></td><td>Seq on each bubble; <code>branched_from</code> becomes a stamp.</td></tr>
+        </tbody>
+      </table>
+      <p class="note" style="margin-top:16px">Do not share a worktree with the source. New Chat already mints a fresh <code>jabot/&lt;id&gt;</code> tree; branch does the same.</p>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li>Open a Code thread (not Chief). Every finished user and assistant bubble should show the branch icon; Tab reaches it; Enter fires it.</li>
+        <li>Fork at an early message. The child title is <code>Branch of …</code>, history stops at the cut, and the header opens the source.</li>
+        <li>Click the same icon again — same child, not a second conversation.</li>
+        <li>Keep typing on the source. Those turns must not appear on the child.</li>
+        <li><code>./scripts/verify.sh</code> — already green on this tree. Targeted: <code>npx vitest run --project unit src/__tests__/transcript.test.tsx src/__tests__/thread-stream.test.tsx</code> and <code>npx vitest run --project e2e tests/e2e/branch.test.ts</code>.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

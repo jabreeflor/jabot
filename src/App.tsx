@@ -881,6 +881,10 @@ function AppShell({
             host={host}
             onSelect={setSelection}
             onFoldThread={foldThread}
+            onOpenHostThread={(threadId) => {
+              registered.reload();
+              setSelection({ view: "thread", threadId });
+            }}
             onSend={(conversationId, text) =>
               dispatch({ type: "sendMessage", conversationId, text })
             }
@@ -1037,6 +1041,7 @@ function MainView({
   host,
   onSelect,
   onFoldThread,
+  onOpenHostThread,
   onSend,
   onNotice,
   onOpenInboxThread,
@@ -1089,6 +1094,8 @@ function MainView({
   onSelect: (selection: Selection) => void;
   /** Fold from the chat you are reading, not only from the sidebar row (#26). */
   onFoldThread: (threadId: string, policy?: FoldPolicy) => void;
+  /** Open a host-owned Code thread after a branch, and refresh the sidebar. */
+  onOpenHostThread: (threadId: string) => void;
   onSend: (conversationId: string, text: string) => void;
   onNotice: (conversationId: string, itemId: string, actionId: string) => void;
   /** Open a card's thread — a reopen on the host, not just a navigation. */
@@ -1213,6 +1220,7 @@ function MainView({
             host={host}
             onFold={(policy) => onFoldThread(hostThread.id, policy)}
             onOpenPullRequest={() => onSelect({ view: "prs" })}
+            onOpenThread={onOpenHostThread}
           />
         );
       }

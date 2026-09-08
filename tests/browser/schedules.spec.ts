@@ -36,7 +36,7 @@ test.describe("schedules", () => {
 
     const toggle = page.locator(".sched-switch .track");
     await toggle.click();
-    await expect(page.getByText("Paused")).toBeVisible();
+    await expect(row.locator(".sched-next")).toHaveText("Paused");
     const paused = await jabot.rpc<{
       schedules: Array<{ enabled: boolean }>;
     }>("schedule/list");

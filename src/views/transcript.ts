@@ -414,14 +414,21 @@ function chunk(
         items: replaceAt(stream.items, open.index, {
           ...previous,
           text: previous.text + text,
+          seq: seqOf(stream),
         }),
       };
     }
   }
   const item: TranscriptItem =
     kind === "user"
-      ? { kind: "user", id: nextId(stream), text }
-      : { kind: "agent", id: nextId(stream), text, streaming: stream.busy };
+      ? { kind: "user", id: nextId(stream), text, seq: seqOf(stream) }
+      : {
+          kind: "agent",
+          id: nextId(stream),
+          text,
+          streaming: stream.busy,
+          seq: seqOf(stream),
+        };
   return {
     ...stream,
     items: [...stream.items, item],
@@ -478,6 +485,22 @@ function stateUpdate(
   const jabot = asRecord(update.jabot);
   // The host's own note that a queued prompt is never going to be sent. It is
   // the user's text, so it is said out loud rather than dropped in silence.
+  if (jabot && str(jabot.event) === "branched_from") {
+    const title = str(jabot.title) ?? "another conversation";
+    const closed = closeBubble(stream);
+    return {
+      ...closed,
+      items: [
+        ...closed.items,
+        {
+          kind: "stamp",
+          id: nextId(closed),
+          text: `Branched from ${title}`,
+        },
+      ],
+      counter: closed.counter + 1,
+    };
+  }
   if (jabot && str(jabot.event) === "prompt_dropped") {
     const text = contentText(jabot.content);
     const reason = str(jabot.reason) ?? "the session ended";
@@ -804,6 +827,11 @@ function nextId(stream: ThreadStream): string {
   return stream.headSeq > 0
     ? `e${stream.headSeq}-${stream.counter}`
     : `n${stream.counter}`;
+}
+
+/** Last transcript seq that contributed to the bubble being written. */
+function seqOf(stream: ThreadStream): number | undefined {
+  return stream.headSeq > 0 ? stream.headSeq : undefined;
 }
 
 function planProgress(entries: unknown): PlanProgress | null {

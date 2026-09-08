@@ -3,6 +3,7 @@
 //! The renderer never opens this file. The host process is the only writer
 //! (`docs/research/data-and-persistence/store.md`).
 
+mod branch;
 mod catalog;
 mod draft;
 mod error;
@@ -435,6 +436,48 @@ impl Store {
 
     pub fn set_thread_preview(&self, thread_id: &str, preview: &str) -> Result<(), StoreError> {
         overlay::set_thread_preview(&self.conn, thread_id, preview)
+    }
+
+    /// Conversation branches (#266) — see [`branch`].
+    pub fn get_branch(
+        &self,
+        source_thread_id: &str,
+        through_seq: i64,
+    ) -> Result<Option<ThreadBranchRow>, StoreError> {
+        branch::get_branch(&self.conn, source_thread_id, through_seq)
+    }
+
+    pub fn branch_source_of(
+        &self,
+        branch_thread_id: &str,
+    ) -> Result<Option<ThreadBranchRow>, StoreError> {
+        branch::branch_source_of(&self.conn, branch_thread_id)
+    }
+
+    pub fn insert_branch(
+        &self,
+        source_thread_id: &str,
+        through_seq: i64,
+        branch_thread_id: &str,
+    ) -> Result<bool, StoreError> {
+        branch::insert_branch(&self.conn, source_thread_id, through_seq, branch_thread_id)
+    }
+
+    pub fn delete_branch(
+        &self,
+        source_thread_id: &str,
+        through_seq: i64,
+    ) -> Result<(), StoreError> {
+        branch::delete_branch(&self.conn, source_thread_id, through_seq)
+    }
+
+    pub fn copy_transcript_through(
+        &self,
+        source_thread_id: &str,
+        branch_thread_id: &str,
+        through_seq: i64,
+    ) -> Result<usize, StoreError> {
+        branch::copy_transcript_through(&self.conn, source_thread_id, branch_thread_id, through_seq)
     }
 
     /// Every bot's standing-thread preview, in one query — see

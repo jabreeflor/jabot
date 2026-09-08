@@ -31,12 +31,14 @@ import type {
   TranscriptItem,
 } from "../components/types";
 import type {
+  BranchedFromView,
   HandoffView,
   HostClient,
   ProcessView,
   ThreadResumeResult,
   ThreadStateResult,
 } from "../host";
+import { hostErrorText } from "./errors";
 import { streamStatus, useThreadTranscript } from "./transcript";
 
 export function ThreadView({
@@ -64,6 +66,10 @@ export function ThreadView({
   resumeNotice,
   client,
   onOpenPullRequest,
+  onBranch,
+  branchingSeq,
+  branchedFrom,
+  onOpenSource,
 }: {
   thread: ThreadSummary;
   harnesses: readonly HarnessCard[];
@@ -107,6 +113,11 @@ export function ThreadView({
   /** Live host, when the summary panel can ask it for Git and sources (#269). */
   client?: HostClient;
   onOpenPullRequest?: (url?: string) => void;
+  /** Fork this conversation through a message (#266). */
+  onBranch?: (itemId: string, seq: number) => void;
+  branchingSeq?: number | null;
+  branchedFrom?: BranchedFromView;
+  onOpenSource?: (threadId: string) => void;
 }) {
   const line = status ?? threadStatus(thread);
 
@@ -144,6 +155,9 @@ export function ThreadView({
           )}
           {onFold && canFold(thread.state) && <FoldButton onFold={onFold} />}
           {handoff && <HandoffLine handoff={handoff} />}
+          {branchedFrom && (
+            <BranchLine source={branchedFrom} onOpen={onOpenSource} />
+          )}
         </div>
       }
       items={items}
@@ -151,6 +165,8 @@ export function ThreadView({
       onSend={onSend}
       onAction={onAction}
       onReact={onReact}
+      onBranch={onBranch}
+      branchingSeq={branchingSeq}
       busy={busy}
       queued={queued}
       onCancel={onCancel}
@@ -302,6 +318,25 @@ function driftLabel(field: string): string {
  * said only "Handed off by Chief" would be describing work that is not
  * happening. `detail` is the host's own sentence about why.
  */
+function BranchLine({
+  source,
+  onOpen,
+}: {
+  source: BranchedFromView;
+  onOpen?: (threadId: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="chat-branch"
+      onClick={() => onOpen?.(source.threadId)}
+      title={`Open ${source.title}`}
+    >
+      <span className="from">Branched from {source.title}</span>
+    </button>
+  );
+}
+
 function HandoffLine({ handoff }: { handoff: HandoffView }) {
   const who = handoff.fromBotName ?? "a bot";
   const verb =
@@ -341,6 +376,7 @@ export function LiveThreadView({
   onPickHost,
   onFold,
   onOpenPullRequest,
+  onOpenThread,
 }: {
   client: HostClient;
   thread: ThreadSummary;
@@ -349,6 +385,8 @@ export function LiveThreadView({
   onPickHost?: (hostId: string) => void;
   onFold?: (policy?: FoldPolicy) => void;
   onOpenPullRequest?: (url?: string) => void;
+  /** Navigate to another Code thread — a branch, or the source it came from. */
+  onOpenThread?: (threadId: string) => void;
 }) {
   const { stream, error, send, cancel, answer, react } = useThreadTranscript(
     client,
@@ -364,6 +402,8 @@ export function LiveThreadView({
     null,
   );
   const [resuming, setResuming] = useState(false);
+  const [branchingSeq, setBranchingSeq] = useState<number | null>(null);
+  const [branchError, setBranchError] = useState<string | null>(null);
 
   // `thread/reopen` — what the Inbox's Open thread runs — is a store write. It
   // puts the row back and spawns nothing, so after a quit or an idle evict the
@@ -391,6 +431,25 @@ export function LiveThreadView({
       .finally(() => setResuming(false));
   }, [applyState, client, thread.id]);
 
+  const onBranch = useCallback(
+    (_itemId: string, seq: number) => {
+      if (typeof client.branchThread !== "function") return;
+      if (branchingSeq != null) return;
+      setBranchError(null);
+      setBranchingSeq(seq);
+      client
+        .branchThread({ threadId: thread.id, throughSeq: seq })
+        .then((state) => {
+          onOpenThread?.(state.threadId);
+        })
+        .catch((err: unknown) => {
+          setBranchError(hostErrorText(err));
+        })
+        .finally(() => setBranchingSeq(null));
+    },
+    [branchingSeq, client, onOpenThread, thread.id],
+  );
+
   return (
     <ThreadView
       thread={thread}
@@ -408,7 +467,7 @@ export function LiveThreadView({
       busy={stream.busy}
       queued={stream.queued}
       onCancel={cancel}
-      error={error}
+      error={branchError ?? error}
       handoff={facts?.handoff}
       drift={facts?.process?.drift}
       worktreePath={facts?.worktreePath}
@@ -426,6 +485,10 @@ export function LiveThreadView({
       resumeNotice={resumeNotice}
       client={client}
       onOpenPullRequest={onOpenPullRequest}
+      onBranch={onBranch}
+      branchingSeq={branchingSeq}
+      branchedFrom={facts?.branchedFrom}
+      onOpenSource={onOpenThread}
     />
   );
 }
@@ -443,6 +506,7 @@ interface ThreadFacts {
   process?: ProcessView;
   worktreePath?: string;
   branch?: string;
+  branchedFrom?: BranchedFromView;
 }
 
 function factsOf(state: ThreadStateResult): ThreadFacts {
@@ -451,6 +515,7 @@ function factsOf(state: ThreadStateResult): ThreadFacts {
     process: state.process,
     worktreePath: state.worktreePath,
     branch: state.branch,
+    branchedFrom: state.branchedFrom,
   };
 }
 

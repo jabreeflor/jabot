@@ -121,6 +121,81 @@ describe("Transcript", () => {
       screen.getByRole("button", { name: "Keep watching" }),
     ).toBeDisabled();
   });
+
+  it("offers Branch in new chat on Code messages and reports the seq", async () => {
+    const onBranch = vi.fn();
+    render(
+      <Transcript
+        items={[
+          { kind: "user", id: "u1", text: "Fold it.", seq: 1 },
+          { kind: "agent", id: "a1", text: "Done.", seq: 4 },
+        ]}
+        onBranch={onBranch}
+      />,
+    );
+
+    const buttons = screen.getAllByRole("button", {
+      name: "Branch in new chat",
+    });
+    expect(buttons).toHaveLength(2);
+    await userEvent.click(buttons[0]);
+    expect(onBranch).toHaveBeenCalledWith("u1", 1);
+    await userEvent.click(buttons[1]);
+    expect(onBranch).toHaveBeenCalledWith("a1", 4);
+  });
+
+  it("keeps the branch action keyboard reachable", async () => {
+    const onBranch = vi.fn();
+    render(
+      <Transcript
+        items={[{ kind: "user", id: "u1", text: "Fold it.", seq: 2 }]}
+        onBranch={onBranch}
+      />,
+    );
+    await userEvent.tab();
+    expect(
+      screen.getByRole("button", { name: "Branch in new chat" }),
+    ).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(onBranch).toHaveBeenCalledWith("u1", 2);
+  });
+
+  it("hides the action while a reply is still streaming", () => {
+    render(
+      <Transcript
+        items={[
+          {
+            kind: "agent",
+            id: "a1",
+            text: "typ",
+            streaming: true,
+            seq: 3,
+          },
+        ]}
+        onBranch={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Branch in new chat" }),
+    ).toBeNull();
+  });
+
+  it("locks every branch control while one fork is in flight", () => {
+    render(
+      <Transcript
+        items={[
+          { kind: "user", id: "u1", text: "one", seq: 1 },
+          { kind: "agent", id: "a1", text: "two", seq: 2 },
+        ]}
+        onBranch={vi.fn()}
+        branchingSeq={1}
+      />,
+    );
+    const buttons = screen.getAllByRole("button", { name: /Branch/ });
+    expect(buttons[0]).toBeDisabled();
+    expect(buttons[0]).toHaveAttribute("aria-busy", "true");
+    expect(buttons[1]).toBeDisabled();
+  });
 });
 
 /**

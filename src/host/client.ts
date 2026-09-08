@@ -55,6 +55,7 @@ import {
   PAIRING_START,
   PAIRING_STATUS,
   THREAD_ARCHIVE,
+  THREAD_BRANCH,
   THREAD_DELETE,
   THREAD_FOLD,
   THREAD_OPEN,
@@ -148,6 +149,7 @@ import {
   type ResumeFromResult,
   type SessionCancelParams,
   type SupervisorStatusResult,
+  type ThreadBranchParams,
   type ThreadFoldParams,
   type ThreadOpenParams,
   type ThreadRefParams,
@@ -400,6 +402,12 @@ export class HostClient {
    */
   async resumeThread(params: ThreadRefParams): Promise<ThreadResumeResult> {
     return this.request<ThreadResumeResult>(THREAD_RESUME, params);
+  }
+
+  /** Fork a Code conversation at a message. Idempotent for a given
+      `(threadId, throughSeq)` — a second click returns the existing child. */
+  async branchThread(params: ThreadBranchParams): Promise<ThreadStateResult> {
+    return this.request<ThreadStateResult>(THREAD_BRANCH, params);
   }
 
   /** What the supervisor is holding open, and what it reconciled at boot. */
