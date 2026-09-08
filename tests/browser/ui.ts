@@ -215,10 +215,6 @@ export function denyButton(page: Page): Locator {
   return page.getByRole("button", { name: "Deny", exact: true });
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export async function chooseSelectOption(
   page: Page,
   triggerName: string | RegExp,
