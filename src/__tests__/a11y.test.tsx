@@ -250,6 +250,25 @@ describe("primary views", () => {
     await expectNoSeriousA11yViolations(container);
   });
 
+  it("conversation summary popover has no critical or serious violations", async () => {
+    const { container } = render(
+      <ThreadView
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+        items={THREAD_ITEMS}
+        onSend={vi.fn()}
+        onAction={vi.fn()}
+        onPickHost={vi.fn()}
+        onFold={vi.fn()}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+    );
+    await expectNoSeriousA11yViolations(container);
+  });
+
   it("Settings has no critical or serious violations", async () => {
     const { container } = render(
       <SettingsView

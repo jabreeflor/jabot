@@ -17,6 +17,7 @@ mod schedule;
 mod secrets;
 mod seed;
 mod settings;
+mod summary;
 
 use std::path::{Path, PathBuf};
 
@@ -321,6 +322,54 @@ impl Store {
         runtime_json: &str,
     ) -> Result<ThreadRow, StoreError> {
         overlay::set_thread_runtime(&self.conn, id, runtime_json)
+    }
+
+    pub fn list_thread_repos(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<summary::ThreadRepoLink>, StoreError> {
+        summary::list_thread_repos(&self.conn, thread_id)
+    }
+
+    pub fn attach_thread_repo(
+        &self,
+        thread_id: &str,
+        folder_id: &str,
+    ) -> Result<summary::ThreadRepoLink, StoreError> {
+        summary::attach_thread_repo(&self.conn, thread_id, folder_id)
+    }
+
+    pub fn detach_thread_repo(&self, thread_id: &str, folder_id: &str) -> Result<bool, StoreError> {
+        summary::detach_thread_repo(&self.conn, thread_id, folder_id)
+    }
+
+    pub fn list_thread_sources(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<summary::ThreadSourceRow>, StoreError> {
+        summary::list_thread_sources(&self.conn, thread_id)
+    }
+
+    pub fn add_thread_source(
+        &self,
+        thread_id: &str,
+        name: &str,
+        kind: &str,
+        path: &str,
+        mime: Option<&str>,
+    ) -> Result<summary::ThreadSourceRow, StoreError> {
+        summary::add_thread_source(&self.conn, thread_id, name, kind, path, mime)
+    }
+
+    pub fn get_thread_source(
+        &self,
+        id: &str,
+    ) -> Result<Option<summary::ThreadSourceRow>, StoreError> {
+        summary::get_thread_source(&self.conn, id)
+    }
+
+    pub fn remove_thread_source(&self, id: &str) -> Result<bool, StoreError> {
+        summary::remove_thread_source(&self.conn, id)
     }
 
     pub fn set_thread_state(&self, id: &str, state: &str) -> Result<ThreadRow, StoreError> {

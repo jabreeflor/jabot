@@ -208,6 +208,7 @@ pub fn run() {
             host_rpc,
             window::window_translucency_applied,
             host::repo::workspace::pick_workspace,
+            host::repo::workspace::pick_sources,
             host::repo::workspace::github_repositories,
             host::repo::workspace::clone_repository,
             host::repo::workspace::scratch_workspace,

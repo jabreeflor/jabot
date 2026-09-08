@@ -22,6 +22,7 @@ mod schedule;
 mod seq;
 mod settings;
 mod store;
+mod summary;
 mod supervisor;
 mod tools;
 mod transcript;
