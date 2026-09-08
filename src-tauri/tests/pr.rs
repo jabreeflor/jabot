@@ -14,7 +14,9 @@
 //! login is in — that a refresh which cannot reach GitHub says so and leaves
 //! the board standing.
 
-use std::path::PathBuf;
+mod common;
+use common::fake_agent;
+
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -147,17 +149,6 @@ fn init_repo(dir: &std::path::Path, origin: &str) {
     std::fs::write(dir.join("README.md"), "# project\n").unwrap();
     git(&["add", "-A"]);
     git(&["commit", "-m", "first"]);
-}
-
-fn fake_agent() -> String {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_fake_acp_agent") {
-        return path.to_string();
-    }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .join("target/debug/fake-acp-agent")
-        .to_string_lossy()
-        .into_owned()
 }
 
 /// The headline: what `gh pr create` printed becomes a row on the board, and

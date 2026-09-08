@@ -28,14 +28,16 @@
 #   2c. install script — the release installer's pins, delivery, and refusals
 #   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
 #   2e. macos lint    — planner/path tests for the before-merge macOS jobs
+#   2f. coverage policy — include/exclude/thresholds still fail when they should
 #   3. tsc            — renderer types
 #   3b. frontend lint — eslint (hooks + no-explicit-any + promises)
 #   3c. frontend format — Prettier --check on first-party TS/JS/CSS/JSON (after lint)
-#   4. vitest unit    — React components + host client (jsdom)
+#   4. vitest unit    — React components + host client (jsdom), with coverage
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors
 #   6b. cargo check   — the crate compiles WITHOUT dev-bins, i.e. what tauri build sees
 #   7. cargo test     — Rust host unit + integration tests
+#                       (or cargo-llvm-cov when JABOT_RUST_COVERAGE=1; CI only)
 #   8. build hostd    — the NDJSON stdio host the e2e suite drives
 #   9. vitest e2e     — TypeScript client against the real Rust host
 #  10. vite build     — the renderer bundle actually builds
@@ -698,6 +700,42 @@ macos_lint_tests() {
 }
 
 # ---------------------------------------------------------------------------
+# 2e. coverage policy
+#
+# The floors in vitest.config.ts only matter if a miss actually fails, and if
+# a new production file that no test imports still counts. scripts/tests/
+# coverage.test.sh proves both on a throwaway fixture, and that CI (not this
+# script) is where cargo-llvm-cov gets installed. Offline, a few seconds.
+# ---------------------------------------------------------------------------
+coverage_policy() {
+  ./scripts/tests/coverage.test.sh
+}
+
+# Frontend unit tests plus the scoped coverage floor. `--coverage` uses the
+# already-installed @vitest/coverage-v8; it does not fetch anything. Reports
+# land in coverage/frontend/ (gitignored) even when tests fail
+# (`reportOnFailure`), so CI can upload them. Scope: docs/coverage.md.
+unit_tests() {
+  mkdir -p coverage
+  if [[ -f docs/coverage.md ]]; then
+    cp docs/coverage.md coverage/SCOPE.md
+  fi
+  npx vitest run --project unit --coverage
+}
+
+# Rust tests. Local default is `cargo test`, same as before. CI sets
+# JABOT_RUST_COVERAGE=1 after installing cargo-llvm-cov in the workflow
+# setup; this then writes coverage/rust/ instead of running the suite twice.
+# The script refuses to install the tool.
+rust_tests() {
+  if [[ "${JABOT_RUST_COVERAGE:-}" == 1 ]]; then
+    ./scripts/coverage-rust.sh
+  else
+    cargo test "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # 2e. frontend format
 #
 # cargo fmt --check already owns Rust layout. The renderer had no equivalent,
@@ -729,10 +767,11 @@ run "commit guards"  guards
 run "install script" install_script
 run "macos acceptance" macos_acceptance
 run "macos lint tests" macos_lint_tests
+run "coverage policy" coverage_policy
 run "typecheck"      npx tsc --noEmit
 run "frontend lint"  npm run lint
 run "frontend format" frontend_format
-run "unit tests"     npx vitest run --project unit
+run "unit tests"     unit_tests
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
 run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings
 # Everything else in this script compiles the crate with `dev-bins` on. That is
@@ -754,10 +793,14 @@ run "default-features check" cargo check "${MANIFEST[@]}" "${LOCKED[@]}"
 if [[ $CHECK_MAC -eq 1 ]]; then
   run "mac notify cross-check" ./scripts/check-mac-notify.sh
 fi
-run "rust tests"     cargo test "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}"
+run "rust tests"     rust_tests
 
 if [[ $FAST -eq 0 ]]; then
-  run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bin jabot-hostd
+  # After `cargo llvm-cov` the bins live under llvm-cov-target/. e2e still
+  # looks in target/debug (and PATH-probes that directory), so rebuild both
+  # host binaries there. `--bin jabot-hostd` alone left fake-acp-agent missing
+  # and every suite that spawns an agent failed with the same ENOENT.
+  run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bin jabot-hostd --bin fake-acp-agent
   # Only meaningful if the binary exists; a failed build would make every e2e
   # case fail with the same confusing spawn error.
   if [[ -x src-tauri/target/debug/jabot-hostd ]]; then

@@ -30,7 +30,7 @@ worktrees/
 # Live-loop state
 .jabot-dev
 
-# Playwright output (created by `npx playwright test`; gitignored)
+# Playwright output (gitignored; leftover runs must not fail --check)
 /test-results/
 /playwright-report/
 /blob-report/

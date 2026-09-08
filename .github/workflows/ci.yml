@@ -20,20 +20,25 @@ jobs:
   # suite. Runs on Linux because it does not need a webview: `jabot-hostd` is
   # the host without the window.
   #
-  # This job is `npm ci` plus `scripts/verify.sh` and nothing else, on purpose:
-  # every gate lives in the script, so running the script locally is running
-  # CI. The one thing the script cannot reproduce is the toolchain — CI
-  # installs current stable on every run — so the script prints its rustc,
-  # clippy and node versions at the top and warns when the local stable looks
-  # a release behind (issue #69).
+  # This job is still `npm ci` plus `scripts/verify.sh`. Extra *setup* (the
+  # rust coverage toolchain) happens here because verify.sh is offline on
+  # purpose and will not `cargo install` anything — #230. `JABOT_RUST_COVERAGE`
+  # tells the rust-tests stage to go through cargo-llvm-cov instead of
+  # running the suite twice. Frontend coverage is just `--coverage` on the
+  # unit project; @vitest/coverage-v8 is already in the lockfile.
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
+    env:
+      JABOT_RUST_COVERAGE: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
       - uses: actions/setup-node@v4
         with:
           # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
@@ -55,6 +60,20 @@ jobs:
       # does not install it itself.
       - run: npm run bundle:adapters
       - run: ./scripts/verify.sh
+      # Upload even when a gate failed: Vitest is configured with
+      # reportOnFailure, and cargo-llvm-cov still writes profdata after a
+      # red test. Missing directories become a warning, not a second failure.
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: |
+            coverage/SCOPE.md
+            coverage/frontend
+            coverage/rust
+          if-no-files-found: warn
+          retention-days: 14
 
   # Playwright Chromium against a real jabot-hostd. Kept out of `verify`
   # because the default gate is offline and display-less: browsers are a
@@ -63,7 +82,7 @@ jobs:
   # WebKit is a local compat project (`npm run test:browser`), not this job.
   browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -90,8 +109,8 @@ jobs:
       - run: npm run host:build
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
-      - name: Browser suite
-        run: npx playwright test --project=chromium
+      - name: Browser Chromium suite
+        run: npm run test:browser:chromium
       - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@v4

@@ -2,7 +2,9 @@
 //! empty responses. Uses the fake ACP agent as the `opencode` runtime so the
 //! catalog id is real and the wire is the same one a live `opencode acp` uses.
 
-use std::path::PathBuf;
+mod common;
+use common::fake_agent;
+
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,28 +24,6 @@ fn hello(session: &mut HostSession) {
         .handle_request(req(1, HOST_HELLO, None))
         .result
         .expect("hello");
-}
-
-fn fake_agent() -> String {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_fake_acp_agent") {
-        return path.to_string();
-    }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let mut candidates = vec![
-        manifest.join("target/debug/fake-acp-agent"),
-        manifest.join("../target/debug/fake-acp-agent"),
-    ];
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(debug_dir) = exe.parent().and_then(|p| p.parent()) {
-            candidates.push(debug_dir.join("fake-acp-agent"));
-        }
-    }
-    candidates
-        .into_iter()
-        .find(|p| p.exists())
-        .unwrap_or_else(|| manifest.join("target/debug/fake-acp-agent"))
-        .to_string_lossy()
-        .into_owned()
 }
 
 fn hosted() -> (tempfile::TempDir, HostSession) {
