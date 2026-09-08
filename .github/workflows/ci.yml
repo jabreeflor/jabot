@@ -56,6 +56,53 @@ jobs:
       - run: npm run bundle:adapters
       - run: ./scripts/verify.sh
 
+  # Playwright Chromium against a real jabot-hostd. Kept out of `verify`
+  # because the default gate is offline and display-less: browsers are a
+  # network install. Headless Chromium does not need a display, but it is
+  # not the same contract as `./scripts/verify.sh`. Required on every PR.
+  # WebKit is a local compat project (`npm run test:browser`), not this job.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          # Current line (v26.x as of 2026-09). Same major as verify / .nvmrc.
+          node-version: 26
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libsoup-3.0-dev
+      - run: npm ci
+      # Same staging verify does: tauri-build refuses a missing
+      # vendor/adapters/node_modules glob (gitignored).
+      - run: npm run bundle:adapters
+      - run: npm run host:build
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser smoke
+        run: npm run test:browser:smoke
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-browser
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
   # The thing users actually install. macOS-only because that is the target —
   # and macOS minutes bill at 10x, so this does NOT run per pull-request commit.
   #
@@ -186,9 +233,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
           prefix-key: macos-clippy
+      - run: npm ci
+      - run: npm run bundle:adapters
       - name: Clippy the jabot lib (-D warnings)
         run: ./scripts/check-macos-clippy.sh

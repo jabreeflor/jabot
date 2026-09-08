@@ -23,6 +23,10 @@
     "test:watch": "vitest --project unit",
     "test:a11y": "vitest run --project unit src/__tests__/a11y.test.tsx",
     "test:e2e": "vitest run --project e2e",
+    "test:browser": "playwright test",
+    "test:browser:smoke": "playwright test --project=chromium --grep @smoke",
+    "test:browser:ui": "playwright test --ui",
+    "test:browser:install": "playwright install chromium webkit",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --max-warnings=0 . && node scripts/tests/lint-probe.mjs && node scripts/tests/lint-rules.mjs",
     "lint:fix": "eslint --fix .",
@@ -45,6 +49,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
@@ -58,7 +63,7 @@
     "eslint": "^10.10.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^30.0.1",
-    "playwright-core": "1.56.1",
+    "playwright-core": "1.63.0",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.70.0",
     "vite": "^7.0.4",

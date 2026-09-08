@@ -30,6 +30,7 @@ export function ChatView({
   queued,
   onCancel,
   error,
+  disabled,
 }: {
   bot: Bot;
   host: HostTarget;
@@ -42,6 +43,8 @@ export function ChatView({
   queued?: readonly string[];
   onCancel?: () => void;
   error?: string | null;
+  /** The standing thread is not open yet — a send would be dropped. */
+  disabled?: boolean;
 }) {
   return (
     <Conversation
@@ -72,6 +75,7 @@ export function ChatView({
       queued={queued}
       onCancel={onCancel}
       error={error}
+      disabled={disabled}
     />
   );
 }
@@ -148,6 +152,7 @@ export function LiveChatView({
       queued={stream.queued}
       onCancel={cancel}
       error={openError ?? error}
+      disabled={threadId === null}
     />
   );
 }
