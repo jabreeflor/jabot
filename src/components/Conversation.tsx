@@ -29,6 +29,7 @@ export function Conversation({
   composerPlaceholder,
   onSend,
   onAction,
+  onReact,
   busy = false,
   queued,
   onCancel,
@@ -41,6 +42,8 @@ export function Conversation({
   composerPlaceholder: string;
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
+  /** Toggle an emoji on an agent bubble (#265). */
+  onReact?: (itemId: string, emoji: string) => void;
   /** A turn is in flight. */
   busy?: boolean;
   /** Prompts the host is holding until it ends, oldest first (#14). */
@@ -122,7 +125,7 @@ export function Conversation({
     <div className="view">
       {header}
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
-        <Transcript items={items} onAction={onAction} />
+        <Transcript items={items} onAction={onAction} onReact={onReact} />
         {/* The way back, and the only sign that the view is deliberately not
             following. Without it a reader who scrolled up during a long turn
             has no idea whether the agent is still talking. */}

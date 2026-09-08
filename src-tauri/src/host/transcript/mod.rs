@@ -29,7 +29,8 @@ use serde_json::{json, Value};
 
 use super::protocol::error::RpcError;
 use super::protocol::methods::{
-    ThreadTranscriptParams, ThreadTranscriptResult, TranscriptEventView,
+    MessageReactionView, ThreadReactParams, ThreadReactResult, ThreadTranscriptParams,
+    ThreadTranscriptResult, TranscriptEventView,
 };
 use super::HostSession;
 
@@ -95,6 +96,16 @@ impl HostSession {
             })
             .collect();
 
+        let reactions = store
+            .list_thread_reactions(&params.thread_id)
+            .map_err(|err| RpcError::Internal(err.to_string()))?
+            .into_iter()
+            .map(|row| MessageReactionView {
+                item_id: row.item_id,
+                emoji: row.emoji,
+            })
+            .collect();
+
         Ok(ThreadTranscriptResult {
             thread_id: params.thread_id.clone(),
             head_seq,
@@ -104,6 +115,30 @@ impl HostSession {
             run_state: self
                 .open_run(&params.thread_id)
                 .map(|(_, state)| state.as_str().to_string()),
+            reactions,
+        })
+    }
+
+    /// Toggle an emoji on a rendered transcript item (#265).
+    ///
+    /// The store is the source of truth so a remount or a restart draws the
+    /// same marks. The answer is the item's set afterwards — the client does
+    /// not have to re-read the transcript to know what to draw.
+    pub fn thread_react(&self, params: ThreadReactParams) -> Result<ThreadReactResult, RpcError> {
+        let store = self.store.as_ref().ok_or(RpcError::StoreUnavailable)?;
+        let reactions = store
+            .toggle_reaction(&params.thread_id, &params.item_id, &params.emoji)
+            .map_err(|err| match err {
+                crate::host::store::StoreError::NotFound(id) => RpcError::ThreadNotFound(id),
+                crate::host::store::StoreError::Invalid(message) => {
+                    RpcError::InvalidParams(message)
+                }
+                other => RpcError::Internal(other.to_string()),
+            })?;
+        Ok(ThreadReactResult {
+            thread_id: params.thread_id,
+            item_id: params.item_id,
+            reactions,
         })
     }
 
@@ -211,7 +246,7 @@ pub(crate) fn block_text(block: &Value) -> String {
 mod tests {
     use super::*;
     use crate::host::protocol::jsonrpc::{JsonRpcRequest, RequestId};
-    use crate::host::protocol::{HOST_HELLO, THREAD_TRANSCRIPT};
+    use crate::host::protocol::{HOST_HELLO, THREAD_REACT, THREAD_TRANSCRIPT};
 
     fn persistent_host() -> (tempfile::TempDir, HostSession) {
         let dir = tempfile::tempdir().unwrap();
@@ -460,5 +495,62 @@ mod tests {
         let value = response.result.expect("transcript");
         assert_eq!(value["headSeq"], 1);
         assert_eq!(value["events"][0]["method"], "session/update");
+    }
+
+    #[test]
+    fn a_reaction_toggles_and_survives_a_reread() {
+        let (_dir, mut session) = persistent_host();
+        open_thread(&mut session, "t-react");
+
+        let added = session
+            .thread_react(ThreadReactParams {
+                thread_id: "t-react".into(),
+                item_id: "e2-1".into(),
+                emoji: "👍".into(),
+            })
+            .unwrap();
+        assert_eq!(added.reactions, vec!["👍".to_string()]);
+
+        let again = session
+            .thread_react(ThreadReactParams {
+                thread_id: "t-react".into(),
+                item_id: "e2-1".into(),
+                emoji: "👍".into(),
+            })
+            .unwrap();
+        assert!(again.reactions.is_empty());
+
+        session
+            .thread_react(ThreadReactParams {
+                thread_id: "t-react".into(),
+                item_id: "e2-1".into(),
+                emoji: "🎉".into(),
+            })
+            .unwrap();
+        let replay = session
+            .thread_transcript(ThreadTranscriptParams {
+                thread_id: "t-react".into(),
+                after_seq: None,
+                limit: None,
+            })
+            .unwrap();
+        assert_eq!(replay.reactions.len(), 1);
+        assert_eq!(replay.reactions[0].item_id, "e2-1");
+        assert_eq!(replay.reactions[0].emoji, "🎉");
+
+        let missing = session.thread_react(ThreadReactParams {
+            thread_id: "no-such".into(),
+            item_id: "e1-0".into(),
+            emoji: "👍".into(),
+        });
+        assert!(matches!(missing, Err(RpcError::ThreadNotFound(_))));
+
+        let routed = session.handle_request(JsonRpcRequest::new(
+            RequestId::Number(3),
+            THREAD_REACT,
+            Some(json!({ "threadId": "t-react", "itemId": "e2-1", "emoji": "🚀" })),
+        ));
+        let value = routed.result.expect("thread/react");
+        assert_eq!(value["reactions"], json!(["🎉", "🚀"]));
     }
 }

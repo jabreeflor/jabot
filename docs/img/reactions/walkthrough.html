@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add emoji reactions to bot chat messages</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .path { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+    .path span { padding:8px 10px; background:#0f141a; border:1px solid var(--line); border-radius:8px; font-size:13px; font-weight:650; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .note { color:var(--warn); }
+    .pass { color:var(--ok); }
+    @media (max-width:700px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #275 · closes #265</div>
+    <h1>Add emoji reactions to bot chat messages</h1>
+    <p>An agent's reply can now take a mark. The picker is the discoverable action; the badges under the bubble are the record. The store, not the live session, is the source of truth — so a remount or a restart draws the same set.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li><code>AgentBubble</code> rendered Markdown and nothing else.</li>
+            <li>There was no write path for a user-authored overlay on a transcript item.</li>
+            <li>Acknowledging a reply meant sending another turn.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li>Add reaction opens a short palette. Choosing an emoji toggles it on that item.</li>
+            <li><code>thread/react</code> writes <code>message_reactions</code>. The primary key is the uniqueness rule: a second click deletes the row.</li>
+            <li><code>thread/transcript</code> returns the marks. Hydrate overlays them onto the same renderer item ids.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="note" style="margin-top:16px">A reaction is not an ACP event. The transcript log stays “what was said.” The marks sit beside it, keyed on the item id hydrate already produces (<code>e{seq}-{counter}</code>).</p>
+      <div class="path">
+        <span>click Add reaction</span>
+        <span>thread/react</span>
+        <span>SQLite toggle</span>
+        <span>badge under the bubble</span>
+      </div>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <table>
+        <tr><th>File</th><th>Why it matters</th></tr>
+        <tr><td><code>src/components/Transcript.tsx</code></td><td>Picker, badges, accessible names. The bubble itself is unchanged Markdown.</td></tr>
+        <tr><td><code>src/views/transcript.ts</code></td><td><code>withReactions</code> on hydrate; optimistic toggle, then the host's set.</td></tr>
+        <tr><td><code>src-tauri/src/host/transcript/mod.rs</code></td><td><code>thread/react</code> and the reactions field on <code>thread/transcript</code>.</td></tr>
+        <tr><td><code>src-tauri/src/host/store/migrations/0014_message_reactions.sql</code></td><td>The table. Cascade-deletes with the thread.</td></tr>
+        <tr><td><code>src/components/reactions.ts</code></td><td>The palette and the no-duplicate toggle helper.</td></tr>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li class="pass"><code>./scripts/verify.sh</code> already passed on the pushed tree (pre-push).</li>
+        <li>Open Chief (or any bot chat), wait for a reply, Tab to <strong>Add reaction</strong>, Enter, pick an emoji.</li>
+        <li>The badge appears under that reply. Click it again — it goes away, it does not double.</li>
+        <li>Switch away and back, or restart the host: the same marks are on the same bubbles.</li>
+        <li>Escape closes the picker and returns focus to Add reaction.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

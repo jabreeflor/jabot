@@ -22,6 +22,7 @@ import { HostClient, HostRpcError } from "../../src/host/client";
 import {
   RPC_ERROR,
   SESSION_UPDATE,
+  THREAD_REACT,
   THREAD_TRANSCRIPT,
   type JsonRpcNotification,
   type SessionUpdateParams,
@@ -104,6 +105,7 @@ describe("transcript overlay", () => {
   it("is a method the host advertises", async () => {
     const { hello } = await connected();
     expect(hello.methods).toContain(THREAD_TRANSCRIPT);
+    expect(hello.methods).toContain(THREAD_REACT);
   });
 
   it("persists what it streams, and stamps both with the same seq", async () => {
@@ -210,6 +212,54 @@ describe("transcript overlay", () => {
       stream = applyAcpEvent(stream, params.acp, params.transcriptSeq);
     }
     expect(stream.items).toHaveLength(hydratedItems);
+  });
+
+  it("persists an emoji reaction across a restart", async () => {
+    const dataDir = ownDataDir();
+    const first = await connected({ dataDir });
+    await openThread(first.client, "t-react", "tools");
+    await first.client.prompt({
+      threadId: "t-react",
+      content: "fix the guard",
+    });
+    const replay = await settle(first.client, "t-react", (result) =>
+      result.events.some(
+        (event) =>
+          (event.payload as { sessionUpdate?: string }).sessionUpdate ===
+          "state_update",
+      ),
+    );
+    const stream = hydrate(replay);
+    const agent = stream.items.find((item) => item.kind === "agent");
+    expect(agent).toBeDefined();
+
+    const added = await first.client.react({
+      threadId: "t-react",
+      itemId: agent!.id,
+      emoji: "👍",
+    });
+    expect(added.reactions).toEqual(["👍"]);
+    const again = await first.client.react({
+      threadId: "t-react",
+      itemId: agent!.id,
+      emoji: "👍",
+    });
+    expect(again.reactions).toEqual([]);
+    await first.client.react({
+      threadId: "t-react",
+      itemId: agent!.id,
+      emoji: "🎉",
+    });
+    await first.host.stop();
+
+    const { client } = await connected({ dataDir });
+    const reread = await client.threadTranscript({ threadId: "t-react" });
+    expect(reread.reactions).toEqual([{ itemId: agent!.id, emoji: "🎉" }]);
+    const restored = hydrate(reread);
+    expect(restored.items.find((item) => item.kind === "agent")).toMatchObject({
+      id: agent!.id,
+      reactions: ["🎉"],
+    });
   });
 });
 

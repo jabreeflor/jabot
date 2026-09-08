@@ -39,3 +39,5 @@ left off) depends on this.
    thread's history doesn't degrade renderer performance (verified by
    `src/__tests__/transcript.test.tsx` and
    `src/__tests__/thread-stream.test.tsx`).
+7. A reader can leave an emoji on an agent reply; the marks persist with
+   the thread ([message-reactions.md](message-reactions.md), #265).
