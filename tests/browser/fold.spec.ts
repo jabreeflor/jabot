@@ -30,8 +30,12 @@ test.describe("fold → Inbox → reopen", () => {
     await openThread(page, "Auth migration");
 
     await sendComposer(page, "migrate the auth middleware", "Auth migration");
-    await expect(userBubble(page).filter({ hasText: "migrate the auth middleware" })).toBeVisible();
-    await expect(agentBubble(page).filter({ hasText: "hello from fake-acp" })).toBeVisible();
+    await expect(
+      userBubble(page).filter({ hasText: "migrate the auth middleware" }),
+    ).toBeVisible();
+    await expect(
+      agentBubble(page).filter({ hasText: "hello from fake-acp" }),
+    ).toBeVisible();
 
     await expect
       .poll(async () => {
@@ -39,7 +43,10 @@ test.describe("fold → Inbox → reopen", () => {
           latestRun?: { state: string };
           process: { acpState: string };
         }>("thread/state", { threadId: "t-fold" });
-        return state.latestRun?.state === "running" && state.process.acpState === "running";
+        return (
+          state.latestRun?.state === "running" &&
+          state.process.acpState === "running"
+        );
       })
       .toBe(true);
 
@@ -49,12 +56,16 @@ test.describe("fold → Inbox → reopen", () => {
     await expect(threadRow(page, "Auth migration")).toHaveCount(0);
     await captureEvidence(page, "fold-hidden");
 
-    const folded = await jabot.rpc<{ state: string }>("thread/state", { threadId: "t-fold" });
+    const folded = await jabot.rpc<{ state: string }>("thread/state", {
+      threadId: "t-fold",
+    });
     expect(folded.state).toBe("folded");
 
     openGate(gate, "end_turn");
 
-    await expect(page.getByRole("button", { name: /Inbox — 1 waiting/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Inbox — 1 waiting/ }),
+    ).toBeVisible();
     await page.getByRole("button", { name: /Inbox — 1 waiting/ }).click();
     await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
     await expect(page.getByText(/Auth migration finished/)).toBeVisible();
@@ -72,8 +83,12 @@ test.describe("fold → Inbox → reopen", () => {
     const open = page.getByRole("button", { name: "Open thread" });
     if (await open.isVisible()) await open.click();
 
-    await expect(page.getByRole("heading", { name: "Auth migration" })).toBeVisible();
-    await expect(userBubble(page).filter({ hasText: "migrate the auth middleware" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Auth migration" }),
+    ).toBeVisible();
+    await expect(
+      userBubble(page).filter({ hasText: "migrate the auth middleware" }),
+    ).toBeVisible();
     await expectSettledAgent(page, "hello from fake-acp");
     await captureEvidence(page, "fold-reopened");
   });

@@ -15,7 +15,10 @@ import {
   type OnboardingProfile,
 } from "../../src/onboarding/state";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 /** Same profile `scripts/dev/shot.mjs` and unit tests seed so the shell opens. */
 export const BROWSER_ONBOARDED: OnboardingProfile = {
@@ -26,7 +29,12 @@ export const BROWSER_ONBOARDED: OnboardingProfile = {
   completedAt: "2026-01-01T00:00:00.000Z",
 };
 
-export const JOURNEY_SHOT_DIR = path.join(repoRoot, "docs", "img", "browser-journeys");
+export const JOURNEY_SHOT_DIR = path.join(
+  repoRoot,
+  "docs",
+  "img",
+  "browser-journeys",
+);
 
 export async function seedOnboarding(
   page: Page,
@@ -87,12 +95,16 @@ export function agentBubble(page: Page) {
 }
 
 export function threadRow(page: Page, title: string) {
-  return page.getByRole("button", { name: new RegExp(`^${escapeRegExp(title)},`) });
+  return page.getByRole("button", {
+    name: new RegExp(`^${escapeRegExp(title)},`),
+  });
 }
 
 export async function openChief(page: Page): Promise<void> {
   await chiefRow(page).click();
-  await expect(page.getByRole("heading", { level: 2, name: "Chief" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Chief" }),
+  ).toBeVisible();
   await expect(composer(page)).toBeVisible();
 }
 
@@ -104,11 +116,17 @@ export async function openThread(page: Page, title: string): Promise<void> {
 /** Write a PNG under docs/img/browser-journeys, and also to JABOT_BROWSER_EVIDENCE. */
 export async function captureEvidence(page: Page, name: string): Promise<void> {
   mkdirSync(JOURNEY_SHOT_DIR, { recursive: true });
-  await page.screenshot({ path: path.join(JOURNEY_SHOT_DIR, `${name}.png`), fullPage: true });
+  await page.screenshot({
+    path: path.join(JOURNEY_SHOT_DIR, `${name}.png`),
+    fullPage: true,
+  });
   const extra = process.env.JABOT_BROWSER_EVIDENCE;
   if (extra && extra !== JOURNEY_SHOT_DIR) {
     mkdirSync(extra, { recursive: true });
-    await page.screenshot({ path: path.join(extra, `${name}.png`), fullPage: true });
+    await page.screenshot({
+      path: path.join(extra, `${name}.png`),
+      fullPage: true,
+    });
   }
 }
 
@@ -135,14 +153,19 @@ export async function sendComposer(
   }
 }
 
-export async function completeOnboarding(page: Page, name = "Ada Lovelace"): Promise<void> {
+export async function completeOnboarding(
+  page: Page,
+  name = "Ada Lovelace",
+): Promise<void> {
   await expect(
     page.getByRole("heading", { name: /What should the crew call you/ }),
   ).toBeVisible();
   await page.getByLabel("YOUR NAME").fill(name);
   await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page.getByRole("heading", { name: "Pick your default engine" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Pick your default engine" }),
+  ).toBeVisible();
   // Default card is already Fake ACP. Extra custom harnesses also match
   // /Fake ACP/, so keep the default rather than clicking a card.
   await page.getByRole("button", { name: "Continue" }).click();
@@ -165,14 +188,22 @@ export async function skipOnboarding(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Skip setup" }).click();
 }
 
-export async function expectSettledAgent(page: Page, text: string | RegExp): Promise<void> {
+export async function expectSettledAgent(
+  page: Page,
+  text: string | RegExp,
+): Promise<void> {
   const bubble = agentBubble(page).filter({ hasText: text }).last();
   await expect(bubble).toBeVisible();
   await expect(bubble).not.toHaveAttribute("data-streaming", "true");
 }
 
-export async function expectStreamingAgent(page: Page, text: string | RegExp): Promise<void> {
-  const bubble = page.locator(".msg.bot .bubble[data-streaming]").filter({ hasText: text });
+export async function expectStreamingAgent(
+  page: Page,
+  text: string | RegExp,
+): Promise<void> {
+  const bubble = page
+    .locator(".msg.bot .bubble[data-streaming]")
+    .filter({ hasText: text });
   await expect(bubble).toBeVisible();
 }
 

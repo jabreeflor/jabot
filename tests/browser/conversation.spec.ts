@@ -31,8 +31,12 @@ test.describe("conversation streaming", () => {
     await openThread(page, "Streaming turn");
 
     await sendComposer(page, "stream please", "Streaming turn");
-    await expect(userBubble(page).filter({ hasText: "stream please" })).toBeVisible();
-    await expect(agentBubble(page).filter({ hasText: "hello from fake-acp" })).toBeVisible();
+    await expect(
+      userBubble(page).filter({ hasText: "stream please" }),
+    ).toBeVisible();
+    await expect(
+      agentBubble(page).filter({ hasText: "hello from fake-acp" }),
+    ).toBeVisible();
 
     openGate(gate, "chunk:partial-");
     await expectStreamingAgent(page, /hello from fake-acppartial-/);
@@ -48,7 +52,10 @@ test.describe("conversation streaming", () => {
     await captureEvidence(page, "conversation-settled");
   });
 
-  test("rapid submit does not duplicate the user turn", async ({ page, jabot }) => {
+  test("rapid submit does not duplicate the user turn", async ({
+    page,
+    jabot,
+  }) => {
     await openConnectedApp(page, jabot.baseURL);
     await openChief(page);
 
@@ -57,9 +64,13 @@ test.describe("conversation streaming", () => {
     await box.fill("once only");
     await Promise.all([box.press("Enter"), box.press("Enter")]);
 
-    await expect(userBubble(page).filter({ hasText: "once only" })).toHaveCount(1);
+    await expect(userBubble(page).filter({ hasText: "once only" })).toHaveCount(
+      1,
+    );
     await expectSettledAgent(page, "hello from fake-acp");
-    await expect(agentBubble(page).filter({ hasText: "hello from fake-acp" })).toHaveCount(1);
+    await expect(
+      agentBubble(page).filter({ hasText: "hello from fake-acp" }),
+    ).toHaveCount(1);
   });
 
   test("reload keeps the durable transcript", async ({ page, jabot }) => {
@@ -71,13 +82,20 @@ test.describe("conversation streaming", () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await waitForConnected(page);
     await openChief(page);
-    await expect(userBubble(page).filter({ hasText: "persist this" })).toBeVisible();
+    await expect(
+      userBubble(page).filter({ hasText: "persist this" }),
+    ).toBeVisible();
     await expectSettledAgent(page, "hello from fake-acp");
 
-    const stored = JSON.stringify(await jabot.rpc("thread/transcript", {
-      threadId: (await jabot.rpc<{ threadId: string }>("crew/thread", { botId: "chief" }))
-        .threadId,
-    }));
+    const stored = JSON.stringify(
+      await jabot.rpc("thread/transcript", {
+        threadId: (
+          await jabot.rpc<{ threadId: string }>("crew/thread", {
+            botId: "chief",
+          })
+        ).threadId,
+      }),
+    );
     expect(stored).toContain("persist this");
     expect(stored).toContain("hello from fake-acp");
   });

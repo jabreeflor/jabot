@@ -22,7 +22,10 @@ test.describe("first launch", () => {
     await expect(page.getByRole("button", { name: /^Chief\b/ })).toBeVisible();
     await captureEvidence(page, "onboarding-complete");
 
-    const stored = await page.evaluate((key) => window.localStorage.getItem(key), ONBOARDING_KEY);
+    const stored = await page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      ONBOARDING_KEY,
+    );
     expect(stored).toBeTruthy();
     expect(JSON.parse(stored as string)).toMatchObject({
       userName: "Ada Lovelace",
@@ -37,7 +40,10 @@ test.describe("first launch", () => {
     ).toHaveCount(0);
   });
 
-  test("skip persists a profile and does not trap the next launch", async ({ page, jabot }) => {
+  test("skip persists a profile and does not trap the next launch", async ({
+    page,
+    jabot,
+  }) => {
     await openFirstRun(page, jabot.baseURL);
     await page.getByLabel("YOUR NAME").fill("Ada");
     await skipOnboarding(page);
@@ -46,7 +52,10 @@ test.describe("first launch", () => {
     await expect(page.getByText("Ada", { exact: true })).toBeVisible();
     await captureEvidence(page, "onboarding-skip");
 
-    const stored = await page.evaluate((key) => window.localStorage.getItem(key), ONBOARDING_KEY);
+    const stored = await page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      ONBOARDING_KEY,
+    );
     expect(JSON.parse(stored as string)).toMatchObject({
       userName: "Ada",
       skipped: true,
@@ -74,14 +83,22 @@ test.describe("first launch", () => {
       page.getByRole("heading", { name: /What should the crew call you/ }),
     ).toBeVisible();
     await expect(page.getByLabel("YOUR NAME")).toHaveValue("Ada Lovelace");
-    const midRun = await page.evaluate((key) => window.localStorage.getItem(key), ONBOARDING_KEY);
+    const midRun = await page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      ONBOARDING_KEY,
+    );
     expect(midRun).toBeTruthy();
 
     await page.keyboard.press("Escape");
     await waitForConnected(page);
     await expect(page.getByText("Ada Lovelace")).toBeVisible();
 
-    const stored = await page.evaluate((key) => window.localStorage.getItem(key), ONBOARDING_KEY);
-    expect(JSON.parse(stored as string)).toMatchObject({ userName: "Ada Lovelace" });
+    const stored = await page.evaluate(
+      (key) => window.localStorage.getItem(key),
+      ONBOARDING_KEY,
+    );
+    expect(JSON.parse(stored as string)).toMatchObject({
+      userName: "Ada Lovelace",
+    });
   });
 });

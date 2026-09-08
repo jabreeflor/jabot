@@ -33,7 +33,9 @@ test.describe("failure and cancel", () => {
 
     const alert = page.getByRole("alert");
     await expect(alert).toBeVisible();
-    await expect(alert).toContainText(/unavailable|not found|missing|Harness|ENOENT|spawn/i);
+    await expect(alert).toContainText(
+      /unavailable|not found|missing|Harness|ENOENT|spawn/i,
+    );
     await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0);
     await captureEvidence(page, "failure-missing-runtime");
   });
@@ -48,8 +50,12 @@ test.describe("failure and cancel", () => {
     await openThread(page, "Empty reply");
 
     await sendComposer(page, "say nothing", "Empty reply");
-    await expect(page.getByRole("status").filter({ hasText: /without a reply/ })).toBeVisible();
-    await expect(page.locator(".status", { hasText: /failed: no reply/ })).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: /without a reply/ }),
+    ).toBeVisible();
+    await expect(
+      page.locator(".status", { hasText: /failed: no reply/ }),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0);
     await captureEvidence(page, "failure-empty-reply");
   });
@@ -67,13 +73,17 @@ test.describe("failure and cancel", () => {
     await openThread(page, "Hanging turn");
 
     await sendComposer(page, "hold on", "Hanging turn");
-    await expect(agentBubble(page).filter({ hasText: "hello from fake-acp" })).toBeVisible();
+    await expect(
+      agentBubble(page).filter({ hasText: "hello from fake-acp" }),
+    ).toBeVisible();
     const stop = page.getByRole("button", { name: "Stop" });
     await expect(stop).toBeVisible();
     await captureEvidence(page, "failure-hanging");
 
     await stop.click();
-    await expect(page.getByRole("status").filter({ hasText: /Cancelled/ })).toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: /Cancelled/ }),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Stop" })).toHaveCount(0);
     await expectSettledAgent(page, "hello from fake-acp");
     await captureEvidence(page, "failure-cancelled");

@@ -22,12 +22,16 @@ async function waitForAdapterLog(
   let last = "";
   while (Date.now() < deadline) {
     last = jabot.adapterLog(threadId);
-    if (typeof needle === "string" ? last.includes(needle) : needle.test(last)) {
+    if (
+      typeof needle === "string" ? last.includes(needle) : needle.test(last)
+    ) {
       return last;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`adapter log for ${threadId} never matched ${needle}; last:\n${last}`);
+  throw new Error(
+    `adapter log for ${threadId} never matched ${needle}; last:\n${last}`,
+  );
 }
 
 test.describe("permission lifecycle", () => {
@@ -49,9 +53,12 @@ test.describe("permission lifecycle", () => {
     await expect(denyButton(page)).toBeVisible();
     await captureEvidence(page, "permission-ask");
 
-    const pendingBefore = await jabot.rpc<{ requests: unknown[] }>("permission/pending", {
-      threadId: "t-perm-allow",
-    });
+    const pendingBefore = await jabot.rpc<{ requests: unknown[] }>(
+      "permission/pending",
+      {
+        threadId: "t-perm-allow",
+      },
+    );
     expect(pendingBefore.requests).toHaveLength(1);
 
     await allow.click();
@@ -61,23 +68,35 @@ test.describe("permission lifecycle", () => {
     await allow.click({ force: true }).catch(() => undefined);
     await expect(allowButton(page)).toBeDisabled();
 
-    const log = await waitForAdapterLog(jabot, "t-perm-allow", "permission_reply=");
-    const replies = log.split("\n").filter((line) => line.startsWith("permission_reply="));
+    const log = await waitForAdapterLog(
+      jabot,
+      "t-perm-allow",
+      "permission_reply=",
+    );
+    const replies = log
+      .split("\n")
+      .filter((line) => line.startsWith("permission_reply="));
     expect(replies).toHaveLength(1);
     expect(replies[0]).toMatch(/allow_once/);
 
     await expect
       .poll(async () => {
-        const pending = await jabot.rpc<{ requests: unknown[] }>("permission/pending", {
-          threadId: "t-perm-allow",
-        });
+        const pending = await jabot.rpc<{ requests: unknown[] }>(
+          "permission/pending",
+          {
+            threadId: "t-perm-allow",
+          },
+        );
         return pending.requests.length;
       })
       .toBe(0);
     await captureEvidence(page, "permission-approved");
   });
 
-  test("reject sends deny and clears the pending ask", async ({ page, jabot }) => {
+  test("reject sends deny and clears the pending ask", async ({
+    page,
+    jabot,
+  }) => {
     await seedCodeThread(jabot, {
       threadId: "t-perm-deny",
       title: "Permission reject",
@@ -92,15 +111,22 @@ test.describe("permission lifecycle", () => {
     await deny.click();
     await expect(deny).toBeDisabled();
 
-    const log = await waitForAdapterLog(jabot, "t-perm-deny", "permission_reply=");
+    const log = await waitForAdapterLog(
+      jabot,
+      "t-perm-deny",
+      "permission_reply=",
+    );
     expect(log).toMatch(/reject_once/);
     await expectSettledAgent(page, "allowed");
 
     await expect
       .poll(async () => {
-        const pending = await jabot.rpc<{ requests: unknown[] }>("permission/pending", {
-          threadId: "t-perm-deny",
-        });
+        const pending = await jabot.rpc<{ requests: unknown[] }>(
+          "permission/pending",
+          {
+            threadId: "t-perm-deny",
+          },
+        );
         return pending.requests.length;
       })
       .toBe(0);
@@ -129,7 +155,11 @@ test.describe("permission lifecycle", () => {
 
     await allowButton(page).click();
     await expectSettledAgent(page, "allowed");
-    const log = await waitForAdapterLog(jabot, "t-perm-reload", "permission_reply=");
+    const log = await waitForAdapterLog(
+      jabot,
+      "t-perm-reload",
+      "permission_reply=",
+    );
     expect(log).toMatch(/allow_once/);
   });
 });
