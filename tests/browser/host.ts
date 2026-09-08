@@ -10,7 +10,13 @@
  * removes only the directory this helper created.
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import { createWriteStream, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import {
+  createWriteStream,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -29,7 +35,10 @@ import {
 } from "../../src/host/protocol";
 import { fakeAcpAgentPath, hostdBinaryPath } from "../support/hostd";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 /** Vite's default and `scripts/live.sh` — never bind this from a test. */
 export const DEVELOPER_PORT = 1420;
@@ -110,7 +119,12 @@ export async function hostRpc<T = unknown>(
   method: string,
   params?: unknown,
 ): Promise<T> {
-  const body: { jsonrpc: typeof JSONRPC_VERSION; id: string; method: string; params?: unknown } = {
+  const body: {
+    jsonrpc: typeof JSONRPC_VERSION;
+    id: string;
+    method: string;
+    params?: unknown;
+  } = {
     jsonrpc: JSONRPC_VERSION,
     id: `browser-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     method,
@@ -123,18 +137,27 @@ export async function hostRpc<T = unknown>(
   });
   const json = (await res.json()) as JsonRpcResponse<T>;
   if (json.error) {
-    throw new Error(`rpc ${method}: ${json.error.message} (${json.error.code})`);
+    throw new Error(
+      `rpc ${method}: ${json.error.message} (${json.error.code})`,
+    );
   }
   return json.result as T;
 }
 
 /** Prerequisite only — put Chief on the scriptable agent before the page loads. */
 export async function seedChiefOnFakeAcp(baseURL: string): Promise<void> {
-  await hostRpc(baseURL, CREW_UPDATE, { botId: "chief", harnessId: "fake-acp" });
+  await hostRpc(baseURL, CREW_UPDATE, {
+    botId: "chief",
+    harnessId: "fake-acp",
+  });
 }
 
-export async function chiefTranscript(baseURL: string): Promise<ThreadTranscriptResult> {
-  const thread = await hostRpc<ThreadStateResult>(baseURL, CREW_THREAD, { botId: "chief" });
+export async function chiefTranscript(
+  baseURL: string,
+): Promise<ThreadTranscriptResult> {
+  const thread = await hostRpc<ThreadStateResult>(baseURL, CREW_THREAD, {
+    botId: "chief",
+  });
   return hostRpc<ThreadTranscriptResult>(baseURL, THREAD_TRANSCRIPT, {
     threadId: thread.threadId,
   });
@@ -155,7 +178,9 @@ export async function startJabotApp(): Promise<JabotApp> {
     logPath,
     rpc: (method, params) => hostRpc(baseURL, method, params),
     hostStatus: () =>
-      fetch(new URL("/__jabot/host", baseURL)).then((r) => r.json() as Promise<HostStatus>),
+      fetch(new URL("/__jabot/host", baseURL)).then(
+        (r) => r.json() as Promise<HostStatus>,
+      ),
     async restart() {
       await stopVite(child);
       child = spawnVite({ dataDir, port, logPath });
@@ -169,9 +194,15 @@ export async function startJabotApp(): Promise<JabotApp> {
   return app;
 }
 
-export async function attachHostLogs(testInfo: TestInfo, app: JabotApp): Promise<void> {
+export async function attachHostLogs(
+  testInfo: TestInfo,
+  app: JabotApp,
+): Promise<void> {
   if (existsSync(app.logPath)) {
-    await testInfo.attach("vite.log", { path: app.logPath, contentType: "text/plain" });
+    await testInfo.attach("vite.log", {
+      path: app.logPath,
+      contentType: "text/plain",
+    });
   }
   const adapterDir = path.join(app.dataDir, "adapter-logs");
   if (!existsSync(adapterDir)) return;
@@ -183,7 +214,11 @@ export async function attachHostLogs(testInfo: TestInfo, app: JabotApp): Promise
   }
 }
 
-function spawnVite(options: { dataDir: string; port: number; logPath: string }): ChildProcess {
+function spawnVite(options: {
+  dataDir: string;
+  port: number;
+  logPath: string;
+}): ChildProcess {
   const viteJs = path.join(repoRoot, "node_modules", "vite", "bin", "vite.js");
   if (!existsSync(viteJs)) {
     throw new Error(`vite is not installed at ${viteJs}`);
@@ -197,7 +232,14 @@ function spawnVite(options: { dataDir: string; port: number; logPath: string }):
   const log = createWriteStream(options.logPath, { flags: "a" });
   const child = spawn(
     process.execPath,
-    [viteJs, "--port", String(options.port), "--strictPort", "--host", "127.0.0.1"],
+    [
+      viteJs,
+      "--port",
+      String(options.port),
+      "--strictPort",
+      "--host",
+      "127.0.0.1",
+    ],
     {
       cwd: repoRoot,
       env: {

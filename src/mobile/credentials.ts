@@ -41,7 +41,9 @@ const encoder = new TextEncoder();
  * it `["ab", "c"]` and `["a", "bc"]` hash the same, and a transcript that can
  * be re-cut is a transcript an attacker chooses.
  */
-export async function frameHash(fields: readonly string[]): Promise<Uint8Array> {
+export async function frameHash(
+  fields: readonly string[],
+): Promise<Uint8Array> {
   let total = 0;
   const parts = fields.map((field) => {
     const bytes = encoder.encode(field);
@@ -79,12 +81,13 @@ function hex(bytes: Uint8Array): string {
   return out;
 }
 
-async function mac(
-  token: string,
-  fields: readonly string[],
-): Promise<string> {
+async function mac(token: string, fields: readonly string[]): Promise<string> {
   const key = await hmacKey(token);
-  const signature = await crypto.subtle.sign("HMAC", key, await frameHash(fields));
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    await frameHash(fields),
+  );
   return hex(new Uint8Array(signature));
 }
 
@@ -181,7 +184,9 @@ export function createDeviceCredentials(
     async signHello(): Promise<DeviceAuth> {
       const counter = await options.nextCounter();
       if (!Number.isSafeInteger(counter) || counter <= 0) {
-        throw new Error(`hello counter must be a positive integer, not ${counter}`);
+        throw new Error(
+          `hello counter must be a positive integer, not ${counter}`,
+        );
       }
       if (last !== null && counter <= last) {
         throw new Error(

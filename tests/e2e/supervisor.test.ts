@@ -24,7 +24,11 @@ import {
   type InboxListResult,
   type ThreadStateResult,
 } from "../../src/host/protocol";
-import { fakeAcpRuntime, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 /** The copy `state-machine.md` specifies. Hard-coded so that changing the
     sentence in the host fails here rather than silently changing what a user
@@ -76,13 +80,16 @@ async function settle(
     const state = await client.threadState({ threadId });
     if (predicate(state)) return state;
     if (Date.now() > deadline) {
-      throw new Error(`${threadId} never settled; last state: ${JSON.stringify(state)}`);
+      throw new Error(
+        `${threadId} never settled; last state: ${JSON.stringify(state)}`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
 }
 
-const kinds = (inbox: InboxListResult) => inbox.events.map((event) => event.kind);
+const kinds = (inbox: InboxListResult) =>
+  inbox.events.map((event) => event.kind);
 
 afterEach(async () => {
   await Promise.all(running.splice(0).map((host) => host.dispose()));
@@ -138,7 +145,11 @@ describe("boot reconciliation", () => {
     const first = await connected({ dataDir });
     await openThread(first.client, "t-hang", "hang");
     await first.client.prompt({ threadId: "t-hang", content: "hi" });
-    await settle(first.client, "t-hang", (s) => s.latestRun?.state === "running");
+    await settle(
+      first.client,
+      "t-hang",
+      (s) => s.latestRun?.state === "running",
+    );
     await first.client.fold({ threadId: "t-hang" });
     await first.host.stop();
 
@@ -161,7 +172,11 @@ describe("resume", () => {
     const first = await connected({ dataDir });
     await openThread(first.client, "t-resume", "resumable");
     await first.client.prompt({ threadId: "t-resume", content: "hi" });
-    await settle(first.client, "t-resume", (s) => s.latestRun?.state === "succeeded");
+    await settle(
+      first.client,
+      "t-resume",
+      (s) => s.latestRun?.state === "succeeded",
+    );
     await first.host.stop();
 
     const second = await connected({ dataDir });
@@ -189,7 +204,11 @@ describe("resume", () => {
     const first = await connected({ dataDir });
     await openThread(first.client, "t-drift", "resumable");
     await first.client.prompt({ threadId: "t-drift", content: "hi" });
-    await settle(first.client, "t-drift", (s) => s.latestRun?.state === "succeeded");
+    await settle(
+      first.client,
+      "t-drift",
+      (s) => s.latestRun?.state === "succeeded",
+    );
     // Wait for Inbox is a different permission mode from the one the receipt
     // was stamped under (#15's fingerprint).
     await first.client.fold({ threadId: "t-drift", policy: "wait_for_inbox" });
@@ -215,7 +234,11 @@ describe("resume", () => {
     const first = await connected({ dataDir });
     await openThread(first.client, "t-gone", "resumable", cwd);
     await first.client.prompt({ threadId: "t-gone", content: "hi" });
-    await settle(first.client, "t-gone", (s) => s.latestRun?.state === "succeeded");
+    await settle(
+      first.client,
+      "t-gone",
+      (s) => s.latestRun?.state === "succeeded",
+    );
     await first.client.fold({ threadId: "t-gone" });
     await first.host.stop();
 
@@ -245,7 +268,11 @@ describe("resume", () => {
     const first = await connected({ dataDir });
     await openThread(first.client, "t-plain");
     await first.client.prompt({ threadId: "t-plain", content: "hi" });
-    await settle(first.client, "t-plain", (s) => s.latestRun?.state === "succeeded");
+    await settle(
+      first.client,
+      "t-plain",
+      (s) => s.latestRun?.state === "succeeded",
+    );
     await first.host.stop();
 
     const second = await connected({ dataDir });

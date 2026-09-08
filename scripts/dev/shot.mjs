@@ -58,7 +58,9 @@ const ONBOARDED = {
 
 function usage(message) {
   console.error(`shot: ${message}`);
-  console.error("usage: node scripts/dev/shot.mjs --out <png> [--url u] [--viewport WxH] [steps…]");
+  console.error(
+    "usage: node scripts/dev/shot.mjs --out <png> [--url u] [--viewport WxH] [steps…]",
+  );
   process.exit(2);
 }
 
@@ -176,7 +178,9 @@ async function seed(url, requests) {
     });
     const answer = await res.json();
     if (answer.error) {
-      throw new Error(`rpc ${request.method}: ${answer.error.message} (${answer.error.code})`);
+      throw new Error(
+        `rpc ${request.method}: ${answer.error.message} (${answer.error.code})`,
+      );
     }
     console.log(`rpc ${request.method}: ok`);
   }
@@ -218,7 +222,9 @@ async function main() {
   const status = await fetch(new URL("/__jabot/host", options.url))
     .then((r) => r.json())
     .catch((err) => {
-      throw new Error(`no dev server at ${options.url} (${err.message}); run scripts/live.sh up`);
+      throw new Error(
+        `no dev server at ${options.url} (${err.message}); run scripts/live.sh up`,
+      );
     });
   if (!status.running) {
     throw new Error(

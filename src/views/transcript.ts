@@ -373,12 +373,14 @@ function chunk(
  * adapter that only ever sends `tool_call_update` all produce exactly that,
  * and a missing line is a worse answer than a line with a late start.
  */
-function toolCall(stream: ThreadStream, update: Record<string, unknown>): ThreadStream {
+function toolCall(
+  stream: ThreadStream,
+  update: Record<string, unknown>,
+): ThreadStream {
   const callId = str(update.toolCallId) ?? str(update.id);
   if (!callId) return stream;
   const at = stream.toolIndex[callId];
-  const existing =
-    at === undefined ? undefined : asToolItem(stream.items[at]);
+  const existing = at === undefined ? undefined : asToolItem(stream.items[at]);
 
   const call: ToolCall = {
     id: callId,
@@ -653,9 +655,7 @@ function permissionBody(
  * the thing being agreed to. The concrete argument wins; the title is the
  * fallback, and it is already the heading anyway.
  */
-function permissionTarget(
-  detail: Record<string, unknown>,
-): string | undefined {
+function permissionTarget(detail: Record<string, unknown>): string | undefined {
   const raw = asRecord(detail.rawInput);
   const argument = raw
     ? (str(raw.command) ??
@@ -1129,9 +1129,7 @@ function liveEvent(
   notification: JsonRpcNotification,
   threadId: string,
 ): LiveEvent | null {
-  const params = notification.params as
-    | { threadId?: string }
-    | undefined;
+  const params = notification.params as { threadId?: string } | undefined;
   if (!params || params.threadId !== threadId) return null;
   switch (notification.method) {
     case SESSION_UPDATE:
@@ -1148,7 +1146,11 @@ function liveEvent(
 function applyLive(stream: ThreadStream, event: LiveEvent): ThreadStream {
   switch (event.kind) {
     case "update":
-      return applyAcpEvent(stream, event.params.acp, event.params.transcriptSeq);
+      return applyAcpEvent(
+        stream,
+        event.params.acp,
+        event.params.transcriptSeq,
+      );
     case "ask":
       return applyPermissionAsk(stream, {
         requestId: event.params.requestId,

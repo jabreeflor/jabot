@@ -69,8 +69,18 @@ describe("the hello proof", () => {
     { token: "dG9rZW4tb25l", hostId: "host-a", counter: 1, protocolVersion: 1 },
     { token: "dG9rZW4tdHdv", hostId: "host-a", counter: 2, protocolVersion: 1 },
     { token: "dG9rZW4tb25l", hostId: "host-b", counter: 2, protocolVersion: 1 },
-    { token: "dG9rZW4tb25l", hostId: "host-a", counter: 999_999, protocolVersion: 2 },
-    { token: "a-token-with-🔑-in-it", hostId: "hôst", counter: 7, protocolVersion: 1 },
+    {
+      token: "dG9rZW4tb25l",
+      hostId: "host-a",
+      counter: 999_999,
+      protocolVersion: 2,
+    },
+    {
+      token: "a-token-with-🔑-in-it",
+      hostId: "hôst",
+      counter: 7,
+      protocolVersion: 1,
+    },
   ];
 
   it("is byte-identical to the independent Node implementation", async () => {
@@ -177,12 +187,20 @@ describe("the host's answering proof", () => {
     expect(
       await verifyHostProof({ ...hostAuth, mac: flip(hostAuth.mac) }, input),
     ).toBe(false);
-    expect(await verifyHostProof(hostAuth, { ...input, token: "other" })).toBe(false);
+    expect(await verifyHostProof(hostAuth, { ...input, token: "other" })).toBe(
+      false,
+    );
     // A different Mac is a different transcript, which is the property a
     // phone is actually checking: the *same* host as last time.
-    expect(await verifyHostProof(hostAuth, { ...input, hostId: "host-b" })).toBe(false);
-    expect(await verifyHostProof(hostAuth, { ...input, deviceId: "dev-2" })).toBe(false);
-    expect(await verifyHostProof({ ...hostAuth, counter: 4 }, input)).toBe(false);
+    expect(
+      await verifyHostProof(hostAuth, { ...input, hostId: "host-b" }),
+    ).toBe(false);
+    expect(
+      await verifyHostProof(hostAuth, { ...input, deviceId: "dev-2" }),
+    ).toBe(false);
+    expect(await verifyHostProof({ ...hostAuth, counter: 4 }, input)).toBe(
+      false,
+    );
   });
 
   /** The case a client is most likely to get wrong: a host that answered with
@@ -197,7 +215,9 @@ describe("the host's answering proof", () => {
   it("is not the device's own proof", async () => {
     const mine = await helloProof({ token, hostId, deviceId, counter: 3 });
     expect(mine.mac).not.toBe(hostAuth.mac);
-    expect(await verifyHostProof({ counter: 3, mac: mine.mac }, input)).toBe(false);
+    expect(await verifyHostProof({ counter: 3, mac: mine.mac }, input)).toBe(
+      false,
+    );
   });
 });
 
@@ -242,14 +262,20 @@ describe("createDeviceCredentials", () => {
    * otherwise that ships as an intermittent, unexplained `UnpairedDevice`.
    */
   it("refuses a counter that does not climb", async () => {
-    const credentials = createDeviceCredentials({ ...base, nextCounter: () => 5 });
+    const credentials = createDeviceCredentials({
+      ...base,
+      nextCounter: () => 5,
+    });
     await credentials.signHello();
     await expect(credentials.signHello()).rejects.toThrow(/must climb/);
   });
 
   it("refuses a counter that is not a positive integer", async () => {
     for (const bad of [0, -1, 1.5, Number.NaN]) {
-      const credentials = createDeviceCredentials({ ...base, nextCounter: () => bad });
+      const credentials = createDeviceCredentials({
+        ...base,
+        nextCounter: () => bad,
+      });
       await expect(credentials.signHello()).rejects.toThrow(/positive integer/);
     }
   });

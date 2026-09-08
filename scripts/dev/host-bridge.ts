@@ -91,7 +91,9 @@ export interface HostBridge {
   handle(frame: unknown, client: BridgeClient): void;
   /** A request from the bridge's own side: the `/__jabot/rpc` route, a test. */
   request(request: JsonRpcRequest): Promise<JsonRpcResponse>;
-  onNotification(handler: (notification: JsonRpcNotification) => void): () => void;
+  onNotification(
+    handler: (notification: JsonRpcNotification) => void,
+  ): () => void;
   status(): BridgeStatus;
   /** Stop the host. Pending requests are answered with an error. */
   close(): void;
@@ -104,7 +106,11 @@ interface Waiter {
   client: BridgeClient;
 }
 
-function errorResponse(id: RequestId, code: number, message: string): JsonRpcResponse {
+function errorResponse(
+  id: RequestId,
+  code: number,
+  message: string,
+): JsonRpcResponse {
   return { jsonrpc: JSONRPC_VERSION, id, error: { code, message } };
 }
 
@@ -134,7 +140,9 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
 
   const failAll = (message: string) => {
     for (const [, waiter] of pending) {
-      waiter.client.send(errorResponse(waiter.id, RPC_ERROR.INTERNAL_ERROR, message));
+      waiter.client.send(
+        errorResponse(waiter.id, RPC_ERROR.INTERNAL_ERROR, message),
+      );
     }
     pending.clear();
   };
@@ -157,7 +165,10 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
         return;
       }
       pending.delete(wire as string);
-      waiter.client.send({ ...(message as unknown as JsonRpcResponse), id: waiter.id });
+      waiter.client.send({
+        ...(message as unknown as JsonRpcResponse),
+        id: waiter.id,
+      });
       return;
     }
     if (typeof message.method === "string") {
@@ -181,7 +192,10 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
     for (const harness of options.harnesses ?? []) {
       const dir = path.join(options.dataDir, "custom_harnesses");
       mkdirSync(dir, { recursive: true });
-      writeFileSync(path.join(dir, `${harness.id}.json`), `${JSON.stringify(harness, null, 2)}\n`);
+      writeFileSync(
+        path.join(dir, `${harness.id}.json`),
+        `${JSON.stringify(harness, null, 2)}\n`,
+      );
     }
     const env = { ...process.env, ...options.env };
     const proc = spawn(options.binary, ["--data-dir", options.dataDir], {
@@ -216,7 +230,9 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
       if (child !== proc) return;
       child = null;
       log(message);
-      failAll(`${message}${stderrLines.length ? `: ${stderrLines.join(" | ")}` : ""}`);
+      failAll(
+        `${message}${stderrLines.length ? `: ${stderrLines.join(" | ")}` : ""}`,
+      );
     };
     proc.on("exit", (code, signal) => {
       exit = { code, signal };
@@ -233,7 +249,11 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
 
   // `own` marks the bridge's own frames (its hello), which are not counted
   // as client traffic in `status()`.
-  const forward = (request: JsonRpcRequest, client: BridgeClient, own = false) => {
+  const forward = (
+    request: JsonRpcRequest,
+    client: BridgeClient,
+    own = false,
+  ) => {
     const wasRunning = child !== null;
     if (!start() || !child) {
       client.send(
@@ -256,7 +276,12 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
 
   const greet = () => {
     forward(
-      { jsonrpc: JSONRPC_VERSION, id: "bridge-hello", method: HOST_HELLO, params: {} },
+      {
+        jsonrpc: JSONRPC_VERSION,
+        id: "bridge-hello",
+        method: HOST_HELLO,
+        params: {},
+      },
       {
         send(frame) {
           if (!("id" in frame)) return;
@@ -265,7 +290,11 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
             return;
           }
           const result = frame.result as HelloResult;
-          hello = { hostName: result.hostName, version: result.version, hostId: result.hostId };
+          hello = {
+            hostName: result.hostName,
+            version: result.version,
+            hostId: result.hostId,
+          };
           log(`host/hello: ${result.hostName} v${result.version}`);
         },
       },
@@ -279,7 +308,11 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
     handle(frame, client) {
       if (!isRequest(frame)) {
         client.send(
-          errorResponse(null, RPC_ERROR.INVALID_REQUEST, "not a JSON-RPC 2.0 request"),
+          errorResponse(
+            null,
+            RPC_ERROR.INVALID_REQUEST,
+            "not a JSON-RPC 2.0 request",
+          ),
         );
         return;
       }
@@ -287,7 +320,9 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
     },
     request(request) {
       return new Promise((resolve) => {
-        forward(request, { send: (frame) => resolve(frame as JsonRpcResponse) });
+        forward(request, {
+          send: (frame) => resolve(frame as JsonRpcResponse),
+        });
       });
     },
     onNotification(handler) {

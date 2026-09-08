@@ -30,7 +30,10 @@ export default defineConfig({
         ["html", { open: "never", outputFolder: "playwright-report" }],
         ["junit", { outputFile: "test-results/junit.xml" }],
       ]
-    : [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
+    : [
+        ["list"],
+        ["html", { open: "never", outputFolder: "playwright-report" }],
+      ],
   outputDir: "test-results",
   globalSetup: "./tests/browser/global-setup.ts",
   use: {

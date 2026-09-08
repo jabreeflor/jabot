@@ -62,8 +62,7 @@ const APPEARANCES: ReadonlyArray<{
   {
     id: "system",
     label: "Match system",
-    detail:
-      "Follows this Mac's appearance. Changes when the OS does.",
+    detail: "Follows this Mac's appearance. Changes when the OS does.",
   },
 ];
 
@@ -196,7 +195,8 @@ function GeneralSettings({
   // the whole view, and the field has to show what was actually stored rather
   // than what was typed at it.
   useEffect(() => {
-    if (settings) setMinutes(String(Math.round(settings.idleTimeoutMs / 60_000)));
+    if (settings)
+      setMinutes(String(Math.round(settings.idleTimeoutMs / 60_000)));
   }, [settings]);
 
   async function send(patch: {
@@ -226,22 +226,39 @@ function GeneralSettings({
 
       <section className="settings-section" aria-label="Harnesses">
         <h2>Harnesses</h2>
-        <p>Choose which harnesses appear when starting a chat or choosing a bot’s engine.</p>
+        <p>
+          Choose which harnesses appear when starting a chat or choosing a bot’s
+          engine.
+        </p>
         {harnesses.map((harness) => (
           <label className="settings-harness" key={harness.id}>
-            <input type="checkbox" checked={!settings?.disabledHarnessIds?.includes(harness.id)}
+            <input
+              type="checkbox"
+              checked={!settings?.disabledHarnessIds?.includes(harness.id)}
               disabled={!settings || saving}
               onChange={(event) => {
                 const ids = settings?.disabledHarnessIds ?? [];
-                void send({ disabledHarnessIds: event.target.checked
-                  ? ids.filter((id) => id !== harness.id) : [...ids, harness.id] });
-              }} />
-            <span><b>{harness.label}</b><small>{harness.available === false
-              ? harness.installHint ?? "Not installed" : harness.blurb}
-              {harness.capabilityNotes ? ` ${harness.capabilityNotes}` : ""}</small>
+                void send({
+                  disabledHarnessIds: event.target.checked
+                    ? ids.filter((id) => id !== harness.id)
+                    : [...ids, harness.id],
+                });
+              }}
+            />
+            <span>
+              <b>{harness.label}</b>
+              <small>
+                {harness.available === false
+                  ? (harness.installHint ?? "Not installed")
+                  : harness.blurb}
+                {harness.capabilityNotes ? ` ${harness.capabilityNotes}` : ""}
+              </small>
               {harness.capabilities?.notes && (
-                <small className="settings-harness-caps">{harness.capabilities.notes}</small>
-              )}</span>
+                <small className="settings-harness-caps">
+                  {harness.capabilities.notes}
+                </small>
+              )}
+            </span>
           </label>
         ))}
       </section>
@@ -260,9 +277,9 @@ function GeneralSettings({
           <section className="setting">
             <h2>Go quiet after</h2>
             <p className="setting-note">
-              How long a running thread can say nothing before it comes back
-              to the Inbox as stuck. The thread keeps working and its
-              process stays alive — this is a nudge, not a timeout.
+              How long a running thread can say nothing before it comes back to
+              the Inbox as stuck. The thread keeps working and its process stays
+              alive — this is a nudge, not a timeout.
             </p>
             <div className="setting-row">
               <input
@@ -302,9 +319,9 @@ function GeneralSettings({
           <section className="setting">
             <h2>New threads fold as</h2>
             <p className="setting-note">
-              What a thread's fold policy starts as. Every thread can still
-              be folded either way from its own menu — this is only the
-              answer it begins with.
+              What a thread's fold policy starts as. Every thread can still be
+              folded either way from its own menu — this is only the answer it
+              begins with.
             </p>
             {POLICIES.map((policy) => (
               <label className="checkline" key={policy.id}>
@@ -313,9 +330,7 @@ function GeneralSettings({
                   name="fold-policy"
                   checked={settings.defaultFoldPolicy === policy.id}
                   disabled={saving}
-                  onChange={() =>
-                    void send({ defaultFoldPolicy: policy.id })
-                  }
+                  onChange={() => void send({ defaultFoldPolicy: policy.id })}
                 />
                 <span>
                   {policy.label}
@@ -343,9 +358,8 @@ function GeneralSettings({
           <h2>Setup</h2>
           <p className="setting-note">
             Walk through the same first-run flow again — your name, default
-            engine, then Chief. Bots, threads, and host settings stay put
-            unless you change them there. Escape or Skip setup returns you
-            to the app.
+            engine, then Chief. Bots, threads, and host settings stay put unless
+            you change them there. Escape or Skip setup returns you to the app.
           </p>
           <div className="setting-row">
             <button type="button" className="btn" onClick={onRunSetup}>
@@ -365,9 +379,9 @@ function AppearanceSettings() {
     <section className="setting">
       <h2>Appearance</h2>
       <p className="setting-note">
-        Dark is the default so an existing install does not flip on
-        upgrade. Match system follows this Mac&apos;s appearance via the
-        OS color-scheme preference.
+        Dark is the default so an existing install does not flip on upgrade.
+        Match system follows this Mac&apos;s appearance via the OS color-scheme
+        preference.
       </p>
       {APPEARANCES.map((choice) => (
         <label className="checkline" key={choice.id}>

@@ -30,6 +30,7 @@
 #   2e. macos lint    — planner/path tests for the before-merge macOS jobs
 #   3. tsc            — renderer types
 #   3b. frontend lint — eslint (hooks + no-explicit-any + promises)
+#   3c. frontend format — Prettier --check on first-party TS/JS/CSS/JSON (after lint)
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors
@@ -697,6 +698,23 @@ macos_lint_tests() {
 }
 
 # ---------------------------------------------------------------------------
+# 2e. frontend format
+#
+# cargo fmt --check already owns Rust layout. The renderer had no equivalent,
+# so TS/JSX/CSS drifted and produced review noise that was not about the
+# change. Prettier is the one formatter; `npm run format:check` is read-only
+# and offline after `npm install`. scripts/tests/format.test.sh is the
+# contract: a planted dirty file fails --check, --write restores a pass, and
+# the ignore list actually ignores vendor/plugins/worktrees/deps/build output.
+# ---------------------------------------------------------------------------
+frontend_format() {
+  local ok=0
+  npm run format:check || ok=1
+  ./scripts/tests/format.test.sh || ok=1
+  return $ok
+}
+
+# ---------------------------------------------------------------------------
 # The tree this run is about to describe.
 #
 # Empty when this is not a git worktree (a tarball, a vendored copy); every
@@ -713,6 +731,7 @@ run "macos acceptance" macos_acceptance
 run "macos lint tests" macos_lint_tests
 run "typecheck"      npx tsc --noEmit
 run "frontend lint"  npm run lint
+run "frontend format" frontend_format
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
 run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings

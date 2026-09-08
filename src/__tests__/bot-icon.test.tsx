@@ -97,14 +97,19 @@ beforeEach(() => {
     "FileReader",
     class {
       result: string | ArrayBuffer | null = null;
-      onload: ((this: FileReader, ev: ProgressEvent<FileReader>) => void) | null =
+      onload:
+        ((this: FileReader, ev: ProgressEvent<FileReader>) => void) | null =
         null;
-      onerror: ((this: FileReader, ev: ProgressEvent<FileReader>) => void) | null =
+      onerror:
+        ((this: FileReader, ev: ProgressEvent<FileReader>) => void) | null =
         null;
       readAsDataURL(_file: Blob) {
         this.result = PIXEL;
         queueMicrotask(() =>
-          this.onload?.call(this as unknown as FileReader, {} as ProgressEvent<FileReader>),
+          this.onload?.call(
+            this as unknown as FileReader,
+            {} as ProgressEvent<FileReader>,
+          ),
         );
       }
     },

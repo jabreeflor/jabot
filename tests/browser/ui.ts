@@ -9,7 +9,10 @@ import path from "node:path";
 
 import { expect, type Page } from "@playwright/test";
 
-import { ONBOARDING_KEY, type OnboardingProfile } from "../../src/onboarding/state";
+import {
+  ONBOARDING_KEY,
+  type OnboardingProfile,
+} from "../../src/onboarding/state";
 
 /** Same profile `scripts/dev/shot.mjs` and unit tests seed so the shell opens. */
 export const BROWSER_ONBOARDED: OnboardingProfile = {
@@ -38,7 +41,10 @@ export async function waitForConnected(page: Page): Promise<void> {
   await expect(page.locator(".host.bad")).toHaveCount(0);
 }
 
-export async function openConnectedApp(page: Page, baseURL: string): Promise<void> {
+export async function openConnectedApp(
+  page: Page,
+  baseURL: string,
+): Promise<void> {
   await seedOnboarding(page);
   await page.goto(baseURL, { waitUntil: "domcontentloaded" });
   await waitForConnected(page);
@@ -68,7 +74,11 @@ export async function captureEvidence(page: Page, name: string): Promise<void> {
   await page.screenshot({ path: path.join(dir, `${name}.png`) });
 }
 
-export async function sendComposer(page: Page, text: string, botName = "Chief"): Promise<void> {
+export async function sendComposer(
+  page: Page,
+  text: string,
+  botName = "Chief",
+): Promise<void> {
   const box = composer(page, botName);
   await expect(box).toBeVisible();
   // LiveChatView disables the field until crew/thread resolves; a send before

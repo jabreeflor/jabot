@@ -48,10 +48,7 @@ type MarkProps = { className?: string };
 /** The shared frame. Filled rather than stroked, `evenodd` because the vendor
     paths cut their own holes, and decorative — the control around a mark
     carries the accessible name, and the label is right beside it. */
-function Mark({
-  className,
-  children,
-}: MarkProps & { children: ReactNode }) {
+function Mark({ className, children }: MarkProps & { children: ReactNode }) {
   return (
     <svg
       className={["hmark", className].filter(Boolean).join(" ")}

@@ -25,7 +25,9 @@ function startHost(options?: ConstructorParameters<typeof HostdProcess>[0]) {
   return host;
 }
 
-async function connected(options?: ConstructorParameters<typeof HostdProcess>[0]) {
+async function connected(
+  options?: ConstructorParameters<typeof HostdProcess>[0],
+) {
   const host = startHost(options);
   const client = new HostClient(host);
   await client.connect();

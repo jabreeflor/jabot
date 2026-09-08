@@ -88,7 +88,9 @@ export const EMPTY_INBOX: MobileInbox = {
 };
 
 function kindOf(raw: string): InboxKind {
-  return KNOWN_KINDS.includes(raw as InboxKind) ? (raw as InboxKind) : "needs_you";
+  return KNOWN_KINDS.includes(raw as InboxKind)
+    ? (raw as InboxKind)
+    : "needs_you";
 }
 
 function newestFirst(a: MobileCard, b: MobileCard): number {
@@ -164,10 +166,14 @@ export function projectInbox(
   pending: PermissionPendingResult = { requests: [] },
 ): MobileInbox {
   const titles = new Map<string, string>();
-  for (const event of inbox.events) titles.set(event.threadId, event.threadTitle);
-  for (const thread of inbox.sleeping) titles.set(thread.threadId, thread.title);
+  for (const event of inbox.events)
+    titles.set(event.threadId, event.threadTitle);
+  for (const thread of inbox.sleeping)
+    titles.set(thread.threadId, thread.title);
 
-  const asks = pending.requests.map((ask) => askCard(ask, titles.get(ask.threadId)));
+  const asks = pending.requests.map((ask) =>
+    askCard(ask, titles.get(ask.threadId)),
+  );
   const askedThreads = new Set(asks.map((card) => card.threadId));
 
   const needs = [...asks];

@@ -27,7 +27,11 @@ import {
   type InboxResurfaceParams,
   type JsonRpcNotification,
 } from "../../src/host/protocol";
-import { fakeAcpRuntime, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 const running: HostdProcess[] = [];
 
@@ -67,13 +71,16 @@ async function settle(
     const state = await client.threadState({ threadId });
     if (predicate(state)) return state;
     if (Date.now() > deadline) {
-      throw new Error(`${threadId} never settled; last state: ${JSON.stringify(state)}`);
+      throw new Error(
+        `${threadId} never settled; last state: ${JSON.stringify(state)}`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
 }
 
-const kinds = (inbox: InboxListResult) => inbox.events.map((event) => event.kind);
+const kinds = (inbox: InboxListResult) =>
+  inbox.events.map((event) => event.kind);
 
 describe("overlay transitions", () => {
   it("advertises every lifecycle method it implements", async () => {
@@ -124,7 +131,9 @@ describe("overlay transitions", () => {
       action: "fold",
     });
     // A refused transition must leave the thread exactly where it was.
-    expect((await client.threadState({ threadId: "t-illegal" })).state).toBe("folded");
+    expect((await client.threadState({ threadId: "t-illegal" })).state).toBe(
+      "folded",
+    );
   });
 
   it("tombstones a deleted thread and takes its Inbox cards with it", async () => {
@@ -144,24 +153,41 @@ describe("overlay transitions", () => {
 });
 
 describe("run ledger", () => {
-  it.each(["empty-reply", "empty-reply-v2", "whitespace-reply"])("fails an empty %s response instead of reporting success", async (mode) => {
-    const { client } = await connected();
-    await openThread(client, "t-empty", mode);
-    await client.prompt({ threadId: "t-empty", content: "hi" });
-    const state = await settle(client, "t-empty", (s) => s.latestRun?.state === "failed");
-    expect(state.lastStopReason).toBe("empty_response");
-    expect(state.latestRun?.error).toContain("empty_response");
-    // The duplicate v2 ending must not overwrite the failed run.
-    expect((await client.threadState({ threadId: "t-empty" })).lastStopReason).toBe("empty_response");
-  });
+  it.each(["empty-reply", "empty-reply-v2", "whitespace-reply"])(
+    "fails an empty %s response instead of reporting success",
+    async (mode) => {
+      const { client } = await connected();
+      await openThread(client, "t-empty", mode);
+      await client.prompt({ threadId: "t-empty", content: "hi" });
+      const state = await settle(
+        client,
+        "t-empty",
+        (s) => s.latestRun?.state === "failed",
+      );
+      expect(state.lastStopReason).toBe("empty_response");
+      expect(state.latestRun?.error).toContain("empty_response");
+      // The duplicate v2 ending must not overwrite the failed run.
+      expect(
+        (await client.threadState({ threadId: "t-empty" })).lastStopReason,
+      ).toBe("empty_response");
+    },
+  );
 
   it("does not count the previous turn’s reply toward a new empty turn", async () => {
     const { client } = await connected();
     await openThread(client, "t-second-empty", "first-reply-only");
     await client.prompt({ threadId: "t-second-empty", content: "first" });
-    await settle(client, "t-second-empty", (s) => s.latestRun?.state === "succeeded");
+    await settle(
+      client,
+      "t-second-empty",
+      (s) => s.latestRun?.state === "succeeded",
+    );
     await client.prompt({ threadId: "t-second-empty", content: "second" });
-    const state = await settle(client, "t-second-empty", (s) => s.latestRun?.state === "failed");
+    const state = await settle(
+      client,
+      "t-second-empty",
+      (s) => s.latestRun?.state === "failed",
+    );
     expect(state.latestRun?.seq).toBe(2);
     expect(state.lastStopReason).toBe("empty_response");
   });
@@ -170,7 +196,11 @@ describe("run ledger", () => {
     const { client } = await connected();
     await openThread(client, "t-logged-out", "empty-reply-logged-out");
     await client.prompt({ threadId: "t-logged-out", content: "hi" });
-    const state = await settle(client, "t-logged-out", (s) => s.latestRun?.state === "failed");
+    const state = await settle(
+      client,
+      "t-logged-out",
+      (s) => s.latestRun?.state === "failed",
+    );
     expect(state.lastStopReason).toBe("not_signed_in");
     expect(state.lastError).toContain("not signed in");
     expect(state.lastError).toContain("Adapter log:");
@@ -182,7 +212,11 @@ describe("run ledger", () => {
     const { client } = await connected();
     await openThread(client, "t-model", "empty-reply-model");
     await client.prompt({ threadId: "t-model", content: "hi" });
-    const state = await settle(client, "t-model", (s) => s.latestRun?.state === "failed");
+    const state = await settle(
+      client,
+      "t-model",
+      (s) => s.latestRun?.state === "failed",
+    );
     expect(state.lastStopReason).toBe("unsupported_model");
     expect(state.lastError).toContain("model configuration");
     expect(state.lastError).toContain("claude-opus-4-99");
@@ -192,7 +226,11 @@ describe("run ledger", () => {
     const { client } = await connected();
     await openThread(client, "t-died", "exit-before-reply");
     await client.prompt({ threadId: "t-died", content: "hi" });
-    const state = await settle(client, "t-died", (s) => s.latestRun?.state === "failed");
+    const state = await settle(
+      client,
+      "t-died",
+      (s) => s.latestRun?.state === "failed",
+    );
     expect(state.lastStopReason).toBe("adapter_exit");
     expect(state.lastError).toContain("exited before sending a reply");
     expect(state.lastError).toContain("Adapter log:");
@@ -211,7 +249,11 @@ describe("run ledger", () => {
     await openThread(client, "t-run");
     await client.prompt({ threadId: "t-run", content: "hi" });
 
-    const state = await settle(client, "t-run", (s) => s.latestRun?.state === "succeeded");
+    const state = await settle(
+      client,
+      "t-run",
+      (s) => s.latestRun?.state === "succeeded",
+    );
     expect(state.latestRun).toMatchObject({
       seq: 1,
       kind: "prompt",
@@ -228,7 +270,9 @@ describe("run ledger", () => {
     const second = await settle(client, "t-run", (s) => s.latestRun?.seq === 2);
     // Many sequential runs, one ACP session (#5).
     expect(second.runs).toHaveLength(2);
-    expect(second.runs.every((run) => run.acpSessionId === "sess-fake-1")).toBe(true);
+    expect(second.runs.every((run) => run.acpSessionId === "sess-fake-1")).toBe(
+      true,
+    );
   });
 
   it("refuses a second prompt while the first turn is still in flight", async () => {
@@ -236,7 +280,11 @@ describe("run ledger", () => {
     await openThread(client, "t-overlap", "permission");
     await client.fold({ threadId: "t-overlap" });
     await client.prompt({ threadId: "t-overlap", content: "rm -rf" });
-    await settle(client, "t-overlap", (s) => s.latestRun?.state === "needs_you");
+    await settle(
+      client,
+      "t-overlap",
+      (s) => s.latestRun?.state === "needs_you",
+    );
 
     // ACP runs one turn per session, and the stop reason that comes back names
     // no prompt — so a second run would be handed the first turn's outcome and
@@ -307,7 +355,10 @@ describe("resurface", () => {
           (n) =>
             client.inbox().then(
               (inbox) =>
-                resolve({ announced: n.params as InboxResurfaceParams, inbox }),
+                resolve({
+                  announced: n.params as InboxResurfaceParams,
+                  inbox,
+                }),
               reject,
             ),
           reject,
@@ -340,7 +391,11 @@ describe("resurface", () => {
     await client.fold({ threadId: "t-perm" });
     await client.prompt({ threadId: "t-perm", content: "rm -rf" });
 
-    const state = await settle(client, "t-perm", (s) => s.state === "resurfaced");
+    const state = await settle(
+      client,
+      "t-perm",
+      (s) => s.state === "resurfaced",
+    );
     expect(state.resurfacedReason).toBe("needs_you");
     // A paused run, not a finished one — answering resumes this same run.
     expect(state.latestRun?.state).toBe("needs_you");
@@ -373,7 +428,11 @@ describe("resurface", () => {
     await openThread(stuck.client, "t-stuck", "hang");
     await stuck.client.fold({ threadId: "t-stuck" });
     await stuck.client.prompt({ threadId: "t-stuck", content: "hi" });
-    const stuckState = await settle(stuck.client, "t-stuck", (s) => s.state === "resurfaced");
+    const stuckState = await settle(
+      stuck.client,
+      "t-stuck",
+      (s) => s.state === "resurfaced",
+    );
     expect(stuckState.resurfacedReason).toBe("stuck");
     expect(stuckState.latestRun?.state).toBe("running");
     expect(stuckState.process.connected).toBe(true);
@@ -388,7 +447,11 @@ describe("resurface", () => {
 
     // The turn completed without the human, which is only possible if the host
     // answered the read on their behalf.
-    const state = await settle(client, "t-read", (s) => s.latestRun?.state === "succeeded");
+    const state = await settle(
+      client,
+      "t-read",
+      (s) => s.latestRun?.state === "succeeded",
+    );
     expect(state.resurfacedReason).toBe("done");
 
     const inbox = await client.inbox();

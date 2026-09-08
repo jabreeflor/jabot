@@ -33,11 +33,7 @@ import type {
   PrUnavailable,
   PullRequestView,
 } from "../host";
-import type {
-  NoticeAction,
-  PrCheck,
-  PullRequest,
-} from "../components/types";
+import type { NoticeAction, PrCheck, PullRequest } from "../components/types";
 
 /**
  * How often to ask GitHub again, from `pr-linkage.md`'s table.
@@ -375,9 +371,10 @@ function failing(checks: readonly PrCheckView[]): string {
 function detail(pr: PrFacts): PullRequest["detail"] {
   if (!pr.polled) return undefined;
   return {
-    checks: pr.checks.map(
-      (check): PrCheck => ({ label: check.label, state: check.state }),
-    ),
+    checks: pr.checks.map((check): PrCheck => ({
+      label: check.label,
+      state: check.state,
+    })),
     bullets: bullets(pr),
     actions: actions(pr),
   };

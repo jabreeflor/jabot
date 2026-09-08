@@ -22,26 +22,60 @@ afterEach(() => {
 
 describe("makeProfile", () => {
   it("trims the name and cannot produce a blank record", () => {
-    expect(makeProfile({ userName: " Ada ", harnessId: null, skipped: false }).userName).toBe("Ada");
-    expect(makeProfile({ userName: "   ", harnessId: null, skipped: true }).userName).toBe(DEFAULT_USER_NAME);
-    expect(makeProfile({ userName: "", harnessId: null, skipped: true }).userName).toBe(DEFAULT_USER_NAME);
+    expect(
+      makeProfile({ userName: " Ada ", harnessId: null, skipped: false })
+        .userName,
+    ).toBe("Ada");
+    expect(
+      makeProfile({ userName: "   ", harnessId: null, skipped: true }).userName,
+    ).toBe(DEFAULT_USER_NAME);
+    expect(
+      makeProfile({ userName: "", harnessId: null, skipped: true }).userName,
+    ).toBe(DEFAULT_USER_NAME);
   });
 
   it("coerces an empty harnessId to null", () => {
-    expect(makeProfile({ userName: "Ada", harnessId: "", skipped: false }).harnessId).toBeNull();
-    expect(makeProfile({ userName: "Ada", harnessId: "codex", skipped: false }).harnessId).toBe("codex");
+    expect(
+      makeProfile({ userName: "Ada", harnessId: "", skipped: false }).harnessId,
+    ).toBeNull();
+    expect(
+      makeProfile({ userName: "Ada", harnessId: "codex", skipped: false })
+        .harnessId,
+    ).toBe("codex");
   });
 
   it("carries a newer version forward and floors the rest at 1", () => {
-    expect(makeProfile({ userName: "Ada", harnessId: null, skipped: false, version: 2 }).version).toBe(2);
-    expect(makeProfile({ userName: "Ada", harnessId: null, skipped: false }).version).toBe(1);
-    expect(makeProfile({ userName: "Ada", harnessId: null, skipped: false, version: 0 }).version).toBe(1);
+    expect(
+      makeProfile({
+        userName: "Ada",
+        harnessId: null,
+        skipped: false,
+        version: 2,
+      }).version,
+    ).toBe(2);
+    expect(
+      makeProfile({ userName: "Ada", harnessId: null, skipped: false }).version,
+    ).toBe(1);
+    expect(
+      makeProfile({
+        userName: "Ada",
+        harnessId: null,
+        skipped: false,
+        version: 0,
+      }).version,
+    ).toBe(1);
   });
 });
 
 describe("loadOnboarding", () => {
   it("round-trips through saveOnboarding", () => {
-    saveOnboarding(makeProfile({ userName: "Ada Lovelace", harnessId: "codex", skipped: false }));
+    saveOnboarding(
+      makeProfile({
+        userName: "Ada Lovelace",
+        harnessId: "codex",
+        skipped: false,
+      }),
+    );
     const loaded = loadOnboarding();
     expect(loaded).not.toBeNull();
     expect(loaded?.userName).toBe("Ada Lovelace");
@@ -50,7 +84,9 @@ describe("loadOnboarding", () => {
   });
 
   it("round-trips skipped provenance", () => {
-    saveOnboarding(makeProfile({ userName: "", harnessId: null, skipped: true }));
+    saveOnboarding(
+      makeProfile({ userName: "", harnessId: null, skipped: true }),
+    );
     expect(loadOnboarding()?.skipped).toBe(true);
   });
 
@@ -73,7 +109,14 @@ describe("loadOnboarding", () => {
   });
 
   it("treats a corrupt or shapeless record as a first run", () => {
-    for (const raw of ["{not json", '["array"]', '"a string"', '{"userName":"x"}', '{"version":"one"}', '{"version":0}']) {
+    for (const raw of [
+      "{not json",
+      '["array"]',
+      '"a string"',
+      '{"userName":"x"}',
+      '{"version":"one"}',
+      '{"version":0}',
+    ]) {
       window.localStorage.setItem(ONBOARDING_KEY, raw);
       expect(loadOnboarding()).toBeNull();
     }
@@ -117,12 +160,16 @@ describe("saveOnboarding / resetOnboarding", () => {
       throw new Error("quota");
     });
     expect(() =>
-      saveOnboarding(makeProfile({ userName: "Ada", harnessId: null, skipped: false })),
+      saveOnboarding(
+        makeProfile({ userName: "Ada", harnessId: null, skipped: false }),
+      ),
     ).not.toThrow();
   });
 
   it("resetOnboarding returns the store to a first run", () => {
-    saveOnboarding(makeProfile({ userName: "Ada", harnessId: null, skipped: false }));
+    saveOnboarding(
+      makeProfile({ userName: "Ada", harnessId: null, skipped: false }),
+    );
     resetOnboarding();
     expect(loadOnboarding()).toBeNull();
   });

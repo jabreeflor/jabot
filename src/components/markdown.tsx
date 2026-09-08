@@ -142,7 +142,11 @@ function inline(text: string): ReactNode {
 
 const SPANS = [
   { open: "`", close: "`", wrap: (node: ReactNode) => <code>{node}</code> },
-  { open: "**", close: "**", wrap: (node: ReactNode) => <strong>{node}</strong> },
+  {
+    open: "**",
+    close: "**",
+    wrap: (node: ReactNode) => <strong>{node}</strong>,
+  },
   { open: "*", close: "*", wrap: (node: ReactNode) => <em>{node}</em> },
   { open: "_", close: "_", wrap: (node: ReactNode) => <em>{node}</em> },
 ] as const;
@@ -178,7 +182,8 @@ function emphasis(text: string, level: number): ReactNode {
     if (open === "_" && (isWord(before.slice(-1)) || isWord(rest[end + 1]))) {
       break;
     }
-    if (before) out.push(<span key={key++}>{emphasis(before, level + 1)}</span>);
+    if (before)
+      out.push(<span key={key++}>{emphasis(before, level + 1)}</span>);
     out.push(
       <span key={key++}>
         {/* Code is opaque: nothing inside a backtick span is markup. */}

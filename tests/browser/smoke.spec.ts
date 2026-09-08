@@ -28,7 +28,9 @@ test(
     await openConnectedApp(page, jabot.baseURL);
 
     await chiefRow(page).click();
-    await expect(page.getByRole("heading", { level: 2, name: "Chief" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 2, name: "Chief" }),
+    ).toBeVisible();
     await expect(composer(page)).toBeVisible();
     await captureEvidence(page, "connected-chief");
 

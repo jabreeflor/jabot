@@ -249,14 +249,14 @@ export function BotEditorModal({
     >
       {proposal && (
         <p className="proposal-banner" role="status">
-          Proposed by {proposal.sourceName}. Saving creates a crew member;
-          this does not start a conversation.
+          Proposed by {proposal.sourceName}. Saving creates a crew member; this
+          does not start a conversation.
           {proposal.stale && (
             <>
               {" "}
               This proposal is stale
-              {proposal.staleReason ? ` (${proposal.staleReason})` : ""}.
-              Review it before Save.
+              {proposal.staleReason ? ` (${proposal.staleReason})` : ""}. Review
+              it before Save.
             </>
           )}
           {proposal.nameWarning ? ` ${proposal.nameWarning}` : ""}
@@ -372,7 +372,11 @@ export function BotEditorModal({
                 }}
               />
               <span className="bot-icon-choice">
-                <Avatar name={choice.name} color={choice.value} titled={false} />
+                <Avatar
+                  name={choice.name}
+                  color={choice.value}
+                  titled={false}
+                />
                 <span className="bot-icon-name">{choice.name}</span>
                 <span className="bot-icon-motion">{choice.motion}</span>
               </span>
@@ -391,7 +395,9 @@ export function BotEditorModal({
 
       <FieldLabel>HARNESS</FieldLabel>
       {!harnesses.some((harness) => harness.id === harnessId) && (
-        <p role="status">Choose an enabled harness, or enable this bot’s harness in Settings.</p>
+        <p role="status">
+          Choose an enabled harness, or enable this bot’s harness in Settings.
+        </p>
       )}
       <HarnessPicker
         harnesses={harnesses}

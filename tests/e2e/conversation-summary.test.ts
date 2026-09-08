@@ -70,7 +70,10 @@ describe("conversation summary over the host protocol", () => {
       harnessId: "claude",
       folderId: folder.folderId,
     });
-    writeFileSync(path.join(thread.worktreePath ?? thread.cwd, "added.rs"), "fn main() {}\n");
+    writeFileSync(
+      path.join(thread.worktreePath ?? thread.cwd, "added.rs"),
+      "fn main() {}\n",
+    );
 
     let summary = await client.threadSummary({ threadId: "t-sum" });
     expect(summary.repositories[0]?.name).toBe("jabot");
@@ -87,7 +90,10 @@ describe("conversation summary over the host protocol", () => {
       "jabot-frontend",
     ]);
 
-    const note = path.join(mkdtempSync(path.join(tmpdir(), "jabot-src-")), "notes.md");
+    const note = path.join(
+      mkdtempSync(path.join(tmpdir(), "jabot-src-")),
+      "notes.md",
+    );
     writeFileSync(note, "remember this\n");
     summary = await client.addThreadSource({ threadId: "t-sum", path: note });
     expect(summary.sources[0]?.name).toBe("notes.md");

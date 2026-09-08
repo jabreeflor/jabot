@@ -157,7 +157,10 @@ describe("the chrome", () => {
     const el = avatar({ ...CREW[0] });
     expect(el).toHaveAttribute("title", "Bot 0");
     expect(el).not.toHaveAttribute("aria-label");
-    expect(el.querySelector(".bot-mark")).toHaveAttribute("aria-hidden", "true");
+    expect(el.querySelector(".bot-mark")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
   });
 
   it("takes a name when the avatar is the only thing in its control", () => {

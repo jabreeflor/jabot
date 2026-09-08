@@ -199,7 +199,11 @@ const TEMPLATES: CrewListResult["templates"] = [
 ];
 
 const HOST_TOOLS: CrewListResult["hostTools"] = [
-  { id: "handoff_to_bot", label: "Handoff", blurb: "Pass a job to another bot" },
+  {
+    id: "handoff_to_bot",
+    label: "Handoff",
+    blurb: "Pass a job to another bot",
+  },
 ];
 
 describe("botRow / templateRow", () => {
@@ -279,7 +283,13 @@ describe("botRow / templateRow", () => {
 describe("withReadiness", () => {
   const cards = [
     { id: "claude", label: "Claude Code", blurb: "b1", accent: "a1" },
-    { id: "hermes", label: "Hermes", blurb: "b2", accent: "a2", installHint: "from the catalog" },
+    {
+      id: "hermes",
+      label: "Hermes",
+      blurb: "b2",
+      accent: "a2",
+      installHint: "from the catalog",
+    },
     { id: "pi", label: "Pi", blurb: "b3", accent: "a3" },
   ];
 
@@ -306,7 +316,9 @@ describe("withReadiness", () => {
 
   it("falls back to the catalog hint when the report carries no remedy", () => {
     const reports = [{ ...DOCTOR.reports[1], remedy: undefined }];
-    expect(withReadiness(cards, reports)[1].installHint).toBe("from the catalog");
+    expect(withReadiness(cards, reports)[1].installHint).toBe(
+      "from the catalog",
+    );
   });
 
   it("is a no-op when the Doctor reported nothing", () => {
@@ -318,38 +330,42 @@ describe("App, once the host has answered with a crew", () => {
   /** A crew the fake host actually holds, so a read after a write sees it. */
   let crew: BotView[] = [];
 
-  const listCrew = vi.fn(
-    async (): Promise<CrewListResult> => ({
-      bots: crew.map((row) => ({ ...row })),
-      templates: TEMPLATES,
-      hostTools: HOST_TOOLS,
-    }),
+  const listCrew = vi.fn(async (): Promise<CrewListResult> => ({
+    bots: crew.map((row) => ({ ...row })),
+    templates: TEMPLATES,
+    hostTools: HOST_TOOLS,
+  }));
+
+  const createBot = vi.fn(
+    async (params: CrewCreateParams): Promise<BotView> => {
+      const template = TEMPLATES.find(
+        (t) => t.templateId === params.templateId,
+      );
+      const created = bot({
+        botId: `bot-${crew.length}`,
+        name: params.name ?? template?.name ?? "Unnamed bot",
+        color: params.color ?? template?.color ?? "b-green",
+        instructions: params.instructions ?? template?.instructions ?? "",
+        tools: params.tools ?? template?.tools ?? [],
+        harnessId: params.harnessId ?? template?.harnessId ?? "claude",
+        templateId: params.templateId,
+        isChief: false,
+      });
+      crew = [...crew, created];
+      return created;
+    },
   );
 
-  const createBot = vi.fn(async (params: CrewCreateParams): Promise<BotView> => {
-    const template = TEMPLATES.find((t) => t.templateId === params.templateId);
-    const created = bot({
-      botId: `bot-${crew.length}`,
-      name: params.name ?? template?.name ?? "Unnamed bot",
-      color: params.color ?? template?.color ?? "b-green",
-      instructions: params.instructions ?? template?.instructions ?? "",
-      tools: params.tools ?? template?.tools ?? [],
-      harnessId: params.harnessId ?? template?.harnessId ?? "claude",
-      templateId: params.templateId,
-      isChief: false,
-    });
-    crew = [...crew, created];
-    return created;
-  });
-
-  const updateBot = vi.fn(async (params: CrewUpdateParams): Promise<BotView> => {
-    const found = crew.find((row) => row.botId === params.botId);
-    if (!found) throw new Error(`no such bot: ${params.botId}`);
-    const { botId: _botId, ...patch } = params;
-    const saved: BotView = { ...found, ...patch };
-    crew = crew.map((row) => (row.botId === saved.botId ? saved : row));
-    return saved;
-  });
+  const updateBot = vi.fn(
+    async (params: CrewUpdateParams): Promise<BotView> => {
+      const found = crew.find((row) => row.botId === params.botId);
+      if (!found) throw new Error(`no such bot: ${params.botId}`);
+      const { botId: _botId, ...patch } = params;
+      const saved: BotView = { ...found, ...patch };
+      crew = crew.map((row) => (row.botId === saved.botId ? saved : row));
+      return saved;
+    },
+  );
 
   const removeBot = vi.fn(
     async ({ botId }: CrewRefParams): Promise<CrewRemoveResult> => {
@@ -419,7 +435,10 @@ describe("App, once the host has answered with a crew", () => {
     disconnectTool = vi.fn(async () => ({}));
     listTools = vi.fn(async () => toolAnswer);
     listeners = [];
-    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+    vi.mocked(connectHost).mockResolvedValue({
+      client: client(),
+      hello: HELLO,
+    });
   });
 
   async function openCrew() {
@@ -576,7 +595,9 @@ describe("App, once the host has answered with a crew", () => {
     );
 
     // Notion is `needs_auth`, so the row offers the one thing that helps.
-    await userEvent.click(screen.getByRole("button", { name: "Connect Notion" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connect Notion" }),
+    );
 
     expect(connectTool).toHaveBeenCalledWith({ toolId: "notion" });
     // And the chip itself still toggles the allowlist: signing this Mac into
@@ -673,7 +694,12 @@ describe("App, once the host has answered with a crew", () => {
   it("offers no sign-in for a tool that is not on this Mac", async () => {
     toolAnswer = {
       tools: [
-        { ...TOOLS.tools[1], id: "terminal", label: "Terminal", status: "missing" },
+        {
+          ...TOOLS.tools[1],
+          id: "terminal",
+          label: "Terminal",
+          status: "missing",
+        },
       ],
     };
     await openCrew();
@@ -682,9 +708,15 @@ describe("App, once the host has answered with a crew", () => {
       within(card("Writer")).getByRole("button", { name: "Edit" }),
     );
 
-    expect(await screen.findByRole("button", { name: "Terminal" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Connect/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Disconnect/ })).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Terminal" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Connect/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Disconnect/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("greys out an engine the Doctor could not find, and says how to install it", async () => {
@@ -717,7 +749,9 @@ describe("App, once the host has answered with a crew", () => {
     // Claude is installed, so nothing about its card changes.
     const claude = screen.getByRole("button", { name: /Claude Code/ });
     expect(
-      within(claude).getByText("Anthropic's coding agent, wrapped in JaBot's UI"),
+      within(claude).getByText(
+        "Anthropic's coding agent, wrapped in JaBot's UI",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -729,7 +763,10 @@ describe("App, once the host has answered with a crew", () => {
     harnessDoctor = vi.fn(async () => {
       throw new Error("probe timed out");
     });
-    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+    vi.mocked(connectHost).mockResolvedValue({
+      client: client(),
+      hello: HELLO,
+    });
 
     await openCrew();
     await waitFor(() => expect(card("Writer")).toBeInTheDocument());
@@ -743,7 +780,9 @@ describe("App, once the host has answered with a crew", () => {
     expect(
       within(hermes).getByText("A preset the mock has never heard of"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Claude Code/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Claude Code/ }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("probe timed out")).not.toBeInTheDocument();
   });
 
@@ -752,7 +791,10 @@ describe("App, once the host has answered with a crew", () => {
     // cheap one must not wait on the expensive one. This holds the probe open
     // forever and asserts the picker opened anyway.
     harnessDoctor = vi.fn(() => new Promise<HarnessDoctorResult>(() => {}));
-    vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
+    vi.mocked(connectHost).mockResolvedValue({
+      client: client(),
+      hello: HELLO,
+    });
 
     await openCrew();
     await waitFor(() => expect(card("Writer")).toBeInTheDocument());
@@ -804,7 +846,10 @@ describe("App, once the host has answered with a crew", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(createBot).toHaveBeenCalledWith(
-      expect.objectContaining({ templateId: "expense", name: "Expense Manager" }),
+      expect.objectContaining({
+        templateId: "expense",
+        name: "Expense Manager",
+      }),
     );
     await waitFor(() => expect(card("Expense Manager")).toBeInTheDocument());
   });
@@ -818,7 +863,9 @@ describe("App, once the host has answered with a crew", () => {
     );
 
     expect(removeBot).toHaveBeenCalledWith({ botId: "writer" });
-    await waitFor(() => expect(within(grid()).queryByText("Writer")).toBeNull());
+    await waitFor(() =>
+      expect(within(grid()).queryByText("Writer")).toBeNull(),
+    );
     expect(card("Chief")).toBeInTheDocument();
   });
 

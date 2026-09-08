@@ -47,7 +47,9 @@ describe("copyText", () => {
 
     await copyText("**hello**\n```ts\nconst x = 1;\n```");
 
-    expect(writeText).toHaveBeenCalledWith("**hello**\n```ts\nconst x = 1;\n```");
+    expect(writeText).toHaveBeenCalledWith(
+      "**hello**\n```ts\nconst x = 1;\n```",
+    );
   });
 
   it("falls back to execCommand when the API is missing", async () => {
@@ -72,12 +74,16 @@ describe("copyText", () => {
     stubClipboard(vi.fn().mockRejectedValue(new Error("denied")));
     stubExecCommand(false);
 
-    await expect(copyText("nope")).rejects.toThrow("Couldn't copy to the clipboard");
+    await expect(copyText("nope")).rejects.toThrow(
+      "Couldn't copy to the clipboard",
+    );
   });
 
   it("throws when there is no clipboard API and no execCommand", async () => {
     stubClipboard(undefined);
 
-    await expect(copyText("nope")).rejects.toThrow("Couldn't copy to the clipboard");
+    await expect(copyText("nope")).rejects.toThrow(
+      "Couldn't copy to the clipboard",
+    );
   });
 });

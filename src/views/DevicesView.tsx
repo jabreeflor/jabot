@@ -84,8 +84,8 @@ export function DevicesView({
           <h1>Devices</h1>
           <p>
             Everything paired with this Mac. A device can answer permission
-            prompts and read your Inbox — revoking one cuts it off
-            immediately, including a connection it already has open.
+            prompts and read your Inbox — revoking one cuts it off immediately,
+            including a connection it already has open.
           </p>
         </div>
       )}
@@ -179,7 +179,9 @@ function DeviceRow({
         </div>
         <div className="dev-meta">
           {revoked ? (
-            <span className="dev-dead">Revoked {shortTime(device.revokedAt)}</span>
+            <span className="dev-dead">
+              Revoked {shortTime(device.revokedAt)}
+            </span>
           ) : (
             <span>{describeRole(device.role)}</span>
           )}

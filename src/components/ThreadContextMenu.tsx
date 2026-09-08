@@ -95,7 +95,12 @@ export function ThreadContextMenu({
         <ArchiveIcon /> Archive
       </button>
       <div className="sep" />
-      <button type="button" role="menuitem" className="danger" onClick={onDelete}>
+      <button
+        type="button"
+        role="menuitem"
+        className="danger"
+        onClick={onDelete}
+      >
         <TrashIcon /> Delete
       </button>
     </div>

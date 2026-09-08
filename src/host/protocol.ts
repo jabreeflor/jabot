@@ -99,11 +99,7 @@ export type ResurfaceReason = "done" | "failed" | "stuck" | "needs_you";
 
 /** `threads.state`, plus the `deleted` tombstone the UI never lists. */
 export type ThreadOverlayState =
-  | "active"
-  | "folded"
-  | "resurfaced"
-  | "archived"
-  | "deleted";
+  "active" | "folded" | "resurfaced" | "archived" | "deleted";
 
 /** "Wait for Inbox" is a permission policy on a folded thread — auto-allow
     reads, still ask for execute and delete — not a fifth overlay state. */
@@ -826,11 +822,7 @@ export type ToolTransport = "http" | "stdio" | "harness_execute";
 /** What the bot editor's chip says. Each value is a different next action,
     which is why "not working" is not one of them. */
 export type ToolConnectionStatus =
-  | "connected"
-  | "needs_auth"
-  | "connecting"
-  | "error"
-  | "missing";
+  "connected" | "needs_auth" | "connecting" | "error" | "missing";
 
 /** A catalog entry with today's connection status. */
 export interface ToolCardView {
@@ -1283,10 +1275,7 @@ export interface InboxEventParams extends Envelope {
 /** `unsupported` is not a refusal: it is a Linux build, or a dev build running
     outside `JaBot.app`, neither of which has a Notification Center to ask. */
 export type NotifyAuthorization =
-  | "granted"
-  | "denied"
-  | "notDetermined"
-  | "unsupported";
+  "granted" | "denied" | "notDetermined" | "unsupported";
 
 /** What `notify/status` answers. Every field is informational — no answer here
     changes whether an Inbox card was written, because the card is written
@@ -1319,10 +1308,7 @@ export type CatchUpPolicy = "once" | "skip";
 
 /** `schedule_fires.state`. `dispatched` is the only non-final one. */
 export type ScheduleFireState =
-  | "dispatched"
-  | "skipped"
-  | "failed"
-  | "delivered";
+  "dispatched" | "skipped" | "failed" | "delivered";
 
 export interface ScheduleFireView {
   fireId: string;
@@ -1705,7 +1691,8 @@ export type PrWireStatus = "open" | "draft" | "merged" | "closed";
 export type PrCheckStateWire = "passing" | "running" | "failing";
 
 /** GitHub's `reviewDecision`, lowercased. */
-export type PrReviewState = "approved" | "changes_requested" | "review_required";
+export type PrReviewState =
+  "approved" | "changes_requested" | "review_required";
 
 export interface PrCheckView {
   label: string;

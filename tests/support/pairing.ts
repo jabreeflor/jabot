@@ -11,7 +11,12 @@
  * It is also the reference a real phone client is written against — everything
  * here is `node:crypto` plus the framing rule, no JaBot code.
  */
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 
 import type { PairingQr } from "../../src/host/protocol";
 
@@ -59,8 +64,10 @@ export function normalizeCode(input: string): string {
   for (const raw of input) {
     if (raw === "-" || raw === " ") continue;
     const upper = raw.toUpperCase();
-    const mapped = upper === "I" || upper === "L" ? "1" : upper === "O" ? "0" : upper;
-    if (!CROCKFORD.includes(mapped)) throw new Error(`not a pairing code: ${input}`);
+    const mapped =
+      upper === "I" || upper === "L" ? "1" : upper === "O" ? "0" : upper;
+    if (!CROCKFORD.includes(mapped))
+      throw new Error(`not a pairing code: ${input}`);
     out += mapped;
   }
   return out;
@@ -136,7 +143,9 @@ export class TestDevice {
       via,
     ]).toString("hex");
     const bind = (domain: string) =>
-      createHmac("sha256", key).update(frameHash([domain, transcript])).digest();
+      createHmac("sha256", key)
+        .update(frameHash([domain, transcript]))
+        .digest();
     return {
       transcript,
       claimMac: bind(CLAIM_DOMAIN).toString("hex"),
@@ -149,7 +158,12 @@ export class TestDevice {
 
   /** The `host/hello` proof. `counter` must climb: the host refuses one it
       has already seen, which is what makes a captured frame useless. */
-  helloAuth(hostId: string, token: string, counter: number, protocolVersion = 1) {
+  helloAuth(
+    hostId: string,
+    token: string,
+    counter: number,
+    protocolVersion = 1,
+  ) {
     return {
       counter,
       mac: createHmac("sha256", token)

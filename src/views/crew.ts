@@ -223,7 +223,9 @@ export interface Crew {
  * `null` until the catalog answers, so a caller can keep its fixtures until
  * there is something real to draw — the same rule `useCrew` follows for bots.
  */
-export function useHarnessCatalog(client: HostClient | null): HarnessCard[] | null {
+export function useHarnessCatalog(
+  client: HostClient | null,
+): HarnessCard[] | null {
   const [cards, setCards] = useState<HarnessCard[] | null>(null);
   // Apart from `cards` on purpose; see the note in `useCrew`. The two calls
   // race, and merging on arrival loses whichever lands first.
@@ -295,7 +297,11 @@ export function useCrew(client: HostClient | null): Crew {
     // these methods should leave the shell on its fixtures rather than take
     // the render down.
     (async () =>
-      Promise.all([client.listCrew(), client.listTools(), client.listHarnesses()]))()
+      Promise.all([
+        client.listCrew(),
+        client.listTools(),
+        client.listHarnesses(),
+      ]))()
       .then(([listed, toolList, harnessList]) => {
         if (cancelled) return;
         setCrew(listed);
@@ -494,7 +500,8 @@ export function useCrew(client: HostClient | null): Crew {
   // Memoised so the picker is handed the same array identity between renders;
   // rebuilding it every render would defeat any memo below it.
   const readyHarnesses = useMemo(
-    () => (harnesses && reports ? withReadiness(harnesses, reports) : harnesses),
+    () =>
+      harnesses && reports ? withReadiness(harnesses, reports) : harnesses,
     [harnesses, reports],
   );
 

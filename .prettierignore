@@ -1,0 +1,41 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build output and generated artifacts
+dist
+dist-ssr
+coverage
+src-tauri/target
+src-tauri/gen/
+*.local
+
+# Generated lockfiles — not hand-edited, and huge
+package-lock.json
+**/package-lock.json
+
+# Vendored jabstack snapshot and bundled ACP adapters — not first-party
+# source. `/plugins/` is rooted so `.agents/plugins/` (first-party Codex
+# marketplace JSON) is still formatted.
+/plugins/
+src-tauri/vendor/
+
+# Nested worktrees (host-owned or harness-created checkouts)
+.worktrees/
+**/.worktrees/
+.claude/worktrees/
+.codex/worktrees/
+worktrees/
+
+# Live-loop state
+.jabot-dev
+
+# Out of the formatter contract (TS/TSX, JS/MJS, CSS, applicable JSON).
+# scripts/frontend-format.sh also restricts globs; this is for anyone who
+# runs `npx prettier --write .` and for the contract test's ignore cases.
+*.md
+*.html
+*.yml
+*.yaml
+*.toml
+*.lock

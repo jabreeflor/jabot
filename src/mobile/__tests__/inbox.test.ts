@@ -69,7 +69,10 @@ describe("the Inbox as the phone sees it", () => {
     expect(inbox.done.map((c) => c.id)).toEqual(["done-1"]);
     // Failed and stuck are things asking for a human, so they are needs-you —
     // the same rule the desktop's `NEEDS_YOU_KINDS` applies (#22).
-    expect(inbox.needs.map((c) => c.id).sort()).toEqual(["failed-1", "stuck-1"]);
+    expect(inbox.needs.map((c) => c.id).sort()).toEqual([
+      "failed-1",
+      "stuck-1",
+    ]);
     expect(inbox.sleeping[0]).toMatchObject({
       threadId: "t4",
       // A folded thread whose adapter is still going says so; that is the

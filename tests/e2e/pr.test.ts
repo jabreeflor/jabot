@@ -229,7 +229,6 @@ function body(over: {
   });
 }
 
-
 /**
  * A `gh` that can also be *logged into*, for the sign-in half (#28).
  *
@@ -718,9 +717,9 @@ describe("resolving a pull request the session never printed", () => {
       "pr view --json number,url,title,state,isDraft,headRefName",
     );
     // And rung 3 was not reached, because rung 2 answered.
-    expect(argvLines(gh.argvPath).some((line) => line.startsWith("pr list"))).toBe(
-      false,
-    );
+    expect(
+      argvLines(gh.argvPath).some((line) => line.startsWith("pr list")),
+    ).toBe(false);
   });
 
   /**
@@ -780,8 +779,9 @@ describe("resolving a pull request the session never printed", () => {
     // the failure this case exists to catch.
     await until(
       async () =>
-        argvLines(stranger.argvPath).some((line) => line.startsWith("pr list")) ||
-        (await refused.client.listPullRequests()).pullRequests.length > 0,
+        argvLines(stranger.argvPath).some((line) =>
+          line.startsWith("pr list"),
+        ) || (await refused.client.listPullRequests()).pullRequests.length > 0,
       "gh ran out of rungs",
     );
     expect((await refused.client.listPullRequests()).pullRequests).toEqual([]);
