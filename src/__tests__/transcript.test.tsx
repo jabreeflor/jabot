@@ -132,7 +132,9 @@ describe("Transcript", () => {
       />,
     );
 
-    const buttons = screen.getAllByRole("button", { name: "Branch in new chat" });
+    const buttons = screen.getAllByRole("button", {
+      name: "Branch in new chat",
+    });
     expect(buttons).toHaveLength(2);
     await userEvent.click(buttons[0]);
     expect(onBranch).toHaveBeenCalledWith("u1", 1);
@@ -149,7 +151,9 @@ describe("Transcript", () => {
       />,
     );
     await userEvent.tab();
-    expect(screen.getByRole("button", { name: "Branch in new chat" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Branch in new chat" }),
+    ).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     expect(onBranch).toHaveBeenCalledWith("u1", 2);
   });

@@ -1679,9 +1679,9 @@ describe("LiveThreadView branch in new chat", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Branch in new chat" }),
     );
-    expect(
-      await screen.findByRole("alert"),
-    ).toHaveTextContent("past the end of this conversation");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "past the end of this conversation",
+    );
   });
 
   it("links back to the source conversation", async () => {
@@ -1703,7 +1703,9 @@ describe("LiveThreadView branch in new chat", () => {
       />,
     );
     await userEvent.click(
-      await screen.findByRole("button", { name: /Branched from Auth migration/ }),
+      await screen.findByRole("button", {
+        name: /Branched from Auth migration/,
+      }),
     );
     expect(onOpenThread).toHaveBeenCalledWith("t-src");
   });

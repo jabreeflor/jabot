@@ -8,7 +8,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { HostClient, HostRpcError } from "../../src/host/client";
 import { THREAD_BRANCH } from "../../src/host/protocol";
-import { fakeAcpRuntime, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 const running: HostdProcess[] = [];
 
