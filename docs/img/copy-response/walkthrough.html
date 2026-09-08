@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add Copy response to assistant chat bubbles</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --ok:#3fb950; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .path { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+    .path span { padding:8px 10px; background:#0f141a; border:1px solid var(--line); border-radius:8px; font-size:13px; font-weight:650; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .ok { color:var(--ok); }
+    .note { color:var(--warn); }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    @media (max-width:700px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR walkthrough · #267</div>
+    <h1>Add Copy response to assistant chat bubbles</h1>
+    <p>Users had to highlight an assistant reply to reuse it. Every assistant bubble now has a compact overlapping-squares control that copies that reply’s source markdown — and only that reply.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>Assistant text sat on the page with no chrome under it.</li>
+            <li>Reuse meant selecting through rendered markdown.</li>
+            <li>Fences, line breaks, and neighbouring stamps came along for the ride.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li><code>AgentBubble</code> draws a <code>msg-actions</code> row under the bubble.</li>
+            <li>The button writes <code>item.text</code> — the source, not <code>innerText</code>.</li>
+            <li>The same control says “Copied” or “Couldn't copy to the clipboard”.</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin-top:16px">Bot chats and Code conversations share <code>Conversation</code> → <code>Transcript</code>. One row covers both. Reactions (#265) and branch (#266) are meant to sit in the same group.</p>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <table>
+        <tr><th>File</th><th>Why it matters</th></tr>
+        <tr><td><code>src/components/Transcript.tsx</code></td><td>The action row and the copy button live on the assistant bubble only.</td></tr>
+        <tr><td><code>src/components/copyText.ts</code></td><td>Clipboard API first, <code>execCommand</code> fallback, a thrown error when both refuse.</td></tr>
+        <tr><td><code>src/components/Icon.tsx</code></td><td>Overlapping-squares glyph sized for the 15px row.</td></tr>
+        <tr><td><code>src/styles/chat.css</code></td><td>Column layout on <code>.msg.bot</code>, icon button, tooltip, copied/failed states.</td></tr>
+        <tr><td><code>src/__tests__/transcript.test.tsx</code></td><td>Pins “this reply’s markdown”, success, refusal, Enter, and “assistant only”.</td></tr>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li>Open a bot chat or a Code thread, send a turn, hover the overlapping squares — tooltip is <strong>Copy response</strong>.</li>
+        <li>Activate it (click or Enter). Paste somewhere: the markdown source, not the rendered list or fence chrome.</li>
+        <li>A user bubble, a stamp, and “Session finished.” stay out of the clipboard.</li>
+        <li>The button keeps the name “Copy response”; a live region announces the result.</li>
+        <li class="ok"><code>./scripts/verify.sh</code> passed on the pushed tree.</li>
+      </ul>
+      <div class="path">
+        <span>Hover → tooltip</span>
+        <span>Click → Copied</span>
+        <span>Refusal → alert</span>
+      </div>
+      <p class="note" style="margin-top:16px">No visual surface was added outside the assistant action row. Mobile transcript is unchanged.</p>
+    </section>
+  </main>
+</body>
+</html>
