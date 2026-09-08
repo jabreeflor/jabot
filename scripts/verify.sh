@@ -778,7 +778,7 @@ if [[ $CHECK_BROWSER -eq 1 ]]; then
   if [[ ! -x src-tauri/target/debug/jabot-hostd || ! -x src-tauri/target/debug/fake-acp-agent ]]; then
     run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bins
   fi
-  run "browser smoke (chromium)" npm run test:browser:smoke
+  run "browser (chromium)" npm run test:browser -- --project=chromium
 fi
 
 # ---------------------------------------------------------------------------

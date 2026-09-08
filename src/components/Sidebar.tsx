@@ -76,6 +76,7 @@ export function Sidebar({
   onOpenPullRequests,
   onOpenSchedules,
   onOpenSettings,
+  onReconnect,
   onNewChat,
   onThreadMenu,
   open = true,
@@ -103,6 +104,8 @@ export function Sidebar({
   onOpenInbox: () => void;
   onOpenPullRequests: () => void;
   onOpenSchedules: () => void;
+  /** Retry the host handshake after a mid-session disconnect. */
+  onReconnect?: () => void;
   /** App-wide preferences and paired devices (#26, #19, #29). Absent before a
       host has answered: a preview build has nothing to set or revoke. */
   onOpenSettings?: () => void;
@@ -345,7 +348,16 @@ export function Sidebar({
               <div className="name">{userName}</div>
               {hostLine && (
                 <div className={hostOffline ? "host bad" : "host"}>
-                  {hostLine}
+                  <span>{hostLine}</span>
+                  {hostOffline && onReconnect && (
+                    <button
+                      type="button"
+                      className="host-reconnect"
+                      onClick={onReconnect}
+                    >
+                      Reconnect
+                    </button>
+                  )}
                 </div>
               )}
             </div>

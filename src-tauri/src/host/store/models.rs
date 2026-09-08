@@ -311,6 +311,19 @@ pub struct TranscriptEventRow {
     pub created_at: String,
 }
 
+/// One emoji the user left on a rendered transcript item (#265).
+///
+/// Keyed on the renderer item id (`e{seq}-{counter}`), not on an ACP event:
+/// a reaction is not something the harness said.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageReactionRow {
+    pub thread_id: String,
+    pub item_id: String,
+    pub emoji: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxEventRow {

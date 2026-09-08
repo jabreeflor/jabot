@@ -434,6 +434,18 @@ export function ArrowUpIcon({ className }: IconProps) {
   );
 }
 
+/** Add a reaction — a quiet face, not a character, so every platform draws it. */
+export function SmileIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={2.2}>
+      <circle cx="12" cy="12" r="7.5" />
+      <path d="M9 10.2v.4" />
+      <path d="M15 10.2v.4" />
+      <path d="M8.6 14c.8 1.4 2.1 2.1 3.4 2.1S14.6 15.4 15.4 14" />
+    </Stroke>
+  );
+}
+
 /** Back: out of the schedule prompt and into the list behind it. */
 export function ArrowLeftIcon({ className }: IconProps) {
   return (

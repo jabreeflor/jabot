@@ -71,6 +71,7 @@ import {
   THREAD_SOURCE_REMOVE,
   THREAD_STATE,
   THREAD_SUMMARY,
+  THREAD_REACT,
   THREAD_TRANSCRIPT,
   TOOLS_CONNECT,
   TOOLS_DISCONNECT,
@@ -156,6 +157,8 @@ import {
   type ThreadGitDiffResult,
   type ThreadGitParams,
   type ThreadGitPushResult,
+  type ThreadReactParams,
+  type ThreadReactResult,
   type ThreadRepoParams,
   type ThreadResumeResult,
   type ThreadSourceAddParams,
@@ -307,6 +310,11 @@ export class HostClient {
     params: ThreadTranscriptParams,
   ): Promise<ThreadTranscriptResult> {
     return this.request<ThreadTranscriptResult>(THREAD_TRANSCRIPT, params);
+  }
+
+  /** Toggle an emoji on a rendered transcript item (#265). */
+  async react(params: ThreadReactParams): Promise<ThreadReactResult> {
+    return this.request<ThreadReactResult>(THREAD_REACT, params);
   }
 
   /** New Chat. Idempotent — reopening the same id returns the same thread. */

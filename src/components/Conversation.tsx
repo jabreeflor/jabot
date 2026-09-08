@@ -29,6 +29,7 @@ export function Conversation({
   composerPlaceholder,
   onSend,
   onAction,
+  onReact,
   onBranch,
   branchingSeq,
   busy = false,
@@ -43,6 +44,8 @@ export function Conversation({
   composerPlaceholder: string;
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
+  /** Toggle an emoji on an agent bubble (#265). */
+  onReact?: (itemId: string, emoji: string) => void;
   /** Code chats only (#266): fork the conversation through this message. */
   onBranch?: (itemId: string, seq: number) => void;
   branchingSeq?: number | null;
@@ -130,6 +133,7 @@ export function Conversation({
         <Transcript
           items={items}
           onAction={onAction}
+          onReact={onReact}
           onBranch={onBranch}
           branchingSeq={branchingSeq}
         />

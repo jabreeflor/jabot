@@ -26,16 +26,16 @@ shared `.jabot-dev/data` a developer may be using on port 1420).
 
 | command | what |
 | --- | --- |
-| `npm run test:browser:smoke` | Chromium, `@smoke` only — the PR gate |
-| `npm run test:browser` | Chromium + WebKit |
+| `npm run test:browser:smoke` | Chromium, `@smoke` only |
+| `npm run test:browser` | Chromium + WebKit (recovery / workspace / smoke) |
 | `npm run test:browser:ui` | Playwright UI mode |
 | `npm run test:browser:install` | download Chromium and WebKit |
 
 `./scripts/verify.sh` stays offline and display-less. Pass
-`--check-browser` to run the Chromium smoke after the usual gates. CI's
-`browser` job is the required PR check. `@playwright/test` and
-`playwright-core` stay pinned together (1.63+); 1.56 hangs extracting
-Chromium on Node 26.
+`--check-browser` to run the Chromium suite after the usual gates. CI's
+`browser` job is the required PR check (`npx playwright test --project=chromium`).
+`@playwright/test` and `playwright-core` stay pinned together (1.63+); 1.56
+hangs extracting Chromium on Node 26.
 
 ## Isolation
 
@@ -57,8 +57,17 @@ Clicks and composer sends go through the visible controls.
 test.use({ seedChief: true }); // default; set false for first-launch tests
 ```
 
+Need Vite/host env before spawn (a fixture `gh` on PATH)? Use
+`browserTest(() => ({ pathPrefix }))` from the same file — do not fork a
+second fixture.
+
+`jabot.stopHost()` / `jabot.startHost()` kill only `jabot-hostd`.
+`jabot.restart()` is a **Vite restart**. Name the test after the mechanism
+it exercises (browser reload vs Vite restart vs host restart).
+
 WebKit is renderer compatibility, not native WKWebView/Tauri. Packaged-app
-acceptance is #235.
+acceptance is #235. Web-renderer+host limits:
+[`docs/browser-e2e.md`](../../docs/browser-e2e.md). Mobile browser is deferred.
 
 ## Failures
 

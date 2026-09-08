@@ -48,6 +48,7 @@ export function ThreadView({
   items,
   onSend,
   onAction,
+  onReact,
   onPickHost,
   onFold,
   status,
@@ -76,6 +77,7 @@ export function ThreadView({
   items: readonly TranscriptItem[];
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
+  onReact?: (itemId: string, emoji: string) => void;
   onPickHost?: (hostId: string) => void;
   /** Fold this thread from the chat itself — "Disappear until done" without
       going back to the sidebar to right-click the row you are looking at. */
@@ -162,6 +164,7 @@ export function ThreadView({
       composerPlaceholder={`Message ${thread.title}`}
       onSend={onSend}
       onAction={onAction}
+      onReact={onReact}
       onBranch={onBranch}
       branchingSeq={branchingSeq}
       busy={busy}
@@ -385,7 +388,7 @@ export function LiveThreadView({
   /** Navigate to another Code thread — a branch, or the source it came from. */
   onOpenThread?: (threadId: string) => void;
 }) {
-  const { stream, error, send, cancel, answer } = useThreadTranscript(
+  const { stream, error, send, cancel, answer, react } = useThreadTranscript(
     client,
     thread.id,
   );
@@ -457,6 +460,7 @@ export function LiveThreadView({
       // The buttons on a permission card are the agent's own ACP options, and
       // this is what carries the one the user pressed back to it (#20).
       onAction={answer}
+      onReact={react}
       onPickHost={onPickHost}
       onFold={onFold}
       status={streamStatus(stream, threadStatus(thread))}

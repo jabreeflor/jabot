@@ -5,7 +5,7 @@
 //! One agent turn that read six files and ran the tests is one thing that
 //! happened, and six stacked cards would read as six turns.
 
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { copyText } from "./copyText";
 import {
@@ -16,9 +16,11 @@ import {
   CrossIcon,
   DotIcon,
   RingIcon,
+  SmileIcon,
   SparkIcon,
 } from "./Icon";
 import { renderMarkdown } from "./markdown";
+import { REACTION_CHOICES, reactionName } from "./reactions";
 import type { ToolCall, ToolKind, TranscriptItem } from "./types";
 
 /**
@@ -35,12 +37,15 @@ const WINDOW = 80;
 export function Transcript({
   items,
   onAction,
+  onReact,
   onBranch,
   branchingSeq,
 }: {
   items: readonly TranscriptItem[];
   /** A notice card's button — a fold offer today, a permission reply in #20. */
   onAction?: (itemId: string, actionId: string) => void;
+  /** Toggle an emoji on an agent bubble (#265). */
+  onReact?: (itemId: string, emoji: string) => void;
   /** Code chats only (#266): fork the conversation through this message. */
   onBranch?: (itemId: string, seq: number) => void;
   /** Seq currently being forked, so the control can show a loading state. */
@@ -88,6 +93,7 @@ export function Transcript({
             key={entry.item.id}
             item={entry.item}
             onAction={onAction}
+            onReact={onReact}
             onBranch={onBranch}
             branchingSeq={branchingSeq}
           />
@@ -134,27 +140,49 @@ const ToolBlock = memo(ToolBlockRow, (before, after) =>
  */
 function AgentBubble({
   item,
+  onReact,
   onBranch,
   branchingSeq,
 }: {
   item: Extract<TranscriptItem, { kind: "agent" }>;
+  onReact?: (itemId: string, emoji: string) => void;
   onBranch?: (itemId: string, seq: number) => void;
   branchingSeq?: number | null;
 }) {
   const nodes = useMemo(() => renderMarkdown(item.text), [item.text]);
+  const reactions = item.reactions ?? [];
+  const canReact = onReact !== undefined;
+  const showBranch = canOfferBranch(onBranch, item.seq, item.streaming);
   return (
     <div className="msg bot">
-      <div className="bubble" data-streaming={item.streaming || undefined}>
-        {nodes}
+      <div className="bot-turn">
+        <div className="bubble" data-streaming={item.streaming || undefined}>
+          {nodes}
+        </div>
       </div>
-      <MessageActions
-        itemId={item.id}
-        seq={item.seq}
-        streaming={item.streaming}
-        onBranch={onBranch}
-        branchingSeq={branchingSeq}
-        copyText={item.text}
-      />
+      {(item.text.length > 0 ||
+        showBranch ||
+        canReact ||
+        reactions.length > 0) && (
+        <div className="msg-actions" role="group" aria-label="Message actions">
+          {item.text.length > 0 && <CopyResponseButton text={item.text} />}
+          {showBranch && onBranch && item.seq !== undefined && (
+            <BranchButton
+              itemId={item.id}
+              seq={item.seq}
+              onBranch={onBranch}
+              branchingSeq={branchingSeq}
+            />
+          )}
+          {(canReact || reactions.length > 0) && (
+            <ReactionBar
+              itemId={item.id}
+              reactions={reactions}
+              onReact={onReact}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -211,6 +239,128 @@ function CopyResponseButton({ text }: { text: string }) {
   );
 }
 
+function ReactionBar({
+  itemId,
+  reactions,
+  onReact,
+}: {
+  itemId: string;
+  reactions: readonly string[];
+  onReact?: (itemId: string, emoji: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const addRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        addRef.current?.focus();
+      }
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    rootRef.current
+      ?.querySelector<HTMLButtonElement>("[role='menuitem']")
+      ?.focus();
+  }, [open]);
+
+  function choose(emoji: string) {
+    setOpen(false);
+    onReact?.(itemId, emoji);
+    addRef.current?.focus();
+  }
+
+  return (
+    <div className="react-bar" ref={rootRef}>
+      {reactions.length > 0 && (
+        <ul className="react-marks" aria-label="Reactions">
+          {reactions.map((emoji) => {
+            const name = reactionName(emoji);
+            return (
+              <li key={emoji}>
+                {onReact ? (
+                  <button
+                    type="button"
+                    className="react-badge"
+                    aria-pressed="true"
+                    aria-label={`Remove ${name} reaction`}
+                    onClick={() => onReact(itemId, emoji)}
+                  >
+                    {emoji}
+                  </button>
+                ) : (
+                  <span className="react-badge" aria-label={`${name} reaction`}>
+                    {emoji}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {onReact && (
+        <div className="react-add-wrap">
+          <button
+            ref={addRef}
+            type="button"
+            className="react-add"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            aria-controls={open ? menuId : undefined}
+            aria-label="Add reaction"
+            onClick={() => setOpen((was) => !was)}
+          >
+            <SmileIcon />
+          </button>
+          {open && (
+            <div
+              className="react-pick"
+              id={menuId}
+              role="menu"
+              aria-label="Choose a reaction"
+            >
+              {REACTION_CHOICES.map((choice) => {
+                const selected = reactions.includes(choice.emoji);
+                return (
+                  <button
+                    key={choice.emoji}
+                    type="button"
+                    role="menuitem"
+                    aria-label={
+                      selected
+                        ? `Remove ${choice.name} reaction`
+                        : `React with ${choice.name}`
+                    }
+                    data-selected={selected || undefined}
+                    onClick={() => choose(choice.emoji)}
+                  >
+                    {choice.emoji}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Identity, not deep equality: the reducer replaces exactly the call it
     changed, so a per-element `===` is both correct and O(n) on pointers. */
 function sameCalls(a: readonly ToolCall[], b: readonly ToolCall[]): boolean {
@@ -222,11 +372,13 @@ const TranscriptEntry = memo(TranscriptRow);
 function TranscriptRow({
   item,
   onAction,
+  onReact,
   onBranch,
   branchingSeq,
 }: {
   item: Exclude<TranscriptItem, { kind: "tool" }>;
   onAction?: (itemId: string, actionId: string) => void;
+  onReact?: (itemId: string, emoji: string) => void;
   onBranch?: (itemId: string, seq: number) => void;
   branchingSeq?: number | null;
 }) {
@@ -243,18 +395,29 @@ function TranscriptRow({
       return (
         <div className="msg me">
           <div className="bubble">{item.text}</div>
-          <MessageActions
-            itemId={item.id}
-            seq={item.seq}
-            onBranch={onBranch}
-            branchingSeq={branchingSeq}
-          />
+          {canOfferBranch(onBranch, item.seq) &&
+            onBranch &&
+            item.seq !== undefined && (
+              <div
+                className="msg-actions"
+                role="group"
+                aria-label="Message actions"
+              >
+                <BranchButton
+                  itemId={item.id}
+                  seq={item.seq}
+                  onBranch={onBranch}
+                  branchingSeq={branchingSeq}
+                />
+              </div>
+            )}
         </div>
       );
     case "agent":
       return (
         <AgentBubble
           item={item}
+          onReact={onReact}
           onBranch={onBranch}
           branchingSeq={branchingSeq}
         />
@@ -269,52 +432,41 @@ function TranscriptRow({
   }
 }
 
-/**
- * Compact actions under a chat bubble.
- *
- * Copy (#267 / #274) sits on assistant replies. Branch (#266) sits on every
- * user and assistant Code message. Reactions (#265) join this same row.
- */
-function MessageActions({
+/** Fork through this bubble's last transcript seq (#266). Hidden while the
+    reply is still streaming — a cut mid-token is not a conversation. */
+function canOfferBranch(
+  onBranch: ((itemId: string, seq: number) => void) | undefined,
+  seq: number | undefined,
+  streaming?: boolean,
+): boolean {
+  return Boolean(onBranch) && seq !== undefined && seq >= 1 && !streaming;
+}
+
+function BranchButton({
   itemId,
   seq,
-  streaming,
   onBranch,
   branchingSeq,
-  copyText: copySource,
 }: {
   itemId: string;
-  seq?: number;
-  streaming?: boolean;
-  onBranch?: (itemId: string, seq: number) => void;
+  seq: number;
+  onBranch: (itemId: string, seq: number) => void;
   branchingSeq?: number | null;
-  copyText?: string;
 }) {
-  const canCopy = Boolean(copySource && copySource.length > 0);
-  const canBranch =
-    Boolean(onBranch) && seq !== undefined && seq >= 1 && !streaming;
-  if (!canCopy && !canBranch) return null;
   const busy = branchingSeq === seq;
   const branchLabel = busy ? "Branching…" : "Branch in new chat";
   return (
-    <div className="msg-actions" role="group" aria-label="Message actions">
-      {canCopy && copySource ? <CopyResponseButton text={copySource} /> : null}
-      {canBranch ? (
-        <button
-          type="button"
-          className="msg-action"
-          aria-label={branchLabel}
-          data-tooltip={branchLabel}
-          aria-busy={busy || undefined}
-          disabled={branchingSeq != null}
-          onClick={() => {
-            if (seq !== undefined) onBranch?.(itemId, seq);
-          }}
-        >
-          <BranchIcon />
-        </button>
-      ) : null}
-    </div>
+    <button
+      type="button"
+      className="msg-action"
+      aria-label={branchLabel}
+      data-tooltip={branchLabel}
+      aria-busy={busy || undefined}
+      disabled={branchingSeq != null}
+      onClick={() => onBranch(itemId, seq)}
+    >
+      <BranchIcon />
+    </button>
   );
 }
 

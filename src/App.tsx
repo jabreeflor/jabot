@@ -32,6 +32,8 @@ import {
 
 import {
   connectHost,
+  HOST_DISCONNECTED,
+  HOST_RECONNECTED,
   onNotificationActivated,
   type FolderRegisterParams,
   CREW_DRAFT,
@@ -210,7 +212,7 @@ function AppShell({
   });
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(loadSidebarOpen);
-  const { client, hello, hostError, connecting } = hostSession;
+  const { client, hello, hostError, connecting, reconnectEpoch } = hostSession;
   // Whether the fixtures may stand in for a host answer that has not arrived.
   // Only where no host exists to ask — see `hostedByApp`. Read once: the
   // webview does not change underneath a running renderer.
@@ -698,8 +700,34 @@ function AppShell({
   const host: HostTarget = {
     hostId: hello?.hostId ?? "local",
     name: hello?.hostName ?? "This Mac",
-    reachable: hello !== null,
+    reachable: hello !== null && hostError === null,
   };
+
+  const reloadInbox = inbox.reload;
+  const reloadSchedules = schedules.reload;
+  const reloadCrew = crew.reload;
+  const reloadGithub = github.reload;
+  const reloadPulls = pulls.reload;
+  const reloadDevices = devices.reload;
+  useEffect(() => {
+    if (reconnectEpoch === 0) return;
+    reloadFolders();
+    reloadInbox();
+    reloadSchedules();
+    reloadCrew();
+    reloadGithub();
+    reloadPulls();
+    reloadDevices();
+  }, [
+    reconnectEpoch,
+    reloadFolders,
+    reloadInbox,
+    reloadSchedules,
+    reloadCrew,
+    reloadGithub,
+    reloadPulls,
+    reloadDevices,
+  ]);
   const editingDraft =
     editor.open && editor.draftId
       ? ((crew.drafts ?? []).find((row) => row.draftId === editor.draftId) ??
@@ -752,6 +780,9 @@ function AppShell({
         userName={profile.userName}
         hostLine={hostLine(hello, hostError, connecting)}
         hostOffline={hostError !== null}
+        onReconnect={() => {
+          void hostSession.reconnect();
+        }}
         leavingThreadIds={leaving}
         onSelectBot={(botId) => setSelection({ view: "bot", botId })}
         onSelectThread={(threadId) =>
@@ -1260,23 +1291,61 @@ function useHost() {
   const [hello, setHello] = useState<HelloResult | null>(null);
   const [hostError, setHostError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(true);
+  const [reconnectEpoch, setReconnectEpoch] = useState(0);
+  const clientRef = useRef<HostClient | null>(null);
+
+  const reconnect = useCallback(async () => {
+    const active = clientRef.current;
+    if (!active || typeof active.hello !== "function") return;
+    setConnecting(true);
+    setHostError(null);
+    try {
+      const result = await active.hello();
+      setHello(result);
+      setHostError(null);
+      setReconnectEpoch((n) => n + 1);
+    } catch (err) {
+      setHello(null);
+      setHostError(formatError(err));
+    } finally {
+      setConnecting(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     let disconnect: (() => void) | undefined;
+    let stopNotify: (() => void) | undefined;
 
     connectHost()
-      .then(({ client, hello: result }) => {
+      .then(({ client: next, hello: result }) => {
         if (cancelled) {
-          client.disconnect();
+          next.disconnect();
           return;
         }
-        disconnect = () => client.disconnect();
+        clientRef.current = next;
+        disconnect = () => {
+          next.disconnect();
+          clientRef.current = null;
+        };
+        if (typeof next.onNotification === "function") {
+          stopNotify = next.onNotification((notification) => {
+            if (notification.method === HOST_DISCONNECTED) {
+              setHello(null);
+              setHostError("Host disconnected");
+              setConnecting(false);
+              return;
+            }
+            if (notification.method === HOST_RECONNECTED) {
+              void reconnect();
+            }
+          });
+        }
         setHello(result);
         // Kept so the feature slices can call the host directly. The identity
         // is stable for the life of the connection, which is what lets it be an
         // effect dependency without re-fetching on every render.
-        setClient(client);
+        setClient(next);
       })
       .catch((err) => {
         if (!cancelled) setHostError(formatError(err));
@@ -1287,12 +1356,13 @@ function useHost() {
 
     return () => {
       cancelled = true;
+      stopNotify?.();
       disconnect?.();
       setClient(null);
     };
-  }, []);
+  }, [reconnect]);
 
-  return { client, hello, hostError, connecting };
+  return { client, hello, hostError, connecting, reconnect, reconnectEpoch };
 }
 
 function hostLine(
@@ -1302,8 +1372,8 @@ function hostLine(
 ): string {
   // A healthy local host does not need a permanent device/version subtitle.
   // Keep transient connection state visible so failures remain actionable.
-  if (hello) return "";
   if (connecting) return "Connecting to host…";
+  if (hello && !hostError) return "";
   return hostError ?? "Host unreachable";
 }
 

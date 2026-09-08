@@ -30,6 +30,7 @@ import type {
   PermissionResolvedParams,
   PromptMode,
   QueuedPromptView,
+  MessageReactionView,
   SessionUpdateParams,
   ThreadTranscriptResult,
   TranscriptEventView,
@@ -44,6 +45,7 @@ import type {
   ToolStatus,
   TranscriptItem,
 } from "../components/types";
+import { toggleReaction } from "../components/reactions";
 
 /** Where the agent has got to in its own plan — the header's "step 3/7". */
 export interface PlanProgress {
@@ -165,7 +167,70 @@ export function hydrate(
     // belongs to the turn before it.
     lastStopReason: busy ? null : settled.lastStopReason,
   };
-  return withQueued(stream, result.queued);
+  return withReactions(withQueued(stream, result.queued), result.reactions);
+}
+
+/** Overlay persisted marks onto the agent items they belong to.
+ *
+ * Identity-preserving for every item that has no marks: streaming memoization
+ * hangs off object identity, and a hydrate that rebuilt the world would
+ * defeat it. */
+export function withReactions(
+  stream: ThreadStream,
+  reactions: readonly MessageReactionView[] | undefined,
+): ThreadStream {
+  if (!reactions || reactions.length === 0) return stream;
+  const byItem = new Map<string, string[]>();
+  for (const row of reactions) {
+    const list = byItem.get(row.itemId) ?? [];
+    if (!list.includes(row.emoji)) list.push(row.emoji);
+    byItem.set(row.itemId, list);
+  }
+  let changed = false;
+  const items = stream.items.map((item) => {
+    if (item.kind !== "agent") return item;
+    const next = byItem.get(item.id);
+    if (!next || next.length === 0) return item;
+    if (sameStrings(item.reactions ?? [], next)) return item;
+    changed = true;
+    return { ...item, reactions: next };
+  });
+  return changed ? { ...stream, items } : stream;
+}
+
+/** Toggle one emoji on one agent item. Other items stay the same objects. */
+export function toggleItemReaction(
+  stream: ThreadStream,
+  itemId: string,
+  emoji: string,
+): ThreadStream {
+  const index = stream.items.findIndex((item) => item.id === itemId);
+  if (index < 0) return stream;
+  const item = stream.items[index];
+  if (item.kind !== "agent") return stream;
+  const reactions = toggleReaction(item.reactions, emoji);
+  if (sameStrings(item.reactions ?? [], reactions)) return stream;
+  return {
+    ...stream,
+    items: replaceAt(stream.items, index, { ...item, reactions }),
+  };
+}
+
+/** Replace one item's marks with the host's answer after a toggle. */
+export function setItemReactions(
+  stream: ThreadStream,
+  itemId: string,
+  reactions: readonly string[],
+): ThreadStream {
+  const index = stream.items.findIndex((item) => item.id === itemId);
+  if (index < 0) return stream;
+  const item = stream.items[index];
+  if (item.kind !== "agent") return stream;
+  if (sameStrings(item.reactions ?? [], reactions)) return stream;
+  return {
+    ...stream,
+    items: replaceAt(stream.items, index, { ...item, reactions }),
+  };
 }
 
 /** `runState` is reported only while the run is open, so any value means yes. */
@@ -967,6 +1032,8 @@ export interface LiveTranscript {
    * [`PERMISSION_CANCEL`] (#20).
    */
   answer: (itemId: string, actionId: string) => void;
+  /** Toggle an emoji on an agent bubble (#265). */
+  react: (itemId: string, emoji: string) => void;
 }
 
 /**
@@ -1141,9 +1208,27 @@ export function useThreadTranscript(
     [client, threadId],
   );
 
+  const react = useCallback(
+    (itemId: string, emoji: string) => {
+      if (!client || !threadId) return;
+      // Optimistic: the picker should close on a mark that is already drawn.
+      setStream((current) => toggleItemReaction(current, itemId, emoji));
+      if (typeof client.react !== "function") return;
+      client
+        .react({ threadId, itemId, emoji })
+        .then((result) => {
+          setStream((current) =>
+            setItemReactions(current, itemId, result.reactions),
+          );
+        })
+        .catch((err: unknown) => setError(message(err)));
+    },
+    [client, threadId],
+  );
+
   return useMemo(
-    () => ({ stream, error, loading, send, cancel, answer }),
-    [stream, error, loading, send, cancel, answer],
+    () => ({ stream, error, loading, send, cancel, answer, react }),
+    [stream, error, loading, send, cancel, answer, react],
   );
 }
 

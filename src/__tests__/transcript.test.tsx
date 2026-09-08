@@ -83,7 +83,9 @@ describe("Transcript", () => {
     );
 
     expect(container.querySelector(".msg.me")?.textContent).toBe("Fold it.");
-    expect(container.querySelector(".msg.bot")?.textContent).toBe("Done.");
+    expect(container.querySelector(".msg.bot .bubble")?.textContent).toBe(
+      "Done.",
+    );
   });
 
   it("reports which notice action was taken and locks the card after", async () => {
@@ -211,7 +213,7 @@ describe("markdown in an agent's reply", () => {
     const { container } = render(
       <Transcript items={[{ kind: "agent", id: "a1", text }]} />,
     );
-    return container.querySelector(".msg.bot") as HTMLElement;
+    return container.querySelector(".msg.bot .bubble") as HTMLElement;
   }
 
   function me(text: string) {
@@ -536,5 +538,98 @@ describe("copy response", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: "Copy response" })).toBeNull();
+  });
+});
+
+/**
+ * Emoji reactions on an agent's reply (#265).
+ *
+ * The picker is the discoverable action; the badges under the bubble are the
+ * record. A second click on the same mark has to take it off, not mint a
+ * duplicate — that is the whole of the toggle rule.
+ */
+describe("emoji reactions on an agent bubble", () => {
+  it("lets a reader add a mark and draws it under the reply", async () => {
+    const onReact = vi.fn();
+    render(
+      <Transcript
+        items={[{ kind: "agent", id: "a1", text: "Done." }]}
+        onReact={onReact}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Add reaction" }));
+    expect(
+      screen.getByRole("menu", { name: "Choose a reaction" }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "React with thumbs up" }),
+    );
+    expect(onReact).toHaveBeenCalledWith("a1", "👍");
+  });
+
+  it("shows selected marks and toggles one off without a second copy", async () => {
+    const onReact = vi.fn();
+    render(
+      <Transcript
+        items={[
+          {
+            kind: "agent",
+            id: "a1",
+            text: "Done.",
+            reactions: ["👍", "🎉"],
+          },
+        ]}
+        onReact={onReact}
+      />,
+    );
+
+    expect(screen.getByRole("list", { name: "Reactions" }).textContent).toBe(
+      "👍🎉",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remove thumbs up reaction" }),
+    );
+    expect(onReact).toHaveBeenCalledWith("a1", "👍");
+    expect(onReact).toHaveBeenCalledTimes(1);
+  });
+
+  it("names every control for a keyboard, and Escape puts focus back", async () => {
+    render(
+      <Transcript
+        items={[{ kind: "agent", id: "a1", text: "Done." }]}
+        onReact={vi.fn()}
+      />,
+    );
+
+    const add = screen.getByRole("button", { name: "Add reaction" });
+    add.focus();
+    expect(add).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    expect(
+      screen.getByRole("menu", { name: "Choose a reaction" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "React with thumbs up" }),
+    ).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(add).toHaveFocus();
+  });
+
+  it("leaves the user bubble without a picker", () => {
+    render(
+      <Transcript
+        items={[
+          { kind: "user", id: "u1", text: "Fold it." },
+          { kind: "agent", id: "a1", text: "Done." },
+        ]}
+        onReact={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getAllByRole("button", { name: "Add reaction" }),
+    ).toHaveLength(1);
   });
 });

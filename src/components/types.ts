@@ -241,7 +241,10 @@ export type TranscriptItem =
       id: string;
       text: string;
       streaming?: boolean;
+      /** Last transcript seq that wrote this bubble — the cut for #266. */
       seq?: number;
+      /** Emoji the user left on this reply (#265). Insertion order. */
+      reactions?: readonly string[];
     }
   | { kind: "tool"; id: string; call: ToolCall }
   | {
