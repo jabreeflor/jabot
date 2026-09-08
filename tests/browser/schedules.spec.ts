@@ -46,7 +46,7 @@ test.describe("schedules", () => {
     const nameField = page.getByLabel("NAME");
     await expect(nameField).toBeVisible();
     await nameField.fill("Morning brief");
-    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(row).toContainText("Morning brief");
     if ((await row.getAttribute("aria-expanded")) !== "true") {
       await row.click();
