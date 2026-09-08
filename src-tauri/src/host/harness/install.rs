@@ -113,7 +113,7 @@ mod tests {
     use super::*;
     #[test]
     fn rejects_catalog_commands_and_unknown_harnesses() {
-        for id in ["custom", "hermes", "claude; touch /tmp/no", ""] {
+        for id in ["custom", "hermes", "cursor", "claude; touch /tmp/no", ""] {
             assert!(package(id).is_err());
         }
         assert_eq!(
