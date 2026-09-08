@@ -264,7 +264,9 @@ describe("primary views", () => {
       />,
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      screen.getByRole("button", {
+        name: "Conversation summary for Repositories",
+      }),
     );
     await expectNoSeriousA11yViolations(container);
   });

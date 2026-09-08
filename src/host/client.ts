@@ -338,11 +338,15 @@ export class HostClient {
     return this.request<ThreadSummaryResult>(THREAD_SUMMARY, params);
   }
 
-  async attachThreadRepo(params: ThreadRepoParams): Promise<ThreadSummaryResult> {
+  async attachThreadRepo(
+    params: ThreadRepoParams,
+  ): Promise<ThreadSummaryResult> {
     return this.request<ThreadSummaryResult>(THREAD_REPO_ATTACH, params);
   }
 
-  async detachThreadRepo(params: ThreadRepoParams): Promise<ThreadSummaryResult> {
+  async detachThreadRepo(
+    params: ThreadRepoParams,
+  ): Promise<ThreadSummaryResult> {
     return this.request<ThreadSummaryResult>(THREAD_REPO_DETACH, params);
   }
 
