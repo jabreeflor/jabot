@@ -45,6 +45,20 @@ async function shot(
   });
 }
 
+/** Dialog only — the dimmed page behind it AA-drifts across Linux Chromiums. */
+async function shotDialog(page: Page, name: string): Promise<void> {
+  await settle(page);
+  await page.evaluate(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+  });
+  await expect(page.getByRole("dialog")).toHaveScreenshot(`${name}.png`, {
+    maxDiffPixels: 0,
+    animations: "disabled",
+    caret: "hide",
+  });
+}
+
 test.describe("stable states @visual", () => {
   test("onboarding", async ({ app, browser }) => {
     for (const theme of THEMES) {
@@ -203,7 +217,7 @@ test.describe("stable states @visual", () => {
         await shot(opened.page, `pr-board-${theme}-desktop`);
         await signIn.click();
         await expect(opened.page.getByRole("dialog")).toBeVisible();
-        await shot(opened.page, `pr-signin-${theme}-desktop`);
+        await shotDialog(opened.page, `pr-signin-${theme}-desktop`);
       } finally {
         await opened.close();
       }
