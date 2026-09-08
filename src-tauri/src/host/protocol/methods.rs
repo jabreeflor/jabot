@@ -27,6 +27,16 @@ pub const THREAD_DELETE: &str = "thread/delete";
 pub const THREAD_STATE: &str = "thread/state";
 pub const THREAD_TRANSCRIPT: &str = "thread/transcript";
 pub const THREAD_RESUME: &str = "thread/resume";
+/// Repositories, Git state, and attached sources for a Code conversation (#269).
+pub const THREAD_SUMMARY: &str = "thread/summary";
+pub const THREAD_REPO_ATTACH: &str = "thread/repo/attach";
+pub const THREAD_REPO_DETACH: &str = "thread/repo/detach";
+pub const THREAD_SOURCE_ADD: &str = "thread/source/add";
+pub const THREAD_SOURCE_REMOVE: &str = "thread/source/remove";
+pub const THREAD_SOURCE_OPEN: &str = "thread/source/open";
+pub const THREAD_GIT_DIFF: &str = "thread/git/diff";
+pub const THREAD_GIT_COMMIT: &str = "thread/git/commit";
+pub const THREAD_GIT_PUSH: &str = "thread/git/push";
 pub const SUPERVISOR_STATUS: &str = "supervisor/status";
 pub const INBOX_RESURFACE: &str = "inbox/resurface";
 pub const HARNESS_LIST: &str = "harness/list";
@@ -117,6 +127,15 @@ pub const CLIENT_METHODS: &[&str] = &[
     CREW_DRAFT_DISMISS,
     THREAD_TRANSCRIPT,
     THREAD_RESUME,
+    THREAD_SUMMARY,
+    THREAD_REPO_ATTACH,
+    THREAD_REPO_DETACH,
+    THREAD_SOURCE_ADD,
+    THREAD_SOURCE_REMOVE,
+    THREAD_SOURCE_OPEN,
+    THREAD_GIT_DIFF,
+    THREAD_GIT_COMMIT,
+    THREAD_GIT_PUSH,
     SUPERVISOR_STATUS,
     SCHEDULE_LIST,
     SCHEDULE_CREATE,
@@ -826,6 +845,152 @@ pub struct ThreadStateResult {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pull_requests: Vec<PullRequestView>,
     pub unread: i64,
+}
+
+/// Repositories, Git state, and attached sources for one conversation (#269).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSummaryResult {
+    pub thread_id: String,
+    /// The repository Git actions apply to unless the caller names another.
+    pub selected_repo_id: String,
+    pub repositories: Vec<ThreadRepoSummary>,
+    pub sources: Vec<ThreadSourceView>,
+    /// Registered folders not yet attached, so the selector can offer them.
+    pub available_folders: Vec<ThreadRepoChoice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadRepoSummary {
+    pub id: String,
+    pub name: String,
+    pub primary: bool,
+    /// Where this conversation is executing — `Local` on this host.
+    pub environment: String,
+    pub is_git: bool,
+    /// The checkout still exists on disk.
+    pub available: bool,
+    /// `ok` | `unavailable` | `empty` | `not_git`.
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additions: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deletions: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forge_host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compare_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull_request_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pull_request_number: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadRepoChoice {
+    pub folder_id: String,
+    pub name: String,
+    pub path: String,
+    pub is_git: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSourceView {
+    pub id: String,
+    pub name: String,
+    /// `file` or `image`.
+    pub kind: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    pub available: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadRepoParams {
+    pub thread_id: String,
+    pub folder_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSourceAddParams {
+    pub thread_id: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSourceRefParams {
+    pub thread_id: String,
+    pub source_id: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSourceOpenResult {
+    pub opened: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadGitParams {
+    pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadGitCommitParams {
+    pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo_id: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadGitDiffResult {
+    pub repo_id: String,
+    pub additions: i64,
+    pub deletions: i64,
+    pub files: Vec<ThreadGitFile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compare_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadGitFile {
+    pub path: String,
+    pub status: String,
+    pub additions: i64,
+    pub deletions: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadGitPushResult {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compare_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -2088,6 +2253,40 @@ impl ThreadFoldParams {
 impl ThreadRefParams {
     pub fn validate(&self) -> Result<(), super::error::RpcError> {
         require_non_empty(&self.thread_id, "threadId")
+    }
+}
+
+impl ThreadRepoParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")?;
+        require_non_empty(&self.folder_id, "folderId")
+    }
+}
+
+impl ThreadSourceAddParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")?;
+        require_non_empty(&self.path, "path")
+    }
+}
+
+impl ThreadSourceRefParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")?;
+        require_non_empty(&self.source_id, "sourceId")
+    }
+}
+
+impl ThreadGitParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")
+    }
+}
+
+impl ThreadGitCommitParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")?;
+        require_non_empty(&self.message, "message")
     }
 }
 

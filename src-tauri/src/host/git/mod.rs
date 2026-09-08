@@ -52,6 +52,7 @@
 //! about a "preparing" state that nothing draws yet.
 
 pub mod setup;
+pub mod status;
 pub mod worktree;
 
 use std::collections::HashSet;

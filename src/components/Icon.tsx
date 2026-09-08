@@ -225,6 +225,56 @@ export function ChevronDownIcon({ className }: IconProps) {
   );
 }
 
+export function ChevronRightIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className}>
+      <path d="M9 6l6 6-6 6" />
+    </Stroke>
+  );
+}
+
+/** Inspect changes: two stacked revisions. */
+export function DiffIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <path d="M8 5h10v14H8Z" />
+      <path d="M6 7H4v14h10v-2" />
+    </Stroke>
+  );
+}
+
+/** Commit or push: an arrow leaving the tree. */
+export function UploadIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <path d="M12 16V5" />
+      <path d="M7 9.5 12 4.5 17 9.5" />
+      <path d="M5 19h14" />
+    </Stroke>
+  );
+}
+
+/** Compare branch: two tips meeting. */
+export function CompareIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <circle cx="6" cy="6" r="2.2" />
+      <circle cx="18" cy="18" r="2.2" />
+      <path d="M6 8.2v5.2A3.6 3.6 0 0 0 9.6 17H16" />
+      <path d="M18 15.8V10.6A3.6 3.6 0 0 0 14.4 7H8" />
+    </Stroke>
+  );
+}
+
+export function FileIcon({ className }: IconProps) {
+  return (
+    <Stroke className={className} width={1.8}>
+      <path d="M7 3.5h7l5 5V20a1.5 1.5 0 0 1-1.5 1.5h-10.5A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5Z" />
+      <path d="M14 3.5V9h5" />
+    </Stroke>
+  );
+}
+
 /** A prompt caret: what a code session is, as opposed to a bot with a face. */
 export function CodeSessionIcon({ className }: IconProps) {
   return (

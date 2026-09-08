@@ -59,8 +59,17 @@ import {
   THREAD_FOLD,
   THREAD_OPEN,
   THREAD_REOPEN,
+  THREAD_GIT_COMMIT,
+  THREAD_GIT_DIFF,
+  THREAD_GIT_PUSH,
+  THREAD_REPO_ATTACH,
+  THREAD_REPO_DETACH,
   THREAD_RESUME,
+  THREAD_SOURCE_ADD,
+  THREAD_SOURCE_OPEN,
+  THREAD_SOURCE_REMOVE,
   THREAD_STATE,
+  THREAD_SUMMARY,
   THREAD_TRANSCRIPT,
   TOOLS_CONNECT,
   TOOLS_DISCONNECT,
@@ -141,8 +150,17 @@ import {
   type ThreadFoldParams,
   type ThreadOpenParams,
   type ThreadRefParams,
+  type ThreadGitCommitParams,
+  type ThreadGitDiffResult,
+  type ThreadGitParams,
+  type ThreadGitPushResult,
+  type ThreadRepoParams,
   type ThreadResumeResult,
+  type ThreadSourceAddParams,
+  type ThreadSourceOpenResult,
+  type ThreadSourceRefParams,
   type ThreadStateResult,
+  type ThreadSummaryResult,
   type ThreadTranscriptParams,
   type ThreadTranscriptResult,
   type ToolConnectResult,
@@ -313,6 +331,51 @@ export class HostClient {
 
   async threadState(params: ThreadRefParams): Promise<ThreadStateResult> {
     return this.request<ThreadStateResult>(THREAD_STATE, params);
+  }
+
+  /** Repositories, Git state, and attached sources for a Code conversation (#269). */
+  async threadSummary(params: ThreadRefParams): Promise<ThreadSummaryResult> {
+    return this.request<ThreadSummaryResult>(THREAD_SUMMARY, params);
+  }
+
+  async attachThreadRepo(params: ThreadRepoParams): Promise<ThreadSummaryResult> {
+    return this.request<ThreadSummaryResult>(THREAD_REPO_ATTACH, params);
+  }
+
+  async detachThreadRepo(params: ThreadRepoParams): Promise<ThreadSummaryResult> {
+    return this.request<ThreadSummaryResult>(THREAD_REPO_DETACH, params);
+  }
+
+  async addThreadSource(
+    params: ThreadSourceAddParams,
+  ): Promise<ThreadSummaryResult> {
+    return this.request<ThreadSummaryResult>(THREAD_SOURCE_ADD, params);
+  }
+
+  async removeThreadSource(
+    params: ThreadSourceRefParams,
+  ): Promise<ThreadSummaryResult> {
+    return this.request<ThreadSummaryResult>(THREAD_SOURCE_REMOVE, params);
+  }
+
+  async openThreadSource(
+    params: ThreadSourceRefParams,
+  ): Promise<ThreadSourceOpenResult> {
+    return this.request<ThreadSourceOpenResult>(THREAD_SOURCE_OPEN, params);
+  }
+
+  async threadGitDiff(params: ThreadGitParams): Promise<ThreadGitDiffResult> {
+    return this.request<ThreadGitDiffResult>(THREAD_GIT_DIFF, params);
+  }
+
+  async threadGitCommit(
+    params: ThreadGitCommitParams,
+  ): Promise<ThreadSummaryResult> {
+    return this.request<ThreadSummaryResult>(THREAD_GIT_COMMIT, params);
+  }
+
+  async threadGitPush(params: ThreadGitParams): Promise<ThreadGitPushResult> {
+    return this.request<ThreadGitPushResult>(THREAD_GIT_PUSH, params);
   }
 
   /**
