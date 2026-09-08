@@ -172,7 +172,9 @@ test.describe("browser axe @a11y @smoke", () => {
         const token = opened.page.getByLabel(/PASTE IT HERE/);
         if (await token.count()) {
           await token.fill("ghp_not-a-real-token");
-          await opened.page.getByRole("button", { name: "Sign in" }).click();
+          await opened.page
+            .getByRole("button", { name: "Sign in", exact: true })
+            .click();
           await expect(opened.page.getByRole("alert")).toBeVisible({
             timeout: 15_000,
           });

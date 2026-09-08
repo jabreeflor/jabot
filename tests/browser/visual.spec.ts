@@ -20,6 +20,7 @@ import {
   seedPermissionAsk,
   seedSchedule,
 } from "./support/seed";
+import { agentBubble } from "./ui";
 
 const THEMES: readonly CaptureTheme[] = ["dark", "light"];
 
@@ -70,9 +71,11 @@ test.describe("stable states @visual", () => {
         try {
           const page = opened.page;
           await page.getByRole("button", { name: /^Chief/ }).click();
-          await expect(page.getByText(FAKE_ACP_REPLY)).toBeVisible();
           await expect(
-            page.getByText("hello from the visual suite"),
+            agentBubble(page).filter({ hasText: FAKE_ACP_REPLY }),
+          ).toBeVisible();
+          await expect(
+            page.getByText("hello from the visual suite", { exact: true }),
           ).toBeVisible();
           await shot(page, `sidebar-stream-${theme}-${windowSize}`);
         } finally {
