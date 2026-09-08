@@ -103,7 +103,7 @@ export default tseslint.config(
     // Playwright fixtures take a callback named `use` — not React's `use`.
     // Keep hooks on for the rest of the tree; the probes under src/ still fire.
     name: "jabot/playwright-fixtures",
-    files: ["tests/browser/fixtures.ts"],
+    files: ["tests/browser/**/*.ts"],
     rules: {
       "react-hooks/rules-of-hooks": "off",
     },
