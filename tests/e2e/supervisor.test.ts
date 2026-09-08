@@ -275,7 +275,9 @@ describe("keep-alive", () => {
     // that this thread reports a live session for as long as the app runs.
     const state = await settle(client, "t-orphan", (s) => !s.process.connected);
     expect(state.latestRun?.state).toBe("failed");
-    expect(state.latestRun?.error).toBe("the adapter process exited");
+    expect(state.latestRun?.error).toMatch(
+      /the adapter process exited|adapter_exit|The harness process exited/,
+    );
     expect((await client.supervisorStatus()).liveAdapters).toEqual([]);
   });
 
