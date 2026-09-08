@@ -59,6 +59,8 @@ new_tree() { # name -> echoes path
     "$d/src-tauri/gen/schemas" \
     "$d/node_modules/left-pad" \
     "$d/dist" \
+    "$d/test-results" \
+    "$d/playwright-report" \
     "$d/.worktrees/nested" \
     "$d/.claude/worktrees/agent"
   cp "$REPO_ROOT/prettier.config.mjs" "$d/"
@@ -228,6 +230,14 @@ ignores_tauri_gen() {
   ignores_stays_ugly "$d" "src-tauri/gen/schemas/desktop-schema.json"
 }
 
+ignores_playwright_output() {
+  local d
+  d=$(new_tree ign-pw)
+  printf '%s' $'export const ok = 1;\n' > "$d/src/ok.ts"
+  ignores_stays_ugly "$d" "test-results/last-run.json" || return
+  ignores_stays_ugly "$d" "playwright-report/stats.json"
+}
+
 ignores_package_lock() {
   local d
   d=$(new_tree ign-lock)
@@ -279,6 +289,7 @@ run_case "ignores_vendor_adapters"         ignores_vendor_adapters
 run_case "ignores_nested_worktrees"        ignores_nested_worktrees
 run_case "ignores_dist"                    ignores_dist
 run_case "ignores_tauri_gen"               ignores_tauri_gen
+run_case "ignores_playwright_output"       ignores_playwright_output
 run_case "ignores_package_lock"            ignores_package_lock
 run_case "refuses_unknown_flag"            refuses_unknown_flag
 

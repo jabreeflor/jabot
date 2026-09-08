@@ -10,6 +10,12 @@ src-tauri/target
 src-tauri/gen/
 *.local
 
+# Playwright writes these even when gitignored; --check-browser then
+# re-runs format and would fail on last-run.json without this.
+/test-results/
+/playwright-report/
+/blob-report/
+
 # Generated lockfiles — not hand-edited, and huge
 package-lock.json
 **/package-lock.json

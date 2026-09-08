@@ -134,7 +134,7 @@ one run tells you everything that is wrong.
 | `macos lint tests` | the path planner that turns CI's macOS jobs on still matches what `docs/macos-lint.md` claims (`scripts/tests/macos-lint.test.sh`) | you changed the planner or the notify/native check scripts; run `./scripts/tests/macos-lint.test.sh` |
 | `typecheck` | `tsc --noEmit`, strict: implicit any, unused locals, unused parameters, no fallthrough | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. `tsc` does **not** reject an explicit `any` annotation or an `as any` cast — that is the linter, below. |
 | `frontend lint` | shared ESLint: Rules of Hooks, exhaustive-deps, `@typescript-eslint/no-explicit-any`, and type-aware `no-floating-promises` / `no-misused-promises` | replace `any` with a concrete type, a generic, or `unknown` plus narrowing. A discarded promise needs `await`, a returned promise, or `void` plus an explicit error strategy. `npm run lint` is the same command; `npm run lint:fix` applies safe fixes (`no-explicit-any` is not auto-fixable). A clean tree does not prove the rules are on — `scripts/tests/lint-probe.mjs` and `scripts/tests/lint-rules.mjs` do. |
-| `frontend format` | first-party TS/TSX, JS/MJS, CSS, and JSON match Prettier (`npm run format:check`), and the ignore/check/apply contract still holds (`npm run test:format`) | `npm run format` to apply. Do not format vendored plugins, adapters, lockfiles, generated `src-tauri/gen/`, or nested worktrees — `.prettierignore` lists them. |
+| `frontend format` | first-party TS/TSX, JS/MJS, CSS, and JSON match Prettier (`npm run format:check`), and the ignore/check/apply contract still holds (`npm run test:format`) | `npm run format` to apply. Do not format vendored plugins, adapters, lockfiles, generated `src-tauri/gen/`, Playwright output, or nested worktrees — `.prettierignore` lists them. |
 | `unit tests` | 200+ vitest cases in jsdom: React components, host client, and axe on the primary views | `npx vitest --project unit` to iterate; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | `rust clippy` | `-D warnings` over all targets, `dev-bins` included | fix, or justify a narrow `#[allow]` in the code. Do not suggest APIs newer than the `msrv` in `src-tauri/clippy.toml`. |
@@ -187,8 +187,8 @@ Prettier is the one frontend formatter — the Rust equivalent of `cargo fmt`.
 It covers first-party TypeScript, JavaScript, CSS, and applicable JSON.
 Markdown, HTML prototypes, YAML workflows, lockfiles, vendored
 `plugins/` / `src-tauri/vendor/`, build output, generated
-`src-tauri/gen/` schemas, dependencies, and nested worktrees are out of
-scope (see `.prettierignore`).
+`src-tauri/gen/` schemas, Playwright `test-results/` / `playwright-report/`,
+dependencies, and nested worktrees are out of scope (see `.prettierignore`).
 
 ```bash
 npm run format:check   # read-only; this is the verify.sh gate
