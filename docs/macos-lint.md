@@ -78,7 +78,8 @@ rustup target add x86_64-apple-darwin
 # same stage, via the existing opt-in:
 ./scripts/verify.sh --check-mac
 
-# Keychain + lib.rs cfg(macos) branches. Needs a Mac.
+# Keychain + lib.rs cfg(macos) branches. Needs a Mac. Stubs the
+# adapters glob when the real tree is not staged (tauri-build).
 ./scripts/check-macos-clippy.sh
 
 # Planner matches, refusals, and (if the Apple target is installed)
@@ -92,7 +93,7 @@ These are not missing coverage; they are the cost and honesty limits from
 #73 / #109 / the bundle-job comment in `.github/workflows/ci.yml`.
 
 - **Default `./scripts/verify.sh`.** Stays offline and Mac-free. `--check-mac`
-  remains opt-in locally. The planner tests (2d) run on that path; the
+  remains opt-in locally. The planner tests (2e) run on that path; the
   cross-check itself does not.
 - **Cross-checking the whole Tauri crate from Linux.**
   `objc2-exception-helper` needs an Apple `cc`. Do not add a

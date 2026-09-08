@@ -17,6 +17,7 @@ reasoning is in
 | Entitlements (and the audit) | [`src-tauri/entitlements.plist`](../src-tauri/entitlements.plist) |
 | Update feed | `https://github.com/jabreeflor/jabot/releases/latest/download/latest.json` |
 | Installer (`curl \| bash`) | [`scripts/install.sh`](../scripts/install.sh), uploaded as a release asset |
+| Packaged-app acceptance (#235) | [`docs/macos-acceptance.md`](macos-acceptance.md), [`scripts/macos-acceptance.sh`](../scripts/macos-acceptance.sh) |
 
 ---
 
@@ -152,7 +153,12 @@ to trigger a check, it also needs `updater:default` in
 
 A green release run is not by itself evidence that updates work: it proves the
 artifacts were signed and published, not that an installed copy accepts them.
-That is what the feed verification below is for.
+That is what the feed verification below is for. Archive *presence*
+(`.app.tar.gz` + `.sig`) is checked automatically by
+`./scripts/macos-acceptance.sh updater-artifacts` at the end of
+`release.yml`. Installing a signed update is a named manual release step —
+see [macos-acceptance.md](macos-acceptance.md) (#235). Do not treat the
+headless macOS bundle job, or a Playwright WebKit run, as that step.
 
 ---
 
@@ -344,7 +350,10 @@ The log names the offending path, which for us will most often be a nested
 executable that was added to the bundle without being signed.
 
 Then the real test, once: mount the downloaded `.dmg`, drag to
-`/Applications`, launch, and start a thread. Gatekeeper problems and
+`/Applications`, launch, and start a thread. The packaged-app acceptance
+matrix ([macos-acceptance.md](macos-acceptance.md)) is the rest of that
+story: Tauri IPC, a synthetic `fake-acp` turn on temp data, quit/relaunch,
+and the notification / signed-update cells that stay manual (D-019). Gatekeeper problems and
 hardened-runtime problems look nothing alike — the first blocks the app, the
 second lets the app open and then kills the adapter subprocess. Adapters are
 `fork`/`exec`ed, so macOS judges each one by its own signature and no

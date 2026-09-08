@@ -65,6 +65,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh --fast` | tight iteration — skips building `jabot-hostd` and the e2e suite |
 | `./scripts/verify.sh --check-mac` | local repro of the PR `mac notify cross-check` — **run it when you touch `src-tauri/src/notify/`** so you find rot before CI does |
 | `./scripts/check-macos-clippy.sh` | on a Mac, local repro of the PR `macos clippy` job — Keychain + `lib.rs` cfg(macos) branches |
+| `./scripts/macos-acceptance.sh check` | packaged-app matrix / isolation (Linux). **`run` needs a Mac** — [docs/macos-acceptance.md](docs/macos-acceptance.md), #235 |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
@@ -139,6 +140,7 @@ one run tells you everything that is wrong.
 | `e2e (ts to rust host)` | 123 cases over 17 suites: the production TypeScript client against a live `jabot-hostd` over real NDJSON | `npx vitest run --project e2e -t "<name>"`. Needs the binary, so build it first or run the full `verify.sh`. Not run under `--fast`. |
 | `renderer build` | `vite build` produces a bundle | usually an import that typechecks but does not resolve |
 | `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
+| `macos acceptance` | #235: the packaged-app matrix still names Tauri IPC, Dock, Keychain, adapters, and updater archives; isolation still refuses production app data; Playwright WebKit is not this gate | you changed the script, the docs, or the workflows; `./scripts/macos-acceptance.sh check` and `./scripts/tests/macos-acceptance.test.sh` name the cell that moved. Launching `JaBot.app` is `run` on a Mac — D-019 is why that is not this stage |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
@@ -322,6 +324,12 @@ filing or "fixing" a gap.
   `src-tauri/src/notify/`, still run `./scripts/verify.sh --check-mac`
   locally** so you see the failure before the PR check does. It needs the
   network and `rustup target add x86_64-apple-darwin`, and no Mac.
+  Native-sensitive PRs also run the packaged-app matrix in
+  [`.github/workflows/macos-native.yml`](.github/workflows/macos-native.yml)
+  (Linux, path-filtered — not a 10x `macos-latest` bundle). Packaged-app
+  launch is `#235` / [docs/macos-acceptance.md](docs/macos-acceptance.md);
+  label a PR `macos-acceptance` to opt into the expensive Mac job. Do not call
+  Playwright WebKit a Tauri acceptance run.
 - A test that cannot fail when the thing it covers breaks is worse than no
   test, because it reads as coverage. Break it once and watch it fail before
   you trust it.
