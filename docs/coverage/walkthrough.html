@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Enforce scoped frontend coverage and report Rust coverage</title>
+  <style>
+    :root {
+      --bg: #14120f;
+      --ink: #f4efe6;
+      --muted: #b4ab9c;
+      --card: #1e1b17;
+      --line: #3a342b;
+      --accent: #e8c36a;
+      --good: #7dcea0;
+      --warn: #e8a87c;
+      --bad: #e07a6a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 "Figtree", "Iowan Old Style", Georgia, serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    main { max-width: 820px; margin: 0 auto; padding: 48px 28px 80px; }
+    h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 8px; }
+    .lede { color: var(--muted); font-size: 1.1rem; margin: 0 0 32px; }
+    h2 { font-size: 1.25rem; margin: 40px 0 12px; color: var(--accent); }
+    p, li { color: var(--ink); }
+    .muted { color: var(--muted); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin: 12px 0 20px;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .flow .box {
+      background: #2a261f;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 0.92rem;
+    }
+    .flow .box strong { display: block; color: var(--accent); margin-bottom: 4px; }
+    .arrow { align-self: center; color: var(--muted); font-size: 1.4rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.8rem; }
+    .in { background: #1f3a2c; color: var(--good); }
+    .out { background: #3a241f; color: var(--bad); }
+    .unit { background: #3a3220; color: var(--accent); }
+    .e2e { background: #24323a; color: #9ec9e8; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; }
+    ol.look li { margin: 8px 0; }
+    @media (max-width: 720px) {
+      .flow { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); justify-self: center; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Enforce scoped frontend coverage and report Rust coverage</h1>
+    <p class="lede">#230 / PR 254 — a unit floor that counts untested new files, honest about what it is not, and Rust reports without a premature threshold.</p>
+
+    <h2>How it works</h2>
+    <p>Before this change the audit at <code>c898b8f</code> already knew the unit number (93 / 85.5 / 81) and that <code>client.ts</code> looked thin in jsdom. Nothing enforced it, and Rust had no report at all.</p>
+    <div class="card flow">
+      <div class="box">
+        <strong>Write src/NewView.tsx</strong>
+        No test imports it.
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <strong>verify unit + coverage</strong>
+        <code>all: true</code> + include <code>src/**/*.{ts,tsx}</code>
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <strong>Floor 90 / 85 / 80</strong>
+        Unimported file pulls the totals down. Gate fails.
+      </div>
+    </div>
+    <p>The e2e project is <em>not</em> folded into that number. <code>HostClient</code> methods that unit tests stub are exercised over a live <code>jabot-hostd</code>; pretending the unit report is whole-product coverage is the lie this policy refuses.</p>
+    <p>Rust is a second report, not a second floor. First Linux baseline: <strong>86.31% lines / 83.76% functions / 85.65% regions</strong>, including 0% process mains (<code>jabot-hostd</code>, Tauri <code>lib.rs</code>). CI installs <code>llvm-tools-preview</code> and <code>cargo-llvm-cov</code> in workflow setup, then sets <code>JABOT_RUST_COVERAGE=1</code> so verify’s rust-tests stage is one instrumented run. <code>scripts/coverage-rust.sh</code> exits 2 if the binary is missing — it will not <code>cargo install</code>.</p>
+
+    <h2>What counts</h2>
+    <table>
+      <thead>
+        <tr><th>Kind</th><th>In?</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Production <code>src/**/*.{ts,tsx}</code>, even unused</td><td><span class="tag in">in</span></td><td>A new view that nothing imports must still move the number.</td></tr>
+        <tr><td>Co-located tests / <code>__tests__</code></td><td><span class="tag out">out</span></td><td>Scoring tests makes padding look like progress.</td></tr>
+        <tr><td><code>*.d.ts</code>, CSS, assets</td><td><span class="tag out">out</span></td><td>No runtime the unit project can execute.</td></tr>
+        <tr><td><code>plugins/**</code> (vendored jabstack)</td><td><span class="tag out">out</span></td><td>Not JaBot renderer source.</td></tr>
+        <tr><td>Nested <code>worktrees/**</code></td><td><span class="tag out">out</span></td><td>Another checkout is not this tree’s product.</td></tr>
+        <tr><td>TS e2e vs live host</td><td><span class="tag e2e">separate</span></td><td>Behaviour coverage; not merged into the unit floor.</td></tr>
+        <tr><td>Rust <code>cargo test</code> (dev-bins)</td><td><span class="tag unit">report only</span></td><td>No threshold until macOS-only / OAuth / <code>gh</code> gaps are understood.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Why 90 / 85 / 80</h2>
+    <p>Originally measured on Node <strong>22.14.0</strong> at the audit commit: <strong>92.96% lines, 85.52% branches, 81.16% functions</strong>. CI is now Node 26 (#215); jsdom <code>localStorage</code> is handled by <code>--no-experimental-webstorage</code>. The proposed start is a hold-the-line floor with a few points of headroom, not a target to climb. #229 is on <code>main</code>; coverage is still a measurement, not a retry harness.</p>
+    <p><code>src/host/client.ts</code> is 52% in unit because slices stub it. <code>selectTransport</code> and the hot-transport error path are already tested. The rest is one-line <code>this.request(METHOD)</code> wrappers and Tauri IPC — the host-protocol suite’s job. No method-mirroring tests were added to lift the number.</p>
+
+    <h2>What to look at</h2>
+    <ol class="look">
+      <li><code>vitest.config.ts</code> — include / exclude / thresholds / <code>reportOnFailure</code>.</li>
+      <li><code>scripts/tests/coverage.test.sh</code> — a throwaway fixture where an unimported file fails 90%, and covering it passes.</li>
+      <li><code>.github/workflows/ci.yml</code> — llvm-cov install in setup; artifact upload with <code>if: always()</code>.</li>
+      <li><code>scripts/coverage-rust.sh</code> + <code>scripts/verify.sh</code> — offline gate; tool install stays in CI.</li>
+      <li><code>docs/coverage.md</code> — unit vs e2e, client.ts investigation, Rust high-risk gaps.</li>
+    </ol>
+
+    <h2>How to verify</h2>
+    <div class="card">
+      <p><code>npm run test:coverage:policy</code> — fixture miss fails; excludes hold.</p>
+      <p><code>npm run test:coverage</code> — unit suite, floors hold on Node 26.</p>
+      <p><code>./scripts/verify.sh</code> — whole gate, including the unit floor. Local rust stays <code>cargo test</code>.</p>
+      <p>On the PR: download the <code>coverage-reports</code> artifact even from a red run. Open <code>coverage/SCOPE.md</code> first.</p>
+    </div>
+  </main>
+</body>
+</html>

@@ -132,15 +132,16 @@ one run tells you everything that is wrong.
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
 | `macos lint tests` | the path planner that turns CI's macOS jobs on still matches what `docs/macos-lint.md` claims (`scripts/tests/macos-lint.test.sh`) | you changed the planner or the notify/native check scripts; run `./scripts/tests/macos-lint.test.sh` |
+| `coverage policy` | the frontend include/exclude list and 90/85/80 floors still fail a fixture that violates them (`scripts/tests/coverage.test.sh`) | you changed coverage config or CI upload wiring; run `npm run test:coverage:policy`. Scope and the unit-vs-e2e split: [docs/coverage.md](docs/coverage.md) |
 | `typecheck` | `tsc --noEmit`, strict: implicit any, unused locals, unused parameters, no fallthrough | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. `tsc` does **not** reject an explicit `any` annotation or an `as any` cast — that is the linter, below. |
 | `frontend lint` | shared ESLint: Rules of Hooks, exhaustive-deps, `@typescript-eslint/no-explicit-any`, and type-aware `no-floating-promises` / `no-misused-promises` | replace `any` with a concrete type, a generic, or `unknown` plus narrowing. A discarded promise needs `await`, a returned promise, or `void` plus an explicit error strategy. `npm run lint` is the same command; `npm run lint:fix` applies safe fixes (`no-explicit-any` is not auto-fixable). A clean tree does not prove the rules are on — `scripts/tests/lint-probe.mjs` and `scripts/tests/lint-rules.mjs` do. |
 | `frontend format` | first-party TS/TSX, JS/MJS, CSS, and JSON match Prettier (`npm run format:check`), and the ignore/check/apply contract still holds (`npm run test:format`) | `npm run format` to apply. Do not format vendored plugins, adapters, lockfiles, generated `src-tauri/gen/`, or nested worktrees — `.prettierignore` lists them. |
-| `unit tests` | 200+ vitest cases in jsdom: React components, host client, and axe on the primary views | `npx vitest --project unit` to iterate; `npm run test:a11y` for the axe slice |
+| `unit tests` | 200+ vitest cases in jsdom, plus scoped `src/**` coverage floors (90/85/80 lines/branches/functions). Unimported production files count. | `npx vitest --project unit` to iterate without coverage; `npm run test:coverage` for the gated run; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | `rust clippy` | `-D warnings` over all targets, `dev-bins` included | fix, or justify a narrow `#[allow]` in the code. Do not suggest APIs newer than the `msrv` in `src-tauri/clippy.toml`. |
 | `default-features check` | the crate still compiles *without* `dev-bins`, i.e. what `tauri build` actually compiles | usually a `cfg` or an import that only exists under the dev binaries |
-| `rust tests` | host unit tests + 8 integration suites | `cargo test --manifest-path src-tauri/Cargo.toml --features dev-bins <name>` |
-| `build jabot-hostd` | the NDJSON host the e2e suite drives still links | not run under `--fast` |
+| `rust tests` | host unit tests + 8 integration suites. CI sets `JABOT_RUST_COVERAGE=1` so this stage is `cargo llvm-cov` (no extra test run). There is no Rust floor yet. | `cargo test --manifest-path src-tauri/Cargo.toml --features dev-bins <name>` locally; `./scripts/coverage-rust.sh` if you have installed `cargo-llvm-cov` yourself. Reports: [docs/coverage.md](docs/coverage.md) |
+| `build jabot-hostd` | `jabot-hostd` and `fake-acp-agent` still link (e2e needs both; llvm-cov's target dir is not `target/debug`) | not run under `--fast` |
 | `e2e (ts to rust host)` | 123 cases over 17 suites: the production TypeScript client against a live `jabot-hostd` over real NDJSON | `npx vitest run --project e2e -t "<name>"`. Needs the binary, so build it first or run the full `verify.sh`. Not run under `--fast`. |
 | `renderer build` | `vite build` produces a bundle | usually an import that typechecks but does not resolve |
 | `browser smoke (chromium)` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd`. CI's `browser` job is the required PR check | `npx playwright install chromium`, then `npm run test:browser:smoke`. Needs the host binaries (`npm run host:build`). |
@@ -367,7 +368,13 @@ filing or "fixing" a gap.
 - Anything added to `verify.sh` must run offline, need no display, no macOS and
   no GitHub token, and be fast enough that people still run it. If a check
   needs any of those, it goes behind a flag — `--check-toolchain`,
-  `--check-mac`, and `--check-browser` are the precedents.
+  `--check-mac`, and `--check-browser` are the precedents. Coverage tool
+  *installs* (`cargo-llvm-cov`, extra Node majors) belong in CI setup,
+  not in this script.
+- Frontend coverage floors live in `vitest.config.ts` and are part of the
+  default unit stage. `npm test` is still the fast no-coverage slice. Do not
+  add snapshot or implementation-mirroring tests just to lift a number — see
+  [docs/coverage.md](docs/coverage.md).
 - `src-tauri/src/notify/mac.rs` is `cfg(target_os = "macos")`, so the default
   gate compiles straight past it and CI's macOS `bundle` job does not run on
   pull requests. PRs that touch `notify/`, its check, or a shared Cargo /

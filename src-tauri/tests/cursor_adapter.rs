@@ -4,7 +4,9 @@
 //! real supervisor against `fake-acp-agent` in Cursor-shaped modes so a
 //! startup failure or an empty turn cannot be mistaken for a successful reply.
 
-use std::path::PathBuf;
+mod common;
+use common::fake_agent;
+
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -16,17 +18,6 @@ use serde_json::{json, Value};
 
 fn req(id: i64, method: &str, params: Option<Value>) -> JsonRpcRequest {
     JsonRpcRequest::new(RequestId::Number(id), method, params)
-}
-
-fn fake_agent() -> String {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_fake_acp_agent") {
-        return path.to_string();
-    }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .join("target/debug/fake-acp-agent")
-        .to_string_lossy()
-        .into_owned()
 }
 
 struct Host {

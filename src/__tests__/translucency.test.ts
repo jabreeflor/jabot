@@ -7,11 +7,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   applyTranslucency,
+  bootTranslucency,
   prefersReducedTransparency,
   previewTranslucencyRequested,
+  probeNativeTranslucency,
   resolveTranslucency,
   subscribeReducedTransparency,
 } from "../translucency";
+import { invoke } from "@tauri-apps/api/core";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 function stubMatchMedia(reduced: boolean) {
   const listeners = new Set<(event: MediaQueryListEvent) => void>();
@@ -101,6 +106,47 @@ describe("applyTranslucency", () => {
     expect(document.documentElement.dataset.translucency).toBeUndefined();
     mq.dispatch(false);
     expect(document.documentElement.dataset.translucency).toBe("on");
+    stop();
+  });
+});
+
+describe("probeNativeTranslucency / bootTranslucency", () => {
+  it("is false outside Tauri", async () => {
+    expect(await probeNativeTranslucency()).toBe(false);
+    stubMatchMedia(false);
+    expect(await bootTranslucency()).toBe(false);
+    expect(document.documentElement.dataset.translucency).toBeUndefined();
+  });
+
+  it("follows the host when Tauri reports the material stuck", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    vi.mocked(invoke).mockResolvedValue(true);
+    stubMatchMedia(false);
+    expect(await probeNativeTranslucency()).toBe(true);
+    expect(await bootTranslucency()).toBe(true);
+    expect(document.documentElement.dataset.translucency).toBe("on");
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  });
+
+  it("stays opaque when the host invoke fails", async () => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
+    vi.mocked(invoke).mockRejectedValue(new Error("no window"));
+    expect(await probeNativeTranslucency()).toBe(false);
+    delete (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+  });
+
+  it("treats a missing matchMedia as not reduced", () => {
+    vi.spyOn(window, "matchMedia").mockImplementation(() => {
+      throw new Error("no mq");
+    });
+    expect(prefersReducedTransparency()).toBe(false);
+    const stop = subscribeReducedTransparency(() => {});
     stop();
   });
 });

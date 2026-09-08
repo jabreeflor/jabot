@@ -11,7 +11,9 @@
 //! test that only watched the client side could not tell `session/resume` from
 //! `session/new`, which is the distinction most of this file is about.
 
-use std::path::PathBuf;
+mod common;
+use common::fake_agent;
+
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -146,17 +148,6 @@ impl Host {
     fn inbox(&mut self) -> Value {
         self.ok(INBOX_LIST, json!({}))
     }
-}
-
-fn fake_agent() -> String {
-    if let Some(path) = option_env!("CARGO_BIN_EXE_fake_acp_agent") {
-        return path.to_string();
-    }
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .join("target/debug/fake-acp-agent")
-        .to_string_lossy()
-        .into_owned()
 }
 
 fn kinds(inbox: &Value) -> Vec<String> {
