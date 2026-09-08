@@ -106,13 +106,17 @@ describe("worktrees over the host protocol", () => {
     expect(first.cwd).toBe(first.worktreePath);
     expect(first.cwd).not.toBe(folder.cwd);
     // Host-owned means under the app's data directory, never inside the repo.
-    expect(first.worktreePath?.startsWith(path.join(host.dataDir!, "worktrees"))).toBe(true);
+    expect(
+      first.worktreePath?.startsWith(path.join(host.dataDir!, "worktrees")),
+    ).toBe(true);
     expect(first.repoRoot).toBe(folder.repoRoot);
 
     // A tracked file is there because it is a checkout; the ignored one is
     // there because the folder said to copy it (#16 records it, #23 uses it).
     expect(existsSync(path.join(first.worktreePath!, "README.md"))).toBe(true);
-    expect(readFileSync(path.join(first.worktreePath!, ".env"), "utf8")).toBe("TOKEN=secret\n");
+    expect(readFileSync(path.join(first.worktreePath!, ".env"), "utf8")).toBe(
+      "TOKEN=secret\n",
+    );
 
     // And the user's own checkout is exactly as they left it.
     expect(git(repo, "branch", "--show-current")).toBe("main");
@@ -134,7 +138,10 @@ describe("worktrees over the host protocol", () => {
     const branch = thread.branch!;
 
     // What an agent leaves behind mid-task: edits nobody committed.
-    writeFileSync(path.join(tree, "auth.ts"), "export const login = () => {};\n");
+    writeFileSync(
+      path.join(tree, "auth.ts"),
+      "export const login = () => {};\n",
+    );
 
     const archived = await client.archiveThread({ threadId: "t-archive" });
     expect(archived.state).toBe("archived");
@@ -143,7 +150,9 @@ describe("worktrees over the host protocol", () => {
 
     // The work is a commit on the thread's branch — recoverable by hand with
     // `git checkout`, and never silently deleted.
-    expect(git(repo, "show", `${branch}:auth.ts`)).toBe("export const login = () => {};");
+    expect(git(repo, "show", `${branch}:auth.ts`)).toBe(
+      "export const login = () => {};",
+    );
     expect(git(repo, "worktree", "list", "--porcelain")).not.toContain(tree);
   });
 
@@ -197,9 +206,9 @@ describe("worktrees over the host protocol", () => {
     expect((failure as HostRpcError).code).toBe(RPC_ERROR.WORKTREE_FAILED);
 
     // Nothing half-made: no thread, and no branch minted for one.
-    await expect(client.threadState({ threadId: "t-bad-base" })).rejects.toBeInstanceOf(
-      HostRpcError,
-    );
+    await expect(
+      client.threadState({ threadId: "t-bad-base" }),
+    ).rejects.toBeInstanceOf(HostRpcError);
     expect(git(repo, "branch", "--list", "jabot/*")).toBe("");
   });
 

@@ -55,12 +55,16 @@ export function parseAskOptions(options: unknown): AskOption[] {
  * the honest answer is `cancelled: true` on `permission/reply`, which is a
  * different thing and the host records it as one.
  */
-export function rejectOption(options: readonly AskOption[]): AskOption | undefined {
+export function rejectOption(
+  options: readonly AskOption[],
+): AskOption | undefined {
   return options.find((option) => option.kind?.startsWith("reject"));
 }
 
 /** The one an "allow" affordance should send, preferring the narrowest grant. */
-export function allowOption(options: readonly AskOption[]): AskOption | undefined {
+export function allowOption(
+  options: readonly AskOption[],
+): AskOption | undefined {
   return (
     options.find((option) => option.kind === "allow_once") ??
     options.find((option) => option.kind?.startsWith("allow"))

@@ -136,15 +136,19 @@ describe("onboarding adapter setup", () => {
   it("offers Gemini CLI install with a separate sign-in note", async () => {
     const client = {
       harnessDoctor: vi.fn().mockResolvedValue({
-        reports: [{
-          id: "gemini",
-          ready: false,
-          status: "cli_missing",
-          detail: "Gemini CLI is not installed.",
-          remedy: "Install Gemini CLI.",
-        }],
+        reports: [
+          {
+            id: "gemini",
+            ready: false,
+            status: "cli_missing",
+            detail: "Gemini CLI is not installed.",
+            remedy: "Install Gemini CLI.",
+          },
+        ],
       }),
-      installHarness: vi.fn().mockResolvedValue({ running: false, error: null }),
+      installHarness: vi
+        .fn()
+        .mockResolvedValue({ running: false, error: null }),
     };
     render(
       <AdapterSetup
@@ -156,6 +160,8 @@ describe("onboarding adapter setup", () => {
     expect(
       await screen.findByText(/Install Gemini CLI into ~\/.local/),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Install adapter" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Install adapter" }),
+    ).toBeEnabled();
   });
 });

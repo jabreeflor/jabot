@@ -10,7 +10,9 @@ import type { StatusTone } from "../components/status";
 
 function spark(tone: StatusTone, seed = "auth") {
   cleanup();
-  const { container } = render(<Sparkle tone={tone} title={tone} seed={seed} />);
+  const { container } = render(
+    <Sparkle tone={tone} title={tone} seed={seed} />,
+  );
   return container.firstElementChild as HTMLElement;
 }
 

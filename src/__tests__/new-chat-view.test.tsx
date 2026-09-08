@@ -35,27 +35,45 @@ async function pickHarness(name: RegExp) {
 describe("NewChatView", () => {
   it("falls back when the saved default is disabled", async () => {
     const enabled = HARNESSES.filter((harness) => harness.id !== "claude");
-    const props = renderView({ harnesses: enabled, defaultHarnessId: "claude" });
-    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
-    expect(props.onStart).toHaveBeenCalledWith(expect.objectContaining({ harnessId: enabled[0].id }));
+    const props = renderView({
+      harnesses: enabled,
+      defaultHarnessId: "claude",
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+    expect(props.onStart).toHaveBeenCalledWith(
+      expect.objectContaining({ harnessId: enabled[0].id }),
+    );
   });
   it("explains how to recover when all harnesses are disabled", async () => {
     const props = renderView({ harnesses: [], defaultHarnessId: "claude" });
-    expect(screen.getByText("Enable a harness in Settings to start a chat.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Start session" })).toBeDisabled();
-    await userEvent.type(screen.getByRole("textbox", { name: /Plan, build/ }), "hello{Enter}");
+    expect(
+      screen.getByText("Enable a harness in Settings to start a chat."),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Start session" }),
+    ).toBeDisabled();
+    await userEvent.type(
+      screen.getByRole("textbox", { name: /Plan, build/ }),
+      "hello{Enter}",
+    );
     expect(props.onStart).not.toHaveBeenCalled();
   });
 
   it("is a chat window, not a dialog", () => {
     renderView();
 
-    expect(screen.getByRole("region", { name: "New Chat" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "New Chat" }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
       screen.getByRole("textbox", { name: /Plan, build/ }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open folder" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open folder" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "GitHub repository" }),
     ).toBeInTheDocument();
@@ -108,7 +126,9 @@ describe("NewChatView", () => {
     await userEvent.click(
       screen.getByRole("option", { name: "anthropic/claude-sonnet-4-5" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
     expect(props.onStart).toHaveBeenCalledWith(
       expect.objectContaining({
         harnessId: "opencode",
@@ -227,7 +247,9 @@ describe("NewChatView", () => {
     await userEvent.keyboard("{Escape}");
 
     expect(props.onStart).not.toHaveBeenCalled();
-    expect(screen.getByRole("region", { name: "New Chat" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "New Chat" }),
+    ).toBeInTheDocument();
   });
 });
 

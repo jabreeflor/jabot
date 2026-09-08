@@ -61,7 +61,9 @@ function fakeHomeWithAgent(name: string): { home: string; binary: string } {
   return { home, binary };
 }
 
-async function connected(options?: ConstructorParameters<typeof HostdProcess>[0]) {
+async function connected(
+  options?: ConstructorParameters<typeof HostdProcess>[0],
+) {
   const host = new HostdProcess(options);
   running.push(host);
   const client = new HostClient(host);
@@ -72,13 +74,17 @@ async function connected(options?: ConstructorParameters<typeof HostdProcess>[0]
 
 function report(reports: HarnessReport[], id: string): HarnessReport {
   const found = reports.find((r) => r.id === id);
-  if (!found) throw new Error(`no report for ${id}; saw ${reports.map((r) => r.id).join(", ")}`);
+  if (!found)
+    throw new Error(
+      `no report for ${id}; saw ${reports.map((r) => r.id).join(", ")}`,
+    );
   return found;
 }
 
 afterEach(async () => {
   await Promise.all(running.splice(0).map((host) => host.dispose()));
-  for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const dir of scratch.splice(0))
+    rmSync(dir, { recursive: true, force: true });
 });
 
 describe("harness/list", () => {
@@ -185,7 +191,12 @@ describe("harness/list", () => {
   it("refuses to let a user file shadow a reserved id, and says why", async () => {
     const dataDir = dataDirWith([
       { id: "claude", label: "Not Claude", command: "totally-not-claude" },
-      { id: "leaky", label: "Leaky", command: "leaky-acp", env: { OPENAI_API_KEY: "sk-live" } },
+      {
+        id: "leaky",
+        label: "Leaky",
+        command: "leaky-acp",
+        env: { OPENAI_API_KEY: "sk-live" },
+      },
       { id: "fine", label: "Fine", command: "fine-acp" },
     ]);
     const { client } = await connected({ dataDir });
@@ -196,7 +207,9 @@ describe("harness/list", () => {
     expect(claude?.label).toBe("Claude Code");
     expect(claude?.tier).toBe("shipped");
 
-    const reasons = issues.map((issue) => `${issue.file}: ${issue.reason}`).join("\n");
+    const reasons = issues
+      .map((issue) => `${issue.file}: ${issue.reason}`)
+      .join("\n");
     expect(reasons).toMatch(/claude.*reserved|reserved/);
     // Credentials in a plaintext catalog file get the same answer the store
     // gives `runtime_json`: no.
@@ -231,14 +244,18 @@ describe("harness/list", () => {
 
 describe("harness/doctor", () => {
   it("gives every card a reason and shows the PATH it searched", async () => {
-    const missingDir = mkdtempSync(path.join(tmpdir(), "jabot-missing-harness-"));
+    const missingDir = mkdtempSync(
+      path.join(tmpdir(), "jabot-missing-harness-"),
+    );
     scratch.push(missingDir);
-    const dataDir = dataDirWith([{
-      id: "missing-agent",
-      label: "Missing test agent",
-      command: path.join(missingDir, "not-installed"),
-      installHint: "Install the test adapter.",
-    }]);
+    const dataDir = dataDirWith([
+      {
+        id: "missing-agent",
+        label: "Missing test agent",
+        command: path.join(missingDir, "not-installed"),
+        installHint: "Install the test adapter.",
+      },
+    ]);
     const { client } = await connected({ dataDir });
 
     const doctor = await client.harnessDoctor();
@@ -250,8 +267,12 @@ describe("harness/doctor", () => {
     }
     // Probe a known absent binary instead of assuming the developer has no
     // vendor CLI installed. CLI-vs-adapter diagnosis is covered by unit tests.
-    expect(report(doctor.reports, "missing-agent").status).toBe("adapter_missing");
-    expect(report(doctor.reports, "missing-agent").installHint).toBe("Install the test adapter.");
+    expect(report(doctor.reports, "missing-agent").status).toBe(
+      "adapter_missing",
+    );
+    expect(report(doctor.reports, "missing-agent").installHint).toBe(
+      "Install the test adapter.",
+    );
     expect(report(doctor.reports, "codex").installHint).toBeTruthy();
     expect(doctor.path.length).toBeGreaterThan(0);
   });
@@ -288,7 +309,12 @@ describe("harness/doctor", () => {
     const { home } = fakeHomeWithAgent("jabot-deep-acp");
     const dataDir = dataDirWith([
       { id: "current", label: "Current", command: "jabot-deep-acp" },
-      { id: "ancient", label: "Ancient", command: "jabot-deep-acp", args: ["old-acp"] },
+      {
+        id: "ancient",
+        label: "Ancient",
+        command: "jabot-deep-acp",
+        args: ["old-acp"],
+      },
     ]);
     const { client } = await connected({ dataDir, env: { HOME: home } });
 

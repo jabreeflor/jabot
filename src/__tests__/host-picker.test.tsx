@@ -25,14 +25,11 @@ describe("HostPicker", () => {
 
   it("marks an unreachable host offline", () => {
     render(
-      <HostPicker
-        host={{ hostId: "h2", name: "Office", reachable: false }}
-      />,
+      <HostPicker host={{ hostId: "h2", name: "Office", reachable: false }} />,
     );
-    expect(screen.getByRole("button", { name: "Host: Office" })).toHaveAttribute(
-      "title",
-      "Office — unreachable",
-    );
+    expect(
+      screen.getByRole("button", { name: "Host: Office" }),
+    ).toHaveAttribute("title", "Office — unreachable");
     expect(screen.getByText("offline")).toBeInTheDocument();
   });
 });

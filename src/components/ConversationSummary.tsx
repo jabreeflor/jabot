@@ -318,7 +318,8 @@ function RepoPanel({
   onViewAll: () => void;
   busy: boolean;
 }) {
-  const gitReady = selected.isGit && selected.available && selected.status === "ok";
+  const gitReady =
+    selected.isGit && selected.available && selected.status === "ok";
   return (
     <>
       <div className="summary-repo-head">
@@ -335,7 +336,11 @@ function RepoPanel({
         </button>
       </div>
       {pickerOpen && (
-        <ul className="summary-repo-menu" role="listbox" aria-label="Repositories">
+        <ul
+          className="summary-repo-menu"
+          role="listbox"
+          aria-label="Repositories"
+        >
           <li>
             <button
               type="button"
@@ -547,11 +552,7 @@ function SourcesStrip({
         >
           <PlusIcon />
         </button>
-        <button
-          type="button"
-          className="summary-view-all"
-          onClick={onViewAll}
-        >
+        <button type="button" className="summary-view-all" onClick={onViewAll}>
           View all
         </button>
       </div>
@@ -683,10 +684,19 @@ function GitCommitModal({
           </p>
         )}
         <div className="summary-commit-actions">
-          <button type="submit" className="btn" disabled={busy || !message.trim()}>
+          <button
+            type="submit"
+            className="btn"
+            disabled={busy || !message.trim()}
+          >
             Commit
           </button>
-          <button type="button" className="btn" disabled={busy} onClick={() => void push()}>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => void push()}
+          >
             Push
           </button>
         </div>

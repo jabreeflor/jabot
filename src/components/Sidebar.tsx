@@ -26,12 +26,7 @@ import {
   SidebarIcon,
 } from "./Icon";
 import type { MenuPosition } from "./ThreadContextMenu";
-import type {
-  Bot,
-  FolderWithThreads,
-  Selection,
-  ThreadSummary,
-} from "./types";
+import type { Bot, FolderWithThreads, Selection, ThreadSummary } from "./types";
 
 /** Matches `--sidebar-w`. jsdom has no stylesheet, so the peek hit-region
     falls back to this rather than treating a missing variable as zero. */
@@ -141,7 +136,10 @@ export function Sidebar({
     holdPeekAt.current = null;
   }, [open]);
 
-  function releasedFromHold(event: { clientX: number; clientY: number }): boolean {
+  function releasedFromHold(event: {
+    clientX: number;
+    clientY: number;
+  }): boolean {
     const hold = holdPeekAt.current;
     if (!hold) return true;
     if (Math.hypot(event.clientX - hold.x, event.clientY - hold.y) < 12) {
@@ -203,164 +201,168 @@ export function Sidebar({
           setArmed(false);
         }}
       >
-      <div className="sidebar-search">
-        {onToggle && (
-          <button
-            type="button"
-            className="sidebar-toggle"
-            aria-expanded={open}
-            aria-label={open ? "Hide sidebar" : "Show sidebar"}
-            title={open ? "Hide sidebar" : "Show sidebar"}
-            onClick={handleToggle}
-            onFocus={armFromAffordance}
-            onPointerEnter={(event) => {
-              if (open || !releasedFromHold(event)) return;
-              setArmed(true);
-              setPeeked(true);
-            }}
-          >
-            <SidebarIcon />
-          </button>
-        )}
+        <div className="sidebar-search">
+          {onToggle && (
+            <button
+              type="button"
+              className="sidebar-toggle"
+              aria-expanded={open}
+              aria-label={open ? "Hide sidebar" : "Show sidebar"}
+              title={open ? "Hide sidebar" : "Show sidebar"}
+              onClick={handleToggle}
+              onFocus={armFromAffordance}
+              onPointerEnter={(event) => {
+                if (open || !releasedFromHold(event)) return;
+                setArmed(true);
+                setPeeked(true);
+              }}
+            >
+              <SidebarIcon />
+            </button>
+          )}
+          {shown && (
+            <div className="field">
+              <SearchIcon />
+              <input
+                type="search"
+                value={query}
+                placeholder="Search"
+                aria-label="Search threads"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+          )}
+        </div>
+
         {shown && (
-          <div className="field">
-            <SearchIcon />
-            <input
-              type="search"
-              value={query}
-              placeholder="Search"
-              aria-label="Search threads"
-              onChange={(event) => setQuery(event.target.value)}
+          <div className="sidebar-list">
+            <div className="section-header">BOT CHATS</div>
+            <BotStrip
+              bots={bots}
+              selection={selection}
+              onSelectBot={onSelectBot}
+              onOpenCrew={onOpenCrew}
             />
-          </div>
-        )}
-      </div>
 
-      {shown && (
-        <div className="sidebar-list">
-        <div className="section-header">BOT CHATS</div>
-        <BotStrip
-          bots={bots}
-          selection={selection}
-          onSelectBot={onSelectBot}
-          onOpenCrew={onOpenCrew}
-        />
+            <div className="section-header">CODE</div>
 
-        <div className="section-header">CODE</div>
+            <button
+              type="button"
+              className="nav-row"
+              aria-current={selection.view === "new-chat"}
+              onClick={() => onNewChat(null)}
+            >
+              <span className="ic">
+                <NewChatIcon />
+              </span>
+              New Chat
+            </button>
 
-        <button
-          type="button"
-          className="nav-row"
-          aria-current={selection.view === "new-chat"}
-          onClick={() => onNewChat(null)}
-        >
-          <span className="ic">
-            <NewChatIcon />
-          </span>
-          New Chat
-        </button>
-
-        {/* The counts are folded into the label rather than left as loose
+            {/* The counts are folded into the label rather than left as loose
             numerals, so "Inbox — 2 waiting" is what gets announced. */}
-        <button
-          type="button"
-          className="nav-row"
-          aria-current={selection.view === "prs"}
-          aria-label={
-            openPrCount > 0 ? `Pull Requests — ${openPrCount} open` : undefined
-          }
-          onClick={onOpenPullRequests}
-        >
-          <span className="ic">
-            <PullRequestIcon />
-          </span>
-          Pull Requests
-          {openPrCount > 0 && (
-            <span className="count" aria-hidden="true">
-              {openPrCount}
-            </span>
-          )}
-        </button>
+            <button
+              type="button"
+              className="nav-row"
+              aria-current={selection.view === "prs"}
+              aria-label={
+                openPrCount > 0
+                  ? `Pull Requests — ${openPrCount} open`
+                  : undefined
+              }
+              onClick={onOpenPullRequests}
+            >
+              <span className="ic">
+                <PullRequestIcon />
+              </span>
+              Pull Requests
+              {openPrCount > 0 && (
+                <span className="count" aria-hidden="true">
+                  {openPrCount}
+                </span>
+              )}
+            </button>
 
-        <button
-          type="button"
-          className="nav-row"
-          aria-current={selection.view === "inbox"}
-          aria-label={
-            inboxCount > 0 ? `Inbox — ${inboxCount} waiting` : undefined
-          }
-          onClick={onOpenInbox}
-        >
-          <span className="ic">
-            <InboxIcon />
-          </span>
-          Inbox
-          {inboxCount > 0 && (
-            <span className="badge" aria-hidden="true">
-              {inboxCount}
-            </span>
-          )}
-        </button>
+            <button
+              type="button"
+              className="nav-row"
+              aria-current={selection.view === "inbox"}
+              aria-label={
+                inboxCount > 0 ? `Inbox — ${inboxCount} waiting` : undefined
+              }
+              onClick={onOpenInbox}
+            >
+              <span className="ic">
+                <InboxIcon />
+              </span>
+              Inbox
+              {inboxCount > 0 && (
+                <span className="badge" aria-hidden="true">
+                  {inboxCount}
+                </span>
+              )}
+            </button>
 
-        {/* Under the Inbox on purpose: a schedule's whole output *is* an
+            {/* Under the Inbox on purpose: a schedule's whole output *is* an
             Inbox card, so the two belong next to each other. */}
-        <button
-          type="button"
-          className="nav-row"
-          aria-current={selection.view === "schedules"}
-          onClick={onOpenSchedules}
-        >
-          <span className="ic">
-            <ClockIcon />
-          </span>
-          Schedules
-        </button>
+            <button
+              type="button"
+              className="nav-row"
+              aria-current={selection.view === "schedules"}
+              onClick={onOpenSchedules}
+            >
+              <span className="ic">
+                <ClockIcon />
+              </span>
+              Schedules
+            </button>
 
-        <FolderList
-          folders={visibleFolders}
-          selection={selection}
-          leavingThreadIds={leavingThreadIds}
-          onSelectThread={onSelectThread}
-          onNewThread={onNewChat}
-          onFolderSettings={onFolderSettings}
-          onThreadMenu={onThreadMenu}
-        />
-        {query && visibleFolders.length === 0 && (
-          <div className="page-empty">No threads match “{query}”.</div>
-        )}
-        {!query && foldersEmpty && (
-          <div className="page-empty">
-            No folders yet. Add one to start a code thread in it.
+            <FolderList
+              folders={visibleFolders}
+              selection={selection}
+              leavingThreadIds={leavingThreadIds}
+              onSelectThread={onSelectThread}
+              onNewThread={onNewChat}
+              onFolderSettings={onFolderSettings}
+              onThreadMenu={onThreadMenu}
+            />
+            {query && visibleFolders.length === 0 && (
+              <div className="page-empty">No threads match “{query}”.</div>
+            )}
+            {!query && foldersEmpty && (
+              <div className="page-empty">
+                No folders yet. Add one to start a code thread in it.
+              </div>
+            )}
           </div>
         )}
-        </div>
-      )}
 
-      {shown && (
-        <div className="me-row">
-        <div className="me-face" aria-hidden="true">
-          {initials(userName)}
-        </div>
-        <div className="who">
-          <div className="name">{userName}</div>
-          {hostLine && (
-            <div className={hostOffline ? "host bad" : "host"}>{hostLine}</div>
-          )}
-        </div>
-        {onOpenSettings && (
-          <button
-            type="button"
-            className="me-settings"
-            aria-label="Settings"
-            title="Settings"
-            aria-current={selection.view === "settings"}
-            onClick={onOpenSettings}
-          >
-            <GearIcon />
-          </button>
+        {shown && (
+          <div className="me-row">
+            <div className="me-face" aria-hidden="true">
+              {initials(userName)}
+            </div>
+            <div className="who">
+              <div className="name">{userName}</div>
+              {hostLine && (
+                <div className={hostOffline ? "host bad" : "host"}>
+                  {hostLine}
+                </div>
+              )}
+            </div>
+            {onOpenSettings && (
+              <button
+                type="button"
+                className="me-settings"
+                aria-label="Settings"
+                title="Settings"
+                aria-current={selection.view === "settings"}
+                onClick={onOpenSettings}
+              >
+                <GearIcon />
+              </button>
+            )}
+          </div>
         )}
-        </div>
-      )}
       </aside>
     </div>
   );

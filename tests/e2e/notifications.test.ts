@@ -21,7 +21,11 @@ import {
   type InboxResurfaceParams,
   type JsonRpcNotification,
 } from "../../src/host/protocol";
-import { fakeAcpRuntime, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 const running: HostdProcess[] = [];
 
@@ -59,7 +63,9 @@ async function settle(
     const state = await client.threadState({ threadId });
     if (predicate(state)) return state;
     if (Date.now() > deadline) {
-      throw new Error(`${threadId} never settled; last: ${JSON.stringify(state)}`);
+      throw new Error(
+        `${threadId} never settled; last: ${JSON.stringify(state)}`,
+      );
     }
     await new Promise((resolve) => setTimeout(resolve, 30));
   }
@@ -162,7 +168,11 @@ describe("the card a banner is built from", () => {
 
     await openThread(client, "t-degrade");
     await client.prompt({ threadId: "t-degrade", content: "hi" });
-    await settle(client, "t-degrade", (s) => s.latestRun?.state === "succeeded");
+    await settle(
+      client,
+      "t-degrade",
+      (s) => s.latestRun?.state === "succeeded",
+    );
     await client.fold({ threadId: "t-degrade" });
 
     const inbox = await client.inbox();

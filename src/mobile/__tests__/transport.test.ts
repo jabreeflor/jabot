@@ -3,7 +3,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { JSONRPC_VERSION, PERMISSION_ASK } from "../../host/protocol";
-import { createLineTransport, HostConnectionClosed, type LineChannel } from "../transport";
+import {
+  createLineTransport,
+  HostConnectionClosed,
+  type LineChannel,
+} from "../transport";
 
 /** A channel a test can drive both ways. */
 function fakeChannel() {
@@ -43,12 +47,19 @@ describe("the phone's transport", () => {
     });
     // The host may push between a request and its answer — a `permission/ask`
     // arriving mid-handshake must not be mistaken for the handshake's reply.
-    wire.deliver({ jsonrpc: JSONRPC_VERSION, method: PERMISSION_ASK, params: {} });
+    wire.deliver({
+      jsonrpc: JSONRPC_VERSION,
+      method: PERMISSION_ASK,
+      params: {},
+    });
     wire.deliver({ jsonrpc: JSONRPC_VERSION, id: 1, result: { ok: true } });
 
     expect((await pending).result).toEqual({ ok: true });
     expect(seen).toEqual([PERMISSION_ASK]);
-    expect(JSON.parse(wire.sent[0])).toMatchObject({ id: 1, method: "host/hello" });
+    expect(JSON.parse(wire.sent[0])).toMatchObject({
+      id: 1,
+      method: "host/hello",
+    });
   });
 
   it("survives a line it cannot parse", async () => {
@@ -80,7 +91,11 @@ describe("the phone's transport", () => {
     wire.hangUp(new Error("EPIPE"));
     await expect(pending).rejects.toBeInstanceOf(HostConnectionClosed);
     await expect(
-      transport.request({ jsonrpc: JSONRPC_VERSION, id: 2, method: "inbox/list" }),
+      transport.request({
+        jsonrpc: JSONRPC_VERSION,
+        id: 2,
+        method: "inbox/list",
+      }),
     ).rejects.toBeInstanceOf(HostConnectionClosed);
   });
 });

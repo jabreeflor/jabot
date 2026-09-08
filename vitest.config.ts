@@ -44,13 +44,7 @@ export default defineConfig({
       // Unimported files matching `include` still appear in the report.
       all: true,
       reportsDirectory: "./coverage/frontend",
-      reporter: [
-        "text",
-        "json",
-        "json-summary",
-        "html",
-        "lcov",
-      ],
+      reporter: ["text", "json", "json-summary", "html", "lcov"],
       // Failed tests still leave HTML/LCOV/JSON behind so CI can upload them.
       reportOnFailure: true,
       // Production renderer only. CSS, assets, and anything outside src/ are

@@ -72,9 +72,10 @@ describe("rejectOption / allowOption", () => {
     ]);
     expect(rejectOption(options)).toBeUndefined();
     expect(allowOption(options)).toBeUndefined();
-    expect(allowOption(parseAskOptions([{ optionId: "a", kind: "allow_session" }]))?.optionId).toBe(
-      "a",
-    );
+    expect(
+      allowOption(parseAskOptions([{ optionId: "a", kind: "allow_session" }]))
+        ?.optionId,
+    ).toBe("a");
   });
 });
 

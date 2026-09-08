@@ -71,7 +71,9 @@ export function TranscriptScreen({
       )}
 
       {!loading && !error && items.length === 0 && (
-        <div className="jm-empty">Nothing has been said in this thread yet.</div>
+        <div className="jm-empty">
+          Nothing has been said in this thread yet.
+        </div>
       )}
 
       {/* Said out loud rather than implied: this is a window onto the end of
@@ -113,7 +115,9 @@ function Line({ item }: { item: TranscriptItem }) {
         <li className={`jm-line tool ${item.call.status}`}>
           <span className="jm-tool-kind">{item.call.kind}</span>
           <span className="jm-tool-target">{item.call.target}</span>
-          {item.call.note && <span className="jm-tool-note">{item.call.note}</span>}
+          {item.call.note && (
+            <span className="jm-tool-note">{item.call.note}</span>
+          )}
         </li>
       );
     case "notice":
@@ -163,7 +167,8 @@ export interface ThreadTranscript {
  */
 export function useThreadTranscript(
   session:
-    | (Pick<MobileSession, "transcript"> & Partial<Pick<MobileSession, "watchThread">>)
+    | (Pick<MobileSession, "transcript"> &
+        Partial<Pick<MobileSession, "watchThread">>)
     | null,
   threadId: string | null,
 ): ThreadTranscript {
@@ -177,7 +182,13 @@ export function useThreadTranscript(
 
   useEffect(() => {
     if (!session || !threadId) {
-      setState({ items: [], truncated: false, queued: [], loading: false, error: null });
+      setState({
+        items: [],
+        truncated: false,
+        queued: [],
+        loading: false,
+        error: null,
+      });
       return;
     }
     let cancelled = false;

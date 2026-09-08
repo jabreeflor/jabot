@@ -11,7 +11,10 @@ import { fileURLToPath } from "node:url";
 
 import { fakeAcpAgentPath, hostdBinaryPath } from "../support/hostd";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 
 export default function globalSetup(): void {
   const hostd = hostdBinaryPath();
@@ -25,7 +28,14 @@ export default function globalSetup(): void {
 
   execFileSync(
     "cargo",
-    ["build", "--manifest-path", "src-tauri/Cargo.toml", "--features", "dev-bins", "--bins"],
+    [
+      "build",
+      "--manifest-path",
+      "src-tauri/Cargo.toml",
+      "--features",
+      "dev-bins",
+      "--bins",
+    ],
     { cwd: repoRoot, stdio: "inherit" },
   );
 }

@@ -21,6 +21,12 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "tests", "scripts/dev", "vitest.config.ts", "playwright.config.ts"],
+  "include": [
+    "src",
+    "tests",
+    "scripts/dev",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

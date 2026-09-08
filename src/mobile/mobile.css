@@ -8,7 +8,11 @@
   max-width: 480px;
   margin: 0 auto;
   padding: 16px;
-  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font:
+    15px/1.45 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .jm-top {

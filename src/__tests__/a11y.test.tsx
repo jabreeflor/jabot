@@ -264,7 +264,9 @@ describe("primary views", () => {
       />,
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      screen.getByRole("button", {
+        name: "Conversation summary for Repositories",
+      }),
     );
     await expectNoSeriousA11yViolations(container);
   });
@@ -321,7 +323,9 @@ describe("primary views", () => {
     await expectNoSeriousA11yViolations(container);
 
     await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
-    expect(screen.getByRole("option", { name: /Claude Code/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Claude Code/ }),
+    ).toBeInTheDocument();
     await expectNoSeriousA11yViolations(container);
   });
 });

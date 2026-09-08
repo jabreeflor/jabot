@@ -25,7 +25,11 @@ import {
   type InboxListResult,
   type PermissionAskParams,
 } from "../../src/host/protocol";
-import { fakeAcpRuntime, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 const running: HostdProcess[] = [];
 const dataDirs: string[] = [];
@@ -59,11 +63,13 @@ async function openThread(client: HostClient, threadId: string, mode: string) {
 /** Prompt, and come back with the `requestId` of the ask it produced. */
 async function ask(host: HostdProcess, client: HostClient, threadId: string) {
   await client.prompt({ threadId, content: "rm -rf" });
-  const asked = (await host.waitFor(
-    (n) =>
-      n.method === PERMISSION_ASK &&
-      (n.params as PermissionAskParams).threadId === threadId,
-  )).params as PermissionAskParams;
+  const asked = (
+    await host.waitFor(
+      (n) =>
+        n.method === PERMISSION_ASK &&
+        (n.params as PermissionAskParams).threadId === threadId,
+    )
+  ).params as PermissionAskParams;
   return asked.requestId;
 }
 
@@ -99,7 +105,9 @@ describe("the permission broker", () => {
     });
     // The agent's own options, passed through rather than reinterpreted.
     expect(pending.requests[0].options).toEqual(
-      expect.arrayContaining([expect.objectContaining({ optionId: "allow_once" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ optionId: "allow_once" }),
+      ]),
     );
 
     const first = await client.replyPermission({
@@ -160,7 +168,9 @@ describe("the permission broker", () => {
     // whether the row survives depends on ordering. Whether it is read or
     // gone, the user is not being asked again — which is the whole claim.
     const after: InboxListResult = await client.inbox();
-    expect(after.events.filter((e) => e.kind === "needs_you" && !e.readAt)).toEqual([]);
+    expect(
+      after.events.filter((e) => e.kind === "needs_you" && !e.readAt),
+    ).toEqual([]);
 
     // And the narrowness is the other half of the claim. Answering lets the
     // turn finish, which resurfaces the folded thread as `done` — a genuinely
@@ -179,14 +189,18 @@ describe("the permission broker", () => {
       done = list.events.filter((event) => event.kind === "done");
       if (done.length > 0) break;
       if (Date.now() > deadline) {
-        throw new Error(`the turn never resurfaced as done: ${JSON.stringify(list.events)}`);
+        throw new Error(
+          `the turn never resurfaced as done: ${JSON.stringify(list.events)}`,
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     expect(done[0].readAt).toBeFalsy();
     // …and answering still did not leave an unread question behind it.
     const settled: InboxListResult = await client.inbox();
-    expect(settled.events.filter((e) => e.kind === "needs_you" && !e.readAt)).toEqual([]);
+    expect(
+      settled.events.filter((e) => e.kind === "needs_you" && !e.readAt),
+    ).toEqual([]);
   });
 
   it("still has the question after the host that asked it was quit", async () => {
@@ -205,7 +219,9 @@ describe("the permission broker", () => {
     const inbox: InboxListResult = await second.client.inbox();
     expect(inbox.events.map((event) => event.kind)).toEqual(["needs_you"]);
 
-    const pending = await second.client.pendingPermissions({ threadId: "t-quit" });
+    const pending = await second.client.pendingPermissions({
+      threadId: "t-quit",
+    });
     expect(pending.requests).toHaveLength(1);
     expect(pending.requests[0]).toMatchObject({
       requestId,
@@ -222,7 +238,10 @@ describe("the permission broker", () => {
     });
     // Recorded, and honest that it went nowhere: replaying a dead ACP request
     // is exactly what `state-machine.md` says not to do.
-    expect(answered).toMatchObject({ delivered: false, alreadyAnswered: false });
+    expect(answered).toMatchObject({
+      delivered: false,
+      alreadyAnswered: false,
+    });
     expect(
       (await second.client.pendingPermissions({ threadId: "t-quit" })).requests,
     ).toEqual([]);

@@ -85,7 +85,11 @@ describe("the approver screen", () => {
 
   it("offers no answer for a sleeping thread", () => {
     render(
-      <InboxScreen inbox={inboxWith()} onAnswer={vi.fn()} onDecline={vi.fn()} />,
+      <InboxScreen
+        inbox={inboxWith()}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+      />,
     );
     const sleeping = screen.getByRole("region", { name: "STILL SLEEPING" });
     // Decision #5: a folded thread is not a notification. On the device most
@@ -135,7 +139,6 @@ describe("the approver screen", () => {
   });
 });
 
-
 /**
  * The transcript screen (#29).
  *
@@ -176,7 +179,9 @@ describe("the transcript screen", () => {
     draw();
 
     expect(screen.getByText("Migrate auth to sessions")).toBeInTheDocument();
-    expect(screen.getByText("Reading the current middleware.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Reading the current middleware."),
+    ).toBeInTheDocument();
     // The target, not the output: a phone is not where somebody reads a diff,
     // and a screen that tried would bury the sentence the question is about.
     expect(screen.getByText("src/auth.ts")).toBeInTheDocument();
@@ -210,7 +215,10 @@ describe("the transcript screen", () => {
   });
 
   it("says why when the host will not answer", () => {
-    draw({ items: [], error: "thread/transcript is not something an approver device may call" });
+    draw({
+      items: [],
+      error: "thread/transcript is not something an approver device may call",
+    });
 
     expect(screen.getByRole("alert")).toHaveTextContent("approver device");
   });
@@ -275,7 +283,9 @@ describe("opening a card", () => {
       await screen.findByText("I need to run rm -rf build."),
     ).toBeInTheDocument();
     expect(screen.getByText("Clear the build directory")).toBeInTheDocument();
-    expect(screen.getByText(/Showing the end of this thread/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Showing the end of this thread/),
+    ).toBeInTheDocument();
   });
 
   it("comes back to the Inbox with the buttons still there", async () => {
@@ -292,7 +302,9 @@ describe("opening a card", () => {
     await screen.findByText("I need to run rm -rf build.");
     await userEvent.click(screen.getByRole("button", { name: /Inbox/ }));
 
-    expect(screen.getByRole("button", { name: "Allow once" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Allow once" }),
+    ).toBeInTheDocument();
   });
 
   /**
@@ -309,13 +321,18 @@ describe("opening a card", () => {
     render(
       <MobileApp
         inbox={inboxWith()}
-        session={{
-          transcript: vi.fn(async () => RESULT),
-          watchThread: (_threadId: string, listener: (u: unknown) => void) => {
-            watchers.push(listener);
-            return () => {};
-          },
-        } as never}
+        session={
+          {
+            transcript: vi.fn(async () => RESULT),
+            watchThread: (
+              _threadId: string,
+              listener: (u: unknown) => void,
+            ) => {
+              watchers.push(listener);
+              return () => {};
+            },
+          } as never
+        }
         onAnswer={vi.fn()}
         onDecline={vi.fn()}
       />,
@@ -374,6 +391,8 @@ describe("opening a card", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Run ls" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("thread is gone");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "thread is gone",
+    );
   });
 });

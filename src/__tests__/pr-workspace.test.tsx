@@ -36,10 +36,14 @@ describe("PR workspace", () => {
 
     expect(refresh.closest(".pr-view-chrome")).toBeInTheDocument();
     expect(refresh.closest(".page-scroll")).not.toBeInTheDocument();
-    await waitFor(() => expect(client.pullRequestDetail).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(client.pullRequestDetail).toHaveBeenCalledOnce(),
+    );
 
     await userEvent.click(refresh);
-    await waitFor(() => expect(client.pullRequestDetail).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(client.pullRequestDetail).toHaveBeenCalledTimes(2),
+    );
   });
 
   it("renders GitHub-flavoured markdown in the PR description", async () => {

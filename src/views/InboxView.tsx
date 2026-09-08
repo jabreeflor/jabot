@@ -96,8 +96,8 @@ export function InboxView({
             {bannersRefused(notify) && (
               <p className="page-note" role="status">
                 Notifications are turned off for JaBot in System Settings, so
-                nothing here will interrupt you. Every card still arrives —
-                this list is complete either way.
+                nothing here will interrupt you. Every card still arrives — this
+                list is complete either way.
               </p>
             )}
           </div>

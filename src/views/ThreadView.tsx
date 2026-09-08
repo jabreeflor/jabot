@@ -301,7 +301,8 @@ function driftLabel(field: string): string {
  */
 function HandoffLine({ handoff }: { handoff: HandoffView }) {
   const who = handoff.fromBotName ?? "a bot";
-  const verb = handoff.kind === "code_session" ? "Coding job from" : "Handed off by";
+  const verb =
+    handoff.kind === "code_session" ? "Coding job from" : "Handed off by";
   return (
     <p
       className="chat-handoff"
@@ -498,7 +499,10 @@ type ResumeNoticeLine = { tone: "ok" | "warn" | "bad"; text: string };
 function resumeLine(result: ThreadResumeResult): ResumeNoticeLine {
   switch (result.outcome) {
     case "live":
-      return { tone: "ok", text: "Still connected — nothing needed restoring." };
+      return {
+        tone: "ok",
+        text: "Still connected — nothing needed restoring.",
+      };
     case "resumed":
       return { tone: "ok", text: "Conversation restored where it left off." };
     // `session/load` means the agent replayed its history to get here, which

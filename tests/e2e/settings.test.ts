@@ -30,9 +30,7 @@ afterEach(async () => {
 });
 
 async function connected(dataDir?: string) {
-  const host = new HostdProcess(
-    dataDir ? { dataDir } : { persistent: true },
-  );
+  const host = new HostdProcess(dataDir ? { dataDir } : { persistent: true });
   running.push(host);
   const client = new HostClient(host);
   await client.connect();
@@ -79,7 +77,10 @@ describe("settings over the host protocol", () => {
     const second = await connected(dataDir);
     const after = await second.client.settings();
     expect(after.disabledHarnessIds).toEqual(["pi", "custom-engine"]);
-    expect((await second.client.saveSettings({ disabledHarnessIds: [] })).disabledHarnessIds).toEqual([]);
+    expect(
+      (await second.client.saveSettings({ disabledHarnessIds: [] }))
+        .disabledHarnessIds,
+    ).toEqual([]);
     expect(after.idleTimeoutMs).toBe(90_000);
     expect(after.defaultFoldPolicy).toBe("wait_for_inbox");
   });
@@ -138,9 +139,9 @@ describe("settings over the host protocol", () => {
     expect(after.foldPolicy).toBe("wait_for_inbox");
     // The thread opened before it keeps what it was opened with: this is a
     // default, not a policy applied retroactively to work already running.
-    expect((await client.threadState({ threadId: "t-before" })).foldPolicy).toBe(
-      "default",
-    );
+    expect(
+      (await client.threadState({ threadId: "t-before" })).foldPolicy,
+    ).toBe("default");
   });
 
   /** A caller that names a policy still wins — the stored value is what a

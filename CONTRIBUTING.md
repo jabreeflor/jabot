@@ -71,6 +71,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
 | `npm run test:browser:smoke` | Playwright Chromium against a real host — not in the default gate |
 | `npm run lint` / `npm run lint:fix` | frontend lint (hooks + no-explicit-any + promises; same command `verify.sh` runs, including `--fast`) |
+| `npm run format:check` / `npm run format` | frontend layout — after lint; check is in `verify.sh`; format rewrites |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
@@ -133,6 +134,7 @@ one run tells you everything that is wrong.
 | `coverage policy` | the frontend include/exclude list and 90/85/80 floors still fail a fixture that violates them (`scripts/tests/coverage.test.sh`) | you changed coverage config or CI upload wiring; run `npm run test:coverage:policy`. Scope and the unit-vs-e2e split: [docs/coverage.md](docs/coverage.md) |
 | `typecheck` | `tsc --noEmit`, strict: implicit any, unused locals, unused parameters, no fallthrough | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. `tsc` does **not** reject an explicit `any` annotation or an `as any` cast — that is the linter, below. |
 | `frontend lint` | shared ESLint: Rules of Hooks, exhaustive-deps, `@typescript-eslint/no-explicit-any`, and type-aware `no-floating-promises` / `no-misused-promises` | replace `any` with a concrete type, a generic, or `unknown` plus narrowing. A discarded promise needs `await`, a returned promise, or `void` plus an explicit error strategy. `npm run lint` is the same command; `npm run lint:fix` applies safe fixes (`no-explicit-any` is not auto-fixable). A clean tree does not prove the rules are on — `scripts/tests/lint-probe.mjs` and `scripts/tests/lint-rules.mjs` do. |
+| `frontend format` | first-party TS/TSX, JS/MJS, CSS, and JSON match Prettier (`npm run format:check`), and the ignore/check/apply contract still holds (`npm run test:format`) | `npm run format` to apply. Do not format vendored plugins, adapters, lockfiles, generated `src-tauri/gen/`, or nested worktrees — `.prettierignore` lists them. |
 | `unit tests` | 200+ vitest cases in jsdom, plus scoped `src/**` coverage floors (90/85/80 lines/branches/functions). Unimported production files count. | `npx vitest --project unit` to iterate without coverage; `npm run test:coverage` for the gated run; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | `rust clippy` | `-D warnings` over all targets, `dev-bins` included | fix, or justify a narrow `#[allow]` in the code. Do not suggest APIs newer than the `msrv` in `src-tauri/clippy.toml`. |
@@ -175,6 +177,30 @@ error strategy. Do not stand up a second linter. Generated output,
 vendored code, `node_modules`, and nested `worktrees/` are ignored.
 Unavoidable interop exceptions stay narrow and documented next to the
 site; tests are not broadly exempt.
+
+`eslint-config-prettier` is last in that file so lint cannot restate
+layout. Prettier is the formatter; do not add `eslint-plugin-prettier`.
+
+## Frontend formatting
+
+Prettier is the one frontend formatter — the Rust equivalent of `cargo fmt`.
+It covers first-party TypeScript, JavaScript, CSS, and applicable JSON.
+Markdown, HTML prototypes, YAML workflows, lockfiles, vendored
+`plugins/` / `src-tauri/vendor/`, build output, generated
+`src-tauri/gen/` schemas, dependencies, and nested worktrees are out of
+scope (see `.prettierignore`).
+
+```bash
+npm run format:check   # read-only; this is the verify.sh gate
+npm run format         # rewrite in place
+npm run test:format    # check-fails / write-restores / ignore contract
+```
+
+`./scripts/verify.sh` and `--fast` both run the check, after lint. It is
+offline after `npm install`.
+
+Prettier owns layout. Frontend lint owns correctness (Hooks, `any`,
+promises) and must not restate style.
 
 ## Accessibility tests
 
@@ -332,7 +358,9 @@ filing or "fixing" a gap.
   `AdapterSetup`: listing it would clear a failed install's error
   (`installingRef` is sampled instead). Exceptions stay next to the line
   they silence and say why. Subsequent TypeScript lint issues extend
-  `eslint.config.js`; do not add a second JS/TS linter.
+  `eslint.config.js`; do not add a second JS/TS linter. Frontend files stay
+  Prettier-clean (`npm run format`). Prettier owns layout; lint owns
+  correctness and must not restate style.
 - Anything added to `verify.sh` must run offline, need no display, no macOS and
   no GitHub token, and be fast enough that people still run it. If a check
   needs any of those, it goes behind a flag — `--check-toolchain`,

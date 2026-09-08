@@ -30,7 +30,10 @@ export function formatWhen(iso: string, now: Date = new Date()): string {
   if (daysBack < 7) {
     return then.toLocaleDateString(undefined, { weekday: "short" });
   }
-  return then.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+  return then.toLocaleDateString(undefined, {
+    month: "numeric",
+    day: "numeric",
+  });
 }
 
 /** "JB" for the me-row avatar. Falls back to one letter for a mononym. */

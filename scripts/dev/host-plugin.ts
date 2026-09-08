@@ -110,7 +110,12 @@ export function jabotHost(options: JabotHostOptions = {}): Plugin {
         process.env.JABOT_FAKE_ACP_BIN ??
         path.join(root, "src-tauri", "target", "debug", "fake-acp-agent");
       if (fakeAgent !== false && existsSync(fakeAgent)) {
-        harnesses.push({ id: FAKE_HARNESS_ID, label: "Fake ACP", command: fakeAgent, args: [] });
+        harnesses.push({
+          id: FAKE_HARNESS_ID,
+          label: "Fake ACP",
+          command: fakeAgent,
+          args: [],
+        });
       }
 
       const logger = server.config.logger;
@@ -154,7 +159,10 @@ export function jabotHost(options: JabotHostOptions = {}): Plugin {
               sendJson(res, 400, {
                 jsonrpc: JSONRPC_VERSION,
                 id: null,
-                error: { code: RPC_ERROR.PARSE_ERROR, message: "body is not JSON" },
+                error: {
+                  code: RPC_ERROR.PARSE_ERROR,
+                  message: "body is not JSON",
+                },
               });
               return;
             }

@@ -27,7 +27,11 @@ import {
   type SessionUpdateParams,
 } from "../../src/host/protocol";
 import { applyAcpEvent, hydrate } from "../../src/views/transcript";
-import { fakeAcpRuntime, HostdProcess, type HostdOptions } from "../support/hostd";
+import {
+  fakeAcpRuntime,
+  HostdProcess,
+  type HostdOptions,
+} from "../support/hostd";
 
 const running: HostdProcess[] = [];
 const dataDirs: string[] = [];
@@ -62,7 +66,9 @@ async function openThread(client: HostClient, threadId: string, mode?: string) {
 async function settle(
   client: HostClient,
   threadId: string,
-  predicate: (result: Awaited<ReturnType<HostClient["threadTranscript"]>>) => boolean,
+  predicate: (
+    result: Awaited<ReturnType<HostClient["threadTranscript"]>>,
+  ) => boolean,
   timeoutMs = 10_000,
 ) {
   const deadline = Date.now() + timeoutMs;
@@ -142,7 +148,10 @@ describe("transcript overlay", () => {
     const dataDir = ownDataDir();
     const first = await connected({ dataDir });
     await openThread(first.client, "t-restart", "tools");
-    await first.client.prompt({ threadId: "t-restart", content: "fix the guard" });
+    await first.client.prompt({
+      threadId: "t-restart",
+      content: "fix the guard",
+    });
     await settle(first.client, "t-restart", (result) =>
       result.events.some(
         (event) =>
@@ -217,7 +226,11 @@ describe("steer vs redispatch", () => {
       content: "second",
       mode: "queue",
     });
-    expect(held).toMatchObject({ queued: true, accepted: false, queuePosition: 1 });
+    expect(held).toMatchObject({
+      queued: true,
+      accepted: false,
+      queuePosition: 1,
+    });
 
     const waiting = await client.threadTranscript({ threadId: "t-queue" });
     expect(waiting.queued).toHaveLength(1);
@@ -226,8 +239,10 @@ describe("steer vs redispatch", () => {
     // the agent is working or the host died under it, so the ledger comes too.
     expect(waiting.runState).toBe("running");
 
-    const settled = await settle(client, "t-queue", (result) =>
-      said(result.events).length === 2,
+    const settled = await settle(
+      client,
+      "t-queue",
+      (result) => said(result.events).length === 2,
     );
     expect(said(settled.events)).toEqual(["first", "second"]);
     expect(settled.queued).toHaveLength(0);
@@ -277,6 +292,7 @@ function said(events: readonly { payload: unknown }[]): string[] {
     .filter((payload) => payload?.sessionUpdate === "user_message_chunk")
     .map(
       (payload) =>
-        ((payload.content as { text?: string } | undefined)?.text ?? "") as string,
+        ((payload.content as { text?: string } | undefined)?.text ??
+          "") as string,
     );
 }

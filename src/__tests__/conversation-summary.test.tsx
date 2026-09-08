@@ -6,7 +6,13 @@
  * which files the person attached — so Git actions have a repository they
  * obviously apply to.
  */
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
@@ -19,7 +25,11 @@ import {
   type JsonRpcNotification,
   type ThreadSummaryResult,
 } from "../host";
-import type { HarnessCard, HostTarget, ThreadSummary } from "../components/types";
+import type {
+  HarnessCard,
+  HostTarget,
+  ThreadSummary,
+} from "../components/types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -91,7 +101,9 @@ function client(summary: ThreadSummaryResult = SUMMARY): HostClient {
       repoId: "f1",
       additions: 1,
       deletions: 0,
-      files: [{ path: "added.rs", status: "added", additions: 1, deletions: 0 }],
+      files: [
+        { path: "added.rs", status: "added", additions: 1, deletions: 0 },
+      ],
       patch: "+fn main() {}",
     })),
     threadGitCommit: vi.fn(async () => summary),
@@ -117,17 +129,31 @@ describe("ConversationSummary", () => {
     );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
-    expect(await screen.findByRole("dialog", { name: "Conversation summary" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("dialog", { name: "Conversation summary" }),
+    ).toBeInTheDocument();
     expect(host.threadSummary).toHaveBeenCalledWith({ threadId: "t-auth" });
-    expect(await screen.findByRole("button", { name: "Selected repository jabot" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Changes in jabot: +1 −0" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Selected repository jabot" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Changes in jabot: +1 −0" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Local")).toBeInTheDocument();
     expect(screen.getByText("main")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "jabot-frontend, +4 −2" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open notes.md" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "jabot-frontend, +4 −2" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Sources" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open notes.md" }),
+    ).toBeInTheDocument();
   });
 
   it("applies Git actions to the selected repository", async () => {
@@ -135,31 +161,45 @@ describe("ConversationSummary", () => {
     render(<ConversationSummary client={host} threadId="t-auth" />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
     await screen.findByRole("button", { name: "Selected repository jabot" });
-    await userEvent.click(screen.getByRole("button", { name: "jabot-frontend, +4 −2" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "jabot-frontend, +4 −2" }),
+    );
     expect(
-      await screen.findByRole("button", { name: "Selected repository jabot-frontend" }),
+      await screen.findByRole("button", {
+        name: "Selected repository jabot-frontend",
+      }),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Inspect changes" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Inspect changes" }),
+    );
     await waitFor(() =>
       expect(host.threadGitDiff).toHaveBeenCalledWith({
         threadId: "t-auth",
         repoId: "f2",
       }),
     );
-    expect(await screen.findByRole("dialog", { name: "Changes in jabot-frontend" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("dialog", { name: "Changes in jabot-frontend" }),
+    ).toBeInTheDocument();
   });
 
   it("opens a source and the full list", async () => {
     const host = client();
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Open notes.md" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Open notes.md" }),
+    );
     expect(host.openThreadSource).toHaveBeenCalledWith({
       threadId: "t-auth",
       sourceId: "s1",
@@ -172,11 +212,17 @@ describe("ConversationSummary", () => {
     const host = client();
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
-    expect(await screen.findByRole("dialog", { name: "Conversation summary" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("dialog", { name: "Conversation summary" }),
+    ).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
-    expect(screen.queryByRole("dialog", { name: "Conversation summary" })).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Conversation summary" }),
+    ).toBeNull();
   });
 
   it("names empty, missing, and non-Git states", async () => {
@@ -199,19 +245,31 @@ describe("ConversationSummary", () => {
     });
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for notes" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for notes",
+      }),
     );
-    expect(await screen.findByText("notes is not a Git repository.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Inspect changes" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Commit or push" })).toBeDisabled();
+    expect(
+      await screen.findByText("notes is not a Git repository."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Inspect changes" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Commit or push" }),
+    ).toBeDisabled();
   });
 
   it("says so when the host cannot answer", async () => {
     render(<ConversationSummary threadId="t-auth" />);
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      screen.getByRole("button", {
+        name: "Conversation summary for Repositories",
+      }),
     );
-    expect(await screen.findByText("Summary is unavailable on this host.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Summary is unavailable on this host."),
+    ).toBeInTheDocument();
   });
 
   it("names a missing checkout and an empty Git state", async () => {
@@ -234,9 +292,13 @@ describe("ConversationSummary", () => {
     });
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for gone" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for gone",
+      }),
     );
-    expect(await screen.findByText("gone is not available on disk.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("gone is not available on disk."),
+    ).toBeInTheDocument();
 
     const empty = client({
       threadId: "t-auth",
@@ -257,9 +319,13 @@ describe("ConversationSummary", () => {
     });
     render(<ConversationSummary client={empty} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for fresh" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for fresh",
+      }),
     );
-    expect(await screen.findByText("Git state is not available yet.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Git state is not available yet."),
+    ).toBeInTheDocument();
   });
 
   it("says when no repository is attached", async () => {
@@ -272,10 +338,14 @@ describe("ConversationSummary", () => {
     });
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      screen.getByRole("button", {
+        name: "Conversation summary for Repositories",
+      }),
     );
     expect(
-      await screen.findByText("No repository is attached to this conversation."),
+      await screen.findByText(
+        "No repository is attached to this conversation.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -288,7 +358,9 @@ describe("ConversationSummary", () => {
     } as unknown as HostClient;
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      screen.getByRole("button", {
+        name: "Conversation summary for Repositories",
+      }),
     );
     expect(await screen.findByText("host is down")).toBeInTheDocument();
   });
@@ -323,7 +395,9 @@ describe("ConversationSummary", () => {
     host.attachThreadRepo = vi.fn(async () => next);
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
     await userEvent.click(
       await screen.findByRole("button", { name: "Selected repository jabot" }),
@@ -344,9 +418,13 @@ describe("ConversationSummary", () => {
     const host = client();
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Commit or push" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Commit or push" }),
+    );
     expect(
       await screen.findByRole("dialog", { name: "Commit or push jabot" }),
     ).toBeInTheDocument();
@@ -374,11 +452,17 @@ describe("ConversationSummary", () => {
       .mockResolvedValueOnce({ ok: true });
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Commit or push" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Commit or push" }),
+    );
     await userEvent.click(await screen.findByRole("button", { name: "Push" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("rejected by remote");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "rejected by remote",
+    );
 
     await userEvent.click(screen.getByRole("button", { name: "Push" }));
     await waitFor(() => expect(host.threadGitPush).toHaveBeenCalledTimes(2));
@@ -407,15 +491,21 @@ describe("ConversationSummary", () => {
       />,
     );
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Compare branch" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Compare branch" }),
+    );
     expect(open).toHaveBeenCalledWith(
       "https://github.com/jabot/compare/main...dev",
       "_blank",
       "noopener",
     );
-    expect(onOpenPullRequest).toHaveBeenCalledWith("https://github.com/jabot/pull/1");
+    expect(onOpenPullRequest).toHaveBeenCalledWith(
+      "https://github.com/jabot/pull/1",
+    );
     open.mockRestore();
   });
 
@@ -436,10 +526,14 @@ describe("ConversationSummary", () => {
     host.addThreadSource = vi.fn(async () => SUMMARY);
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
     expect(
-      screen.getByRole("button", { name: "Open shot.png" }).querySelector("img"),
+      screen
+        .getByRole("button", { name: "Open shot.png" })
+        .querySelector("img"),
     ).toHaveAttribute("src", "https://example.com/shot.png");
     await userEvent.click(screen.getByRole("button", { name: "Add source" }));
     await waitFor(() =>
@@ -455,7 +549,9 @@ describe("ConversationSummary", () => {
     const host = client();
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Add source" }));
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("pick_sources"));
@@ -473,18 +569,26 @@ describe("ConversationSummary", () => {
     };
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
-    expect(await screen.findByRole("dialog", { name: "Conversation summary" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("dialog", { name: "Conversation summary" }),
+    ).toBeInTheDocument();
     const before = vi.mocked(host.threadSummary).mock.calls.length;
     await act(async () => {
       notify?.({ jsonrpc: JSONRPC_VERSION, method: "session/update" });
     });
     await waitFor(() =>
-      expect(vi.mocked(host.threadSummary).mock.calls.length).toBeGreaterThan(before),
+      expect(vi.mocked(host.threadSummary).mock.calls.length).toBeGreaterThan(
+        before,
+      ),
     );
     fireEvent.mouseDown(document.body);
-    expect(screen.queryByRole("dialog", { name: "Conversation summary" })).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Conversation summary" }),
+    ).toBeNull();
   });
 
   it("opens a pull request from an empty review", async () => {
@@ -514,12 +618,22 @@ describe("ConversationSummary", () => {
       />,
     );
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Inspect changes" }));
-    expect(await screen.findByText("No changes in this repository.")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Open pull request" }));
-    expect(onOpenPullRequest).toHaveBeenCalledWith("https://github.com/jabot/pull/9");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Inspect changes" }),
+    );
+    expect(
+      await screen.findByText("No changes in this repository."),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open pull request" }),
+    );
+    expect(onOpenPullRequest).toHaveBeenCalledWith(
+      "https://github.com/jabot/pull/9",
+    );
   });
 
   it("says when the sources list is empty", async () => {
@@ -529,9 +643,13 @@ describe("ConversationSummary", () => {
     });
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+      await screen.findByRole("button", {
+        name: "Conversation summary for jabot",
+      }),
     );
     await userEvent.click(screen.getByRole("button", { name: "View all" }));
-    expect(await screen.findByText("No sources attached yet.")).toBeInTheDocument();
+    expect(
+      await screen.findByText("No sources attached yet."),
+    ).toBeInTheDocument();
   });
 });

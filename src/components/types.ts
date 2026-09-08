@@ -82,11 +82,7 @@ export type ToolKind =
 
 /** ACP tool-call status. `pending` also covers "awaiting your approval". */
 export type ToolStatus =
-  | "pending"
-  | "in_progress"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "pending" | "in_progress" | "completed" | "failed" | "cancelled";
 
 /** `folders` row. Folder = one registered repo (#16). */
 export interface Folder {

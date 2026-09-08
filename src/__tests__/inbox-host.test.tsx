@@ -154,7 +154,9 @@ beforeEach(() => {
   inbox.mockReset().mockResolvedValue(INBOX);
   pendingPermissions.mockReset().mockResolvedValue(NO_ASKS);
   reopenThread.mockReset().mockResolvedValue(reopened);
-  archiveThread.mockReset().mockResolvedValue({ ...reopened, state: "archived" });
+  archiveThread
+    .mockReset()
+    .mockResolvedValue({ ...reopened, state: "archived" });
   replyPermission.mockReset().mockResolvedValue({ delivered: true });
   vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
 });
@@ -162,7 +164,9 @@ beforeEach(() => {
 async function openInbox() {
   render(<App />);
   await screen.findByRole("button", { name: "Settings" });
-  await userEvent.click(await screen.findByRole("button", { name: /^Inbox —/ }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: /^Inbox —/ }),
+  );
   return screen.getByRole("heading", { level: 1, name: "Inbox" });
 }
 
@@ -187,7 +191,9 @@ describe("the Inbox on real data", () => {
     await openInbox();
 
     await screen.findByText("Sidebar overflow fix finished");
-    expect(screen.getByText("Auth migration has gone quiet")).toBeInTheDocument();
+    expect(
+      screen.getByText("Auth migration has gone quiet"),
+    ).toBeInTheDocument();
     // Still Sleeping is `threads.state = folded`, projected — not an event.
     expect(screen.getByText("Nightly NAS backup")).toBeInTheDocument();
     expect(screen.getByText("STILL SLEEPING")).toBeInTheDocument();
@@ -264,7 +270,9 @@ describe("the Inbox on real data", () => {
       });
     }
 
-    expect(await screen.findByText("Nightly NAS backup failed")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Nightly NAS backup failed"),
+    ).toBeInTheDocument();
     expect(
       await screen.findByRole("button", { name: "Inbox — 4 waiting" }),
     ).toBeInTheDocument();
@@ -515,7 +523,9 @@ describe("a host thread that no folder lists", () => {
     await waitFor(() =>
       expect(screen.queryByText(/That thread is gone/)).not.toBeInTheDocument(),
     );
-    expect(await screen.findByRole("heading", { level: 2, name: "Writer" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { level: 2, name: "Writer" }),
+    ).toBeInTheDocument();
   });
 
   /**

@@ -53,7 +53,9 @@ export function CrewView({
           {drafts.length > 0 && (
             <div className="pending-drafts" aria-label="Pending bot drafts">
               <h2>Pending proposals</h2>
-              <p>Close does not dismiss. Review and Save to add a crew member.</p>
+              <p>
+                Close does not dismiss. Review and Save to add a crew member.
+              </p>
               <ul>
                 {drafts.map((draft) => (
                   <li key={draft.draftId}>
