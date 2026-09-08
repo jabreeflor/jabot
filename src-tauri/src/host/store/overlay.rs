@@ -7,7 +7,8 @@ use uuid::Uuid;
 
 use super::error::StoreError;
 use super::models::{
-    InboxEventRow, NewThread, RunRow, SessionReceiptRow, ThreadRow, TranscriptEventRow,
+    InboxEventRow, MessageReactionRow, NewThread, RunRow, SessionReceiptRow, ThreadRow,
+    TranscriptEventRow,
 };
 use super::{
     map_inbox_event, map_receipt, map_run, map_thread, map_transcript, now_utc,
@@ -396,6 +397,97 @@ pub fn transcript_head(conn: &Connection, thread_id: &str) -> Result<i64, StoreE
         |row| row.get(0),
     )?;
     Ok(head)
+}
+
+/// Toggle one emoji on a rendered item. The primary key is the uniqueness
+/// rule: a second click on the same mark deletes the row rather than
+/// inserting another.
+pub fn toggle_reaction(
+    conn: &Connection,
+    thread_id: &str,
+    item_id: &str,
+    emoji: &str,
+) -> Result<Vec<String>, StoreError> {
+    validate_reaction_key(thread_id, item_id, emoji)?;
+    if get_thread(conn, thread_id)?.is_none() {
+        return Err(StoreError::NotFound(thread_id.into()));
+    }
+    let emoji = emoji.trim();
+    let now = now_utc();
+    let deleted = conn.execute(
+        "DELETE FROM message_reactions
+         WHERE thread_id = ?1 AND item_id = ?2 AND emoji = ?3",
+        params![thread_id, item_id, emoji],
+    )?;
+    if deleted == 0 {
+        conn.execute(
+            "INSERT INTO message_reactions (thread_id, item_id, emoji, created_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![thread_id, item_id, emoji, now],
+        )?;
+    }
+    list_item_reactions(conn, thread_id, item_id)
+}
+
+pub fn list_thread_reactions(
+    conn: &Connection,
+    thread_id: &str,
+) -> Result<Vec<MessageReactionRow>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT thread_id, item_id, emoji, created_at
+         FROM message_reactions
+         WHERE thread_id = ?1
+         ORDER BY created_at, emoji",
+    )?;
+    let rows = stmt
+        .query_map([thread_id], |row| {
+            Ok(MessageReactionRow {
+                thread_id: row.get(0)?,
+                item_id: row.get(1)?,
+                emoji: row.get(2)?,
+                created_at: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn list_item_reactions(
+    conn: &Connection,
+    thread_id: &str,
+    item_id: &str,
+) -> Result<Vec<String>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT emoji FROM message_reactions
+         WHERE thread_id = ?1 AND item_id = ?2
+         ORDER BY created_at, emoji",
+    )?;
+    let rows = stmt
+        .query_map(params![thread_id, item_id], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn validate_reaction_key(thread_id: &str, item_id: &str, emoji: &str) -> Result<(), StoreError> {
+    if thread_id.trim().is_empty() {
+        return Err(StoreError::invalid("threadId is required"));
+    }
+    if item_id.trim().is_empty() || item_id.len() > 64 {
+        return Err(StoreError::invalid("itemId is required"));
+    }
+    let trimmed = emoji.trim();
+    if trimmed.is_empty() {
+        return Err(StoreError::invalid("emoji is required"));
+    }
+    if trimmed.chars().count() > 16 {
+        return Err(StoreError::invalid("emoji is too long"));
+    }
+    if trimmed.chars().any(|c| c.is_control()) {
+        return Err(StoreError::invalid(
+            "emoji cannot contain control characters",
+        ));
+    }
+    Ok(())
 }
 
 pub fn insert_inbox_event(

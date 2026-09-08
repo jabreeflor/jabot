@@ -103,6 +103,32 @@ fn wait_for(
     found
 }
 
+/// The first `session/update` is the host's echo of the prompt
+/// (`user_message_chunk`). Wait for a particular later chunk.
+fn wait_for_update(
+    session: &mut HostSession,
+    needle: &str,
+    timeout: Duration,
+) -> Vec<JsonRpcNotification> {
+    let start = Instant::now();
+    let mut found = Vec::new();
+    while start.elapsed() < timeout {
+        session.pump_acp();
+        found.extend(session.take_outbound());
+        if found.iter().any(|n| {
+            n.method == SESSION_UPDATE
+                && n.params
+                    .as_ref()
+                    .map(|p| p["acp"].to_string().contains(needle))
+                    .unwrap_or(false)
+        }) {
+            return found;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
+    found
+}
+
 #[test]
 fn catalog_lists_opencode_as_a_shipped_card() {
     let mut session = HostSession::ephemeral();
@@ -147,7 +173,7 @@ fn a_real_prompt_persists_a_reply_on_opencode() {
     ));
     assert_eq!(response.result.as_ref().unwrap()["accepted"], true);
 
-    let outbound = wait_for(&mut session, SESSION_UPDATE, Duration::from_secs(3));
+    let outbound = wait_for_update(&mut session, "hello from fake-acp", Duration::from_secs(3));
     assert!(
         outbound.iter().any(|n| {
             n.method == SESSION_UPDATE

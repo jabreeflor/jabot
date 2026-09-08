@@ -415,6 +415,24 @@ impl Store {
         overlay::transcript_head(&self.conn, thread_id)
     }
 
+    /// Toggle an emoji on a rendered transcript item (#265). Returns the
+    /// item's marks afterwards so the caller does not have to re-read.
+    pub fn toggle_reaction(
+        &self,
+        thread_id: &str,
+        item_id: &str,
+        emoji: &str,
+    ) -> Result<Vec<String>, StoreError> {
+        overlay::toggle_reaction(&self.conn, thread_id, item_id, emoji)
+    }
+
+    pub fn list_thread_reactions(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<MessageReactionRow>, StoreError> {
+        overlay::list_thread_reactions(&self.conn, thread_id)
+    }
+
     pub fn set_thread_preview(&self, thread_id: &str, preview: &str) -> Result<(), StoreError> {
         overlay::set_thread_preview(&self.conn, thread_id, preview)
     }
@@ -1714,6 +1732,26 @@ mod tests {
         let replay = store.transcript_after("t1", 1).unwrap();
         assert_eq!(replay.len(), 1);
         assert_eq!(replay[0].seq, 2);
+
+        let first = store.toggle_reaction("t1", "e2-1", "👍").unwrap();
+        assert_eq!(first, vec!["👍".to_string()]);
+        let again = store.toggle_reaction("t1", "e2-1", "👍").unwrap();
+        assert!(
+            again.is_empty(),
+            "a second click must drop the mark, not duplicate it"
+        );
+        store.toggle_reaction("t1", "e2-1", "🎉").unwrap();
+        store.toggle_reaction("t1", "e2-1", "👍").unwrap();
+        let listed = store.list_thread_reactions("t1").unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .map(|row| row.emoji.as_str())
+                .collect::<Vec<_>>(),
+            vec!["🎉", "👍"]
+        );
+        let missing = store.toggle_reaction("no-such", "e1-0", "👍").unwrap_err();
+        assert!(matches!(missing, StoreError::NotFound(_)), "{missing}");
 
         let event = store
             .insert_inbox_event(

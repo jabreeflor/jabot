@@ -236,7 +236,14 @@ export type TranscriptItem =
   | { kind: "stamp"; id: string; text: string }
   | { kind: "sys"; id: string; text: string }
   | { kind: "user"; id: string; text: string }
-  | { kind: "agent"; id: string; text: string; streaming?: boolean }
+  | {
+      kind: "agent";
+      id: string;
+      text: string;
+      streaming?: boolean;
+      /** Emoji the user left on this reply (#265). Insertion order. */
+      reactions?: readonly string[];
+    }
   | { kind: "tool"; id: string; call: ToolCall }
   | {
       kind: "notice";
