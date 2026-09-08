@@ -11,7 +11,12 @@
  */
 import { test as base, expect } from "@playwright/test";
 
-import { attachHostLogs, seedChiefOnFakeAcp, startJabotApp, type JabotApp } from "./host";
+import {
+  attachHostLogs,
+  seedChiefOnFakeAcp,
+  startJabotApp,
+  type JabotApp,
+} from "./host";
 
 export type BrowserFixtures = {
   jabot: JabotApp;
