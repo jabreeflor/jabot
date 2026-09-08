@@ -6,6 +6,8 @@
 #   ./scripts/verify.sh --fast             # skip the e2e project (no Rust binary build)
 #   ./scripts/verify.sh --check-toolchain  # also ask rustup if stable moved (NETWORK)
 #   ./scripts/verify.sh --check-mac        # also lint notify/mac.rs for macOS (NETWORK; CI runs this itself)
+#                                    # packaged-app matrix/isolation is a default
+#                                    # stage; see docs/macos-acceptance.md (#235)
 #
 # This is the only gate. CI's `verify` job is `npm ci` + this script, and the
 # macOS `bundle` job does not run on pull requests (.github/workflows/ci.yml
@@ -20,8 +22,10 @@
 #   2. bundle-config  — what the macOS `bundle` job reads, checked without macOS
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   2c. install script — the release installer's pins, delivery, and refusals
+#   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
+#   2e. macos lint    — planner/path tests for the before-merge macOS jobs
 #   3. tsc            — renderer types
-#   3b. eslint        — React Hooks + type-aware promise rules (npm run lint)
+#   3b. frontend lint — eslint (hooks + no-explicit-any + promises)
 #   4. vitest unit    — React components + host client (jsdom)
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors
@@ -30,7 +34,6 @@
 #   8. build hostd    — the NDJSON stdio host the e2e suite drives
 #   9. vitest e2e     — TypeScript client against the real Rust host
 #  10. vite build     — the renderer bundle actually builds
-#   2d. macos lint    — planner/path tests for the before-merge macOS jobs
 #   *. mac notify     — --check-mac only: notify/mac.rs, which is cfg'd out on
 #                      Linux. CI runs the same script automatically on relevant
 #                      PRs; locally it stays opt-in (NETWORK)
@@ -645,7 +648,33 @@ NODE
 }
 
 # ---------------------------------------------------------------------------
-# 2d. macos lint planner
+# 2d. macos packaged-app acceptance (#235)
+#
+# Browser Playwright is the renderer + jabot-hostd. This stage is the native
+# boundary: Tauri IPC, Dock, Keychain, packaged adapters, updater archives.
+# The default path cannot launch JaBot.app (no macOS, no display), so what
+# runs here is the part that *can* rot silently on Linux: the matrix still
+# names every cell, isolation still refuses production app data and the
+# production Keychain service, `package` still distinguishes a .app from an
+# updater archive, and the workflows still trigger the targeted native check
+# and the release artifact check. scripts/tests/macos-acceptance.test.sh is
+# the behaviour (~2s). Launching the .app is `macos-acceptance.sh run` on a
+# Mac; D-019 is why that is not this stage.
+# ---------------------------------------------------------------------------
+macos_acceptance() {
+  local ok=0
+  local sh='scripts/macos-acceptance.sh'
+  if [[ ! -x "$sh" ]]; then
+    printf '  %s is missing or not executable\n' "$sh"
+    return 1
+  fi
+  "$sh" check || ok=1
+  ./scripts/tests/macos-acceptance.test.sh || ok=1
+  return $ok
+}
+
+# ---------------------------------------------------------------------------
+# 2e. macos lint planner
 #
 # CI decides whether to run the Linux notify cross-check or the native macOS
 # Clippy job from a path list (scripts/macos-lint-needed.sh). That classifier
@@ -671,9 +700,10 @@ run "bundle-config"  bundle_config
 run "binary set"     binary_set
 run "commit guards"  guards
 run "install script" install_script
+run "macos acceptance" macos_acceptance
 run "macos lint tests" macos_lint_tests
 run "typecheck"      npx tsc --noEmit
-run "lint"           npm run lint
+run "frontend lint"  npm run lint
 run "unit tests"     npx vitest run --project unit
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
 run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings

@@ -24,6 +24,7 @@ the issue number is noted so it can be cross-referenced against
 | [thread-state-and-runs.md](thread-state-and-runs.md) | Thread overlay states + run ledger | #5, #15 |
 | [folder-repo-registration.md](folder-repo-registration.md) | Folder/repo registration | #16 |
 | [crew-management.md](crew-management.md) | Crew store, bot templates, "every bot is a harness" | #6, #17 |
+| [bot-awareness.md](../bot-awareness.md) | App awareness + conversational bot drafts | #237 |
 | [tools-mcp-framework.md](tools-mcp-framework.md) | Tool/MCP catalog, OAuth, per-bot allowlists | #18 |
 | [device-pairing.md](device-pairing.md) | QR + SAS device pairing, scoped grants (MVP2) | #19 |
 | [permission-broker.md](permission-broker.md) | Permission prompts for tool/file access | #20 |

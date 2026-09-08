@@ -65,10 +65,11 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh --fast` | tight iteration — skips building `jabot-hostd` and the e2e suite |
 | `./scripts/verify.sh --check-mac` | local repro of the PR `mac notify cross-check` — **run it when you touch `src-tauri/src/notify/`** so you find rot before CI does |
 | `./scripts/check-macos-clippy.sh` | on a Mac, local repro of the PR `macos clippy` job — Keychain + `lib.rs` cfg(macos) branches |
+| `./scripts/macos-acceptance.sh check` | packaged-app matrix / isolation (Linux). **`run` needs a Mac** — [docs/macos-acceptance.md](docs/macos-acceptance.md), #235 |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
-| `npm run lint` / `npm run lint:fix` | frontend lint (Hooks + promises); same command `verify.sh` runs, including `--fast` |
+| `npm run lint` / `npm run lint:fix` | frontend lint (hooks + no-explicit-any + promises; same command `verify.sh` runs, including `--fast`) |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
@@ -128,8 +129,8 @@ one run tells you everything that is wrong.
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
 | `macos lint tests` | the path planner that turns CI's macOS jobs on still matches what `docs/macos-lint.md` claims (`scripts/tests/macos-lint.test.sh`) | you changed the planner or the notify/native check scripts; run `./scripts/tests/macos-lint.test.sh` |
-| `typecheck` | `tsc --noEmit`, strict, no `any` | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. |
-| `lint` | shared frontend ESLint: official React Hooks rules plus type-aware `no-floating-promises` / `no-misused-promises` | `npm run lint` to iterate; `npm run lint:fix` for anything the rules can rewrite. Type-aware promise checks need `tsc`'s project files; they run offline after `npm install`. |
+| `typecheck` | `tsc --noEmit`, strict: implicit any, unused locals, unused parameters, no fallthrough | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. `tsc` does **not** reject an explicit `any` annotation or an `as any` cast — that is the linter, below. |
+| `frontend lint` | shared ESLint: Rules of Hooks, exhaustive-deps, `@typescript-eslint/no-explicit-any`, and type-aware `no-floating-promises` / `no-misused-promises` | replace `any` with a concrete type, a generic, or `unknown` plus narrowing. A discarded promise needs `await`, a returned promise, or `void` plus an explicit error strategy. `npm run lint` is the same command; `npm run lint:fix` applies safe fixes (`no-explicit-any` is not auto-fixable). A clean tree does not prove the rules are on — `scripts/tests/lint-probe.mjs` and `scripts/tests/lint-rules.mjs` do. |
 | `unit tests` | 200+ vitest cases in jsdom: React components, host client, and axe on the primary views | `npx vitest --project unit` to iterate; `npm run test:a11y` for the axe slice |
 | `rust fmt` | `cargo fmt --check` | `cargo fmt --manifest-path src-tauri/Cargo.toml` |
 | `rust clippy` | `-D warnings` over all targets, `dev-bins` included | fix, or justify a narrow `#[allow]` in the code. Do not suggest APIs newer than the `msrv` in `src-tauri/clippy.toml`. |
@@ -139,10 +140,38 @@ one run tells you everything that is wrong.
 | `e2e (ts to rust host)` | 123 cases over 17 suites: the production TypeScript client against a live `jabot-hostd` over real NDJSON | `npx vitest run --project e2e -t "<name>"`. Needs the binary, so build it first or run the full `verify.sh`. Not run under `--fast`. |
 | `renderer build` | `vite build` produces a bundle | usually an import that typechecks but does not resolve |
 | `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
+| `macos acceptance` | #235: the packaged-app matrix still names Tauri IPC, Dock, Keychain, adapters, and updater archives; isolation still refuses production app data; Playwright WebKit is not this gate | you changed the script, the docs, or the workflows; `./scripts/macos-acceptance.sh check` and `./scripts/tests/macos-acceptance.test.sh` name the cell that moved. Launching `JaBot.app` is `run` on a Mac — D-019 is why that is not this stage |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
 caused a real failure at least once.
+
+## Frontend lint
+
+The renderer, its tests, and the TypeScript/JavaScript under `scripts/dev`
+share one ESLint config (`eslint.config.js`). `./scripts/verify.sh` runs it
+on every path, `--fast` included. After `npm install` the check is offline.
+
+```bash
+npm run lint        # eslint --max-warnings=0 . , then probes that a
+                    # conditional hook, a missing effect dependency, an
+                    # explicit `any`, an `as any` cast, a discarded
+                    # promise, and a misused async callback still fail
+npm run lint:fix    # apply auto-fixes only; does not run the probes
+```
+
+`tsc --noEmit` is strict: it rejects *implicit* any. It still permits
+`const x: any` and `x as any`. The linter is what enforces the documented
+no-any policy (`@typescript-eslint/no-explicit-any`). Do not treat a green
+typecheck as "no any".
+
+The same file also enforces React Rules of Hooks, exhaustive-deps, and
+type-aware `no-floating-promises` / `no-misused-promises`. A discarded
+promise needs `await`, a returned promise, or `void` plus an explicit
+error strategy. Do not stand up a second linter. Generated output,
+vendored code, `node_modules`, and nested `worktrees/` are ignored.
+Unavoidable interop exceptions stay narrow and documented next to the
+site; tests are not broadly exempt.
 
 ## Accessibility tests
 
@@ -268,15 +297,18 @@ filing or "fixing" a gap.
 
 - Rust: `cargo fmt` clean, `clippy -D warnings` clean, nothing newer than the
   `msrv` pinned in `src-tauri/clippy.toml`.
-- TypeScript: strict, no `any`. `tsc --noEmit` is the type gate; `npm run lint`
-  is the React Hooks and promise-handling gate (`eslint.config.js`). A discarded
-  promise needs `await`, a returned promise, or `void` plus an explicit error
-  strategy (the callee reports the failure, or the same expression has
-  `.catch`). There is no blanket exemption for JSX event handlers — wrap
-  `async` work so `onClick` itself returns `void`. The one Hooks exception is
-  `installing` in `AdapterSetup`: listing it would clear a failed install's
-  error. Exceptions stay next to the line they silence and say why. Subsequent
-  TypeScript lint issues extend this config; do not add a second linter.
+- TypeScript: `tsc` is strict (implicit any is an error). Explicit `any` and
+  `as any` are forbidden by the shared frontend ESLint config
+  (`npm run lint` / `npm run lint:fix`), not by `tsc`. The same file is the
+  React Hooks and promise-handling gate. A discarded promise needs `await`,
+  a returned promise, or `void` plus an explicit error strategy (the callee
+  reports the failure, or the same expression has `.catch`). There is no
+  blanket exemption for JSX event handlers — wrap `async` work so `onClick`
+  itself returns `void`. The one Hooks exception is `installing` in
+  `AdapterSetup`: listing it would clear a failed install's error
+  (`installingRef` is sampled instead). Exceptions stay next to the line
+  they silence and say why. Subsequent TypeScript lint issues extend
+  `eslint.config.js`; do not add a second JS/TS linter.
 - Anything added to `verify.sh` must run offline, need no display, no macOS and
   no GitHub token, and be fast enough that people still run it. If a check
   needs any of those, it goes behind a flag — `--check-toolchain` and
@@ -292,6 +324,12 @@ filing or "fixing" a gap.
   `src-tauri/src/notify/`, still run `./scripts/verify.sh --check-mac`
   locally** so you see the failure before the PR check does. It needs the
   network and `rustup target add x86_64-apple-darwin`, and no Mac.
+  Native-sensitive PRs also run the packaged-app matrix in
+  [`.github/workflows/macos-native.yml`](.github/workflows/macos-native.yml)
+  (Linux, path-filtered — not a 10x `macos-latest` bundle). Packaged-app
+  launch is `#235` / [docs/macos-acceptance.md](docs/macos-acceptance.md);
+  label a PR `macos-acceptance` to opt into the expensive Mac job. Do not call
+  Playwright WebKit a Tauri acceptance run.
 - A test that cannot fail when the thing it covers breaks is worse than no
   test, because it reads as coverage. Break it once and watch it fail before
   you trust it.

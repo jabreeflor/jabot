@@ -61,7 +61,8 @@ pub fn is_unauthenticated(method: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::super::super::protocol::methods::{
-        CREW_UPDATE, DEVICE_REVOKE, PAIRING_START, SESSION_PROMPT, THREAD_DELETE, TOOLS_CONNECT,
+        CREW_DRAFT_SAVE, CREW_UPDATE, DEVICE_REVOKE, PAIRING_START, SESSION_PROMPT, THREAD_DELETE,
+        TOOLS_CONNECT,
     };
     use super::*;
 
@@ -85,6 +86,7 @@ mod tests {
         for method in [
             THREAD_DELETE,
             CREW_UPDATE,
+            CREW_DRAFT_SAVE,
             TOOLS_CONNECT,
             PAIRING_START,
             DEVICE_REVOKE,

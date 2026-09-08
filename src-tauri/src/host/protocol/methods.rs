@@ -57,6 +57,14 @@ pub const CREW_CREATE: &str = "crew/create";
 pub const CREW_UPDATE: &str = "crew/update";
 pub const CREW_REMOVE: &str = "crew/remove";
 pub const CREW_THREAD: &str = "crew/thread";
+pub const CREW_DRAFTS: &str = "crew/drafts";
+pub const CREW_DRAFT_GET: &str = "crew/drafts/get";
+pub const CREW_DRAFT_SAVE: &str = "crew/drafts/save";
+pub const CREW_DRAFT_DISMISS: &str = "crew/drafts/dismiss";
+/// A draft was submitted, saved, or dismissed. Not a thread envelope: the
+/// durable record is `crew/drafts`. Clients that do not know this method
+/// ignore it.
+pub const CREW_DRAFT: &str = "crew/draft";
 pub const SCHEDULE_LIST: &str = "schedule/list";
 pub const SCHEDULE_CREATE: &str = "schedule/create";
 pub const SCHEDULE_UPDATE: &str = "schedule/update";
@@ -103,6 +111,10 @@ pub const CLIENT_METHODS: &[&str] = &[
     CREW_UPDATE,
     CREW_REMOVE,
     CREW_THREAD,
+    CREW_DRAFTS,
+    CREW_DRAFT_GET,
+    CREW_DRAFT_SAVE,
+    CREW_DRAFT_DISMISS,
     THREAD_TRANSCRIPT,
     THREAD_RESUME,
     SUPERVISOR_STATUS,
@@ -133,6 +145,7 @@ pub const HOST_NOTIFICATIONS: &[&str] = &[
     PERMISSION_RESOLVED,
     INBOX_RESURFACE,
     INBOX_EVENT,
+    CREW_DRAFT,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1874,6 +1887,103 @@ pub struct CrewRefParams {
     pub bot_id: String,
 }
 
+/// A reviewable bot proposal (#237). `botId` is present only after Save.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BotDraftView {
+    pub draft_id: String,
+    pub request_key: String,
+    pub status: String,
+    pub revision: i64,
+    pub name: String,
+    pub instructions: String,
+    pub tools: Vec<String>,
+    pub harness_id: String,
+    pub color: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub template_id: Option<String>,
+    pub source_bot_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_bot_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name_warning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_warning: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewDraftsResult {
+    pub drafts: Vec<BotDraftView>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewDraftGetParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub draft_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_bot_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewDraftSaveParams {
+    pub draft_id: String,
+    pub revision: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewDraftDismissParams {
+    pub draft_id: String,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewDraftSaveResult {
+    pub draft: BotDraftView,
+    pub bot: BotView,
+    /// Always false here: Save never starts a run (#237).
+    pub run_started: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CrewDraftEventParams {
+    pub draft_id: String,
+    pub status: String,
+    pub name: String,
+    pub source_bot_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_bot_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bot_id: Option<String>,
+}
+
 /// Removing a bot takes the row, never the directory — its markdown memory
 /// outlives it, the same way forgetting a folder leaves the checkout alone.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1922,6 +2032,34 @@ impl CrewUpdateParams {
 impl CrewRefParams {
     pub fn validate(&self) -> Result<(), super::error::RpcError> {
         require_non_empty(&self.bot_id, "botId")
+    }
+}
+
+impl CrewDraftGetParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        match (&self.draft_id, &self.request_key) {
+            (None, None) => Err(super::error::RpcError::InvalidParams(
+                "draftId or requestKey is required".into(),
+            )),
+            (Some(id), _) => require_non_empty(id, "draftId"),
+            (_, Some(key)) => require_non_empty(key, "requestKey"),
+        }
+    }
+}
+
+impl CrewDraftSaveParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.draft_id, "draftId")?;
+        if let Some(name) = &self.name {
+            require_non_empty(name, "name")?;
+        }
+        Ok(())
+    }
+}
+
+impl CrewDraftDismissParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.draft_id, "draftId")
     }
 }
 

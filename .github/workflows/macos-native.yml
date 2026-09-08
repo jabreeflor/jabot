@@ -1,0 +1,101 @@
+name: macOS native
+
+# Targeted native checks (#235). Split from ci.yml so path filters do not
+# suppress the Linux verify job.
+#
+# macos-latest bills at 10x. The old per-PR bundle job was ~86% of spend
+# (ci.yml). This workflow therefore:
+#
+# * runs the cheap, honest compile of notify/mac.rs on Linux when
+#   native-sensitive paths change (`native-check`);
+# * runs a packaged launch only on tags, workflow_dispatch, or a PR labelled
+#   `macos-acceptance` (`macos-packaged`).
+#
+# Neither job is Playwright. A WebKit browser project is not Tauri IPC and
+# is not this gate. Headless macos-latest is not an Aqua session: Dock and
+# notification clicks stay manual (D-019 / #73).
+
+on:
+  pull_request:
+    paths:
+      - "src-tauri/src/notify/**"
+      - "src-tauri/src/lib.rs"
+      - "src-tauri/src/acceptance.rs"
+      - "src-tauri/src/host/store/secrets.rs"
+      - "src-tauri/src/host/harness/bundled.rs"
+      - "src-tauri/tauri.conf.json"
+      - "src-tauri/entitlements.plist"
+      - "src-tauri/capabilities/**"
+      - "scripts/macos-acceptance.sh"
+      - "scripts/check-mac-notify.sh"
+      - "scripts/tests/macos-acceptance.test.sh"
+      - "docs/macos-acceptance.md"
+      - ".github/workflows/macos-native.yml"
+      - ".github/workflows/release.yml"
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: macos-native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Linux. Network only because --check-mac resolves the macOS half of the
+  # objc2 graph (scripts/check-mac-notify.sh). Not a substitute for launching
+  # JaBot.app.
+  native-check:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+          components: clippy
+      - uses: actions/setup-node@v4
+        with:
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
+          node-version: 26
+      - name: Cross-check notify/mac.rs and acceptance matrix
+        run: |
+          ./scripts/check-mac-notify.sh
+          ./scripts/macos-acceptance.sh check
+          ./scripts/tests/macos-acceptance.test.sh
+
+  # Unsigned .app + isolated launch. ~2–4 min wall / ~20–40 billable at 10x.
+  # Opt-in on PRs via the macos-acceptance label; always on tags / dispatch.
+  macos-packaged:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'macos-acceptance'))
+    runs-on: macos-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / .node-version.
+          node-version: 26
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm run bundle:adapters
+      - run: npm run tauri build
+      - name: Package identity (not updater install)
+        run: ./scripts/macos-acceptance.sh package
+      - name: Isolated launch (skip Dock / notification UI)
+        run: ./scripts/macos-acceptance.sh run --no-interactive
+      - name: Retain acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-acceptance-evidence
+          path: .macos-acceptance-evidence
+          if-no-files-found: warn
+          retention-days: 14

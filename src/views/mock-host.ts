@@ -166,12 +166,14 @@ export const TOOL_CATALOG: readonly ToolOption[] = [
   { id: "slack", label: "Slack", status: "needs_auth" },
 ];
 
-/** Chief's extra host tools (#6). Not MCP, so not offered to other bots. */
+/** Host-implemented tools (#6, #237). Chief and Recruiter ship a subset. */
 export const HOST_TOOLS: readonly ToolOption[] = [
   { id: "handoff_to_bot", label: "Handoff" },
   { id: "spawn_code_session", label: "Spawn code session" },
   { id: "fold_thread", label: "Fold thread" },
   { id: "list_crew_status", label: "Crew status" },
+  { id: "draft_bot", label: "Draft bot" },
+  { id: "get_bot_draft", label: "Draft status" },
 ];
 
 /**
@@ -245,12 +247,14 @@ export function initialMockState(): MockState {
         name: "Chief",
         color: "b-teal",
         instructions:
-          "Route work across the crew. Fold long tasks away, surface only what matters.",
+          "Route work across the crew. Fold long tasks away, surface only what matters. When the user asks for a new crew member, propose one with draft_bot; they must Save it.",
         tools: [
           "handoff_to_bot",
           "spawn_code_session",
           "fold_thread",
           "list_crew_status",
+          "draft_bot",
+          "get_bot_draft",
         ],
         harnessId: "claude",
         isChief: true,
@@ -260,8 +264,8 @@ export function initialMockState(): MockState {
         name: "Bot Recruiter",
         color: "b-purple",
         instructions:
-          "Help me shape and add the right bots for the work I need.",
-        tools: [],
+          "Help me shape and add the right bots for the work I need. When they ask for a new crew member, propose one with draft_bot. Submitting a draft does not create or launch the bot; the user must Save it.",
+        tools: ["draft_bot", "get_bot_draft"],
         harnessId: "claude",
         isChief: false,
       },

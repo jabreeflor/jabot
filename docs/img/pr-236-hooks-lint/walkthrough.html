@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add React Hooks linting to the frontend verification gate</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .gate { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .gate div { padding:14px; background:#0f141a; border-radius:9px; }
+    .gate strong { display:block; margin-bottom:6px; }
+    .fail { color:var(--bad); }
+    .pass { color:var(--ok); }
+    .files { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:18px; }
+    .files div { padding:12px 10px; background:#0f141a; border-radius:9px; font-size:13px; font-weight:650; text-align:center; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    @media (max-width:700px) { .flow,.gate,.files { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #236 walkthrough</div>
+    <h1>Add React Hooks linting to the frontend verification gate</h1>
+    <p>One shared ESLint config now sits next to <code>tsc</code> in <code>verify.sh</code>. This PR turns on Rules of Hooks and exhaustive-deps only. Issues #225 and #226 add their rules to the same file.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>The frontend gate was strict TypeScript and tests.</li>
+            <li>A hook behind an <code>if</code>, or an effect missing a dependency, type-checked clean.</li>
+            <li>Nothing in pre-push or CI failed those cases.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li><code>eslint.config.js</code> is the one frontend lint file.</li>
+            <li><code>npm run lint</code> is <code>eslint .</code> plus a probe that the two justifying cases still fail.</li>
+            <li><code>verify.sh</code> runs that command on every path, including <code>--fast</code>.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="files">
+        <div>src/ + tests/</div>
+        <div>scripts/dev + lint probe</div>
+        <div>vite / vitest config</div>
+      </div>
+      <div class="gate">
+        <div>
+          <strong class="fail">Fails the run</strong>
+          Conditional hooks and missing effect dependencies. The probe lints those two snippets in memory so a config that no longer reports them cannot pass.
+        </div>
+        <div>
+          <strong class="pass">Not this PR</strong>
+          Floating promises, misused async callbacks, and <code>no-explicit-any</code>. The parser is already typescript-eslint so #225 can add <code>projectService</code> without a second config.
+        </div>
+      </div>
+      <p>Ignored on purpose: generated output, <code>src-tauri/</code> (Rust + vendored adapters), <code>plugins/</code>, <code>node_modules</code>, and nested <code>worktrees/</code>.</p>
+    </section>
+
+    <section id="review">
+      <h2>What to look at</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>eslint.config.js</code></td><td>Shared allowlist + ignores. Only <code>rules-of-hooks</code> and <code>exhaustive-deps</code> as errors — compiler rules from the v7 recommended preset stay off.</td></tr>
+          <tr><td><code>scripts/tests/lint-probe.mjs</code></td><td>In-memory proofs that a conditional hook and a missing dependency still fail those rules.</td></tr>
+          <tr><td><code>scripts/verify.sh</code></td><td>New <code>frontend lint</code> stage after typecheck. Not behind <code>--fast</code>.</td></tr>
+          <tr><td><code>src/App.tsx</code> and three siblings</td><td>The five existing findings, fixed without suppressions (memoized empty arrays / target; reload extracted; install mode in a ref).</td></tr>
+          <tr><td><code>CONTRIBUTING.md</code></td><td><code>npm run lint</code> / <code>lint:fix</code>, and that the check is offline after <code>npm install</code>.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>npm run lint</code> — clean tree, then the two probe lines.</li>
+        <li>Write a hook behind <code>if</code> or an effect with <code>[]</code> that reads a prop; <code>npx eslint</code> on that file must fail; delete it.</li>
+        <li><code>./scripts/verify.sh --fast</code> includes the lint stage. Full <code>./scripts/verify.sh</code> is the same gate CI runs.</li>
+        <li>To extend later: add the #225 / #226 rules in <code>eslint.config.js</code>. Do not add a second linter.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

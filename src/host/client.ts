@@ -6,6 +6,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createHotTransport, type HotChannel } from "./devTransport";
 import {
   CREW_CREATE,
+  CREW_DRAFTS,
+  CREW_DRAFT_DISMISS,
+  CREW_DRAFT_GET,
+  CREW_DRAFT_SAVE,
   CREW_LIST,
   CREW_REMOVE,
   CREW_THREAD,
@@ -71,7 +75,13 @@ import {
   type ScheduleRunResult,
   type ScheduleUpdateParams,
   type ScheduleView,
+  type BotDraftView,
   type CrewCreateParams,
+  type CrewDraftDismissParams,
+  type CrewDraftGetParams,
+  type CrewDraftSaveParams,
+  type CrewDraftSaveResult,
+  type CrewDraftsResult,
   type CrewListResult,
   type CrewRefParams,
   type CrewRemoveResult,
@@ -399,6 +409,26 @@ export class HostClient {
       so calling twice cannot make two threads. */
   async botThread(params: CrewRefParams): Promise<ThreadStateResult> {
     return this.request<ThreadStateResult>(CREW_THREAD, params);
+  }
+
+  /** Pending and stale bot drafts waiting for Save or Dismiss (#237). */
+  async listBotDrafts(): Promise<CrewDraftsResult> {
+    return this.request<CrewDraftsResult>(CREW_DRAFTS);
+  }
+
+  async getBotDraft(params: CrewDraftGetParams): Promise<BotDraftView> {
+    return this.request<BotDraftView>(CREW_DRAFT_GET, params);
+  }
+
+  /** Commit a draft through normal crew creation. Never starts a run. */
+  async saveBotDraft(params: CrewDraftSaveParams): Promise<CrewDraftSaveResult> {
+    return this.request<CrewDraftSaveResult>(CREW_DRAFT_SAVE, params);
+  }
+
+  async dismissBotDraft(
+    params: CrewDraftDismissParams,
+  ): Promise<BotDraftView> {
+    return this.request<BotDraftView>(CREW_DRAFT_DISMISS, params);
   }
 
   /** Every app-wide preference, as it is actually in force (#26). */

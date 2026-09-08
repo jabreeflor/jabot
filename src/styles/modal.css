@@ -293,6 +293,15 @@
   margin-top: var(--sp-3);
 }
 
+.proposal-banner {
+  margin: 0 0 var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: 8px;
+  background: var(--raise);
+  color: var(--ink);
+  font-size: var(--fs-meta);
+}
+
 /* What the host said went wrong — the only place a registration failure can
    be read, since the modal stays open on error rather than losing the form. */
 .modal-error {
