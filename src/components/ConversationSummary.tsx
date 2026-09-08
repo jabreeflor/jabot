@@ -71,6 +71,10 @@ export function ConversationSummary({
   }, [client, threadId]);
 
   useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
     if (!open) return;
     void load();
   }, [load, open]);
@@ -520,22 +524,21 @@ function SourcesStrip({
     <section className="summary-sources" aria-label="Sources">
       <h3>Sources</h3>
       <div className="summary-source-row">
-        {visible.map((source) => (
-          <button
-            key={source.id}
-            type="button"
-            className="summary-source"
-            aria-label={`Open ${source.name}`}
-            title={source.path}
-            onClick={() => onOpen(source)}
-          >
-            {source.kind === "image" ? (
-              <img alt="" src={filePreview(source.path)} />
-            ) : (
-              <FileIcon />
-            )}
-          </button>
-        ))}
+        {visible.map((source) => {
+          const preview = previewSrc(source.path);
+          return (
+            <button
+              key={source.id}
+              type="button"
+              className="summary-source"
+              aria-label={`Open ${source.name}`}
+              title={source.path}
+              onClick={() => onOpen(source)}
+            >
+              {preview ? <img alt="" src={preview} /> : <FileIcon />}
+            </button>
+          );
+        })}
         <button
           type="button"
           className="summary-add-source"
@@ -734,7 +737,9 @@ async function pickSourcePaths(): Promise<string[]> {
   }
 }
 
-function filePreview(path: string): string {
-  if (path.startsWith("data:") || path.startsWith("http")) return path;
-  return `file://${path}`;
+/** Only URLs the renderer can actually paint. Local paths stay a file icon
+ *  so the Sources strip does not show a broken `file://` thumbnail. */
+function previewSrc(path: string): string | null {
+  if (path.startsWith("data:") || /^https?:\/\//.test(path)) return path;
+  return null;
 }

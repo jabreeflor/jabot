@@ -197,9 +197,9 @@ up() {
     # Its own session, so `down` can take the whole tree (vite, esbuild,
     # jabot-hostd, adapters) with one signal to the group.
     if command -v setsid >/dev/null 2>&1; then
-      setsid npx vite --port "$PORT" --strictPort >"$LOG" 2>&1 < /dev/null &
+      setsid npx vite --port "$PORT" --strictPort --host 127.0.0.1 >"$LOG" 2>&1 < /dev/null &
     else
-      npx vite --port "$PORT" --strictPort >"$LOG" 2>&1 < /dev/null &
+      npx vite --port "$PORT" --strictPort --host 127.0.0.1 >"$LOG" 2>&1 < /dev/null &
     fi
     echo $! >"$PIDFILE"
   fi

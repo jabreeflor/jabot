@@ -109,7 +109,7 @@ describe("ConversationSummary", () => {
     );
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
     );
     expect(await screen.findByRole("dialog", { name: "Conversation summary" })).toBeInTheDocument();
     expect(host.threadSummary).toHaveBeenCalledWith({ threadId: "t-auth" });
@@ -127,7 +127,7 @@ describe("ConversationSummary", () => {
     render(<ConversationSummary client={host} threadId="t-auth" />);
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
     );
     await screen.findByRole("button", { name: "Selected repository jabot" });
     await userEvent.click(screen.getByRole("button", { name: "jabot-frontend, +4 −2" }));
@@ -149,7 +149,7 @@ describe("ConversationSummary", () => {
     const host = client();
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
     );
     await userEvent.click(await screen.findByRole("button", { name: "Open notes.md" }));
     expect(host.openThreadSource).toHaveBeenCalledWith({
@@ -164,7 +164,7 @@ describe("ConversationSummary", () => {
     const host = client();
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
     );
     expect(await screen.findByRole("dialog", { name: "Conversation summary" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
@@ -191,7 +191,7 @@ describe("ConversationSummary", () => {
     });
     render(<ConversationSummary client={host} threadId="t-auth" />);
     await userEvent.click(
-      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+      await screen.findByRole("button", { name: "Conversation summary for notes" }),
     );
     expect(await screen.findByText("notes is not a Git repository.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Inspect changes" })).toBeDisabled();
