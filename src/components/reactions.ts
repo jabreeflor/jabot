@@ -23,7 +23,9 @@ export const REACTION_CHOICES: readonly ReactionChoice[] = [
 ];
 
 export function reactionName(emoji: string): string {
-  return REACTION_CHOICES.find((choice) => choice.emoji === emoji)?.name ?? emoji;
+  return (
+    REACTION_CHOICES.find((choice) => choice.emoji === emoji)?.name ?? emoji
+  );
 }
 
 /** Add `emoji` if it is missing, drop it if it is already there. Order is

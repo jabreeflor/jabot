@@ -218,7 +218,10 @@ describe("transcript overlay", () => {
     const dataDir = ownDataDir();
     const first = await connected({ dataDir });
     await openThread(first.client, "t-react", "tools");
-    await first.client.prompt({ threadId: "t-react", content: "fix the guard" });
+    await first.client.prompt({
+      threadId: "t-react",
+      content: "fix the guard",
+    });
     const replay = await settle(first.client, "t-react", (result) =>
       result.events.some(
         (event) =>
@@ -251,9 +254,7 @@ describe("transcript overlay", () => {
 
     const { client } = await connected({ dataDir });
     const reread = await client.threadTranscript({ threadId: "t-react" });
-    expect(reread.reactions).toEqual([
-      { itemId: agent!.id, emoji: "🎉" },
-    ]);
+    expect(reread.reactions).toEqual([{ itemId: agent!.id, emoji: "🎉" }]);
     const restored = hydrate(reread);
     expect(restored.items.find((item) => item.kind === "agent")).toMatchObject({
       id: agent!.id,

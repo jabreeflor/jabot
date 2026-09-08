@@ -590,7 +590,12 @@ describe("hydrate", () => {
             content: { type: "text", text: "go" },
           },
         },
-        { seq: 2, method: SESSION_UPDATE, createdAt: "", payload: text("Done.") },
+        {
+          seq: 2,
+          method: SESSION_UPDATE,
+          createdAt: "",
+          payload: text("Done."),
+        },
       ],
       truncated: false,
       queued: [],
@@ -736,14 +741,16 @@ function stubHost(
       };
     }),
     cancel,
-    react: vi.fn(async ({ itemId, emoji }: { itemId: string; emoji: string }) => {
-      const current = marks.get(itemId) ?? [];
-      const next = current.includes(emoji)
-        ? current.filter((item) => item !== emoji)
-        : [...current, emoji];
-      marks.set(itemId, next);
-      return { threadId: THREAD.id, itemId, reactions: next };
-    }),
+    react: vi.fn(
+      async ({ itemId, emoji }: { itemId: string; emoji: string }) => {
+        const current = marks.get(itemId) ?? [];
+        const next = current.includes(emoji)
+          ? current.filter((item) => item !== emoji)
+          : [...current, emoji];
+        marks.set(itemId, next);
+        return { threadId: THREAD.id, itemId, reactions: next };
+      },
+    ),
   } as unknown as HostClient;
 
   function notify(method: string, params: unknown) {

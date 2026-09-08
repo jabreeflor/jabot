@@ -484,7 +484,9 @@ describe("emoji reactions on an agent bubble", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Add reaction" }));
-    expect(screen.getByRole("menu", { name: "Choose a reaction" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menu", { name: "Choose a reaction" }),
+    ).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("menuitem", { name: "React with thumbs up" }),
     );
@@ -529,7 +531,9 @@ describe("emoji reactions on an agent bubble", () => {
     add.focus();
     expect(add).toHaveFocus();
     await userEvent.keyboard("{Enter}");
-    expect(screen.getByRole("menu", { name: "Choose a reaction" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menu", { name: "Choose a reaction" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("menuitem", { name: "React with thumbs up" }),
     ).toHaveFocus();
@@ -549,8 +553,8 @@ describe("emoji reactions on an agent bubble", () => {
       />,
     );
 
-    expect(screen.getAllByRole("button", { name: "Add reaction" })).toHaveLength(
-      1,
-    );
+    expect(
+      screen.getAllByRole("button", { name: "Add reaction" }),
+    ).toHaveLength(1);
   });
 });
