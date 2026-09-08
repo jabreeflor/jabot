@@ -24,6 +24,7 @@ pub const WORKTREE_FAILED: i64 = -32011;
 pub const CWD_MISSING: i64 = -32012;
 pub const PAIRING_FAILED: i64 = -32013;
 pub const DEVICE_SCOPE: i64 = -32014;
+pub const DRAFT_CONFLICT: i64 = -32015;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -121,6 +122,9 @@ pub enum RpcError {
     /// from anything the client said about itself.
     #[error("a {role} device cannot call {method}")]
     DeviceScope { role: &'static str, method: String },
+    /// A draft retry or Save raced another writer (#237).
+    #[error("{0}")]
+    DraftConflict(String),
 }
 
 impl RpcError {
@@ -146,6 +150,7 @@ impl RpcError {
             Self::CwdMissing { .. } => CWD_MISSING,
             Self::PairingFailed { .. } => PAIRING_FAILED,
             Self::DeviceScope { .. } => DEVICE_SCOPE,
+            Self::DraftConflict(_) => DRAFT_CONFLICT,
         }
     }
 
@@ -215,6 +220,7 @@ impl RpcError {
                 "role": role,
                 "method": method,
             })),
+            Self::DraftConflict(detail) => Some(serde_json::json!({ "detail": detail })),
             _ => None,
         }
     }

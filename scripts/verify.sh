@@ -23,7 +23,7 @@
 #   2d. macos lint    — planner/path tests for the before-merge macOS jobs
 #   2e. coverage policy — include/exclude/thresholds still fail when they should
 #   3. tsc            — renderer types
-#   3b. eslint        — React Hooks + type-aware promise rules (npm run lint)
+#   3b. frontend lint — eslint (hooks + no-explicit-any + promises)
 #   4. vitest unit    — React components + host client (jsdom), with coverage
 #   5. cargo fmt      — Rust formatting
 #   6. cargo clippy   — Rust lints, warnings are errors
@@ -712,7 +712,7 @@ run "install script" install_script
 run "macos lint tests" macos_lint_tests
 run "coverage policy" coverage_policy
 run "typecheck"      npx tsc --noEmit
-run "lint"           npm run lint
+run "frontend lint"  npm run lint
 run "unit tests"     unit_tests
 run "rust fmt"       cargo fmt "${MANIFEST[@]}" -- --check
 run "rust clippy"    cargo clippy "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --all-targets -- -D warnings

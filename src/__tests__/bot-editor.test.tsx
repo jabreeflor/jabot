@@ -159,6 +159,59 @@ describe("BotEditorModal", () => {
       expect.objectContaining({ name: "Unnamed bot" }),
     );
   });
+
+  it("shows a proposal banner and treats Close as not Dismiss", async () => {
+    const onDismiss = vi.fn();
+    const onSaveAndOpen = vi.fn();
+    const props = renderEditor({
+      bot: {
+        id: "draft-1",
+        name: "Researcher",
+        color: "b-green",
+        instructions: "Check sources and summarize findings.",
+        tools: ["browser"],
+        harnessId: "claude",
+        isChief: false,
+      },
+      proposal: {
+        sourceName: "Chief",
+        stale: true,
+        staleReason: "the proposing bot no longer has draft_bot",
+        nameWarning: "another crew member is already named Researcher",
+      },
+      onDismiss,
+      onSaveAndOpen,
+    });
+
+    expect(screen.getByRole("heading", { name: "Proposed bot" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Proposed by Chief");
+    expect(screen.getByRole("status")).toHaveTextContent("stale");
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Cancel" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Remove" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(props.onCancel).toHaveBeenCalled();
+    expect(onDismiss).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onDismiss).toHaveBeenCalled();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Save and open chat" }),
+    );
+    expect(onSaveAndOpen).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Researcher",
+        instructions: "Check sources and summarize findings.",
+        tools: ["browser"],
+      }),
+    );
+  });
 });
 
 describe("the animated bot picker", () => {

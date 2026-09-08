@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Add Jabot app awareness and conversational bot drafts</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 0; background: #111; color: #eee; }
+    main { max-width: 820px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 28px; margin: 0 0 8px; }
+    .lede { color: #bbb; margin: 0 0 32px; }
+    h2 { font-size: 20px; margin: 36px 0 12px; }
+    p, li { color: #ddd; }
+    .flow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
+    .step { background: #1c1c1c; border: 1px solid #333; border-radius: 12px; padding: 14px; }
+    .step strong { display: block; margin-bottom: 6px; }
+    code { font: 13px/1.4 ui-monospace, monospace; background: #222; padding: 1px 5px; border-radius: 4px; }
+    .files { list-style: none; padding: 0; }
+    .files li { background: #1c1c1c; border: 1px solid #333; border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+    .policy { columns: 2; gap: 16px; }
+    .policy p { break-inside: avoid; margin: 0 0 10px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Add Jabot app awareness and conversational bot drafts</h1>
+  <p class="lede">Chief or Bot Recruiter can propose a crew member. Save creates the bot. Every session/prompt carries versioned Jabot context and the current persona.</p>
+
+  <h2>How it works</h2>
+  <div class="flow">
+    <div class="step"><strong>1. Propose</strong> An allowed bot calls <code>draft_bot</code> on the existing MCP bridge. The host persists a draft and returns <code>saved: false</code>.</div>
+    <div class="step"><strong>2. Review</strong> Full-device UI lists pending drafts. Close is not Dismiss. Approver phones cannot Save.</div>
+    <div class="step"><strong>3. Save</strong> Atomic host Save creates one crew member. Opening chat uses <code>crew/thread</code>. No run starts.</div>
+  </div>
+  <p>Before every ACP dispatch the host prepends one text block: packaged Jabot instructions, current bot, current thread, then the user’s original blocks. The transcript stays exact. There is no invented <code>systemPrompt</code>.</p>
+
+  <h2>What to look at</h2>
+  <ul class="files">
+    <li><code>src-tauri/src/host/acp/prompt.rs</code> — composition used by direct and queued dispatch</li>
+    <li><code>src-tauri/src/host/crew/draft.rs</code> — MCP tools, UI RPCs, validation, stale policy</li>
+    <li><code>src-tauri/src/host/store/draft.rs</code> — durable drafts and atomic Save</li>
+    <li><code>src/App.tsx</code> + <code>BotEditorModal.tsx</code> — Proposed by, pending list, Open chat</li>
+    <li><code>src-tauri/src/host/store/seed.rs</code> — default grant and upgrade of untouched seats</li>
+  </ul>
+
+  <h2>Policy</h2>
+  <div class="policy">
+    <p>Draft-first. Save is UI-only, never an agent tool.</p>
+    <p>Default grant: untouched Chief and Recruiter only.</p>
+    <p>Omitted harness: template, then source bot, then thread.</p>
+    <p>No MEMORY.md, tokens, or credentials in the prompt.</p>
+    <p>Stale drafts stay reviewable. Save is a fresh user action.</p>
+    <p>Drafts are not Inbox permission cards.</p>
+  </div>
+
+  <h2>How to verify</h2>
+  <ol>
+    <li>Run <code>./scripts/verify.sh</code>.</li>
+    <li>Ask Chief to make a research bot; confirm a pending draft and no new crew row.</li>
+    <li>Save in the editor; Researcher appears. Open chat uses the standing thread.</li>
+    <li>Check a captured <code>session_prompt=</code> for <code>Jabot context v1</code> and the persona; the transcript is only the user text.</li>
+  </ol>
+</main>
+</body>
+</html>

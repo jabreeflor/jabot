@@ -111,10 +111,11 @@ impl HostSession {
             self.drop_prompt_queue(thread_id, "the adapter is no longer running");
             return;
         };
+        let wire = self.compose_prompt_for_dispatch(thread_id, &next.content);
         let Some(conn) = self.conn_mut(thread_id) else {
             return;
         };
-        if let Err(err) = conn.send_prompt(thread_id, &session_id, &next.content) {
+        if let Err(err) = conn.send_prompt(thread_id, &session_id, &wire) {
             eprintln!("failed to send a queued prompt for {thread_id}: {err}");
             self.drop_adapter(thread_id);
             self.requeue_front(thread_id, next);

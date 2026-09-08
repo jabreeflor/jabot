@@ -136,9 +136,12 @@ export function BotEditorModal({
   tools,
   harnesses,
   error = null,
+  proposal = null,
   onSave,
+  onSaveAndOpen,
   onRemove,
   onCancel,
+  onDismiss,
   onConnectTool,
   onDisconnectTool,
   onOpenUrl,
@@ -152,9 +155,18 @@ export function BotEditorModal({
       the form: "unknown tool" and "no such harness" are things to fix and
       retry, not reasons to lose what the user typed. */
   error?: string | null;
+  /** Conversational proposal (#237). Close is not Dismiss. */
+  proposal?: {
+    sourceName: string;
+    stale?: boolean;
+    staleReason?: string;
+    nameWarning?: string;
+  } | null;
   onSave: (draft: BotDraft) => void;
+  onSaveAndOpen?: (draft: BotDraft) => void;
   onRemove?: (botId: string) => void;
   onCancel: () => void;
+  onDismiss?: () => void;
   /** Start / drop the *provider grant* (#18). Absent on a preview build,
       which has no host to sign into anything — the row then shows status and
       offers nothing, which is what it did before this existed. */
@@ -164,7 +176,7 @@ export function BotEditorModal({
       The app passes `window.open(url, "_blank", "noopener,noreferrer")`. */
   onOpenUrl?: (url: string) => void;
 }) {
-  const adding = bot === null;
+  const adding = bot === null && !proposal;
   const templateFieldId = useId();
   const nameId = useId();
   const instructionsId = useId();
@@ -226,9 +238,30 @@ export function BotEditorModal({
 
   return (
     <Modal
-      title={adding ? "Add a bot" : `Customize ${bot.name}`}
+      title={
+        proposal
+          ? `Proposed bot`
+          : adding
+            ? "Add a bot"
+            : `Customize ${bot?.name ?? "bot"}`
+      }
       onClose={onCancel}
     >
+      {proposal && (
+        <p className="proposal-banner" role="status">
+          Proposed by {proposal.sourceName}. Saving creates a crew member;
+          this does not start a conversation.
+          {proposal.stale && (
+            <>
+              {" "}
+              This proposal is stale
+              {proposal.staleReason ? ` (${proposal.staleReason})` : ""}.
+              Review it before Save.
+            </>
+          )}
+          {proposal.nameWarning ? ` ${proposal.nameWarning}` : ""}
+        </p>
+      )}
       {adding && (
         <>
           <FieldLabel htmlFor={templateFieldId}>
@@ -401,7 +434,12 @@ export function BotEditorModal({
       )}
 
       <div className="macts">
-        {!adding && !bot.isChief && onRemove && (
+        {proposal && onDismiss && (
+          <button type="button" className="btn danger" onClick={onDismiss}>
+            Dismiss
+          </button>
+        )}
+        {!adding && !proposal && bot && !bot.isChief && onRemove && (
           <button
             type="button"
             className="btn danger"
@@ -411,8 +449,28 @@ export function BotEditorModal({
           </button>
         )}
         <button type="button" className="btn" onClick={onCancel}>
-          Cancel
+          {proposal ? "Close" : "Cancel"}
         </button>
+        {proposal && onSaveAndOpen && (
+          <button
+            type="button"
+            className="btn"
+            disabled={!harnesses.some((harness) => harness.id === harnessId)}
+            onClick={() =>
+              onSaveAndOpen({
+                name: name.trim() || "Unnamed bot",
+                color,
+                image,
+                instructions: instructions.trim(),
+                tools: selectedTools,
+                harnessId,
+                templateId: adding ? templateId || null : bot?.templateId,
+              })
+            }
+          >
+            Save and open chat
+          </button>
+        )}
         <button
           type="button"
           className="btn primary"
@@ -425,7 +483,7 @@ export function BotEditorModal({
               instructions: instructions.trim(),
               tools: selectedTools,
               harnessId,
-              templateId: adding ? templateId || null : bot.templateId,
+              templateId: adding ? templateId || null : bot?.templateId,
             })
           }
         >
