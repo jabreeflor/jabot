@@ -32,7 +32,10 @@ makes bots user-editable without shipping code changes.
 3. Users can create, edit, and delete crew members via
    `BotEditorModal.tsx`; changes persist immediately through the crew
    store and are reflected in `BotStrip.tsx` and the New Chat harness
-   picker without requiring a restart.
+   picker without requiring a restart. Chief and Bot Recruiter can also
+   propose a crew member with `draft_bot` (#237). That is a reviewable
+   draft, not a created bot — see [bot-awareness.md](../bot-awareness.md).
+   When the tool is unavailable, Crew remains the fallback.
 4. `standing.rs` distinguishes "standing" crew (always available, e.g.
    Chief) from ad hoc/one-off bot configurations if the UI creates
    throwaway ones (e.g. for a single custom-harness experiment).

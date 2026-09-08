@@ -34,7 +34,7 @@ pub const SPECS: &[HostToolSpec] = &[
                       standing thread and it starts work immediately. Use this instead of \
                       doing a specialist's job yourself. Choose a bot reported by \
                       list_crew_status; if the right specialist is missing, ask the user to \
-                      add one in Crew or hand planning to Bot Recruiter. The receiving bot \
+                      propose one with draft_bot or hand planning to Bot Recruiter. The receiving bot \
                       works in its own memory directory and has no repository checkout; for \
                       anything that needs code, use spawn_code_session.",
         schema: handoff_schema,
@@ -67,6 +67,25 @@ pub const SPECS: &[HostToolSpec] = &[
                       A bot's `idle` only means it has no threads at all, so read `busy` to \
                       tell a bot whose only job is asleep from one mid-run.",
         schema: no_args_schema,
+    },
+    HostToolSpec {
+        id: "draft_bot",
+        title: "Propose a new crew member",
+        description: "Submit a draft of a new persistent crew member for the user to review. \
+                      This does not create or launch a bot. The host returns pending_review \
+                      and saved:false. The user must Save the draft in the editor. Do not \
+                      start work, connect providers, create schedules, or grant the child \
+                      draft_bot. Name and instructions are enough; do not interrogate the \
+                      user about models or providers.",
+        schema: draft_bot_schema,
+    },
+    HostToolSpec {
+        id: "get_bot_draft",
+        title: "Check a proposed bot",
+        description: "Look up a draft you submitted with draft_bot, by draftId or requestKey. \
+                      Returns saved:true and botId only after the user has Saved it. \
+                      Submitting a draft never creates a bot on its own.",
+        schema: get_bot_draft_schema,
     },
 ];
 
@@ -147,6 +166,61 @@ fn fold_schema() -> Value {
 
 fn no_args_schema() -> Value {
     json!({ "type": "object", "properties": {}, "additionalProperties": false })
+}
+
+fn draft_bot_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "requestKey": {
+                "type": "string",
+                "description": "A stable id for this creation request. Retrying the same \
+                                key with the same payload returns the existing draft."
+            },
+            "name": {
+                "type": "string",
+                "description": "Display name for the proposed bot."
+            },
+            "instructions": {
+                "type": "string",
+                "description": "What the bot should do, written as its persona."
+            },
+            "tools": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Optional catalog tool ids the user should review. Do not \
+                                include draft_bot or other management tools."
+            },
+            "harnessId": {
+                "type": "string",
+                "description": "Optional engine id from the catalog. Defaults to this \
+                                conversation's harness."
+            },
+            "templateId": {
+                "type": "string",
+                "description": "Optional shipped template to snapshot fields from."
+            }
+        },
+        "required": ["requestKey", "name", "instructions"],
+        "additionalProperties": false
+    })
+}
+
+fn get_bot_draft_schema() -> Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "draftId": {
+                "type": "string",
+                "description": "Host-generated id returned by draft_bot."
+            },
+            "requestKey": {
+                "type": "string",
+                "description": "The requestKey you submitted. Scoped to this bot."
+            }
+        },
+        "additionalProperties": false
+    })
 }
 
 /// The MCP `tools/list` entry for one spec.
