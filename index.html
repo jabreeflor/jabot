@@ -30,6 +30,16 @@
               : "dark";
         document.documentElement.dataset.theme = resolved;
         document.documentElement.style.colorScheme = resolved;
+        // live.sh preview only. The real app waits for the host to say the
+        // native material applied (src/translucency.ts) so Linux/Windows
+        // and Reduce Transparency stay opaque.
+        try {
+          if (
+            /(?:^|[?&])translucency=preview(?:&|$)/.test(location.search)
+          ) {
+            document.documentElement.dataset.translucency = "on";
+          }
+        } catch (e) {}
       })();
     </script>
   </head>

@@ -167,9 +167,9 @@ describe("the seed", () => {
 
     expect(cards.map((card) => card.id)).toContain("claude");
     for (const harness of HARNESSES) {
-      // Presets and custom harnesses reach the UI at runtime through
-      // `harness/list`; the seeded cards are the ones the mock may hard-code,
-      // and every word of them has to be the host's.
+      // Compiled-in cards (shipped + presets) may be hard-coded in the mock;
+      // custom harnesses still arrive only through `harness/list`. Every
+      // word of a mock card has to be the host's.
       expect(cards).toContainEqual({
         id: harness.id,
         label: harness.label,

@@ -28,6 +28,7 @@ use std::collections::BTreeMap;
 use super::super::protocol::methods::{
     HarnessCapabilitiesView, HarnessCardView, HarnessStatus, HarnessTier, RuntimeSpec, SessionScope,
 };
+use super::cursor;
 
 /// One way to start a harness, tried in order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +94,10 @@ pub enum Readiness {
 pub enum InspectKind {
     Copilot,
     Gemini,
+    /// Cursor Agent CLI: version, login / API key, then models. The vendor
+    /// CLI *is* the ACP adapter (`agent acp`), so a single `Command` probe
+    /// cannot tell "old binary" from "logged out" from "no model".
+    Cursor,
 }
 
 /// A catalog entry, whatever tier it came from.
@@ -104,9 +109,10 @@ pub struct HarnessDescriptor {
     pub accent: String,
     pub tier: HarnessTier,
     pub launches: Vec<Launch>,
-    /// The vendor CLI behind the adapter. Its absence is `CliMissing` — a
-    /// different sentence to the user than "the ACP adapter is missing".
-    pub cli: Option<String>,
+    /// Vendor CLI names, tried in order. Absence of every name is
+    /// `CliMissing` — a different sentence than "the ACP adapter is missing".
+    /// Cursor answers to both `agent` and the older `cursor-agent`.
+    pub cli: Vec<String>,
     /// Floor, not override: a value the user already exported wins. Resolved
     /// in [`HarnessDescriptor::runtime_spec`], so what a thread snapshots is
     /// what the supervisor will apply.
@@ -220,7 +226,7 @@ struct Compiled {
     accent: &'static str,
     tier: HarnessTier,
     launches: &'static [(&'static str, &'static [&'static str], bool)],
-    cli: Option<&'static str>,
+    cli: &'static [&'static str],
     env: &'static [(&'static str, &'static str)],
     install_hint: &'static str,
     install_url: &'static str,
@@ -254,7 +260,7 @@ const SHIPPED: &[Compiled] = &[
             ("claude-agent-acp", &[], false),
             ("claude-code-acp", &[], false),
         ],
-        cli: Some("claude"),
+        cli: &["claude"],
         env: &[],
         // JaBot ships the adapter, so the only install left is Claude Code
         // itself — and Node, which the bundled adapter runs on. The npm line
@@ -278,7 +284,7 @@ const SHIPPED: &[Compiled] = &[
         accent: "var(--h-codex)",
         tier: HarnessTier::Shipped,
         launches: &[("codex-acp", &[], false)],
-        cli: Some("codex"),
+        cli: &["codex"],
         env: &[],
         install_hint: "Install Codex, then `npm i -g @zed-industries/codex-acp`.",
         install_url: "https://github.com/agentclientprotocol/codex-acp",
@@ -302,7 +308,7 @@ const SHIPPED: &[Compiled] = &[
             ("omp", &["acp"], false),
             ("npx", &["-y", "pi-acp"], true),
         ],
-        cli: Some("pi"),
+        cli: &["pi"],
         env: &[],
         install_hint: "Install Pi (pi.dev), then `npm i -g pi-acp`.",
         install_url: "https://pi.dev/",
@@ -322,7 +328,7 @@ const SHIPPED: &[Compiled] = &[
         // explicit flag is what older builds lack, and what the Doctor looks
         // for before it will call this ready.
         launches: &[("copilot", &["--acp"], false)],
-        cli: Some("copilot"),
+        cli: &["copilot"],
         env: &[],
         install_hint: "Install GitHub Copilot CLI (`npm i -g @github/copilot`), then run `copilot login`. Requires a Copilot subscription with CLI enabled in your organization policy.",
         install_url: "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/install-copilot-cli",
@@ -344,7 +350,7 @@ const SHIPPED: &[Compiled] = &[
             ("gemini", &["--acp"], false),
             ("gemini", &["--experimental-acp"], false),
         ],
-        cli: Some("gemini"),
+        cli: &["gemini"],
         env: &[],
         install_hint: "Install Gemini CLI (`npm i -g @google/gemini-cli`), then run `gemini` once to sign in or export GEMINI_API_KEY.",
         install_url: "https://geminicli.com/docs/cli/acp-mode/",
@@ -365,7 +371,7 @@ const PRESETS: &[Compiled] = &[
         accent: "var(--h-hermes)",
         tier: HarnessTier::Preset,
         launches: &[("hermes", &["acp"], false), ("hermes-acp", &[], false)],
-        cli: Some("hermes"),
+        cli: &["hermes"],
         // Host-selected MCP has to win over Hermes' own config.yaml servers
         // (decision #6: skip ambient harness MCP as a general rule).
         env: &[("HERMES_ACP_SKIP_CONFIGURED_MCP", "1")],
@@ -391,7 +397,7 @@ const PRESETS: &[Compiled] = &[
         accent: "var(--h-aider)",
         tier: HarnessTier::Preset,
         launches: &[("jabot-aider-acp", &[], false)],
-        cli: Some("aider"),
+        cli: &["aider"],
         env: &[
             ("AIDER_AUTO_COMMITS", "false"),
             ("AIDER_DIRTY_COMMITS", "false"),
@@ -414,7 +420,7 @@ const PRESETS: &[Compiled] = &[
         accent: "var(--h-openclaw)",
         tier: HarnessTier::Preset,
         launches: &[("openclaw", &["acp"], false)],
-        cli: Some("openclaw"),
+        cli: &["openclaw"],
         env: &[],
         install_hint: "Install OpenClaw and run `openclaw onboard --install-daemon`.",
         install_url: "https://docs.openclaw.ai/tools/acp-agents",
@@ -427,6 +433,30 @@ const PRESETS: &[Compiled] = &[
             "Start the Gateway (`openclaw gateway status` shows whether it is up).",
         ),
         session_scope: SessionScope::Profile,
+    },
+    Compiled {
+        id: "cursor",
+        label: "Cursor Agent",
+        blurb: "Cursor's coding agent. Permissions stay in JaBot — no --force.",
+        accent: "var(--h-cursor)",
+        tier: HarnessTier::Preset,
+        // Official current name is `agent`; Buzz and older installs still
+        // ship `cursor-agent`. Both speak `acp` over stdio. Never `--force`,
+        // `--yolo`, `--approve-mcps`, or `--trust` — those skip the permission
+        // broker this card exists to use (#222).
+        launches: &[
+            ("agent", &["acp"], false),
+            ("cursor-agent", &["acp"], false),
+        ],
+        cli: &["agent", "cursor-agent"],
+        env: &[],
+        install_hint: cursor::INSTALL_HINT,
+        install_url: cursor::INSTALL_URL,
+        capability_notes: Some(
+            "Permissions stay in JaBot (no --force). Auth uses this machine's Cursor account or CURSOR_API_KEY — not isolated per bot. Resume only if the CLI advertises loadSession. cursor/ask_question and cursor/create_plan are declined so a turn cannot hang.",
+        ),
+        readiness: CompiledReadiness::Inspect(InspectKind::Cursor),
+        session_scope: SessionScope::Thread,
     },
 ];
 
@@ -445,7 +475,11 @@ fn build(compiled: &Compiled) -> HarnessDescriptor {
             .map(|(command, args, downloads)| Launch::new(command, args, *downloads))
             .chain(super::bundled::launches_for(compiled.id))
             .collect(),
-        cli: compiled.cli.map(str::to_string),
+        cli: compiled
+            .cli
+            .iter()
+            .map(|name| (*name).to_string())
+            .collect(),
         env: compiled
             .env
             .iter()
@@ -501,6 +535,7 @@ fn capabilities_for(id: &str) -> Option<HarnessCapabilities> {
                 "Streaming, tool events, permission prompts, and cancel work over `copilot --acp`. Resume after the Copilot process exits is not supported — sessions are process-local, and `session/close` is unimplemented upstream. JaBot starts a new ACP session instead of claiming a restore.".into(),
             ),
         }),
+        "cursor" => Some(cursor::capabilities()),
         _ => None,
     }
 }
@@ -535,6 +570,7 @@ mod tests {
         }
         assert!(is_reserved("hermes"), "presets are reserved too");
         assert!(is_reserved("aider"), "presets are reserved too");
+        assert!(is_reserved("cursor"), "Cursor is a reserved preset");
         assert!(!is_reserved("my-agent"));
     }
 
@@ -546,7 +582,7 @@ mod tests {
             .unwrap();
         assert_eq!(gemini.tier, HarnessTier::Shipped);
         assert_eq!(gemini.session_scope, SessionScope::Thread);
-        assert_eq!(gemini.cli.as_deref(), Some("gemini"));
+        assert_eq!(gemini.cli, ["gemini"]);
         assert_eq!(gemini.primary().command, "gemini");
         assert_eq!(gemini.primary().args, ["--acp"]);
         assert!(gemini
@@ -564,6 +600,42 @@ mod tests {
                 kind: InspectKind::Gemini
             }
         ));
+    }
+
+    #[test]
+    fn cursor_is_acp_without_force_flags() {
+        let cursor = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "cursor")
+            .unwrap();
+        assert_eq!(cursor.tier, HarnessTier::Preset);
+        assert_eq!(cursor.session_scope, SessionScope::Thread);
+        assert_eq!(cursor.cli, ["agent", "cursor-agent"]);
+        assert_eq!(cursor.primary().command, "agent");
+        assert_eq!(cursor.primary().args, ["acp"]);
+        for launch in &cursor.launches {
+            for flag in super::cursor::forbidden_launch_flags() {
+                assert!(
+                    !launch.args.iter().any(|arg| arg == flag),
+                    "{} must not pass {flag}",
+                    launch.command
+                );
+            }
+        }
+        assert!(matches!(
+            cursor.readiness,
+            Readiness::Inspect {
+                kind: InspectKind::Cursor
+            }
+        ));
+        let caps = cursor
+            .capabilities
+            .as_ref()
+            .expect("declared after reading ACP docs");
+        assert!(caps.streaming && caps.tool_events && caps.permissions && caps.cancel);
+        assert!(!caps.resume, "resume is only if initialize advertises it");
+        assert!(caps.notes.as_deref().unwrap().contains("--force"));
+        assert!(caps.notes.as_deref().unwrap().contains("CURSOR_API_KEY"));
     }
 
     /// Both adapter names are tried, current one first, and whatever this
@@ -699,7 +771,7 @@ mod tests {
         let aider = compiled_in().into_iter().find(|d| d.id == "aider").unwrap();
         assert_eq!(aider.tier, HarnessTier::Preset);
         assert_eq!(aider.session_scope, SessionScope::Thread);
-        assert_eq!(aider.cli.as_deref(), Some("aider"));
+        assert_eq!(aider.cli, ["aider"]);
         assert_eq!(
             aider.env.get("AIDER_AUTO_COMMITS").map(String::as_str),
             Some("false")

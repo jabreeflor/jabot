@@ -152,6 +152,12 @@ planner_path_rs_is_deliberately_excluded() {
   assert_eq $'notify=0\nnative=0' "$out" "path.rs uses cfg! and is linted on Linux" && pass
 }
 
+planner_window_rs_is_deliberately_excluded() {
+  local out
+  out=$(plan src-tauri/src/window.rs) || { fail "planner exited $?"; return; }
+  assert_eq $'notify=0\nnative=0' "$out" "window.rs uses cfg! and is linted on Linux" && pass
+}
+
 planner_mixed_notify_and_secrets_runs_both() {
   local out
   out=$(plan src-tauri/src/notify/mac.rs src-tauri/src/host/store/secrets.rs) || {
@@ -285,6 +291,7 @@ run_case planner_notify_script_runs_notify_only planner_notify_script_runs_notif
 run_case planner_native_script_runs_native_only planner_native_script_runs_native_only
 run_case planner_planner_script_runs_both planner_planner_script_runs_both
 run_case planner_path_rs_is_deliberately_excluded planner_path_rs_is_deliberately_excluded
+run_case planner_window_rs_is_deliberately_excluded planner_window_rs_is_deliberately_excluded
 run_case planner_mixed_notify_and_secrets_runs_both planner_mixed_notify_and_secrets_runs_both
 run_case planner_docs_only_skips_both planner_docs_only_skips_both
 run_case planner_force_all_runs_both planner_force_all_runs_both

@@ -1,14 +1,14 @@
-// Shared frontend lint configuration.
+// Shared frontend lint. This file is the one configuration for the renderer,
+// its tests, and the TypeScript development tooling that ships beside them.
 //
-// One file, one `npm run lint`, one verify.sh gate. Later TypeScript lint
-// issues (#226 no-explicit-any, and friends) extend this file rather than
-// standing up a second linter. Hooks come from the official
-// `eslint-plugin-react-hooks` (the #224 setup); type-aware promise rules
-// are the #225 extension.
+// #224 turned on React Rules of Hooks and exhaustive-deps. #226 adds
+// `@typescript-eslint/no-explicit-any`. #225 adds type-aware promise
+// rules. Do not stand up a second linter or a second config.
 //
 // Type-aware rules need a tsconfig. `projectService` picks
 // `tsconfig.json` for app/tests/dev tooling and `tsconfig.node.json` for
 // `vite.config.ts`. Files that are not TypeScript are not linted here.
+
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
@@ -16,14 +16,20 @@ export default tseslint.config(
   {
     name: "jabot/ignores",
     ignores: [
+      "**/node_modules/**",
       "dist/**",
+      "dist-ssr/**",
       "coverage/**",
-      "node_modules/**",
-      "src-tauri/**",
-      "plugins/**",
       ".jabot-dev/**",
+      // Rust crate, cargo output, and the bundled ACP adapters.
+      "src-tauri/**",
+      // Vendored plugin snapshot — not first-party product code.
+      "plugins/**",
+      // Host-owned git worktrees (and any nested checkout that uses the
+      // same directory name).
       "**/worktrees/**",
       "**/.worktrees/**",
+      "**/.git/**",
     ],
   },
   {
@@ -37,9 +43,13 @@ export default tseslint.config(
           // stdin so they never land in the tree. They are not in a
           // tsconfig; the default project is enough to type Promise and
           // MouseEventHandler.
-          allowDefaultProject: ["scripts/tests/lint-probe-*.ts"],
+          allowDefaultProject: [
+            "scripts/tests/lint-probe-*.ts",
+            "src/__lint-probe-*.tsx",
+          ],
         },
         tsconfigRootDir: import.meta.dirname,
+        ecmaFeatures: { jsx: true },
       },
     },
     plugins: {
@@ -48,8 +58,14 @@ export default tseslint.config(
     },
     rules: {
       // Official React Hooks plugin — do not re-implement these.
+      // Recommended in v7 also turns on React Compiler rules; keep these
+      // two explicit so later issues can append without inheriting that set.
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "error",
+
+      // tsc --noEmit is strict and rejects implicit any. It still allows
+      // `const x: any` and `x as any`. This is the documented no-any policy.
+      "@typescript-eslint/no-explicit-any": "error",
 
       // A discarded Promise is almost always a missed rejection. `void`
       // marks deliberate background work; the callee, or a `.catch` on

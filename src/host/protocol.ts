@@ -683,6 +683,7 @@ export interface HarnessReport {
   installHint?: string;
   installUrl?: string;
   elapsedMs: number;
+  capabilities?: HarnessCapabilitiesView;
 }
 
 export interface HarnessDoctorResult {

@@ -149,6 +149,22 @@ describe("harness/list", () => {
     expect(byId.get("aider")?.capabilityNotes).toMatch(
       /session\/request_permission/,
     );
+    expect(byId.get("cursor")).toMatchObject({
+      tier: "preset",
+      label: "Cursor Agent",
+      reserved: true,
+      sessionScope: "thread",
+      command: "agent",
+      args: ["acp"],
+    });
+    expect(byId.get("cursor")?.capabilities).toMatchObject({
+      streaming: true,
+      toolEvents: true,
+      permissions: true,
+      cancel: true,
+      resume: false,
+    });
+    expect(byId.get("cursor")?.capabilities?.notes).toMatch(/--force/);
     expect(byId.get("my-agent")).toMatchObject({
       tier: "custom",
       label: "My Agent",

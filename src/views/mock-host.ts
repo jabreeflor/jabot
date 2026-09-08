@@ -110,6 +110,21 @@ export const HARNESSES: readonly HarnessCard[] = [
     blurb: "Paired programming via Aider's scripting CLI — not native ACP",
     accent: "var(--h-aider)",
   },
+  {
+    id: "cursor",
+    label: "Cursor Agent",
+    blurb: "Cursor's coding agent. Permissions stay in JaBot — no --force.",
+    accent: "var(--h-cursor)",
+    capabilities: {
+      streaming: true,
+      toolEvents: true,
+      permissions: true,
+      cancel: true,
+      resume: false,
+      notes:
+        "Auth uses this machine's Cursor account or CURSOR_API_KEY — not isolated per bot.",
+    },
+  },
 ];
 
 /**

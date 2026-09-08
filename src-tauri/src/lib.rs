@@ -5,6 +5,7 @@
 
 pub mod host;
 pub mod notify;
+pub mod window;
 
 pub use host::{
     HostSession, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NewThread, RequestId, Store,
@@ -161,10 +162,14 @@ pub fn run() {
             // genuine no-op, and no click can ever arrive to reach the sink.
             route_notification_clicks(app.handle().clone());
             notify::install();
+            // Under-window vibrancy (#250). False off macOS and when the
+            // material cannot be applied; the renderer stays opaque then.
+            window::apply(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             host_rpc,
+            window::window_translucency_applied,
             host::repo::workspace::pick_workspace,
             host::repo::workspace::github_repositories,
             host::repo::workspace::clone_repository,

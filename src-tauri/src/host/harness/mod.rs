@@ -18,6 +18,7 @@ pub mod aider_acp;
 pub mod bundled;
 pub mod catalog;
 pub mod copilot;
+pub mod cursor;
 pub mod custom;
 pub mod doctor;
 pub mod gemini;

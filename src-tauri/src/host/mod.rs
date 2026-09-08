@@ -145,7 +145,8 @@ pub struct HostSession {
     store_error: Option<String>,
     /// Live adapter processes, keyed by **connection key**, not by thread.
     ///
-    /// For every `SessionScope::Thread` harness — claude, codex, gemini, aider — the
+    /// For every `SessionScope::Thread` harness — claude, codex, gemini,
+    /// aider, cursor — the
     /// key embeds the thread id, so this stays one process per thread exactly
     /// as it always was. For a `SessionScope::Profile` harness the key is the
     /// profile, and several threads share the entry (#13, #21).
@@ -1116,9 +1117,12 @@ mod tests {
         // this line, and what hello promises is "the schema you have".
         assert_eq!(value["store"]["schemaVersion"], schema_head());
         assert_eq!(value["store"]["botCount"], 2);
-        // Five shipped cards plus the three presets, all seeded as rows so a
-        // thread can name any of them (#13, #221).
-        assert_eq!(value["store"]["harnessCount"], 8);
+        // Compiled-in cards (shipped + presets) are seeded as rows so a
+        // thread can name any of them (#13, #221, #222).
+        assert_eq!(
+            value["store"]["harnessCount"],
+            harness::catalog::compiled_in().len()
+        );
         let backend = value["store"]["secretsBackend"].as_str().unwrap();
         assert!(
             backend == "keychain" || backend == "unavailable",

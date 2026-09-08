@@ -111,7 +111,7 @@ JaBot host supervisor
         ↓  ACP stdio
 Harness from catalog (claude-agent-acp, codex-acp, pi-acp,
                       copilot --acp, gemini --acp, jabot --aider-acp,
-                      hermes acp, openclaw acp, Custom JSON, …)
+                      agent acp, hermes acp, openclaw acp, Custom JSON, …)
         ↓  MCP from JaBot catalog on session/new
 Gmail / Calendar / GitHub / …  (allowlisted per bot)
 ```

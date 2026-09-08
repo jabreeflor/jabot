@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Add subtle Cursor-style window translucency</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ink: #1c1c1e;
+        --dim: #5c5c63;
+        --line: #d8d7d3;
+        --raise: #fff;
+        --accent: #2a7a3d;
+        --page: #f6f6f4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #f2f2f2;
+          --dim: #98989e;
+          --line: #303033;
+          --raise: #2a2a2c;
+          --accent: #8ee09a;
+          --page: #151516;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 32px 28px 64px;
+        font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+        color: var(--ink);
+        background: var(--page);
+      }
+      main { max-width: 760px; margin: 0 auto; }
+      h1 { font-size: 28px; letter-spacing: -0.02em; margin: 0 0 8px; }
+      .lede { color: var(--dim); margin: 0 0 28px; }
+      h2 { font-size: 18px; margin: 32px 0 10px; }
+      p, li { color: var(--ink); }
+      code {
+        font: 13px/1.4 ui-monospace, Menlo, monospace;
+        background: var(--raise);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .flow {
+        display: grid;
+        gap: 10px;
+        margin: 16px 0 8px;
+      }
+      .step {
+        background: var(--raise);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .step strong { display: block; margin-bottom: 4px; }
+      .step span { color: var(--dim); font-size: 14px; }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th, td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+      th { color: var(--dim); font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Add subtle Cursor-style window translucency</h1>
+      <p class="lede">
+        Almost-opaque chrome, a faint desktop hint, and a hard opaque
+        fallback. Closes #250 without touching the light/dark palettes.
+      </p>
+
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>1. Native material, macOS only</strong>
+          <span>
+            The main window is <code>transparent</code>. Setup applies
+            Tauri <code>Effect::UnderWindowBackground</code> (Cursor’s
+            Electron <code>under-window</code> equivalent) and clears the
+            webview fill. Linux/Windows <code>set_effects</code> fails;
+            the command reports false and CSS never mixes.
+          </span>
+        </div>
+        <div class="step">
+          <strong>2. Renderer paints one attribute</strong>
+          <span>
+            <code>bootTranslucency()</code> asks
+            <code>window_translucency_applied</code>. If the material
+            stuck — or the URL is <code>?translucency=preview</code> for
+            live.sh shots — it sets <code>data-translucency="on"</code>.
+            Reduce Transparency clears it.
+          </span>
+        </div>
+        <div class="step">
+          <strong>3. Fills mix; raised surfaces do not</strong>
+          <span>
+            <code>--side-fill</code> / <code>--chat-fill</code> become a
+            96% / 97% <code>color-mix</code> of the existing theme tokens.
+            Search, composer, selected rows, and Settings controls stay on
+            solid <code>--raise</code> / <code>--cream</code>. Body goes
+            transparent so the two panes do not stack mixes.
+          </span>
+        </div>
+      </div>
+
+      <h2>What to look at</h2>
+      <table>
+        <tr><th>File</th><th>Why it matters</th></tr>
+        <tr>
+          <td><code>src-tauri/src/window.rs</code></td>
+          <td>Applies the material and exposes whether it stuck.</td>
+        </tr>
+        <tr>
+          <td><code>src/translucency.ts</code></td>
+          <td>The decision: native, preview, or Reduce Transparency.</td>
+        </tr>
+        <tr>
+          <td><code>src/styles/tokens.css</code></td>
+          <td>Fill tokens keyed off <code>data-translucency</code>.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/tauri.conf.json</code></td>
+          <td><code>transparent</code> + declarative <code>windowEffects</code>.</td>
+        </tr>
+      </table>
+
+      <h2>Platform limits</h2>
+      <p>
+        macOS 13+ gets the material. Linux has no Tauri window effects
+        (this live.sh path). Windows Mica/Acrylic are left off — a different
+        look, not tuned against Cursor. Missing material or
+        <code>prefers-reduced-transparency: reduce</code> keeps every
+        surface on the solid theme tokens.
+      </p>
+
+      <h2>How to verify</h2>
+      <ol>
+        <li>On a Mac: <code>npm run tauri dev</code>, park the window over a light wallpaper, then a dark one. Both themes.</li>
+        <li>Turn on Reduce Transparency — chrome should go fully opaque.</li>
+        <li>On Linux: <code>./scripts/live.sh up</code> then
+          <code>./scripts/live.sh shot --out /tmp/after.png --desktop light --translucency preview</code>.</li>
+        <li><code>./scripts/verify.sh</code> on the pushed tree.</li>
+      </ol>
+    </main>
+  </body>
+</html>
