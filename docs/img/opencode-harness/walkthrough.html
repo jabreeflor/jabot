@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add OpenCode as a shipped ACP harness</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#f97316; --ok:#63d6b3; --warn:#f2cc60; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 36px 1fr 36px 1fr; gap:10px; align-items:stretch; }
+    .state { padding:16px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 10px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .arrow { display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:26px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#ffd7b5; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .note { color:var(--warn); }
+    .caps { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+    .caps span { padding:5px 10px; border-radius:999px; background:#0f141a; border:1px solid var(--line); font-size:13px; }
+    @media (max-width:800px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); height:28px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #255 walkthrough · Closes #220</div>
+    <h1>Add OpenCode as a shipped ACP harness</h1>
+    <p>OpenCode joins Claude, Codex, and Pi as a tier-1 card. The CLI <em>is</em> the adapter: JaBot spawns the documented <code>opencode acp</code> stdio transport. No extra npm package, no TUI wrap.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Catalog</h3>
+          <p>Shipped id <code>opencode</code>. Launch is <code>opencode acp</code>. Settings, onboarding, New Chat, and the bot editor all read <code>harness/list</code>, so one card wires every picker.</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>Doctor</h3>
+          <p>Three probes, three fixes: <code>acp --help</code> (upgrade), <code>auth list</code> (login or export a key), <code>models</code> (set <code>opencode.json</code> or pick in New Chat). Never run <code>opencode acp</code> as a probe — it hangs.</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>Session</h3>
+          <p>Same ACP client as everyone else. A New Chat model is snapshotted on the thread, passed on <code>session/new</code>, and applied via <code>OPENCODE_CONFIG_CONTENT</code> so the project file is not rewritten.</p>
+        </div>
+      </div>
+      <div class="caps">
+        <span>streaming</span>
+        <span>tools</span>
+        <span>permissions</span>
+        <span>cancel</span>
+        <span>resume</span>
+        <span>empty → failed, not success</span>
+      </div>
+      <p style="margin-top:16px">Host MCP still comes from the bot allowlist. JaBot’s permission broker still answers <code>session/request_permission</code>. OpenCode may also load MCP from the project <code>opencode.json</code> — a deny in JaBot is still a deny.</p>
+      <p>Auth is one global <code>~/.local/share/opencode/auth.json</code>. <code>OPENCODE_CONFIG_DIR</code> does not isolate credentials. Concurrent accounts need a dedicated data directory; JaBot will set that when #218 lands.</p>
+    </section>
+
+    <section id="review">
+      <h2>What to review</h2>
+      <table>
+        <thead><tr><th>File</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>src-tauri/src/host/harness/catalog.rs</code></td><td>The shipped card, <code>AuthAndModels</code> readiness, model + capability + isolation fields.</td></tr>
+          <tr><td><code>src-tauri/src/host/harness/doctor.rs</code></td><td>Classifies missing CLI / outdated ACP / logged out / no models.</td></tr>
+          <tr><td><code>src-tauri/src/host/acp/{connection,spawn,runtime}.rs</code></td><td>Model on <code>session/new</code>, best-effort <code>session/set_config</code>, spawn-time config content.</td></tr>
+          <tr><td><code>src/components/NewChatView.tsx</code></td><td>Model chip when <code>supportsModels</code>.</td></tr>
+          <tr><td><code>src-tauri/tests/opencode.rs</code></td><td>Catalog, persisted reply, auth-fail, cancel, empty response.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li>Settings → Harnesses includes OpenCode; unchecking it drops the card from New Chat and the bot editor.</li>
+        <li>New Chat → Harness → OpenCode shows a model chip and the <code>opencode.json</code> hint.</li>
+        <li>Onboarding engine pane lists OpenCode. Doctor shows install / login / model, not “Install adapter”.</li>
+        <li><code>cargo test --features dev-bins --test opencode</code> — five cases against <code>fake-acp-agent</code>.</li>
+        <li><code>./scripts/verify.sh</code> on this tree.</li>
+        <li class="note">This environment (and CI) does not install the real OpenCode CLI. A machine that has it should run <code>opencode auth login</code> and send one live prompt.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

@@ -110,6 +110,7 @@ pub fn classify(
         launch: launch.cloned(),
         resolved_path: resolved.cloned(),
         elapsed_ms: started.elapsed().as_millis() as u64,
+        models: Vec::new(),
     };
 
     match probe.output("aider", &["--version".to_string()]) {

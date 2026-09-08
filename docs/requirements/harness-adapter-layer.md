@@ -8,7 +8,7 @@
 The layer that turns "a bot" into a real subprocess speaking the Agent
 Client Protocol (ACP) over stdio: spawning, connection setup, wake/idle
 signaling, and a catalog of known harnesses (Claude Code, Codex, Pi,
-GitHub Copilot, Gemini CLI, Hermes, Aider, OpenClaw, Cursor Agent, custom
+OpenCode, Copilot, Gemini, Hermes, Aider, OpenClaw, Cursor Agent, custom
 JSON) with a "Doctor" that checks whether each is actually installed and
 usable. Aider is a scripting-CLI wrapper, not a native ACP agent — see
 [aider.md](../research/harness-integration/aider.md).
@@ -47,7 +47,11 @@ host-owned "thin LLM + MCP" runtime. This module is that one runtime.
    design in
    [`docs/decisions/issues-4-6.md`](../decisions/issues-4-6.md#buzz-style-harness-catalog):
    - **Tier 1 — compiled-in**: shipped cards with reserved ids
-     (`claude`, `codex`, `pi`, `copilot`, `gemini`), including auth probes.
+     (`claude`, `codex`, `pi`, `opencode`, `copilot`, `gemini`), including
+     auth probes. OpenCode is first-party ACP (`opencode acp`); there is
+     no separate npm adapter. See [setup/opencode.md](../setup/opencode.md).
+     Gemini CLI is first-party ACP (`gemini --acp`). See
+     [setup/gemini-cli.md](../setup/gemini-cli.md).
    - **Tier 2 — presets**: PATH-probed, not user-editable (Hermes,
      Aider, OpenClaw, Cursor Agent via `agent acp`, …), resolved via
      `path.rs`. Aider is a scripting-CLI wrapper, not native ACP. Cursor

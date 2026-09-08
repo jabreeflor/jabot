@@ -1290,6 +1290,9 @@ impl HostSession {
             if let Some(hint) = &spec.install_hint {
                 runtime["installHint"] = json!(hint);
             }
+            if let Some(model) = spec.model.as_deref().or(params.model.as_deref()) {
+                runtime["model"] = json!(model);
+            }
             return Ok(runtime.to_string());
         }
         // The catalog knows which of a card's candidate commands this machine
@@ -1307,6 +1310,9 @@ impl HostSession {
             if let Some(hint) = &spec.install_hint {
                 runtime["installHint"] = json!(hint);
             }
+            if let Some(model) = params.model.as_deref() {
+                runtime["model"] = json!(model);
+            }
             return Ok(runtime.to_string());
         }
         let row = self
@@ -1319,13 +1325,16 @@ impl HostSession {
                     params.harness_id
                 ))
             })?;
-        Ok(json!({
+        let mut runtime = json!({
             "command": row.command,
             "args": serde_json::from_str::<Value>(&row.args_json).unwrap_or_else(|_| json!([])),
             "env": serde_json::from_str::<Value>(&row.env_json).unwrap_or_else(|_| json!({})),
             "installHint": row.install_hint,
-        })
-        .to_string())
+        });
+        if let Some(model) = params.model.as_deref() {
+            runtime["model"] = json!(model);
+        }
+        Ok(runtime.to_string())
     }
 }
 

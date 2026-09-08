@@ -73,6 +73,19 @@ pub fn spawn_adapter(
     for (key, value) in &runtime.env {
         cmd.env(key, value);
     }
+    // OpenCode reads model from config, not from `session/new` on most
+    // builds. Inline config is the documented override that does not rewrite
+    // the user's `opencode.json`.
+    if runtime.id == "opencode" {
+        if let Some(model) = runtime.model.as_deref() {
+            if !runtime.env.contains_key("OPENCODE_CONFIG_CONTENT") {
+                cmd.env(
+                    "OPENCODE_CONFIG_CONTENT",
+                    serde_json::json!({ "model": model }).to_string(),
+                );
+            }
+        }
+    }
     if let Some(cwd) = cwd {
         // Refuse rather than fall through. A child given no `current_dir`
         // inherits the host's, so a thread whose checkout was unmounted or
@@ -134,6 +147,7 @@ mod tests {
             args: vec!["-c".into(), script],
             env: BTreeMap::new(),
             install_hint: None,
+            model: None,
         };
         let mut spawned = spawn_adapter(&runtime, None, &log_path).unwrap();
         drop(spawned.stdin);
@@ -186,6 +200,7 @@ mod tests {
             ],
             env: BTreeMap::from([("HOME".to_string(), "/jabot/from-thread".to_string())]),
             install_hint: None,
+            model: None,
         };
         let mut spawned = spawn_adapter(&runtime, None, &dir.path().join("stderr.log")).unwrap();
         drop(spawned.stdin);

@@ -22,6 +22,7 @@ mod schedule;
 mod seq;
 mod settings;
 mod store;
+mod summary;
 mod supervisor;
 mod tools;
 mod transcript;
@@ -1128,7 +1129,7 @@ mod tests {
         assert_eq!(value["store"]["schemaVersion"], schema_head());
         assert_eq!(value["store"]["botCount"], 2);
         // Compiled-in cards (shipped + presets) are seeded as rows so a
-        // thread can name any of them (#13, #221, #222).
+        // thread can name any of them (#13, #219, #220, #221, #222).
         assert_eq!(
             value["store"]["harnessCount"],
             harness::catalog::compiled_in().len()

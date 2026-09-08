@@ -70,6 +70,7 @@ export function NewChatView({
   const [chosenHarnessId, setHarnessId] = useState(
     defaultHarnessId ?? harnesses[0]?.id ?? "",
   );
+  const [model, setModel] = useState("");
   const [folder, setFolder] = useState(defaultFolderId ?? "");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -100,6 +101,7 @@ export function NewChatView({
         harnessId,
         folderId: folder || null,
         task,
+        ...(selectedHarness?.supportsModels && model ? { model } : {}),
       });
     });
   }
@@ -150,9 +152,28 @@ export function NewChatView({
             aria-label={`Harness: ${selectedHarness?.label ?? "Harness"}`}
             value={harnessId}
             options={harnessOptions}
-            onChange={setHarnessId}
+            onChange={(id) => {
+              setHarnessId(id);
+              setModel("");
+            }}
             disabled={busy}
           />
+          {selectedHarness?.supportsModels && (
+            <Select
+              variant="chip"
+              aria-label={`Model: ${model || "Project default"}`}
+              value={model}
+              options={[
+                { value: "", label: "Project default" },
+                ...(selectedHarness.models ?? []).map((id) => ({
+                  value: id,
+                  label: id,
+                })),
+              ]}
+              onChange={setModel}
+              disabled={busy}
+            />
+          )}
           <button
             type="button"
             className="ctx-chip"
@@ -214,6 +235,14 @@ export function NewChatView({
         {selectedHarness?.available === false && (
           <p className="workspace-hint" role="status">
             {selectedHarness.installHint ?? "Not installed"}
+          </p>
+        )}
+        {selectedHarness?.supportsModels && selectedHarness.available !== false && (
+          <p className="workspace-hint" role="status">
+            Model follows the project `opencode.json` unless you pick one here.
+            {selectedHarness.accountIsolation
+              ? ` ${selectedHarness.accountIsolation}`
+              : ""}
           </p>
         )}
 

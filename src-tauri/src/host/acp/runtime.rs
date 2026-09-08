@@ -18,6 +18,7 @@ pub struct HarnessRuntime {
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
     pub install_hint: Option<String>,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +42,7 @@ impl HarnessRuntime {
             args: spec.args.clone().unwrap_or_default(),
             env: spec.env.clone().unwrap_or_default(),
             install_hint: spec.install_hint.clone(),
+            model: spec.model.clone(),
         })
     }
 
@@ -53,6 +55,7 @@ impl HarnessRuntime {
             args,
             env,
             install_hint: row.install_hint.clone(),
+            model: None,
         })
     }
 
@@ -81,12 +84,18 @@ impl HarnessRuntime {
             .get("installHint")
             .and_then(Value::as_str)
             .map(str::to_string);
+        let model = obj
+            .get("model")
+            .and_then(Value::as_str)
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
         Ok(Self {
             id: id.into(),
             command: command.to_string(),
             args,
             env,
             install_hint,
+            model,
         })
     }
 
@@ -157,6 +166,7 @@ mod tests {
             args: vec![],
             env: BTreeMap::new(),
             install_hint: None,
+            model: None,
         };
         match runtime.probe() {
             ProbeResult::Installed(path) => {
@@ -174,6 +184,7 @@ mod tests {
             args: vec![],
             env: BTreeMap::new(),
             install_hint: Some("brew install nope".into()),
+            model: None,
         };
         match runtime.probe() {
             ProbeResult::Missing { command, hint } => {

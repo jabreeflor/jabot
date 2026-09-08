@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Add Playwright Test infrastructure against the real Rust host</title>
+  <style>
+    :root {
+      --bg: #141210;
+      --card: #1e1c19;
+      --ink: #f4efe6;
+      --muted: #b7b0a4;
+      --line: #3a3630;
+      --accent: #4fd1c5;
+      --user: #8b9cff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 "Figtree", ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 40px 24px 80px;
+    }
+    h1 { font-size: 1.8rem; line-height: 1.2; margin: 0 0 8px; }
+    .lede { color: var(--muted); font-size: 1.05rem; margin: 0 0 32px; }
+    h2 {
+      font-size: 1.15rem;
+      margin: 36px 0 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+    p, li { color: var(--ink); }
+    .muted { color: var(--muted); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 18px;
+      margin: 12px 0;
+    }
+    .flow {
+      display: grid;
+      gap: 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+    }
+    .flow span {
+      display: block;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #2a2722;
+    }
+    .flow span.real { border-left: 3px solid var(--accent); }
+    .flow span.mock { border-left: 3px solid #c9a227; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.9em;
+      background: #2a2722;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; }
+    .beforeafter { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 700px) { .beforeafter { grid-template-columns: 1fr; } }
+    .kicker { color: var(--accent); font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="kicker">PR #256 · issue #231</p>
+    <h1>Add Playwright Test infrastructure against the real Rust host</h1>
+    <p class="lede">
+      A reusable browser harness that talks to a real <code>jabot-hostd</code>,
+      not jsdom and not the shared <code>live.sh</code> data directory.
+      One smoke journey lands now; #232–#234 reuse the fixtures.
+    </p>
+
+    <h2>How it works</h2>
+    <p>
+      Before this PR, protocol tests spawned the Rust host without a renderer,
+      and React tests ran in jsdom. <code>playwright-core</code> existed only
+      for <code>live.sh shot</code>. There was no Playwright Test suite and no
+      browser CI gate.
+    </p>
+    <div class="beforeafter">
+      <div class="card">
+        <strong>Before</strong>
+        <p class="muted">Vitest e2e → HostClient → jabot-hostd. Renderer never loads. jsdom covers React in isolation.</p>
+      </div>
+      <div class="card">
+        <strong>After</strong>
+        <p class="muted">Each test owns Vite + host + temp SQLite. Playwright clicks the real composer. Protocol e2e stays.</p>
+      </div>
+    </div>
+
+    <div class="card flow">
+      <span class="real">Playwright Chromium (or WebKit)</span>
+      <span class="real">React renderer (Vite, JABOT_LIVE_HOST=1)</span>
+      <span class="real">src/host/devTransport.ts → Vite HMR bridge</span>
+      <span class="real">scripts/dev/host-plugin.ts / host-bridge.ts</span>
+      <span class="real">jabot-hostd --data-dir $TMP → SQLite</span>
+      <span class="mock">fake-acp-agent only — no Claude, no GitHub, no Keychain</span>
+    </div>
+    <p class="muted">
+      Readiness is <code>GET /__jabot/host</code> with <code>running: true</code>
+      <em>and</em> a hello payload, then the Settings control with
+      “Connecting to host…” gone. HTTP 200 alone is not enough.
+    </p>
+    <p>
+      Isolation: listen on a free loopback port (never 1420), write
+      <code>JABOT_DEV_DATA_DIR</code> to a temp folder, spawn Vite as a process
+      group. <code>jabot.restart()</code> reuses that folder. Teardown SIGTERMs
+      the group and deletes only the owned directory.
+    </p>
+
+    <h2>What to look at</h2>
+    <table>
+      <tr><th>File</th><th>Why</th></tr>
+      <tr>
+        <td><code>tests/browser/host.ts</code></td>
+        <td>Owns Vite, ports, RPC, readiness JSON, process-group teardown.</td>
+      </tr>
+      <tr>
+        <td><code>tests/browser/fixtures.ts</code></td>
+        <td>The import #232+ should use. Seeds Chief on fake-acp via RPC only as a prerequisite.</td>
+      </tr>
+      <tr>
+        <td><code>tests/browser/smoke.spec.ts</code></td>
+        <td>The one required journey: Chief → composer → fake reply → reload persistence.</td>
+      </tr>
+      <tr>
+        <td><code>.github/workflows/ci.yml</code></td>
+        <td>Separate <code>browser</code> job so default <code>verify</code> stays offline and display-less.</td>
+      </tr>
+      <tr>
+        <td><code>src/views/ChatView.tsx</code></td>
+        <td>Composer stays disabled until <code>crew/thread</code> resolves — a send before that was a silent no-op.</td>
+      </tr>
+    </table>
+
+    <h2>How to verify</h2>
+    <div class="card">
+      <p><strong>Local, one command, no credentials:</strong></p>
+      <p><code>npm run host:build && npx playwright install chromium && npm run test:browser:smoke</code></p>
+      <p class="muted">Runs against a fresh temp host. Do not use <code>live.sh smoke</code> for this suite.</p>
+      <p><strong>CI:</strong> the <code>browser</code> job on this PR. Failure artifacts upload even when the job fails.</p>
+      <p><strong>Opt-in on verify:</strong> <code>./scripts/verify.sh --check-browser</code></p>
+      <p><strong>WebKit:</strong> <code>npm run test:browser</code> — renderer compat only, not native WKWebView.</p>
+    </div>
+  </main>
+</body>
+</html>

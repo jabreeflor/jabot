@@ -643,7 +643,16 @@ fn an_adapter_that_dies_without_closing_its_stdout_is_still_dead() {
     // the keep-alive probe this thread reports a live session forever.
     let state = host.settle("t-orphan", |s| s["process"]["connected"] == false);
     assert_eq!(state["latestRun"]["state"], "failed");
-    assert_eq!(state["latestRun"]["error"], "the adapter process exited");
+    // Keep-alive reaping names the pid; a no-reply diagnosis that races in
+    // first (#217) names `adapter_exit` with the same meaning. Either is the
+    // host noticing the process is gone despite stdout staying open.
+    let why = state["latestRun"]["error"].as_str().unwrap_or_default();
+    assert!(
+        why == "the adapter process exited"
+            || why.contains("adapter_exit")
+            || why.contains("The harness process exited"),
+        "unexpected adapter-exit error: {why}"
+    );
     assert_eq!(host.session.live_adapter_count(), 0);
 }
 
@@ -1174,7 +1183,10 @@ fn a_dead_shared_process_takes_every_chat_on_it() {
         // the pid. What must not happen is a run left open.
         let why = gone["latestRun"]["error"].as_str().unwrap_or_default();
         assert!(
-            why == "adapter stdout closed" || why == "the adapter process exited",
+            why == "adapter stdout closed"
+                || why == "the adapter process exited"
+                || why.contains("adapter_exit")
+                || why.contains("The harness process exited"),
             "{thread_id} closed its run for an unrelated reason: {why}"
         );
     }

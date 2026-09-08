@@ -112,6 +112,9 @@ export function harnessCard(card: HarnessCardView): HarnessCard {
     blurb: card.blurb,
     accent: card.accent,
     installHint: card.installHint,
+    supportsModels: card.supportsModels,
+    declaredCapabilities: card.declaredCapabilities,
+    accountIsolation: card.accountIsolation,
     capabilities: card.capabilities,
     capabilityNotes: card.capabilityNotes,
   };
@@ -146,6 +149,7 @@ export function withReadiness(
       ...card,
       available: report.ready,
       installHint: report.remedy ?? report.installHint ?? card.installHint,
+      models: report.models ?? card.models,
     };
   });
 }

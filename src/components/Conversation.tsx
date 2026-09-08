@@ -34,6 +34,7 @@ export function Conversation({
   onCancel,
   error,
   notice,
+  disabled = false,
 }: {
   header: ReactNode;
   items: readonly TranscriptItem[];
@@ -45,6 +46,8 @@ export function Conversation({
   /** Prompts the host is holding until it ends, oldest first (#14). */
   queued?: readonly string[];
   onCancel?: () => void;
+  /** The standing thread (or equivalent) is not ready — a send would be dropped. */
+  disabled?: boolean;
   /** The last host error on this thread, shown rather than swallowed. */
   error?: string | null;
   /** A standing caution about this thread, distinct from `error`: an error is
@@ -166,6 +169,7 @@ export function Conversation({
         onSend={onSend}
         busy={busy}
         onCancel={onCancel}
+        disabled={disabled}
       />
     </div>
   );

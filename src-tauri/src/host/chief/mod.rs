@@ -272,6 +272,7 @@ impl HostSession {
                 // editing the tree they are looking at (#23).
                 use_checkout: Some(false),
                 base_ref,
+                model: None,
             })
             .map_err(|err| format!("could not start a session in {}: {err}", folder.name))?;
 

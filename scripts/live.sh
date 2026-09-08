@@ -135,6 +135,24 @@ setup_host() {
 }
 
 setup_browser() {
+  # Prefer the @playwright/test CLI when present so shot.mjs (playwright-core)
+  # and `npm run test:browser` share one cache — the two packages are pinned
+  # to the same version in package.json.
+  if [[ -x node_modules/.bin/playwright ]]; then
+    local exe
+    if exe=$(node -e '
+      const { chromium } = require("playwright-core");
+      const p = chromium.executablePath();
+      require("fs").accessSync(p);
+      console.log(p);' 2>/dev/null); then
+      ok "browser: $exe"
+      return 0
+    fi
+    printf '  no Chromium for Playwright; downloading (network)\n'
+    npx --no-install playwright install chromium >/dev/null 2>&1 || die "playwright install chromium failed"
+    ok "browser installed"
+    return 0
+  fi
   local exe
   if exe=$(node -e '
     const { chromium } = require("playwright-core");
@@ -197,9 +215,9 @@ up() {
     # Its own session, so `down` can take the whole tree (vite, esbuild,
     # jabot-hostd, adapters) with one signal to the group.
     if command -v setsid >/dev/null 2>&1; then
-      setsid npx vite --port "$PORT" --strictPort >"$LOG" 2>&1 < /dev/null &
+      setsid npx vite --port "$PORT" --strictPort --host 127.0.0.1 >"$LOG" 2>&1 < /dev/null &
     else
-      npx vite --port "$PORT" --strictPort >"$LOG" 2>&1 < /dev/null &
+      npx vite --port "$PORT" --strictPort --host 127.0.0.1 >"$LOG" 2>&1 < /dev/null &
     fi
     echo $! >"$PIDFILE"
   fi

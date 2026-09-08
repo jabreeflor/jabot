@@ -65,6 +65,14 @@ Keychain, the updater / hide-to-Dock branches) is linted on the PR by scoped
 jobs, not by `verify.sh` and not by a per-PR bundle — see
 [`docs/macos-lint.md`](docs/macos-lint.md).
 
+The renderer-against-real-host suite is Playwright, not the default gate:
+
+```bash
+npm run test:browser:smoke    # Chromium, one smoke journey, no credentials
+```
+
+See [`tests/browser/README.md`](tests/browser/README.md).
+
 ## Prototypes
 
 Open `prototypes/jabot-classic.html` in a browser — the main MVP (chat, Inbox, Pull Requests, thread sessions, New Chat with harness picker, Crew management).
