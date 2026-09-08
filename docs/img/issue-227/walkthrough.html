@@ -89,6 +89,7 @@
           <tr><td><code>.prettierignore</code></td><td>Explicit exclusions. <code>/plugins/</code> is rooted so first-party <code>.agents/plugins/</code> JSON is still formatted.</td></tr>
           <tr><td><code>scripts/tests/format.test.sh</code></td><td>Throwaway trees: check fails, write restores, ignores hold. Break the ignore list and this fails.</td></tr>
           <tr><td><code>scripts/verify.sh</code></td><td>New <code>frontend format</code> stage, including <code>--fast</code>.</td></tr>
+          <tr><td><code>eslint.config.js</code></td><td><code>eslint-config-prettier</code> is last so lint cannot restate layout. Do not add <code>eslint-plugin-prettier</code>.</td></tr>
           <tr><td><code>CONTRIBUTING.md</code></td><td>Usage. Prettier owns layout; lint (#224+) owns correctness and must not restate style.</td></tr>
         </tbody>
       </table>
@@ -101,7 +102,7 @@
         <li><code>npm run test:format</code> — 12 cases, including a dirty file that fails then a write that restores.</li>
         <li>Deliberately break a first-party file, watch <code>format:check</code> fail, run <code>npm run format</code>, watch it pass again.</li>
         <li><code>./scripts/verify.sh --fast</code> includes the same check. No network after <code>npm install</code>.</li>
-        <li>Two review commits: gate/docs/tests first; mechanical rewrite of 83 files second. Rubber-stamp the second.</li>
+        <li>Two review commits: gate/docs/tests first; mechanical rewrite of first-party files second. Rubber-stamp the second.</li>
       </ul>
     </section>
   </main>

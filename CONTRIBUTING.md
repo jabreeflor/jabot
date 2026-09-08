@@ -177,6 +177,9 @@ vendored code, `node_modules`, and nested `worktrees/` are ignored.
 Unavoidable interop exceptions stay narrow and documented next to the
 site; tests are not broadly exempt.
 
+`eslint-config-prettier` is last in that file so lint cannot restate
+layout. Prettier is the formatter; do not add `eslint-plugin-prettier`.
+
 ## Frontend formatting
 
 Prettier is the one frontend formatter — the Rust equivalent of `cargo fmt`.
@@ -195,11 +198,8 @@ npm run test:format    # check-fails / write-restores / ignore contract
 `./scripts/verify.sh` and `--fast` both run the check, after lint. It is
 offline after `npm install`.
 
-Prettier owns layout. Frontend lint owns correctness (Rules of Hooks,
-`no-explicit-any`, promises) and must not restate style. Add
-`eslint-config-prettier` if style rules ever appear so the two cannot
-disagree. Do not turn on `eslint-plugin-prettier` — that would couple
-them and duplicate this check.
+Prettier owns layout. Frontend lint owns correctness (Hooks, `any`,
+promises) and must not restate style.
 
 ## Accessibility tests
 

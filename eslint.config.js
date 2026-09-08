@@ -9,6 +9,7 @@
 // `tsconfig.json` for app/tests/dev tooling and `tsconfig.node.json` for
 // `vite.config.ts`. Files that are not TypeScript are not linted here.
 
+import prettier from "eslint-config-prettier";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
@@ -107,4 +108,8 @@ export default tseslint.config(
       "react-hooks/rules-of-hooks": "off",
     },
   },
+  // Last: turn off any stylistic ESLint rules so Prettier owns layout
+  // (#227). Do not add eslint-plugin-prettier — that would run format
+  // inside lint. This package only disables conflicts.
+  prettier,
 );
