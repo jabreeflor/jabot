@@ -4,6 +4,41 @@
  * sits in the same grid rather than hiding behind a toolbar button.
  */
 
+.pending-drafts {
+  margin: var(--sp-4) 0;
+  padding: var(--sp-4);
+  background: var(--raise);
+  border-radius: var(--r-xl);
+  border: 1px solid var(--edge);
+}
+
+.pending-drafts h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-body);
+}
+
+.pending-drafts p {
+  margin: 0 0 var(--sp-3);
+  color: var(--dim);
+  font-size: var(--fs-meta);
+}
+
+.pending-drafts ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.pending-drafts li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
 .crew-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

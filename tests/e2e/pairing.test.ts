@@ -194,6 +194,11 @@ describe("pairing a second device", () => {
     expect(pending.error?.code).toBe(RPC_ERROR.DEVICE_SCOPE);
     const asks = await host.call("permission/pending", {});
     expect(asks.error).toBeUndefined();
+    const draftSave = await host.call("crew/drafts/save", {
+      draftId: "not-a-draft",
+      revision: 1,
+    });
+    expect(draftSave.error?.code).toBe(RPC_ERROR.DEVICE_SCOPE);
 
     // And it cannot climb back out by saying hello a second time. `host/hello`
     // has to be on the approver allowlist — a phone that drops in a lift must

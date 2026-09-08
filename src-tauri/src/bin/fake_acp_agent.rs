@@ -227,6 +227,10 @@ fn main() {
             }
             "session/prompt" => {
                 prompts_received += 1;
+                // Echo the prompt the host actually sent. Persona and Jabot
+                // context are composed onto the wire (#237); a test that only
+                // reads the transcript would miss them.
+                eprintln!("session_prompt={}", msg["params"]);
                 // Answer *this* prompt's session, not whichever was created
                 // last. On a shared process those differ, and an agent that
                 // stamped the wrong one would make a misrouting host look

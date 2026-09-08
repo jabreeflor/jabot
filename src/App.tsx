@@ -34,6 +34,8 @@ import {
   connectHost,
   onNotificationActivated,
   type FolderRegisterParams,
+  CREW_DRAFT,
+  type CrewDraftEventParams,
   type HelloResult,
   type HostClient,
   HostRpcError,
@@ -51,9 +53,11 @@ import {
   ThreadContextMenu,
   type MenuPosition,
 } from "./components/ThreadContextMenu";
-import type {
-  Bot,
-  BotDraft,
+import {
+  BOT_COLORS,
+  type Bot,
+  type BotColor,
+  type BotDraft,
   FoldPolicy,
   HarnessCard,
   HostTarget,
@@ -110,7 +114,9 @@ import "./App.css";
 /** Matches the row's exit transition, so the state change lands after it. */
 const LEAVE_MS = 380;
 
-type EditorState = { open: false } | { open: true; botId: string | null };
+type EditorState =
+  | { open: false }
+  | { open: true; botId: string | null; draftId?: string };
 /** Editing only: a *new* schedule is written as a prompt inside the Schedules
     screen (#25), so the modal never opens without a record behind it. */
 type ScheduleEditorState = { open: false } | { open: true; scheduleId: string };
@@ -536,8 +542,28 @@ function AppShell({
 
   /** The editor *is* the record (#17), so a save is a host call and the modal
       stays open until the host has taken it. */
-  function saveBot(draft: BotDraft) {
+  function saveBot(draft: BotDraft, openChat = false) {
     if (!editor.open) return;
+    if (editor.draftId && crew.bots) {
+      const pending = (crew.drafts ?? []).find(
+        (row) => row.draftId === editor.draftId,
+      );
+      if (!pending) {
+        setEditorError("This proposal is no longer available.");
+        return;
+      }
+      setEditorError(null);
+      crew
+        .saveDraft(pending.draftId, pending.revision, draft)
+        .then((result) => {
+          closeEditor();
+          if (openChat) {
+            setSelection({ view: "bot", botId: result.bot.botId });
+          }
+        })
+        .catch((err) => setEditorError(formatError(err)));
+      return;
+    }
     if (crew.bots) {
       setEditorError(null);
       crew
@@ -548,6 +574,22 @@ function AppShell({
     }
     dispatch({ type: "saveBot", botId: editor.botId, draft });
     closeEditor();
+  }
+
+  function dismissProposedBot() {
+    if (!editor.open || !editor.draftId) return;
+    const pending = (crew.drafts ?? []).find(
+      (row) => row.draftId === editor.draftId,
+    );
+    if (!pending) {
+      closeEditor();
+      return;
+    }
+    setEditorError(null);
+    crew
+      .dismissDraft(pending.draftId, pending.revision)
+      .then(() => closeEditor())
+      .catch((err) => setEditorError(formatError(err)));
   }
 
   /** Remove from the grid or from inside the editor. Chief is refused by the
@@ -590,6 +632,40 @@ function AppShell({
     setEditorError(null);
   }
 
+  const reviewDraft = useCallback((draftId: string) => {
+    setEditor({ open: true, botId: null, draftId });
+  }, []);
+
+  useEffect(() => {
+    if (!client) return;
+    try {
+      return client.onNotification((notification) => {
+        if (notification.method !== CREW_DRAFT) return;
+        if (!isCrewDraftNotice(notification.params)) return;
+        if (notification.params.status !== "pending_review") return;
+        const { sourceThreadId, sourceBotId, draftId } = notification.params;
+        if (
+          selection.view === "thread" &&
+          sourceThreadId &&
+          selection.threadId === sourceThreadId
+        ) {
+          const current =
+            hostThreads.find((thread) => thread.id === sourceThreadId) ??
+            (resolved?.id === sourceThreadId ? resolved : undefined);
+          if (current?.state === "folded") return;
+          reviewDraft(draftId);
+          return;
+        }
+        // Standing crew chats are selected as the bot, not as their thread id.
+        if (selection.view === "bot" && selection.botId === sourceBotId) {
+          reviewDraft(draftId);
+        }
+      });
+    } catch {
+      return;
+    }
+  }, [client, selection, hostThreads, resolved, reviewDraft]);
+
   /** Like the bot editor, the schedule editor *is* the record: the modal stays
       open until the host has taken it, because a refused cron is something to
       correct rather than something to lose. */
@@ -620,8 +696,25 @@ function AppShell({
     name: hello?.hostName ?? "This Mac",
     reachable: hello !== null,
   };
-  const editingBot =
-    editor.open && editor.botId
+  const editingDraft =
+    editor.open && editor.draftId
+      ? ((crew.drafts ?? []).find((row) => row.draftId === editor.draftId) ??
+        null)
+      : null;
+  const editingBot: Bot | null = editingDraft
+    ? {
+        id: editingDraft.draftId,
+        name: editingDraft.name,
+        color: (BOT_COLORS as readonly string[]).includes(editingDraft.color)
+          ? (editingDraft.color as BotColor)
+          : "b-green",
+        instructions: editingDraft.instructions,
+        tools: editingDraft.tools,
+        harnessId: editingDraft.harnessId,
+        isChief: false,
+        templateId: editingDraft.templateId ?? null,
+      }
+    : editor.open && editor.botId
       ? (bots.find((bot) => bot.id === editor.botId) ?? null)
       : null;
   const editingSchedule = scheduleEditor.open
@@ -771,6 +864,8 @@ function AppShell({
           onEditBot={(botId) => setEditor({ open: true, botId })}
           onAddBot={() => setEditor({ open: true, botId: null })}
           onRemoveBot={(botId) => removeBot(botId, false)}
+          drafts={crew.drafts ?? []}
+          onReviewDraft={reviewDraft}
           onRunSetup={onRunSetup}
         />
         )}
@@ -813,14 +908,29 @@ function AppShell({
 
       {editor.open && (
         <BotEditorModal
+          key={editor.draftId ?? editor.botId ?? "new"}
           bot={editingBot}
           templates={templates}
           tools={toolChips}
           harnesses={enabledHarnesses}
           error={editorError}
-          onSave={saveBot}
+          proposal={
+            editingDraft
+              ? {
+                  sourceName: editingDraft.sourceBotName ?? "a crew member",
+                  stale: editingDraft.status === "stale",
+                  staleReason: editingDraft.staleReason,
+                  nameWarning: editingDraft.nameWarning,
+                }
+              : null
+          }
+          onSave={(draft) => saveBot(draft, false)}
+          onSaveAndOpen={
+            editingDraft ? (draft) => saveBot(draft, true) : undefined
+          }
           onRemove={(botId) => removeBot(botId, true)}
           onCancel={closeEditor}
+          onDismiss={editingDraft ? dismissProposedBot : undefined}
           // Only with a host. A preview build has nothing to sign into, and a
           // Connect button there would offer a flow that cannot start.
           onConnectTool={client ? connectTool : undefined}
@@ -897,6 +1007,8 @@ function MainView({
   onEditBot,
   onAddBot,
   onRemoveBot,
+  onReviewDraft,
+  drafts = [],
   onRunSetup,
 }: {
   /** Present once the host has answered. A thread the host owns is rendered
@@ -948,6 +1060,8 @@ function MainView({
   onEditBot: (botId: string) => void;
   onAddBot: () => void;
   onRemoveBot: (botId: string) => void;
+  drafts?: readonly import("./host").BotDraftView[];
+  onReviewDraft?: (draftId: string) => void;
   /** Re-enter first-run setup without wiping the stored record. */
   onRunSetup: () => void;
 }) {
@@ -962,9 +1076,11 @@ function MainView({
           bots={bots}
           harnesses={harnesses}
           tools={tools}
+          drafts={drafts}
           onEdit={onEditBot}
           onAdd={onAddBot}
           onRemove={onRemoveBot}
+          onReviewDraft={onReviewDraft}
           onRunSetup={onRunSetup}
         />
       );
@@ -1174,6 +1290,16 @@ function hostLine(
   if (hello) return "";
   if (connecting) return "Connecting to host…";
   return hostError ?? "Host unreachable";
+}
+
+function isCrewDraftNotice(value: unknown): value is CrewDraftEventParams {
+  if (!value || typeof value !== "object") return false;
+  const rec = value as Record<string, unknown>;
+  return (
+    typeof rec.draftId === "string" &&
+    typeof rec.status === "string" &&
+    typeof rec.sourceBotId === "string"
+  );
 }
 
 function formatError(err: unknown): string {

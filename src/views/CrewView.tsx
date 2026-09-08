@@ -7,23 +7,28 @@
 import { Avatar } from "../components/avatar";
 import { HarnessChip } from "../components/HarnessChip";
 import { PlusIcon } from "../components/Icon";
+import type { BotDraftView } from "../host";
 import type { Bot, HarnessCard, ToolOption } from "../components/types";
 
 export function CrewView({
   bots,
   harnesses,
   tools,
+  drafts = [],
   onEdit,
   onAdd,
   onRemove,
+  onReviewDraft,
   onRunSetup,
 }: {
   bots: readonly Bot[];
   harnesses: readonly HarnessCard[];
   tools: readonly ToolOption[];
+  drafts?: readonly BotDraftView[];
   onEdit: (botId: string) => void;
   onAdd: () => void;
   onRemove: (botId: string) => void;
+  onReviewDraft?: (draftId: string) => void;
   /** Re-run first-run setup — also offered from Settings. */
   onRunSetup?: () => void;
 }) {
@@ -44,6 +49,35 @@ export function CrewView({
               </button>
             )}
           </div>
+
+          {drafts.length > 0 && (
+            <div className="pending-drafts" aria-label="Pending bot drafts">
+              <h2>Pending proposals</h2>
+              <p>Close does not dismiss. Review and Save to add a crew member.</p>
+              <ul>
+                {drafts.map((draft) => (
+                  <li key={draft.draftId}>
+                    <span>
+                      {draft.name}
+                      {draft.sourceBotName
+                        ? ` — proposed by ${draft.sourceBotName}`
+                        : ""}
+                      {draft.status === "stale" ? " (stale)" : ""}
+                    </span>
+                    {onReviewDraft && (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() => onReviewDraft(draft.draftId)}
+                      >
+                        Review
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="crew-grid">
             {bots.map((bot) => (
