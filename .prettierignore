@@ -30,6 +30,11 @@ worktrees/
 # Live-loop state
 .jabot-dev
 
+# Playwright output (gitignored; leftover runs must not fail --check)
+/test-results/
+/playwright-report/
+/blob-report/
+
 # Out of the formatter contract (TS/TSX, JS/MJS, CSS, applicable JSON).
 # scripts/frontend-format.sh also restricts globs; this is for anyone who
 # runs `npx prettier --write .` and for the contract test's ignore cases.

@@ -82,7 +82,7 @@ jobs:
   # WebKit is a local compat project (`npm run test:browser`), not this job.
   browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -109,8 +109,8 @@ jobs:
       - run: npm run host:build
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
-      - name: Browser suite
-        run: npx playwright test --project=chromium
+      - name: Browser Chromium suite
+        run: npm run test:browser:chromium
       - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@v4

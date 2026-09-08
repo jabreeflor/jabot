@@ -124,6 +124,14 @@ export function gatedAcpRuntime(gatePath: string): RuntimeSpec {
 }
 
 /**
+ * A `runtime` for the fake agent's `pump` mode: each gate write is consumed
+ * so a test can stream deterministic chunks, then decide when the turn ends.
+ */
+export function pumpAcpRuntime(gatePath: string): RuntimeSpec {
+  return { command: fakeAcpAgentPath(), args: ["pump", gatePath] };
+}
+
+/**
  * Tell a gated turn what happens next — a stop reason, or a comma-separated
  * script of ACP tool kinds to ask permission for first.
  *

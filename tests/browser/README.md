@@ -27,6 +27,8 @@ shared `.jabot-dev/data` a developer may be using on port 1420).
 | command | what |
 | --- | --- |
 | `npm run test:browser:smoke` | Chromium, `@smoke` only |
+| `npm run test:browser:chromium` | all Chromium journeys — the PR gate (#232 + #233) |
+| `npm run test:browser:repeat` | `@smoke` × 20, retries 0 |
 | `npm run test:browser` | Chromium + WebKit (recovery / workspace / smoke) |
 | `npm run test:browser:ui` | Playwright UI mode |
 | `npm run test:browser:install` | download Chromium and WebKit |
@@ -47,14 +49,16 @@ that directory.
 Workers stay at 1 until a worker can prove it owns an independent
 host/data/port triple.
 
-## Adding a journey (#232+)
+## Journeys (#232)
 
-Import `{ test, expect }` from `./fixtures` and the locators from `./ui`.
-Use `jabot.rpc` only for prerequisites and independent host assertions.
-Clicks and composer sends go through the visible controls.
+Onboarding, streaming, scrolling, fold → Inbox, permission, and
+failure/cancel live next to the #231 smoke. They import `{ test, expect }`
+from `./fixtures` and locators from `./ui`. `jabot.rpc` / `seedCodeThread`
+are prerequisites and independent host assertions only — clicks and composer
+sends go through visible controls.
 
 ```ts
-test.use({ seedChief: true }); // default; set false for first-launch tests
+test.use({ seedChief: true }); // default; set false only when first-launch must not pre-seed
 ```
 
 Need Vite/host env before spawn (a fixture `gh` on PATH)? Use
@@ -65,9 +69,13 @@ second fixture.
 `jabot.restart()` is a **Vite restart**. Name the test after the mechanism
 it exercises (browser reload vs Vite restart vs host restart).
 
+A deliberate send-path break is `./scripts/dev/browser-break-demo.sh`.
+Representative screenshots land in `docs/img/browser-journeys/`.
+
 WebKit is renderer compatibility, not native WKWebView/Tauri. Packaged-app
-acceptance is #235. Web-renderer+host limits:
-[`docs/browser-e2e.md`](../../docs/browser-e2e.md). Mobile browser is deferred.
+acceptance is #235. Recovery/workspace journeys are #233. Web-renderer+host
+limits: [`docs/browser-e2e.md`](../../docs/browser-e2e.md). Mobile browser
+is deferred.
 
 ## Failures
 
