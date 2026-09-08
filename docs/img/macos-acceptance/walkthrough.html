@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add a macOS packaged-app acceptance gate for native integration</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:40px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .stages { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:18px; }
+    .stages div { padding:12px 10px; background:#0f141a; border-radius:9px; font-size:13px; }
+    .stages strong { display:block; margin-bottom:6px; color:var(--accent); }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    .ok { color:var(--ok); }
+    .manual { color:var(--warn); }
+    .no { color:var(--bad); }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    @media (max-width:700px) { .flow,.stages { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #253 · issue #235</div>
+    <h1>Add a macOS packaged-app acceptance gate for native integration</h1>
+    <p>Browser Playwright can prove the renderer plus a real Rust host. It uses the Vite transport. This gate covers the remaining native boundary: Tauri IPC, Dock, Keychain, packaged adapters, and updater archives — without pretending a headless compile, or a WebKit browser project, is that proof.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>Linux <code>verify.sh</code> compiled the crate and drove <code>jabot-hostd</code>.</li>
+            <li>macOS <code>bundle</code> packed an unsigned <code>.app</code> on main only — 10x minutes, no launch.</li>
+            <li>D-019: no banner has ever been delivered or clicked on Linux.</li>
+            <li>Nothing refused production app data or <code>com.jabot.app</code> Keychain.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li>A named matrix distinguishes compiled, packaged, launched, and interactively verified.</li>
+            <li>An isolated <code>run</code> launches <code>JaBot.app</code> against temp data + a throwaway Keychain + <code>fake-acp-agent</code>.</li>
+            <li><code>ipc-connected.json</code> is written only from <code>host_rpc</code> — the webview invoke path.</li>
+            <li>Updater <code>.app.tar.gz</code> + <code>.sig</code> are checked separately from a signed install.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="stages">
+        <div><strong>compiled</strong>Linux verify.sh. No .app.</div>
+        <div><strong>packaged</strong>Identity + staged adapter. Headless bundle job.</div>
+        <div><strong>launched</strong>Isolated run. IPC, fake-acp, Keychain, relaunch.</div>
+        <div><strong>interactive</strong>Dock + notify click. Owner = release cutter.</div>
+      </div>
+    </section>
+
+    <section id="isolation">
+      <h2>Isolation (load-bearing)</h2>
+      <p>Acceptance exits 2 rather than fall through to the user’s install. No credentials. No production SQLite. No <code>login.keychain</code> service <code>com.jabot.app</code>.</p>
+      <table>
+        <thead><tr><th>Knob</th><th>Production</th><th>Acceptance</th></tr></thead>
+        <tbody>
+          <tr><td>App data</td><td><code>~/Library/Application Support/com.jabot.app</code></td><td><code>JABOT_APP_DATA_DIR</code> under <code>/tmp/jabot-acceptance-*</code></td></tr>
+          <tr><td>Keychain</td><td><code>com.jabot.app</code></td><td><code>com.jabot.app.acceptance.&lt;id&gt;</code> + throwaway keychain</td></tr>
+          <tr><td>Agent</td><td>user’s Claude / Codex</td><td><code>fake-acp-agent</code> (<code>dev-bins</code>)</td></tr>
+          <tr><td>Listener in JaBot.app</td><td>none (decision #4)</td><td>still none — probe talks to the in-process host</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="cost">
+      <h2>Cost and what CI may claim</h2>
+      <p><code>macos-latest</code> bills at 10x. The old per-PR bundle job was ~86% of spend. This gate does not bring that back.</p>
+      <table>
+        <thead><tr><th>Job</th><th>Runner</th><th>When</th><th>Honest claim</th></tr></thead>
+        <tbody>
+          <tr><td><code>verify</code> + <code>macos acceptance</code></td><td>Linux</td><td>every PR</td><td>matrix, isolation, docs still agree</td></tr>
+          <tr><td><code>native-check</code></td><td>Ubuntu, path-filtered</td><td>notify / secrets / Tauri / adapters</td><td><code>mac.rs</code> still lints (D-019 scratch crate)</td></tr>
+          <tr><td><code>macos-packaged</code></td><td>macos-latest</td><td>tags, dispatch, label <code>macos-acceptance</code></td><td>unsigned .app launched isolated; Dock/notify UI skipped</td></tr>
+          <tr><td><code>bundle</code> + <code>package</code></td><td>macos-latest</td><td>main, not PRs</td><td>packaged identity — not interaction</td></tr>
+          <tr><td>release <code>updater-artifacts</code></td><td>macos-latest</td><td>v* tags</td><td>archive + sig present, not a signed install</td></tr>
+        </tbody>
+      </table>
+      <p>Playwright WebKit is not Tauri acceptance and is not WKWebView acceptance.</p>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <ul>
+        <li><code>docs/macos-acceptance.md</code> — the matrix, owners, and evidence rules.</li>
+        <li><code>scripts/macos-acceptance.sh</code> — check / package / updater-artifacts / run / release-checklist.</li>
+        <li><code>src-tauri/src/acceptance.rs</code> — evidence files; refuses production paths; no socket.</li>
+        <li><code>src-tauri/src/lib.rs</code> + <code>secrets.rs</code> — <code>JABOT_APP_DATA_DIR</code>, <code>JABOT_KEYCHAIN_SERVICE</code>, IPC marker on <code>host_rpc</code>.</li>
+        <li><code>.github/workflows/macos-native.yml</code> — cheap Linux trigger vs opt-in 10x packaged launch.</li>
+      </ul>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>./scripts/verify.sh</code> — includes the new Linux stage.</li>
+        <li><code>./scripts/macos-acceptance.sh check</code> and <code>./scripts/tests/macos-acceptance.test.sh</code>.</li>
+        <li>On a Mac, after <code>npm run tauri build</code>: <code>./scripts/macos-acceptance.sh run --app src-tauri/target/release/bundle/macos/JaBot.app</code>. Keep the printed evidence directory.</li>
+        <li>Release: <code>./scripts/macos-acceptance.sh release-checklist</code>. Notification prompt, click-to-thread, and signed update install stay manual with screenshots.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
