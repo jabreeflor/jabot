@@ -65,12 +65,11 @@ passes; test / plugin / worktree files do not appear in the JSON.
 
 Originally reproduced on Node v22.14.0 at the audit commit: **11122 /
 11963 lines**, 2571 / 3006 branches, 573 / 706 functions. Re-measured
-on this branch after rebasing onto current `main` (includes #257
-Cursor Agent CLI and #264 translucency; Node 22 locally, CI is **26**):
-**92.95 / 85.57 / 81.59** (11514 / 12387 lines). `main.tsx` (entry),
-`src/mobile/index.ts` (barrel), and the type-only
-`src/host/prWorkspace.ts` sit at 0% on purpose — they count, they are
-not excluded to flatter the number.
+on this branch after merging current `main` (OpenCode, conversation
+summary, copy-response, Playwright #256; Node 22 locally, CI is **26**):
+**92.70 / 85.97 / 81.17**. `main.tsx` (entry), `src/mobile/index.ts`
+(barrel), and the type-only `src/host/prWorkspace.ts` sit at 0% on
+purpose — they count, they are not excluded to flatter the number.
 
 The proposed 90/85/80 start is a **hold-the-line** floor under the same
 include policy, not a target to climb. A few points of headroom absorb

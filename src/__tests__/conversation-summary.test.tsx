@@ -6,14 +6,17 @@
  * which files the person attached — so Git actions have a repository they
  * obviously apply to.
  */
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { invoke } from "@tauri-apps/api/core";
 
 import { ConversationSummary } from "../components/ConversationSummary";
 import { ThreadView } from "../views/ThreadView";
 import type { HostClient, ThreadSummaryResult } from "../host";
 import type { HarnessCard, HostTarget, ThreadSummary } from "../components/types";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const THREAD: ThreadSummary = {
   id: "t-auth",
@@ -204,5 +207,326 @@ describe("ConversationSummary", () => {
       screen.getByRole("button", { name: "Conversation summary for Repositories" }),
     );
     expect(await screen.findByText("Summary is unavailable on this host.")).toBeInTheDocument();
+  });
+
+  it("names a missing checkout and an empty Git state", async () => {
+    const host = client({
+      threadId: "t-auth",
+      selectedRepoId: "f1",
+      repositories: [
+        {
+          id: "f1",
+          name: "gone",
+          primary: true,
+          environment: "Local",
+          isGit: true,
+          available: false,
+          status: "unavailable",
+        },
+      ],
+      sources: [],
+      availableFolders: [],
+    });
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for gone" }),
+    );
+    expect(await screen.findByText("gone is not available on disk.")).toBeInTheDocument();
+
+    const empty = client({
+      threadId: "t-auth",
+      selectedRepoId: "f1",
+      repositories: [
+        {
+          id: "f1",
+          name: "fresh",
+          primary: true,
+          environment: "Local",
+          isGit: true,
+          available: true,
+          status: "empty",
+        },
+      ],
+      sources: [],
+      availableFolders: [],
+    });
+    render(<ConversationSummary client={empty} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for fresh" }),
+    );
+    expect(await screen.findByText("Git state is not available yet.")).toBeInTheDocument();
+  });
+
+  it("says when no repository is attached", async () => {
+    const host = client({
+      threadId: "t-auth",
+      selectedRepoId: "",
+      repositories: [],
+      sources: [],
+      availableFolders: [],
+    });
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+    );
+    expect(
+      await screen.findByText("No repository is attached to this conversation."),
+    ).toBeInTheDocument();
+  });
+
+  it("surfaces a load error from the host", async () => {
+    const host = {
+      ...client(),
+      threadSummary: vi.fn(async () => {
+        throw new Error("host is down");
+      }),
+    } as unknown as HostClient;
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Conversation summary for Repositories" }),
+    );
+    expect(await screen.findByText("host is down")).toBeInTheDocument();
+  });
+
+  it("attaches an extra folder from the picker", async () => {
+    const next: ThreadSummaryResult = {
+      ...SUMMARY,
+      selectedRepoId: "f3",
+      repositories: [
+        ...SUMMARY.repositories,
+        {
+          id: "f3",
+          name: "docs",
+          primary: false,
+          environment: "Local",
+          isGit: true,
+          available: true,
+          status: "ok",
+          branch: "main",
+          additions: 0,
+          deletions: 0,
+        },
+      ],
+      availableFolders: [],
+    };
+    const host = client({
+      ...SUMMARY,
+      availableFolders: [
+        { folderId: "f3", name: "docs", path: "/tmp/docs", isGit: true },
+      ],
+    });
+    host.attachThreadRepo = vi.fn(async () => next);
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Selected repository jabot" }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: "Add docs" }));
+    await waitFor(() =>
+      expect(host.attachThreadRepo).toHaveBeenCalledWith({
+        threadId: "t-auth",
+        folderId: "f3",
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Selected repository docs" }),
+    ).toBeInTheDocument();
+  });
+
+  it("commits and pushes from the commit modal", async () => {
+    const host = client();
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Commit or push" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Commit or push jabot" }),
+    ).toBeInTheDocument();
+
+    const message = screen.getByLabelText("Commit message");
+    await userEvent.click(screen.getByRole("button", { name: "Commit" }));
+    expect(host.threadGitCommit).not.toHaveBeenCalled();
+
+    await userEvent.type(message, "cover the commit path");
+    await userEvent.click(screen.getByRole("button", { name: "Commit" }));
+    await waitFor(() =>
+      expect(host.threadGitCommit).toHaveBeenCalledWith({
+        threadId: "t-auth",
+        repoId: "f1",
+        message: "cover the commit path",
+      }),
+    );
+  });
+
+  it("reports a failed push and a successful one", async () => {
+    const host = client();
+    host.threadGitPush = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, detail: "rejected by remote" })
+      .mockResolvedValueOnce({ ok: true });
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Commit or push" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Push" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("rejected by remote");
+
+    await userEvent.click(screen.getByRole("button", { name: "Push" }));
+    await waitFor(() => expect(host.threadGitPush).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(host.threadSummary).toHaveBeenCalled());
+  });
+
+  it("opens a compare URL and the pull request callback", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    const onOpenPullRequest = vi.fn();
+    const host = client({
+      ...SUMMARY,
+      repositories: [
+        {
+          ...SUMMARY.repositories[0],
+          compareUrl: "https://github.com/jabot/compare/main...dev",
+          pullRequestUrl: "https://github.com/jabot/pull/1",
+        },
+        SUMMARY.repositories[1],
+      ],
+    });
+    render(
+      <ConversationSummary
+        client={host}
+        threadId="t-auth"
+        onOpenPullRequest={onOpenPullRequest}
+      />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Compare branch" }));
+    expect(open).toHaveBeenCalledWith(
+      "https://github.com/jabot/compare/main...dev",
+      "_blank",
+      "noopener",
+    );
+    expect(onOpenPullRequest).toHaveBeenCalledWith("https://github.com/jabot/pull/1");
+    open.mockRestore();
+  });
+
+  it("adds a picked source and paints an https thumbnail", async () => {
+    vi.mocked(invoke).mockResolvedValue(["/tmp/extra.md"]);
+    const host = client({
+      ...SUMMARY,
+      sources: [
+        {
+          id: "s-img",
+          name: "shot.png",
+          kind: "file",
+          path: "https://example.com/shot.png",
+          available: true,
+        },
+      ],
+    });
+    host.addThreadSource = vi.fn(async () => SUMMARY);
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Open shot.png" }).querySelector("img"),
+    ).toHaveAttribute("src", "https://example.com/shot.png");
+    await userEvent.click(screen.getByRole("button", { name: "Add source" }));
+    await waitFor(() =>
+      expect(host.addThreadSource).toHaveBeenCalledWith({
+        threadId: "t-auth",
+        path: "/tmp/extra.md",
+      }),
+    );
+  });
+
+  it("treats a cancelled source picker as no paths", async () => {
+    vi.mocked(invoke).mockRejectedValue(new Error("cancelled"));
+    const host = client();
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add source" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("pick_sources"));
+    expect(host.addThreadSource).not.toHaveBeenCalled();
+  });
+
+  it("reloads when the session updates and closes on an outside click", async () => {
+    let notify: ((note: { method: string }) => void) | undefined;
+    const host = client();
+    host.onNotification = (listener: (note: { method: string }) => void) => {
+      notify = listener;
+      return () => {
+        notify = undefined;
+      };
+    };
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    expect(await screen.findByRole("dialog", { name: "Conversation summary" })).toBeInTheDocument();
+    const before = vi.mocked(host.threadSummary).mock.calls.length;
+    await act(async () => {
+      notify?.({ method: "session/update" });
+    });
+    await waitFor(() =>
+      expect(vi.mocked(host.threadSummary).mock.calls.length).toBeGreaterThan(before),
+    );
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("dialog", { name: "Conversation summary" })).toBeNull();
+  });
+
+  it("opens a pull request from an empty review", async () => {
+    const onOpenPullRequest = vi.fn();
+    const host = client({
+      ...SUMMARY,
+      repositories: [
+        {
+          ...SUMMARY.repositories[0],
+          pullRequestUrl: "https://github.com/jabot/pull/9",
+        },
+        SUMMARY.repositories[1],
+      ],
+    });
+    host.threadGitDiff = vi.fn(async () => ({
+      repoId: "f1",
+      additions: 0,
+      deletions: 0,
+      files: [],
+      patch: "",
+    }));
+    render(
+      <ConversationSummary
+        client={host}
+        threadId="t-auth"
+        onOpenPullRequest={onOpenPullRequest}
+      />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Inspect changes" }));
+    expect(await screen.findByText("No changes in this repository.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Open pull request" }));
+    expect(onOpenPullRequest).toHaveBeenCalledWith("https://github.com/jabot/pull/9");
+  });
+
+  it("says when the sources list is empty", async () => {
+    const host = client({
+      ...SUMMARY,
+      sources: [],
+    });
+    render(<ConversationSummary client={host} threadId="t-auth" />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Conversation summary for jabot" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "View all" }));
+    expect(await screen.findByText("No sources attached yet.")).toBeInTheDocument();
   });
 });
