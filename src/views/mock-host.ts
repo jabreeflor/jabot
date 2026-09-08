@@ -105,6 +105,12 @@ export const HARNESSES: readonly HarnessCard[] = [
     accent: "var(--h-gemini)",
   },
   {
+    id: "aider",
+    label: "Aider",
+    blurb: "Paired programming via Aider's scripting CLI — not native ACP",
+    accent: "var(--h-aider)",
+  },
+  {
     id: "cursor",
     label: "Cursor Agent",
     blurb: "Cursor's coding agent. Permissions stay in JaBot — no --force.",

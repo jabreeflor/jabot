@@ -127,7 +127,10 @@ impl Clients {
 }
 
 fn main() {
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1).peekable();
+    if args.peek().map(String::as_str) == Some("--aider-acp") {
+        std::process::exit(jabot_lib::run_aider_acp());
+    }
     let mut data_dir: Option<PathBuf> = None;
     let mut socket_path: Option<PathBuf> = None;
     while let Some(arg) = args.next() {

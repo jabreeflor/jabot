@@ -1510,7 +1510,7 @@ mod tests {
         let harnesses = store.list_harnesses().unwrap();
         let ids: Vec<_> = harnesses.iter().map(|h| h.id.as_str()).collect();
         assert!(
-            ids.contains(&"claude") && ids.contains(&"hermes"),
+            ids.contains(&"claude") && ids.contains(&"hermes") && ids.contains(&"aider"),
             "{ids:?}"
         );
         assert!(harnesses.iter().all(|h| h.is_builtin));
