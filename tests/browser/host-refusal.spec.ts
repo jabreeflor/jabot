@@ -19,9 +19,13 @@ test.describe("host refusal", () => {
     const alert = page.getByRole("alert");
     await expect(alert).toBeVisible();
     await expect(alert).toContainText(/hour/i);
-    await expect(page.getByLabel("What should it do?")).toHaveValue("never fire this job");
+    await expect(page.getByLabel("What should it do?")).toHaveValue(
+      "never fire this job",
+    );
     await expect(page.getByLabel("CRON")).toHaveValue("0 99 * * *");
-    await expect(page.getByRole("button", { name: /never fire/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /never fire/i })).toHaveCount(
+      0,
+    );
     await captureEvidence(page, "host-refusal");
 
     const listed = await jabot.rpc<{ schedules: unknown[] }>("schedule/list");

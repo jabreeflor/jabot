@@ -111,7 +111,10 @@ export function writeBoardPr(gh: FakeGh): void {
       html_url: "https://github.com/jabreeflor/jabot/pull/23",
       body: "Session-opened fixture PR.",
       user: { login: "octocat" },
-      head: { ref: "jabot/t-auth", sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+      head: {
+        ref: "jabot/t-auth",
+        sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      },
       base: { ref: "main" },
       additions: 214,
       deletions: 96,
@@ -122,14 +125,17 @@ export function writeBoardPr(gh: FakeGh): void {
       requested_reviewers: [],
     }),
   );
-  writeFileSync(path.join(gh.dir, "pr-view.json"), JSON.stringify({
-    number: 23,
-    url: "https://github.com/jabreeflor/jabot/pull/23",
-    title: "Migrate auth to sessions",
-    state: "OPEN",
-    isDraft: false,
-    headRefName: "jabot/t-auth",
-  }));
+  writeFileSync(
+    path.join(gh.dir, "pr-view.json"),
+    JSON.stringify({
+      number: 23,
+      url: "https://github.com/jabreeflor/jabot/pull/23",
+      title: "Migrate auth to sessions",
+      state: "OPEN",
+      isDraft: false,
+      headRefName: "jabot/t-auth",
+    }),
+  );
   writeFileSync(
     gh.graphqlPath,
     JSON.stringify({

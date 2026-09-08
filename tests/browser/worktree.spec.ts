@@ -27,7 +27,9 @@ test.describe("real worktree session", () => {
     const task = "Auth migration";
     await startFolderSession(page, "demo-repo", task);
     await expect(page.getByText("hello from fake-acp")).toBeVisible();
-    await expect(page.getByRole("button", { name: new RegExp(`^${task}`) })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^${task}`) }),
+    ).toBeVisible();
     await captureEvidence(page, "worktree-session");
 
     const folders = await jabot.rpc<{
@@ -46,14 +48,21 @@ test.describe("real worktree session", () => {
     }>("thread/state", { threadId: listed!.threadId });
     expect(thread.worktreePath).toBeTruthy();
     expect(thread.branch?.startsWith("jabot/")).toBe(true);
-    expect(thread.worktreePath!.startsWith(path.join(jabot.dataDir, "worktrees"))).toBe(true);
+    expect(
+      thread.worktreePath!.startsWith(path.join(jabot.dataDir, "worktrees")),
+    ).toBe(true);
     expect(existsSync(path.join(thread.worktreePath!, "README.md"))).toBe(true);
     expect(git(repo.dir, "branch", "--show-current")).toBe("main");
 
-    writeFileSync(path.join(thread.worktreePath!, "auth.ts"), "export const login = () => {};\n");
+    writeFileSync(
+      path.join(thread.worktreePath!, "auth.ts"),
+      "export const login = () => {};\n",
+    );
 
     await archiveThread(page, task);
-    await expect(page.getByRole("button", { name: new RegExp(`^${task}`) })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^${task}`) }),
+    ).toHaveCount(0);
 
     expect(existsSync(thread.worktreePath!)).toBe(false);
     expect(git(repo.dir, "show", `${thread.branch}:auth.ts`)).toBe(
@@ -65,7 +74,9 @@ test.describe("real worktree session", () => {
     await expect(page.getByRole("heading", { name: other })).toBeVisible();
     await expect(page.getByText("hello from fake-acp")).toBeVisible();
     await deleteThread(page, other);
-    await expect(page.getByRole("button", { name: new RegExp(`^${other}`) })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: new RegExp(`^${other}`) }),
+    ).toHaveCount(0);
   });
 
   test("keeps an unsaveable dirty tree when Archive cannot commit the work", async ({
@@ -94,7 +105,10 @@ test.describe("real worktree session", () => {
       threadId: listed!.threadId,
     });
     expect(thread.worktreePath).toBeTruthy();
-    writeFileSync(path.join(thread.worktreePath!, "model.bin"), "an hour of work");
+    writeFileSync(
+      path.join(thread.worktreePath!, "model.bin"),
+      "an hour of work",
+    );
 
     await archiveThread(page, task);
     expect(existsSync(thread.worktreePath!)).toBe(true);

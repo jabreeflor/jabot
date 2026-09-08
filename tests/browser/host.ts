@@ -177,7 +177,9 @@ export async function chiefTranscript(
   });
 }
 
-export async function startJabotApp(options: StartJabotOptions = {}): Promise<JabotApp> {
+export async function startJabotApp(
+  options: StartJabotOptions = {},
+): Promise<JabotApp> {
   const dataDir = mkdtempSync(path.join(tmpdir(), "jabot-browser-"));
   const port = await listenFreePort();
   const logPath = path.join(dataDir, "vite.log");

@@ -8,7 +8,9 @@ test.describe("schedules", () => {
   }) => {
     await openConnectedApp(page, jabot.baseURL);
     await page.getByRole("button", { name: /^Schedules/ }).click();
-    await expect(page.getByRole("heading", { name: "Schedules", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Schedules", exact: true }),
+    ).toBeVisible();
 
     const prompt = page.getByLabel("What should it do?");
     await prompt.fill("summarise overnight mail every weekday at 9am");

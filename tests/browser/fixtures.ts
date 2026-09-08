@@ -58,7 +58,9 @@ export function browserTest(start: JabotStartFactory = () => ({})) {
         errors.push(err.message);
       });
       await provide(page);
-      expect(errors, `unexpected page errors:\n${errors.join("\n")}`).toEqual([]);
+      expect(errors, `unexpected page errors:\n${errors.join("\n")}`).toEqual(
+        [],
+      );
     },
   });
 }

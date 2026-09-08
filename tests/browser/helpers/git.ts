@@ -18,9 +18,10 @@ export function git(cwd: string, ...args: string[]): string {
 }
 
 /** A real repository with one commit. No user checkout is touched. */
-export function tempRepository(
-  prefix = "jabot-browser-repo-",
-): { dir: string; name: string } {
+export function tempRepository(prefix = "jabot-browser-repo-"): {
+  dir: string;
+  name: string;
+} {
   const dir = mkdtempSync(path.join(tmpdir(), prefix));
   git(dir, "init", "--initial-branch=main");
   git(dir, "config", "user.email", "test@example.com");

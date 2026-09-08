@@ -85,7 +85,9 @@ describe("host disconnect recovery", () => {
     await waitFor(() =>
       expect(screen.queryByText("Host disconnected")).not.toBeInTheDocument(),
     );
-    expect(screen.queryByRole("button", { name: "Reconnect" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reconnect" }),
+    ).not.toBeInTheDocument();
   });
 
   it("treats a bridge reconnect notification as a successful handshake", async () => {

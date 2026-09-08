@@ -111,16 +111,20 @@ export async function startFolderSession(
 }
 
 export async function archiveThread(page: Page, title: string): Promise<void> {
-  await page.getByRole("button", { name: new RegExp(`^${escapeRegExp(title)}`) }).click({
-    button: "right",
-  });
+  await page
+    .getByRole("button", { name: new RegExp(`^${escapeRegExp(title)}`) })
+    .click({
+      button: "right",
+    });
   await page.getByRole("menuitem", { name: "Archive" }).click();
 }
 
 export async function deleteThread(page: Page, title: string): Promise<void> {
-  await page.getByRole("button", { name: new RegExp(`^${escapeRegExp(title)}`) }).click({
-    button: "right",
-  });
+  await page
+    .getByRole("button", { name: new RegExp(`^${escapeRegExp(title)}`) })
+    .click({
+      button: "right",
+    });
   await page.getByRole("menuitem", { name: "Delete" }).click();
 }
 
