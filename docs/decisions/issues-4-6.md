@@ -110,7 +110,8 @@ User / Chief / schedule
 JaBot host supervisor
         ↓  ACP stdio
 Harness from catalog (claude-agent-acp, codex-acp, pi-acp,
-                      gemini --acp, hermes acp, openclaw acp, Custom JSON, …)
+                      copilot --acp, gemini --acp, jabot --aider-acp,
+                      agent acp, hermes acp, openclaw acp, Custom JSON, …)
         ↓  MCP from JaBot catalog on session/new
 Gmail / Calendar / GitHub / …  (allowlisted per bot)
 ```
@@ -130,8 +131,8 @@ and [setup-porting/buzz.md](../research/setup-porting/buzz.md):
 
 | Tier | What | Examples |
 |---|---|---|
-| 1 — compiled-in | Shipped cards, auth probes, reserved ids | `claude`, `codex`, `pi`, `gemini` |
-| 2 — presets | PATH-probed, not user-editable | Hermes, OpenClaw, Cursor, … |
+| 1 — compiled-in | Shipped cards, auth probes, reserved ids | `claude`, `codex`, `pi`, `copilot`, `gemini` |
+| 2 — presets | PATH-probed, not user-editable | Hermes, Aider, OpenClaw, Cursor, … |
 | 3 — user JSON | Settings / `custom_harnesses/` | Anything that speaks ACP stdio |
 
 Custom JSON (Buzz schema):

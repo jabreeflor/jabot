@@ -35,7 +35,7 @@ describe("the harness mark", () => {
 
     const marks = marksIn(container);
     expect(marks).toHaveLength(HARNESSES.length);
-    // Distinct: five cards that drew the same glyph would be the dot again
+    // Distinct: cards that drew the same glyph would be the dot again
     // with extra steps.
     const shapes = new Set(marks.map((mark) => mark.innerHTML));
     expect(shapes.size).toBe(HARNESSES.length);

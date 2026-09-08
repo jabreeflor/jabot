@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Add Aider harness integration</title>
+  <style>
+    :root { color-scheme: dark; --bg: #12141a; --ink: #e8e6df; --mute: #9a968c; --card: #1c1f28; --line: #2a2e3a; --teal: #14b8a6; }
+    body { margin: 0; font: 16px/1.5 ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--ink); }
+    main { max-width: 760px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 28px; margin: 0 0 8px; }
+    h2 { font-size: 18px; margin: 36px 0 10px; }
+    p, li { color: var(--ink); }
+    .lede { color: var(--mute); margin: 0 0 28px; }
+    .flow { display: grid; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+    .flow div { display: flex; gap: 12px; align-items: baseline; }
+    .flow b { color: var(--teal); min-width: 7.5rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--mute); font-weight: 600; }
+    code { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; background: #0d0f14; padding: 1px 5px; border-radius: 4px; }
+    .note { background: var(--card); border-left: 3px solid var(--teal); padding: 10px 14px; margin: 16px 0; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Add Aider harness integration</h1>
+  <p class="lede">JaBot can now start Aider threads. Aider still does not speak ACP — JaBot wraps its scripting CLI and says so in the catalog, Doctor, and <code>initialize</code>.</p>
+
+  <h2>How it works</h2>
+  <div class="flow">
+    <div><b>Picker</b><span>Catalog id <code>aider</code> is a reserved preset. Onboarding, Settings, New Chat, and the crew editor all read the same list.</span></div>
+    <div><b>Doctor</b><span>Asks <code>aider</code> on PATH, then <code>--version ≥ 0.35</code>, then an API key, then a model. Each miss has its own remedy.</span></div>
+    <div><b>Spawn</b><span><code>jabot --aider-acp</code> (or <code>jabot-hostd --aider-acp</code>) speaks ACP stdio. It is not a third production binary.</span></div>
+    <div><b>Turn</b><span>One <code>session/prompt</code> becomes <code>aider --message-file … --yes --no-auto-commits --no-dirty-commits --stream</code> in the thread cwd.</span></div>
+    <div><b>Context</b><span>Per-session <code>--chat-history-file</code> under <code>$TMPDIR/jabot-aider/</code> plus <code>--restore-chat-history</code>.</span></div>
+    <div><b>Failure</b><span>Spawn errors and non-zero exits return <code>stopReason: error</code> plus visible text. Empty stdout is <code>end_turn</code> (host maps that to empty_response).</span></div>
+  </div>
+
+  <h2>What we do not claim</h2>
+  <div class="note">
+    Native ACP is <code>_meta.jabot.nativeAcp: false</code>. Permission prompts are unsupported — the adapter always passes <code>--yes</code>. Aider’s config is user-global; two bots cannot have different Aider accounts. Auto-commits stay off so JaBot owns the worktree.
+  </div>
+
+  <h2>Capabilities</h2>
+  <table>
+    <tr><th>Capability</th><th>Support</th></tr>
+    <tr><td>Streaming</td><td>Yes — stdout lines become <code>agent_message_chunk</code></td></tr>
+    <tr><td>Multi-turn / resume</td><td>Yes — Aider history file, adapter-side</td></tr>
+    <tr><td>File selection</td><td>Partial — resource links and <code>@path</code> become CLI args</td></tr>
+    <tr><td>Cancel</td><td>Yes — kills the Aider process group</td></tr>
+    <tr><td>Tool events</td><td>Synthesized one <code>execute</code> call around the CLI run</td></tr>
+    <tr><td>Permissions</td><td>Unsupported — declared in <code>_meta.jabot.unsupported</code></td></tr>
+  </table>
+
+  <h2>What to look at</h2>
+  <table>
+    <tr><th>File</th><th>Why</th></tr>
+    <tr><td><code>src-tauri/src/host/harness/catalog.rs</code></td><td>Preset card, env floor, reserved id</td></tr>
+    <tr><td><code>src-tauri/src/host/harness/aider.rs</code></td><td>Doctor classification and commit policy</td></tr>
+    <tr><td><code>src-tauri/src/host/harness/aider_acp.rs</code></td><td>ACP loop over the scripting CLI</td></tr>
+    <tr><td><code>docs/research/harness-integration/aider.md</code></td><td>Setup, auth isolation, capabilities</td></tr>
+  </table>
+
+  <h2>How to verify</h2>
+  <ol>
+    <li><code>./scripts/verify.sh</code> on this branch (already green on the pushed tree).</li>
+    <li>Install Aider and export a provider key, then start a thread on Aider in a folder worktree.</li>
+    <li>Confirm Doctor names a missing binary / old version / missing key / missing model instead of a generic “not installed”.</li>
+    <li>Confirm <code>git log</code> in the worktree has no Aider auto-commits.</li>
+  </ol>
+</main>
+</body>
+</html>
