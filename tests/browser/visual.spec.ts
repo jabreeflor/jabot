@@ -45,20 +45,14 @@ async function shot(
   });
 }
 
-/**
- * Dialog only. Mask inline `<code>` — Figtree AA on those chips is 35px
- * different between this Linux Chromium and ubuntu-latest, with the rest
- * of the dialog matching at maxDiffPixels 0.
- */
+/** Dialog only — the dimmed page behind it AA-drifts across Linux Chromiums. */
 async function shotDialog(page: Page, name: string): Promise<void> {
   await settle(page);
   await page.evaluate(() => {
     const active = document.activeElement;
     if (active instanceof HTMLElement) active.blur();
   });
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toHaveScreenshot(`${name}.png`, {
-    mask: [dialog.locator("code")],
+  await expect(page.getByRole("dialog")).toHaveScreenshot(`${name}.png`, {
     maxDiffPixels: 0,
     animations: "disabled",
     caret: "hide",
