@@ -92,6 +92,31 @@ describe("NewChatView", () => {
     expect(pi).not.toHaveTextContent(/Inflection/i);
   });
 
+  it("offers a model picker for OpenCode and sends the chosen model", async () => {
+    const props = renderView({
+      harnesses: HARNESSES.map((harness) =>
+        harness.id === "opencode"
+          ? { ...harness, models: ["anthropic/claude-sonnet-4-5"] }
+          : harness,
+      ),
+    });
+    await pickHarness(/OpenCode/);
+    expect(
+      screen.getByRole("button", { name: /Model: Project default/ }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Model:/ }));
+    await userEvent.click(
+      screen.getByRole("option", { name: "anthropic/claude-sonnet-4-5" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Start session" }));
+    expect(props.onStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harnessId: "opencode",
+        model: "anthropic/claude-sonnet-4-5",
+      }),
+    );
+  });
+
   it("starts the session with the harness, folder, and task picked", async () => {
     const props = renderView({ defaultFolderId: "globnet-sync" });
 

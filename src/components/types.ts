@@ -201,6 +201,10 @@ export interface HarnessCard {
   accent: string;
   available?: boolean;
   installHint?: string;
+  supportsModels?: boolean;
+  models?: string[];
+  declaredCapabilities?: string[];
+  accountIsolation?: string;
   /** Catalog-declared capabilities. Absent means unverified. */
   capabilities?: {
     streaming: boolean;
@@ -372,6 +376,7 @@ export interface NewChatDraft {
   harnessId: string;
   folderId: string | null;
   task: string;
+  model?: string | null;
 }
 
 /**

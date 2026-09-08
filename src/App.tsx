@@ -508,6 +508,7 @@ function AppShell({
             : await invoke<string>("scratch_workspace"),
           harnessId: draft.harnessId,
           folderId: folder?.id,
+          model: draft.model || undefined,
           // No `useCheckout` or `baseRef`: the window stopped offering them (#92),
           // so every folder thread gets a fresh worktree from the host's own
           // default base ref. A worktree the host cannot make still comes back

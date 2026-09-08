@@ -226,6 +226,8 @@ export interface RuntimeSpec {
   args?: string[];
   env?: Record<string, string>;
   installHint?: string;
+  /** Host-selected `provider/model` when the harness exposes one. */
+  model?: string;
 }
 
 /**
@@ -380,6 +382,8 @@ export interface ThreadOpenParams {
   /** What the thread's branch starts from — a branch, tag or sha. Default is
       `origin/<default branch>`, never the user's possibly-dirty `HEAD`. */
   baseRef?: string;
+  /** Host-selected `provider/model` for harnesses that expose one. */
+  model?: string;
 }
 
 export interface RunView {
@@ -748,6 +752,12 @@ export interface HarnessCardView {
   sessionScope: SessionScope;
   /** Reserved ids cannot be shadowed by a user file. */
   reserved: boolean;
+  /** New Chat / bot editor can offer a provider/model picker. */
+  supportsModels?: boolean;
+  /** Catalog-declared ACP capabilities. Resume is still negotiated. */
+  declaredCapabilities?: string[];
+  /** Why concurrent account profiles cannot isolate this harness. */
+  accountIsolation?: string;
   /** What this card is willing to claim. Absent means unverified. */
   capabilities?: HarnessCapabilitiesView;
 }
@@ -796,6 +806,8 @@ export interface HarnessReport {
   installHint?: string;
   installUrl?: string;
   elapsedMs: number;
+  /** `provider/model` lines the Doctor's models probe printed. */
+  models?: string[];
   capabilities?: HarnessCapabilitiesView;
 }
 

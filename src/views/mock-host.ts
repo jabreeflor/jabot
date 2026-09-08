@@ -93,6 +93,13 @@ export const HARNESSES: readonly HarnessCard[] = [
     accent: "var(--h-pi)",
   },
   {
+    id: "opencode",
+    label: "OpenCode",
+    blurb: "The open-source AI coding agent",
+    accent: "var(--h-opencode)",
+    supportsModels: true,
+  },
+  {
     id: "copilot",
     label: "GitHub Copilot",
     blurb: "GitHub's coding agent, over ACP",

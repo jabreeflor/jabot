@@ -361,6 +361,7 @@ fn report(descriptor: &HarnessDescriptor, diagnosis: Diagnosis) -> HarnessReport
         install_hint: descriptor.install_hint.clone(),
         install_url: descriptor.install_url.clone(),
         elapsed_ms: diagnosis.elapsed_ms,
+        models: diagnosis.models,
     }
 }
 

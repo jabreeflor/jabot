@@ -107,6 +107,13 @@ describe("harness/list", () => {
       reserved: true,
       sessionScope: "thread",
     });
+    expect(byId.get("opencode")).toMatchObject({
+      tier: "shipped",
+      label: "OpenCode",
+      reserved: true,
+      sessionScope: "thread",
+      supportsModels: true,
+    });
     expect(byId.get("copilot")).toMatchObject({
       tier: "shipped",
       label: "GitHub Copilot",

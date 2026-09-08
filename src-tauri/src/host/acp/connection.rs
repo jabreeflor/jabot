@@ -250,22 +250,36 @@ impl AcpConnection {
         thread_id: &str,
         cwd: &str,
         mcp_servers: Value,
+        model: Option<&str>,
     ) -> Result<String, RpcError> {
         self.initialize()?;
-        let result = self.request(
-            "session/new",
-            json!({
-                "cwd": cwd,
-                "mcpServers": mcp_servers
-            }),
-            SESSION_NEW_TIMEOUT,
-        )?;
+        let mut params = json!({
+            "cwd": cwd,
+            "mcpServers": mcp_servers
+        });
+        if let Some(model) = model {
+            params["model"] = json!(model);
+        }
+        let result = self.request("session/new", params, SESSION_NEW_TIMEOUT)?;
         let session_id = result
             .get("sessionId")
             .and_then(Value::as_str)
             .ok_or_else(|| RpcError::Internal("session/new did not return sessionId".into()))?
             .to_string();
         self.adopt(thread_id, &session_id);
+        if let Some(model) = model {
+            // OpenCode versions that expose `session/set_config` take this;
+            // older builds answer method-not-found and keep the config model.
+            let _ = self.request(
+                "session/set_config",
+                json!({
+                    "sessionId": session_id,
+                    "configId": "model",
+                    "value": model
+                }),
+                Duration::from_secs(2),
+            );
+        }
         Ok(session_id)
     }
 

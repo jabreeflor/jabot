@@ -242,6 +242,7 @@ mod tests {
                 fold_policy: None,
                 use_checkout: None,
                 base_ref: None,
+                model: None,
             })
             .expect("thread/open");
     }

@@ -85,6 +85,17 @@ pub enum Readiness {
     },
     /// A daemon must be listening before the adapter can do anything.
     Daemon { addr: String, remedy: String },
+    /// The vendor CLI *is* the ACP adapter. Classify from `acp --help`,
+    /// an auth-list command, and a models listing — three different fixes.
+    AuthAndModels {
+        acp_help_args: Vec<String>,
+        auth_args: Vec<String>,
+        models_args: Vec<String>,
+        logged_out_remedy: String,
+        model_remedy: String,
+        outdated_remedy: String,
+        env_auth_keys: Vec<String>,
+    },
     /// Vendor-specific inspect after the CLI is known to be on PATH.
     Inspect { kind: InspectKind },
 }
@@ -125,6 +136,13 @@ pub struct HarnessDescriptor {
     pub capability_notes: Option<String>,
     pub readiness: Readiness,
     pub session_scope: SessionScope,
+    /// New Chat / bot editor can offer a provider/model picker.
+    pub supports_models: bool,
+    /// What the catalog claims this harness can do over ACP. Resume is still
+    /// negotiated per process; a name here is not a handshake.
+    pub declared_capabilities: Vec<String>,
+    /// Why this harness cannot isolate concurrent accounts (#218).
+    pub account_isolation: Option<String>,
     /// What we are willing to advertise after reading upstream docs — not a
     /// guess from the binary being present. Absent means unverified.
     pub capabilities: Option<HarnessCapabilities>,
@@ -173,6 +191,7 @@ impl HarnessDescriptor {
             args: Some(launch.args.clone()),
             env: (!env.is_empty()).then_some(env),
             install_hint: self.install_hint.clone(),
+            model: None,
         }
     }
 
@@ -198,6 +217,9 @@ impl HarnessDescriptor {
             capability_notes: self.capability_notes.clone(),
             session_scope: self.session_scope,
             reserved: is_reserved(&self.id),
+            supports_models: self.supports_models,
+            declared_capabilities: self.declared_capabilities.clone(),
+            account_isolation: self.account_isolation.clone(),
             capabilities: self.capabilities.clone().map(Into::into),
         }
     }
@@ -233,6 +255,9 @@ struct Compiled {
     capability_notes: Option<&'static str>,
     readiness: CompiledReadiness,
     session_scope: SessionScope,
+    supports_models: bool,
+    declared_capabilities: &'static [&'static str],
+    account_isolation: Option<&'static str>,
 }
 
 enum CompiledReadiness {
@@ -244,6 +269,16 @@ enum CompiledReadiness {
         &'static str,
     ),
     Daemon(&'static str, &'static str),
+    /// The CLI *is* the adapter. Classify from ACP help, auth list, and models.
+    AuthAndModels {
+        acp_help: &'static [&'static str],
+        auth: &'static [&'static str],
+        models: &'static [&'static str],
+        logged_out: &'static str,
+        no_model: &'static str,
+        outdated: &'static str,
+        env_keys: &'static [&'static str],
+    },
     Inspect(InspectKind),
 }
 
@@ -276,6 +311,9 @@ const SHIPPED: &[Compiled] = &[
             "Run `claude` once and sign in, or export ANTHROPIC_API_KEY.",
         ),
         session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
     },
     Compiled {
         id: "codex",
@@ -296,6 +334,9 @@ const SHIPPED: &[Compiled] = &[
             "Run `codex login`.",
         ),
         session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
     },
     Compiled {
         id: "pi",
@@ -317,6 +358,46 @@ const SHIPPED: &[Compiled] = &[
         // login-status command to ask; claiming otherwise would be a guess.
         readiness: CompiledReadiness::Binary,
         session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
+    },
+    Compiled {
+        id: "opencode",
+        label: "OpenCode",
+        blurb: "The open-source AI coding agent",
+        accent: "var(--h-opencode)",
+        tier: HarnessTier::Shipped,
+        // First-party ACP: the CLI *is* the adapter (`opencode acp`).
+        launches: &[("opencode", &["acp"], false)],
+        cli: &["opencode"],
+        env: &[],
+        install_hint: "Install OpenCode (`curl -fsSL https://opencode.ai/install | bash` or `npm i -g opencode-ai`), then run `opencode auth login`.",
+        install_url: "https://opencode.ai/docs/acp/",
+        capability_notes: None,
+        // Auth is a global `~/.local/share/opencode/auth.json`. Empty list is
+        // logged out; a provider with no usable model is a config problem.
+        readiness: CompiledReadiness::AuthAndModels {
+            acp_help: &["acp", "--help"],
+            auth: &["auth", "list"],
+            models: &["models"],
+            logged_out: "Run `opencode auth login` to connect a provider, or export a provider API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, OPENCODE_API_KEY).",
+            no_model: "Set `model` in the project `opencode.json` (or `~/.config/opencode/opencode.json`) as `provider/model`, or pick a model in New Chat.",
+            outdated: "Upgrade OpenCode (`opencode upgrade`) so the `acp` command is available.",
+            env_keys: &[
+                "ANTHROPIC_API_KEY",
+                "OPENAI_API_KEY",
+                "OPENCODE_API_KEY",
+                "GOOGLE_GENERATIVE_AI_API_KEY",
+                "GEMINI_API_KEY",
+            ],
+        },
+        session_scope: SessionScope::Thread,
+        supports_models: true,
+        declared_capabilities: &["streaming", "tools", "permissions", "cancel", "resume"],
+        account_isolation: Some(
+            "OpenCode keeps one global ~/.local/share/opencode/auth.json. OPENCODE_CONFIG_DIR does not isolate credentials — concurrent accounts need a dedicated XDG_DATA_HOME (or OPENCODE_DATA_DIR / OPENCODE_APPNAME when the vendor ships them). JaBot will set those when the account-profile system (#218) is available.",
+        ),
     },
     Compiled {
         id: "copilot",
@@ -335,6 +416,9 @@ const SHIPPED: &[Compiled] = &[
         capability_notes: None,
         readiness: CompiledReadiness::Inspect(InspectKind::Copilot),
         session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
     },
     Compiled {
         id: "gemini",
@@ -359,6 +443,9 @@ const SHIPPED: &[Compiled] = &[
         ),
         readiness: CompiledReadiness::Inspect(InspectKind::Gemini),
         session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
     },
 ];
 
@@ -388,6 +475,9 @@ const PRESETS: &[Compiled] = &[
             "Run `hermes acp --setup` to choose a provider and model.",
         ),
         session_scope: SessionScope::Profile,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
     },
     // Honest: Aider does not speak ACP. JaBot wraps the scripting CLI.
     Compiled {
@@ -412,6 +502,9 @@ const PRESETS: &[Compiled] = &[
         // found. Binary here is only the last-resort "it is on PATH" answer.
         readiness: CompiledReadiness::Binary,
         session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
     },
     Compiled {
         id: "openclaw",
@@ -433,6 +526,9 @@ const PRESETS: &[Compiled] = &[
             "Start the Gateway (`openclaw gateway status` shows whether it is up).",
         ),
         session_scope: SessionScope::Profile,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
     },
     Compiled {
         id: "cursor",
@@ -457,6 +553,9 @@ const PRESETS: &[Compiled] = &[
         ),
         readiness: CompiledReadiness::Inspect(InspectKind::Cursor),
         session_scope: SessionScope::Thread,
+        supports_models: false,
+        declared_capabilities: &[],
+        account_isolation: None,
     },
 ];
 
@@ -500,9 +599,33 @@ fn build(compiled: &Compiled) -> HarnessDescriptor {
                 addr: (*addr).to_string(),
                 remedy: (*remedy).to_string(),
             },
+            CompiledReadiness::AuthAndModels {
+                acp_help,
+                auth,
+                models,
+                logged_out,
+                no_model,
+                outdated,
+                env_keys,
+            } => Readiness::AuthAndModels {
+                acp_help_args: acp_help.iter().map(|a| (*a).to_string()).collect(),
+                auth_args: auth.iter().map(|a| (*a).to_string()).collect(),
+                models_args: models.iter().map(|a| (*a).to_string()).collect(),
+                logged_out_remedy: (*logged_out).to_string(),
+                model_remedy: (*no_model).to_string(),
+                outdated_remedy: (*outdated).to_string(),
+                env_auth_keys: env_keys.iter().map(|k| (*k).to_string()).collect(),
+            },
             CompiledReadiness::Inspect(kind) => Readiness::Inspect { kind: kind.clone() },
         },
         session_scope: compiled.session_scope,
+        supports_models: compiled.supports_models,
+        declared_capabilities: compiled
+            .declared_capabilities
+            .iter()
+            .map(|c| (*c).to_string())
+            .collect(),
+        account_isolation: compiled.account_isolation.map(str::to_string),
         capabilities: capabilities_for(compiled.id),
     }
 }
@@ -564,7 +687,10 @@ mod tests {
     #[test]
     fn shipped_ids_are_the_reserved_cards() {
         let ids: Vec<_> = SHIPPED.iter().map(|c| c.id).collect();
-        assert_eq!(ids, ["claude", "codex", "pi", "copilot", "gemini"]);
+        assert_eq!(
+            ids,
+            ["claude", "codex", "pi", "opencode", "copilot", "gemini"]
+        );
         for id in ids {
             assert!(is_reserved(id), "{id} must be reserved");
         }
@@ -572,6 +698,24 @@ mod tests {
         assert!(is_reserved("aider"), "presets are reserved too");
         assert!(is_reserved("cursor"), "Cursor is a reserved preset");
         assert!(!is_reserved("my-agent"));
+    }
+
+    #[test]
+    fn opencode_is_first_party_acp_with_model_selection() {
+        let opencode = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "opencode")
+            .unwrap();
+        assert_eq!(opencode.tier, HarnessTier::Shipped);
+        assert_eq!(opencode.primary().command, "opencode");
+        assert_eq!(opencode.primary().args, ["acp"]);
+        assert!(opencode.supports_models);
+        assert!(opencode.declared_capabilities.contains(&"resume".into()));
+        assert!(opencode.account_isolation.unwrap().contains("auth.json"));
+        assert!(matches!(
+            opencode.readiness,
+            Readiness::AuthAndModels { .. }
+        ));
     }
 
     #[test]
