@@ -139,6 +139,16 @@ describe("harness/list", () => {
       reserved: true,
       sessionScope: "profile",
     });
+    expect(byId.get("aider")).toMatchObject({
+      tier: "preset",
+      label: "Aider",
+      reserved: true,
+      sessionScope: "thread",
+    });
+    expect(byId.get("aider")?.blurb).toMatch(/not native ACP/);
+    expect(byId.get("aider")?.capabilityNotes).toMatch(
+      /session\/request_permission/,
+    );
     expect(byId.get("cursor")).toMatchObject({
       tier: "preset",
       label: "Cursor Agent",

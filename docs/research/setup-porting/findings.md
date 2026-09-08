@@ -127,6 +127,7 @@ with Buzz's three tiers and OpenClaw/Hermes as first-class presets:
 | Gemini | `gemini` | `--acp` (fallback `--experimental-acp`) | `~/.gemini` profile / `GEMINI_API_KEY` | help flags + account-profile inspect; see [gemini.md](../harness-integration/gemini.md) |
 | Pi | `omp acp` or `npx -y pi-acp` | verify at implement time | `pi` on PATH | handshake |
 | Hermes | `hermes` | `acp` (or `-p <profile> acp`) | `HERMES_ACP_SKIP_CONFIGURED_MCP=1` | `hermes acp --check`; terminal `--setup` |
+| Aider | `jabot --aider-acp` (JaBot wrapper; not native ACP) | `--aider-acp` | `AIDER_AUTO_COMMITS=false`; inherit provider keys | `aider` on PATH, version ≥ 0.35, API key, model |
 | OpenClaw | `openclaw` | `acp` | Gateway must be running; token/url | `openclaw gateway status` — PATH-only is a false ready |
 | Custom | user JSON | user | floor env; strip host-reserved keys | ACP `initialize` |
 
@@ -229,6 +230,7 @@ Never put tokens in templates, transcripts, ACP prompts, or `environment.json`.
 2. PATH/auth/daemon Doctor; concurrent probes (Buzz; OpenClaw gateway status).
 3. Hermes preset: `hermes acp` + skip ambient MCP + `--check`/`--setup`.
 4. OpenClaw preset: `openclaw acp` talks to a Gateway; false-ready if daemon down.
+   Aider is a scripting-CLI wrapper (`jabot --aider-acp`), not native ACP; auto-commits off.
 5. Interactive permission broker; cancel resolves pending prompts.
 6. Steer vs cancel-and-redispatch when the user talks to an in-flight folded run (Buzz).
 

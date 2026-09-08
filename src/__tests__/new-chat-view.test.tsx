@@ -75,6 +75,14 @@ describe("NewChatView", () => {
     ).toBeInTheDocument();
   });
 
+  it("describes Aider as a scripting CLI, not native ACP", async () => {
+    renderView();
+
+    await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
+    const aider = screen.getByRole("option", { name: /^Aider/ });
+    expect(aider).toHaveTextContent("not native ACP");
+  });
+
   it("describes Pi as a coding agent, not Inflection's chatbot", async () => {
     renderView();
 
