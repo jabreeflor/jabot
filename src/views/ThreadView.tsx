@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Conversation } from "../components/Conversation";
+import { ConversationSummary } from "../components/ConversationSummary";
 import { canFold, FoldButton } from "../components/FoldButton";
 import { HarnessChip } from "../components/HarnessChip";
 import { HostPicker } from "../components/HostPicker";
@@ -60,6 +61,8 @@ export function ThreadView({
   onResume,
   resuming,
   resumeNotice,
+  client,
+  onOpenPullRequest,
 }: {
   thread: ThreadSummary;
   harnesses: readonly HarnessCard[];
@@ -99,6 +102,9 @@ export function ThreadView({
   resuming?: boolean;
   /** What the last resume actually did, in the host's own words. */
   resumeNotice?: { tone: "ok" | "warn" | "bad"; text: string } | null;
+  /** Live host, when the summary panel can ask it for Git and sources (#269). */
+  client?: HostClient;
+  onOpenPullRequest?: (url?: string) => void;
 }) {
   const line = status ?? threadStatus(thread);
 
@@ -110,6 +116,11 @@ export function ThreadView({
             <CodeSessionIcon />
           </div>
           <h2>{thread.title}</h2>
+          <ConversationSummary
+            client={client}
+            threadId={thread.id}
+            onOpenPullRequest={onOpenPullRequest}
+          />
           <HarnessChip harnessId={thread.harnessId} harnesses={harnesses} />
           {worktreePath && (
             <WorktreeChip worktreePath={worktreePath} branch={branch} />
@@ -325,6 +336,7 @@ export function LiveThreadView({
   host,
   onPickHost,
   onFold,
+  onOpenPullRequest,
 }: {
   client: HostClient;
   thread: ThreadSummary;
@@ -332,6 +344,7 @@ export function LiveThreadView({
   host: HostTarget;
   onPickHost?: (hostId: string) => void;
   onFold?: (policy?: FoldPolicy) => void;
+  onOpenPullRequest?: (url?: string) => void;
 }) {
   const { stream, error, send, cancel, answer } = useThreadTranscript(
     client,
@@ -406,6 +419,8 @@ export function LiveThreadView({
       onResume={onResume}
       resuming={resuming}
       resumeNotice={resumeNotice}
+      client={client}
+      onOpenPullRequest={onOpenPullRequest}
     />
   );
 }

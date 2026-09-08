@@ -26,6 +26,16 @@ export const THREAD_DELETE = "thread/delete";
 export const THREAD_STATE = "thread/state";
 export const THREAD_TRANSCRIPT = "thread/transcript";
 export const THREAD_RESUME = "thread/resume";
+/** Repositories, Git state, and attached sources for a Code conversation (#269). */
+export const THREAD_SUMMARY = "thread/summary";
+export const THREAD_REPO_ATTACH = "thread/repo/attach";
+export const THREAD_REPO_DETACH = "thread/repo/detach";
+export const THREAD_SOURCE_ADD = "thread/source/add";
+export const THREAD_SOURCE_REMOVE = "thread/source/remove";
+export const THREAD_SOURCE_OPEN = "thread/source/open";
+export const THREAD_GIT_DIFF = "thread/git/diff";
+export const THREAD_GIT_COMMIT = "thread/git/commit";
+export const THREAD_GIT_PUSH = "thread/git/push";
 export const SUPERVISOR_STATUS = "supervisor/status";
 export const INBOX_RESURFACE = "inbox/resurface";
 export const INBOX_LIST = "inbox/list";
@@ -535,6 +545,103 @@ export interface ThreadStateResult {
       which is every thread that is not a code thread and most that are. */
   pullRequests?: PullRequestView[];
   unread: number;
+}
+
+/** Repositories, Git state, and attached sources for one conversation (#269). */
+export interface ThreadSummaryResult {
+  threadId: string;
+  selectedRepoId: string;
+  repositories: ThreadRepoSummary[];
+  sources: ThreadSourceView[];
+  availableFolders: ThreadRepoChoice[];
+}
+
+export interface ThreadRepoSummary {
+  id: string;
+  name: string;
+  primary: boolean;
+  environment: string;
+  isGit: boolean;
+  available: boolean;
+  status: "ok" | "unavailable" | "empty" | "not_git" | string;
+  branch?: string;
+  additions?: number;
+  deletions?: number;
+  path?: string;
+  repo?: string;
+  forgeHost?: string;
+  defaultBranch?: string;
+  compareUrl?: string;
+  pullRequestUrl?: string;
+  pullRequestNumber?: number;
+}
+
+export interface ThreadRepoChoice {
+  folderId: string;
+  name: string;
+  path: string;
+  isGit: boolean;
+}
+
+export interface ThreadSourceView {
+  id: string;
+  name: string;
+  kind: "file" | "image" | string;
+  path: string;
+  mime?: string;
+  available: boolean;
+}
+
+export interface ThreadRepoParams {
+  threadId: string;
+  folderId: string;
+}
+
+export interface ThreadSourceAddParams {
+  threadId: string;
+  path: string;
+}
+
+export interface ThreadSourceRefParams {
+  threadId: string;
+  sourceId: string;
+}
+
+export interface ThreadSourceOpenResult {
+  opened: boolean;
+}
+
+export interface ThreadGitParams {
+  threadId: string;
+  repoId?: string;
+}
+
+export interface ThreadGitCommitParams {
+  threadId: string;
+  repoId?: string;
+  message: string;
+}
+
+export interface ThreadGitDiffResult {
+  repoId: string;
+  additions: number;
+  deletions: number;
+  files: ThreadGitFile[];
+  patch?: string;
+  compareUrl?: string;
+}
+
+export interface ThreadGitFile {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface ThreadGitPushResult {
+  ok: boolean;
+  detail?: string;
+  compareUrl?: string;
 }
 
 /** How a bot dispatched work: onto a crew member's standing thread, or into a

@@ -1175,6 +1175,7 @@ function MainView({
             harnesses={harnesses}
             host={host}
             onFold={(policy) => onFoldThread(hostThread.id, policy)}
+            onOpenPullRequest={() => onSelect({ view: "prs" })}
           />
         );
       }

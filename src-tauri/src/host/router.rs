@@ -10,15 +10,18 @@ use super::protocol::methods::{
     CrewRefParams, CrewUpdateParams, FolderRefParams, FolderRegisterParams, FolderUpdateParams,
     GithubLoginParams, GithubStatusParams, HarnessDoctorParams, HelloParams, InboxListParams,
     PermissionPendingParams, PermissionReplyParams, PromptParams, ResumeFromParams,
-    SessionCancelParams, ThreadFoldParams, ThreadOpenParams, ThreadRefParams,
-    ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_DRAFTS, CREW_DRAFT_DISMISS,
-    CREW_DRAFT_GET, CREW_DRAFT_SAVE, CREW_LIST, CREW_REMOVE, CREW_THREAD, CREW_UPDATE,
-    FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_LOGIN, GITHUB_STATUS,
-    HARNESS_DOCTOR, HARNESS_INSTALL, HARNESS_LIST, HOST_HEALTH, HOST_HELLO, INBOX_LIST,
-    NOTIFY_STATUS, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL, SESSION_PROMPT,
-    SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN,
-    THREAD_REOPEN, THREAD_RESUME, THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT,
-    TOOLS_LIST,
+    SessionCancelParams, ThreadFoldParams, ThreadGitCommitParams, ThreadGitParams,
+    ThreadOpenParams, ThreadRefParams, ThreadRepoParams, ThreadSourceAddParams,
+    ThreadSourceRefParams, ThreadTranscriptParams, ToolRefParams, CREW_CREATE, CREW_DRAFTS,
+    CREW_DRAFT_DISMISS, CREW_DRAFT_GET, CREW_DRAFT_SAVE, CREW_LIST, CREW_REMOVE, CREW_THREAD,
+    CREW_UPDATE, FOLDER_FORGET, FOLDER_LIST, FOLDER_REGISTER, FOLDER_UPDATE, GITHUB_LOGIN,
+    GITHUB_STATUS, HARNESS_DOCTOR, HARNESS_INSTALL, HARNESS_LIST, HOST_HEALTH, HOST_HELLO,
+    INBOX_LIST, NOTIFY_STATUS, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL,
+    SESSION_PROMPT, SUPERVISOR_STATUS, SYNC_RESUME_FROM, THREAD_ARCHIVE, THREAD_DELETE,
+    THREAD_FOLD, THREAD_GIT_COMMIT, THREAD_GIT_DIFF, THREAD_GIT_PUSH, THREAD_OPEN, THREAD_REOPEN,
+    THREAD_REPO_ATTACH, THREAD_REPO_DETACH, THREAD_RESUME, THREAD_SOURCE_ADD, THREAD_SOURCE_OPEN,
+    THREAD_SOURCE_REMOVE, THREAD_STATE, THREAD_SUMMARY, THREAD_TRANSCRIPT, TOOLS_CONNECT,
+    TOOLS_DISCONNECT, TOOLS_LIST,
 };
 use super::protocol::methods::{
     DeviceRefParams, PairingClaimParams, PairingConfirmParams, PairingRefParams,
@@ -124,6 +127,60 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             let params: ThreadRefParams = parse_params(request.params.as_ref())?;
             params.validate()?;
             to_value(session.thread_resume(params)?)
+        }
+        THREAD_SUMMARY => {
+            session.require_hello()?;
+            let params: ThreadRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_summary(&params.thread_id)?)
+        }
+        THREAD_REPO_ATTACH => {
+            session.require_hello()?;
+            let params: ThreadRepoParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_repo_attach(params)?)
+        }
+        THREAD_REPO_DETACH => {
+            session.require_hello()?;
+            let params: ThreadRepoParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_repo_detach(params)?)
+        }
+        THREAD_SOURCE_ADD => {
+            session.require_hello()?;
+            let params: ThreadSourceAddParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_source_add(params)?)
+        }
+        THREAD_SOURCE_REMOVE => {
+            session.require_hello()?;
+            let params: ThreadSourceRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_source_remove(params)?)
+        }
+        THREAD_SOURCE_OPEN => {
+            session.require_hello()?;
+            let params: ThreadSourceRefParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_source_open(params)?)
+        }
+        THREAD_GIT_DIFF => {
+            session.require_hello()?;
+            let params: ThreadGitParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_git_diff(params)?)
+        }
+        THREAD_GIT_COMMIT => {
+            session.require_hello()?;
+            let params: ThreadGitCommitParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_git_commit(params)?)
+        }
+        THREAD_GIT_PUSH => {
+            session.require_hello()?;
+            let params: ThreadGitParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.thread_git_push(params)?)
         }
         SUPERVISOR_STATUS => {
             session.require_hello()?;

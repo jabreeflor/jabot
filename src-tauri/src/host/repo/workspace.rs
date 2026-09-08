@@ -30,6 +30,18 @@ pub async fn pick_workspace() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+pub async fn pick_sources() -> Result<Vec<String>, String> {
+    Ok(rfd::AsyncFileDialog::new()
+        .set_title("Add sources to this conversation")
+        .pick_files()
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|file| file.path().to_string_lossy().into_owned())
+        .collect())
+}
+
+#[tauri::command]
 pub async fn github_repositories(host: String, page: u32) -> Result<Vec<Repository>, String> {
     if !super::super::pr::github::is_hostname(&host) || page == 0 {
         return Err("Invalid GitHub host or page.".into());
