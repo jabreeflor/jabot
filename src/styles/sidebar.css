@@ -576,6 +576,23 @@
 
 .me-row .host.bad {
   color: var(--red);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: normal;
+}
+
+.me-row .host-reconnect {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .me-settings {

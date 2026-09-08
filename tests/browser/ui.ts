@@ -87,3 +87,47 @@ export async function sendComposer(
   await box.fill(text);
   await box.press("Enter");
 }
+
+export async function chooseSelectOption(
+  page: Page,
+  triggerName: string | RegExp,
+  optionName: string | RegExp,
+): Promise<void> {
+  await page.getByRole("button", { name: triggerName }).click();
+  await page.getByRole("option", { name: optionName }).click();
+}
+
+export async function startFolderSession(
+  page: Page,
+  folderName: string,
+  task: string,
+): Promise<void> {
+  await page.getByRole("button", { name: "New Chat" }).click();
+  await expect(page.getByRole("region", { name: "New Chat" })).toBeVisible();
+  await chooseSelectOption(page, /Workspace:/, folderName);
+  await chooseSelectOption(page, /Harness:/, /Fake ACP/);
+  await page.getByLabel("Plan, build, or describe a change").fill(task);
+  await page.getByRole("button", { name: "Send" }).click();
+}
+
+export async function archiveThread(page: Page, title: string): Promise<void> {
+  await page
+    .getByRole("button", { name: new RegExp(`^${escapeRegExp(title)}`) })
+    .click({
+      button: "right",
+    });
+  await page.getByRole("menuitem", { name: "Archive" }).click();
+}
+
+export async function deleteThread(page: Page, title: string): Promise<void> {
+  await page
+    .getByRole("button", { name: new RegExp(`^${escapeRegExp(title)}`) })
+    .click({
+      button: "right",
+    });
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+}
+
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

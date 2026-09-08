@@ -31,7 +31,9 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import {
+  HOST_DISCONNECTED,
   HOST_HELLO,
+  HOST_RECONNECTED,
   JSONRPC_VERSION,
   RPC_ERROR,
   type HelloResult,
@@ -137,6 +139,7 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
   let closed = false;
   let startError: string | null = null;
   let hello: BridgeStatus["hello"] = null;
+  let generations = 0;
 
   const failAll = (message: string) => {
     for (const [, waiter] of pending) {
@@ -145,6 +148,10 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
       );
     }
     pending.clear();
+  };
+
+  const notify = (notification: JsonRpcNotification) => {
+    for (const listener of listeners) listener(notification);
   };
 
   const deliver = (line: string) => {
@@ -172,8 +179,7 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
       return;
     }
     if (typeof message.method === "string") {
-      const notification = message as unknown as JsonRpcNotification;
-      for (const listener of listeners) listener(notification);
+      notify(message as unknown as JsonRpcNotification);
     }
   };
 
@@ -208,6 +214,7 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
     exit = null;
     startError = null;
     hello = null;
+    generations += 1;
     proc.stdout.setEncoding("utf8");
     proc.stderr.setEncoding("utf8");
     proc.stdout.on("data", (chunk: string) => {
@@ -230,9 +237,13 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
       if (child !== proc) return;
       child = null;
       log(message);
-      failAll(
-        `${message}${stderrLines.length ? `: ${stderrLines.join(" | ")}` : ""}`,
-      );
+      const detail = `${message}${stderrLines.length ? `: ${stderrLines.join(" | ")}` : ""}`;
+      failAll(detail);
+      notify({
+        jsonrpc: JSONRPC_VERSION,
+        method: HOST_DISCONNECTED,
+        params: { reason: detail },
+      });
     };
     proc.on("exit", (code, signal) => {
       exit = { code, signal };
@@ -296,6 +307,15 @@ export function createHostBridge(options: HostBridgeOptions): HostBridge {
             hostId: result.hostId,
           };
           log(`host/hello: ${result.hostName} v${result.version}`);
+          // First boot is not a reconnect. A later hello after the process
+          // died is — idle tabs have to hear it without sending their own RPC.
+          if (generations > 1) {
+            notify({
+              jsonrpc: JSONRPC_VERSION,
+              method: HOST_RECONNECTED,
+              params: hello,
+            });
+          }
         },
       },
       true,

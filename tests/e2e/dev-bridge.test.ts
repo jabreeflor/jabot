@@ -21,8 +21,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { HostClient } from "../../src/host/client";
 import {
   HARNESS_LIST,
+  HOST_DISCONNECTED,
   HOST_HEALTH,
   HOST_HELLO,
+  HOST_RECONNECTED,
   JSONRPC_VERSION,
   RPC_ERROR,
   SESSION_UPDATE,
@@ -256,6 +258,40 @@ describe("dev bridge", () => {
     const hello = await host.hello();
     expect(hello.hostMode).toBe("in-process");
     expect(bridge.status().running).toBe(true);
+    expect(bridge.status().pid).not.toBe(pid);
+  });
+
+  it("notifies subscribers when the host dies and when a new one greets", async () => {
+    const bridge = bridgeUp();
+    const seen: JsonRpcNotification[] = [];
+    bridge.onNotification((n) => seen.push(n));
+    const { host } = tab(bridge);
+    await host.hello();
+
+    const pid = bridge.status().pid!;
+    const disconnected = new Promise<void>((resolve) => {
+      const stop = bridge.onNotification((n) => {
+        if (n.method === HOST_DISCONNECTED) {
+          stop();
+          resolve();
+        }
+      });
+    });
+    process.kill(pid, "SIGKILL");
+    await disconnected;
+    expect(seen.some((n) => n.method === HOST_DISCONNECTED)).toBe(true);
+
+    const reconnected = new Promise<void>((resolve) => {
+      const stop = bridge.onNotification((n) => {
+        if (n.method === HOST_RECONNECTED) {
+          stop();
+          resolve();
+        }
+      });
+    });
+    await host.health();
+    await reconnected;
+    expect(seen.some((n) => n.method === HOST_RECONNECTED)).toBe(true);
     expect(bridge.status().pid).not.toBe(pid);
   });
 });
