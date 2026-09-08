@@ -167,30 +167,34 @@ export function ConversationSummary({
                 setSelectedId(id);
                 setPickerOpen(false);
               }}
-              onAttach={async (folderId) => {
-                if (!client) return;
-                const next = await client.attachThreadRepo({
-                  threadId,
-                  folderId,
-                });
-                setSummary(next);
-                setSelectedId(folderId);
-                setPickerOpen(false);
+              onAttach={(folderId) => {
+                void (async () => {
+                  if (!client) return;
+                  const next = await client.attachThreadRepo({
+                    threadId,
+                    folderId,
+                  });
+                  setSummary(next);
+                  setSelectedId(folderId);
+                  setPickerOpen(false);
+                })();
               }}
-              onInspect={async () => {
-                if (!client) return;
-                setReviewing(true);
-                try {
-                  setReview(
-                    await client.threadGitDiff({
-                      threadId,
-                      repoId: selected.id,
-                    }),
-                  );
-                  setOpen(false);
-                } finally {
-                  setReviewing(false);
-                }
+              onInspect={() => {
+                void (async () => {
+                  if (!client) return;
+                  setReviewing(true);
+                  try {
+                    setReview(
+                      await client.threadGitDiff({
+                        threadId,
+                        repoId: selected.id,
+                      }),
+                    );
+                    setOpen(false);
+                  } finally {
+                    setReviewing(false);
+                  }
+                })();
               }}
               onCommit={() => {
                 setCommitOpen(true);
@@ -214,18 +218,19 @@ export function ConversationSummary({
                   setOpen(false);
                 })();
               }}
-              onAddSource={async () => {
-                if (!client) return;
-                const paths = await pickSourcePaths();
-                let next = summary;
-                for (const path of paths) {
-                  next = await client.addThreadSource({ threadId, path });
-                }
-                if (next) setSummary(next);
+              onAddSource={() => {
+                void (async () => {
+                  if (!client) return;
+                  const paths = await pickSourcePaths();
+                  let next = summary;
+                  for (const path of paths) {
+                    next = await client.addThreadSource({ threadId, path });
+                  }
+                  if (next) setSummary(next);
+                })();
               }}
-              onOpenSource={async (source) => {
-                if (!client) return;
-                await client.openThreadSource({
+              onOpenSource={(source) => {
+                void client?.openThreadSource({
                   threadId,
                   sourceId: source.id,
                 });
@@ -267,9 +272,8 @@ export function ConversationSummary({
         <SourcesModal
           sources={summary?.sources ?? []}
           onClose={() => setSourcesOpen(false)}
-          onOpen={async (source) => {
-            if (!client) return;
-            await client.openThreadSource({ threadId, sourceId: source.id });
+          onOpen={(source) => {
+            void client?.openThreadSource({ threadId, sourceId: source.id });
           }}
         />
       )}
