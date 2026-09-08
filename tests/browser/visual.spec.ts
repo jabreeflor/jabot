@@ -7,7 +7,8 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { test } from "./fixtures";
+import { browserTest, test } from "./fixtures";
+import { createFakeGh } from "./helpers/gh";
 import {
   type CaptureTheme,
   type WindowSize,
@@ -21,6 +22,12 @@ import {
   seedSchedule,
 } from "./support/seed";
 import { agentBubble } from "./ui";
+
+/** Logged-out fixture `gh` so the board does not inherit a developer login. */
+const prVisual = browserTest(() => ({
+  pathPrefix: [createFakeGh().dir],
+  extraEnv: { GH_TOKEN: "", GITHUB_TOKEN: "" },
+}));
 
 const THEMES: readonly CaptureTheme[] = ["dark", "light"];
 
@@ -176,7 +183,7 @@ test.describe("stable states @visual", () => {
     }
   });
 
-  test("pr workspace @chromium-only", async ({ app, browser }) => {
+  prVisual("pr workspace @chromium-only", async ({ app, browser }) => {
     for (const theme of THEMES) {
       const opened = await openApp(browser, app, {
         theme,
@@ -189,15 +196,14 @@ test.describe("stable states @visual", () => {
         await expect(
           opened.page.getByRole("heading", { name: "Pull Requests" }),
         ).toBeVisible();
-        await shot(opened.page, `pr-board-${theme}-desktop`);
         const signIn = opened.page.getByRole("button", {
           name: "Sign in with GitHub",
         });
-        if (await signIn.isVisible()) {
-          await signIn.click();
-          await expect(opened.page.getByRole("dialog")).toBeVisible();
-          await shot(opened.page, `pr-signin-${theme}-desktop`);
-        }
+        await expect(signIn).toBeVisible();
+        await shot(opened.page, `pr-board-${theme}-desktop`);
+        await signIn.click();
+        await expect(opened.page.getByRole("dialog")).toBeVisible();
+        await shot(opened.page, `pr-signin-${theme}-desktop`);
       } finally {
         await opened.close();
       }
