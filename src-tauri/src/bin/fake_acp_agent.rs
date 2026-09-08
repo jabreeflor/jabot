@@ -630,17 +630,6 @@ fn prompt_text(prompt: &serde_json::Value) -> String {
     }
 }
 
-fn error(stdout: &mut io::Stdout, id: Option<serde_json::Value>, code: i64, message: &str) {
-    let Some(id) = id else { return };
-    let msg = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "error": { "code": code, "message": message }
-    });
-    writeln!(stdout, "{msg}").ok();
-    stdout.flush().ok();
-}
-
 fn reply(stdout: &mut io::Stdout, id: Option<serde_json::Value>, result: serde_json::Value) {
     let Some(id) = id else { return };
     let msg = serde_json::json!({
