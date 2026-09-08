@@ -147,7 +147,7 @@ export function Select({
           className="mselect-list"
           role="listbox"
           id={listId}
-          tabIndex={-1}
+          tabIndex={0}
           // Named from the trigger so an open listbox is not an anonymous
           // ARIA input — axe treats that as serious, and so does a reader.
           aria-labelledby={triggerId}

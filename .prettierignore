@@ -34,6 +34,7 @@ worktrees/
 /test-results/
 /playwright-report/
 /blob-report/
+/playwright/.cache/
 
 # Out of the formatter contract (TS/TSX, JS/MJS, CSS, applicable JSON).
 # scripts/frontend-format.sh also restricts globs; this is for anyone who

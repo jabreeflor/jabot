@@ -2,8 +2,9 @@
 //!
 //! The prototype toggled a class and left the keyboard behind. A modal here
 //! actually behaves: Escape closes it, a click on the backdrop closes it, focus
-//! moves inside on open and Tab is trapped so it cannot wander back into the
-//! sidebar underneath.
+//! moves inside on open, Tab is trapped so it cannot wander back into the
+//! sidebar underneath, and closing puts focus back on the control that opened
+//! it.
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
@@ -25,7 +26,14 @@ export function Modal({
   useEffect(() => {
     const modal = modalRef.current;
     if (!modal) return;
+    const previous =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     modal.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    return () => {
+      if (previous?.isConnected) previous.focus();
+    };
   }, []);
 
   useEffect(() => {

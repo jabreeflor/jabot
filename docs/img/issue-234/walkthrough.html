@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add Playwright visual regression and browser accessibility checks</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; --warn:#f2cc60; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .path { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:18px; }
+    .path div { padding:12px 10px; background:#0f141a; border-radius:9px; font-size:13px; }
+    .path strong { display:block; color:var(--accent); font-size:11px; letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px; }
+    .gates { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:16px; }
+    .gates div { padding:14px; background:#0f141a; border-radius:9px; }
+    .gates strong { display:block; margin-bottom:6px; }
+    .fail { color:var(--bad); }
+    .pass { color:var(--ok); }
+    .note { color:var(--warn); }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    pre { margin:12px 0 0; padding:14px 16px; background:#0f141a; border-radius:9px; overflow:auto; color:#c9e9df; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    @media (max-width:700px) { .flow,.gates,.path { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #270 walkthrough · closes #234</div>
+    <h1>Add Playwright visual regression and browser accessibility checks</h1>
+    <p>jsdom cannot paint. This suite drives the real renderer against an isolated <code>jabot-hostd</code>, then fails on pixel drift, painted contrast, and keyboard traps. It is Chromium + WebKit proof of the web renderer — not native Tauri or WKWebView.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>Axe in Vitest, contrast <em>off</em>, because jsdom does not paint.</li>
+            <li>Manual <code>docs/img/</code> shots, no automated baseline gate.</li>
+            <li>No browser keyboard / Escape / focus-restore run in CI.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li>Each test starts its own Vite + host, temp <code>--data-dir</code>, free port.</li>
+            <li><code>toHaveScreenshot</code> with pinned locale, timezone, viewport, and <code>maxDiffPixels: 0</code>.</li>
+            <li>Browser axe with contrast on; keyboard specs for tab, trap, Escape.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="path">
+        <div><strong>1 · Isolate</strong>Fixture starts Vite + <code>jabot-hostd</code>. Never <code>live.sh</code>, never <code>.jabot-dev/</code>.</div>
+        <div><strong>2 · Seed</strong>RPC seeds Chief / fake-acp, a permission ask, or a schedule. UI settles before capture.</div>
+        <div><strong>3 · Assert</strong>Visual, axe, or keyboard. Masks only <code>.when</code> and <code>.sched-next</code>.</div>
+        <div><strong>4 · Tear down</strong>Reap the process group and delete only that temp dir.</div>
+      </div>
+
+      <div class="gates">
+        <div>
+          <strong>Visual</strong>
+          Dark + light. Desktop 1180×780 and minimum 900×600 on onboarding, stream, Settings. Inbox, New Chat, schedules, PR board are Chromium-only desktop shots.
+        </div>
+        <div>
+          <strong>Axe</strong>
+          Contrast on. Critical / serious fail. <code>AXE_EXCEPTIONS</code> is empty — no blanket disable. Moderate / minor attach to the HTML report.
+        </div>
+        <div>
+          <strong>Keyboard</strong>
+          Onboarding Escape skip; tab to New Chat / Inbox / Settings with <code>:focus-visible</code>; modal trap + restore; New Chat listbox Escape.
+        </div>
+      </div>
+
+      <p style="margin-top:16px">CI never auto-approves. <code>updateSnapshots: "none"</code> and the <code>browser</code> job does not pass <code>--update-snapshots</code>. A changed pixel fails and uploads expected / actual / diff. Default <code>verify.sh</code> stays offline; opt in with <code>--check-browser</code>.</p>
+      <p class="note">#231 / #256 is now on main. This PR layers visual, axe, and keyboard checks on that shared <code>jabot</code> fixture. Native packaged-app acceptance stays #235.</p>
+    </section>
+
+    <section id="review">
+      <h2>What to look at</h2>
+      <table>
+        <thead><tr><th>File</th><th>Why it matters</th></tr></thead>
+        <tbody>
+          <tr><td><code>playwright.config.ts</code></td><td>Workers 1, retries 0, pinned env, per-project snapshot paths, <code>updateSnapshots: "none"</code>.</td></tr>
+          <tr><td><code>tests/browser/host.ts</code> + <code>fixtures.ts</code></td><td>Shared isolated Vite + host from #256. Visual/axe/keyboard use the same <code>jabot</code> fixture.</td></tr>
+          <tr><td><code>tests/browser/visual.spec.ts</code></td><td>The seven stable states and which ones are <code>@chromium-only</code>.</td></tr>
+          <tr><td><code>tests/browser/support/a11y.ts</code></td><td>Painted axe. Contrast on. Exceptions must be named, not global.</td></tr>
+          <tr><td><code>src/styles/tokens.css</code> + <code>Modal.tsx</code></td><td>Product fixes the painted gate found: <code>--faint</code> AA, selected-detail contrast, focus restore on unmount.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li>Install browsers once: <code>npx playwright install chromium webkit</code></li>
+        <li>Full suite: <code>npm run test:browser</code> — Chromium + WebKit, visual + axe + keyboard.</li>
+        <li>Smoke (no screenshots): <code>npm run test:browser:smoke</code></li>
+        <li>Default gate stays clean: <code>./scripts/verify.sh --fast</code> (no display, no browsers).</li>
+        <li>Opt-in after the usual gates: <code>./scripts/verify.sh --check-browser</code></li>
+      </ul>
+      <p>Refresh baselines only on the baseline environment (Linux, Playwright 1.63, those Chromium/WebKit builds, <code>en-US</code> / <code>UTC</code>, 1180×780 and 900×600). Review every PNG under <code>tests/browser/__screenshots__/</code> before committing. Do not raise <code>maxDiffPixels</code>.</p>
+      <pre>npm run test:browser:update-snapshots</pre>
+    </section>
+  </main>
+</body>
+</html>

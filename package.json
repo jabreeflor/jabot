@@ -29,8 +29,10 @@
     "test:browser:smoke": "playwright test --project=chromium --grep @smoke",
     "test:browser:chromium": "playwright test --project=chromium",
     "test:browser:repeat": "playwright test --project=chromium --grep @smoke --repeat-each 20 --retries 0",
+    "test:browser:visual": "playwright test --project=chromium-visual",
     "test:browser:ui": "playwright test --ui",
     "test:browser:install": "playwright install chromium webkit",
+    "test:browser:update-snapshots": "playwright test --update-snapshots --project=chromium-visual --project=webkit-visual",
     "typecheck": "tsc --noEmit",
     "lint": "eslint --max-warnings=0 . && node scripts/tests/lint-probe.mjs && node scripts/tests/lint-rules.mjs",
     "lint:fix": "eslint --fix .",
@@ -57,6 +59,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "1.63.0",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^7.0.1",

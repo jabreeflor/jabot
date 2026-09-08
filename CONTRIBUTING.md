@@ -66,13 +66,14 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh --check-mac` | local repro of the PR `mac notify cross-check` — **run it when you touch `src-tauri/src/notify/`** so you find rot before CI does |
 | `./scripts/check-macos-clippy.sh` | on a Mac, local repro of the PR `macos clippy` job — Keychain + `lib.rs` cfg(macos) branches |
 | `./scripts/macos-acceptance.sh check` | packaged-app matrix / isolation (Linux). **`run` needs a Mac** — [docs/macos-acceptance.md](docs/macos-acceptance.md), #235 |
+| `./scripts/verify.sh --check-browser` | Playwright visual + browser axe + smoke; also a dedicated `browser` CI job |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
 | `npm test` / `npm run test:a11y` / `npm run test:e2e` | one slice, while you are working on it |
 | `npm run lint` / `npm run lint:fix` | frontend lint (hooks + no-explicit-any + promises; same command `verify.sh` runs, including `--fast`) |
 | `npm run format:check` / `npm run format` | frontend layout — after lint; check is in `verify.sh`; format rewrites |
-| `npm run test:browser:smoke` | Playwright Chromium smoke against a real host — not in the default gate |
-| `npm run test:browser` | Playwright Chromium + WebKit (host recovery / workspace journeys) |
+| `npm run test:browser:smoke` | Playwright Chromium `@smoke` against a real host — not in the default gate |
+| `npm run test:browser` | Playwright Chromium + WebKit: journeys, visual, axe, keyboard. See [docs/browser-tests.md](docs/browser-tests.md) |
 | `./scripts/live.sh up` + `shot` | see the change running, on any OS (below) |
 
 Only `verify.sh` is the gate. The others are conveniences around it.
@@ -144,7 +145,7 @@ one run tells you everything that is wrong.
 | `build jabot-hostd` | `jabot-hostd` and `fake-acp-agent` still link (e2e needs both; llvm-cov's target dir is not `target/debug`) | not run under `--fast` |
 | `e2e (ts to rust host)` | 123 cases over 17 suites: the production TypeScript client against a live `jabot-hostd` over real NDJSON | `npx vitest run --project e2e -t "<name>"`. Needs the binary, so build it first or run the full `verify.sh`. Not run under `--fast`. |
 | `renderer build` | `vite build` produces a bundle | usually an import that typechecks but does not resolve |
-| `browser smoke (chromium)` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd`. CI's `browser` job is the required PR check | `npx playwright install chromium`, then `npm run test:browser:smoke`. Needs the host binaries (`npm run host:build`). |
+| `browser visual + a11y + smoke` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd` (smoke journey, axe with contrast, keyboard, visual baselines). CI's `browser` job is the required PR check | `npx playwright install chromium webkit`, then `npm run test:browser`. Needs the host binaries (`npm run host:build`). |
 | `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 | `macos acceptance` | #235: the packaged-app matrix still names Tauri IPC, Dock, Keychain, adapters, and updater archives; isolation still refuses production app data; Playwright WebKit is not this gate | you changed the script, the docs, or the workflows; `./scripts/macos-acceptance.sh check` and `./scripts/tests/macos-acceptance.test.sh` name the cell that moved. Launching `JaBot.app` is `run` on a Mac — D-019 is why that is not this stage |
 
@@ -227,24 +228,26 @@ Vitest `e2e` project. Each test owns a Vite process, a temp data directory,
 and a dedicated port — it does not call `live.sh smoke` or `reset`. Details:
 [`tests/browser/README.md`](tests/browser/README.md). Web-renderer+host limits
 (not native dialogs, Keychain, Tauri IPC, or WKWebView) live in
-[`docs/browser-e2e.md`](docs/browser-e2e.md).
+[`docs/browser-e2e.md`](docs/browser-e2e.md). Browser axe (contrast on),
+keyboard/focus/Escape, and `toHaveScreenshot` are in the same suite;
+baseline updates are in [docs/browser-tests.md](docs/browser-tests.md).
 
 ```bash
 npm run host:build
-npx playwright install chromium
-npm run test:browser:smoke          # Chromium @smoke — the documented local command
-npm run test:browser:chromium       # all Chromium journeys — CI's browser job
+npx playwright install chromium webkit
+npm run test:browser:smoke          # Chromium @smoke (journey + axe + keyboard)
+npm run test:browser:chromium       # all Chromium journeys without screenshots
 npm run test:browser:repeat         # @smoke × 20, no retries
-npm run test:browser                # Chromium + WebKit (recovery / workspace)
-./scripts/verify.sh --check-browser # Chromium suite, after the usual gates
+npm run test:browser                # Chromium + WebKit, including visual
+./scripts/verify.sh --check-browser # same full suite, after the usual gates
 ```
 
 The default `./scripts/verify.sh` does **not** run these: the gate stays
 offline and display-less. CI's `browser` job is the required PR check and
-uploads the Playwright report on failure. WebKit is a local compatibility
-project, not proof of native WKWebView/Tauri. The `browser` job uses the
-same Node major as `verify` (Node 26 / `.nvmrc`). Playwright is pinned at
-1.63+ because 1.56 hangs extracting Chromium on Node 26.
+uploads the Playwright report on failure. WebKit is renderer compatibility,
+not proof of native WKWebView/Tauri. The `browser` job uses the same Node
+major as `verify` (Node 26 / `.nvmrc`). Playwright is pinned at 1.63+
+because 1.56 hangs extracting Chromium on Node 26.
 
 ## Committing: `scripts/checkpoint.sh`
 
