@@ -52,4 +52,14 @@ export const SCREENSHOT_STYLE = `
     animation-delay: 0s !important;
     transition-duration: 0s !important;
   }
+  /* Relative next-run copy changes width ("in 9 hours" vs "in 10 hours").
+     The magenta mask is the locator's box, so a shorter string shrinks the
+     overlay and fails maxDiffPixels: 0. Pin the slot for screenshots only. */
+  .sched-next {
+    display: inline-block;
+    width: 24ch;
+    overflow: hidden;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
 `;

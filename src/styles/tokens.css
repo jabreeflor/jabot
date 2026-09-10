@@ -11,25 +11,35 @@
  * Only tokens, the reset, and element defaults live here. Layout belongs to
  * the stylesheet of the component that owns it. `[data-theme="light"]`
  * reassigns the surface/text/edge tokens; components should keep reading
- * the names, not the dark hexes. `--*-fill` is the chrome paint: opaque
- * until `data-translucency="on"` (#250), then a 96–97% mix so Cursor-thin
- * desktop bleed can show through. Raised surfaces stay the solid tokens.
+ * the names, not the dark hexes. `--*-solid` is the opaque swatch;
+ * `--win` / `--raise` / `--*-fill` alias it until `data-translucency="on"`
+ * (#250), then a 90–95% mix so the whole chrome can frost over the desktop
+ * without a second palette. Cream, ink, and edges stay solid.
  */
 
 :root {
   color-scheme: dark;
 
-  /* surfaces */
-  --win: #1c1c1e;
-  --side: #1c1c1e;
-  --chat: #151516;
+  /* surfaces — solids are the mix source; semantic names follow them */
+  --win-solid: #1c1c1e;
+  --side-solid: #1c1c1e;
+  --chat-solid: #151516;
+  --raise-solid: #2a2a2c;
+  --raise2-solid: #232325;
+  /* Hover on --raise; the prototype's #333336, named so light can invert it. */
+  --raise-hover-solid: #333336;
+  --sunk-solid: #101012;
+  --bub-me-solid: #2c2c2e;
+
+  --win: var(--win-solid);
+  --side: var(--side-solid);
+  --chat: var(--chat-solid);
   --win-fill: var(--win);
   --side-fill: var(--side);
   --chat-fill: var(--chat);
-  --raise: #2a2a2c;
-  --raise2: #232325;
-  /* Hover on --raise; the prototype's #333336, named so light can invert it. */
-  --raise-hover: #333336;
+  --raise: var(--raise-solid);
+  --raise2: var(--raise2-solid);
+  --raise-hover: var(--raise-hover-solid);
 
   /* text */
   --ink: #f2f2f2;
@@ -45,8 +55,13 @@
   --cream-ink: #1c1c1e;
 
   /* my bubble — graphite on the chat ground; the bot has no balloon */
-  --bub-me: #2c2c2e;
+  --bub-me: var(--bub-me-solid);
   --bub-me-ink: #f2f2f2;
+
+  /* overlay dimmer; mixed when the chrome is glass */
+  --overlay: rgba(0, 0, 0, 0.55);
+  /* backdrop-filter for panes and floating chrome; none until glass is on */
+  --chrome-frost: none;
 
   /* status */
   --amber: #e8a33d;
@@ -62,7 +77,7 @@
   --edge-menu: #3a3a3e;
 
   /* toolblocks sit *below* the chat ground, not above it */
-  --sunk: #101012;
+  --sunk: var(--sunk-solid);
   --sunk-edge: #2c2c2f;
 
   /* A bright ok on the chat ground — New Chat's Start pill. Darker in light. */
@@ -150,12 +165,14 @@
 [data-theme="light"] {
   color-scheme: light;
 
-  --win: #f6f6f4;
-  --side: #ffffff;
-  --chat: #efeeec;
-  --raise: #ffffff;
-  --raise2: #f4f3f1;
-  --raise-hover: #ecebe8;
+  --win-solid: #f6f6f4;
+  --side-solid: #ffffff;
+  --chat-solid: #efeeec;
+  --raise-solid: #ffffff;
+  --raise2-solid: #f4f3f1;
+  --raise-hover-solid: #ecebe8;
+  --sunk-solid: #e6e5e2;
+  --bub-me-solid: #ffffff;
 
   --ink: #1c1c1e;
   --dim: #5c5c63;
@@ -164,7 +181,6 @@
   --cream: #1c1c1e;
   --cream-ink: #f6f6f4;
 
-  --bub-me: #ffffff;
   --bub-me-ink: #1c1c1e;
 
   --line: #d8d7d3;
@@ -172,30 +188,45 @@
   --edge-strong: #c9c8c4;
   --edge-menu: #c9c8c4;
 
-  --sunk: #e6e5e2;
   --sunk-edge: #cfcfc9;
 
   --ok-bright: #2a7a3d;
 }
 
 /*
- * Cursor-thin translucency (#250). The mix is the experiment point from the
- * issue (95–98% opaque), not a brand constant — tune here, not in components.
- * `prefers-reduced-transparency` and a missing `data-translucency` both
- * leave the fills equal to the solid tokens, so Linux live.sh, Windows,
- * and Reduce Transparency stay readable.
+ * Cursor-thin translucency (#250), extended across chrome. Mix percents
+ * are the experiment point (still in the 90s — a hint, not wallpaper),
+ * not a brand constant: tune here, not in components. Raised chips stay
+ * a hair more opaque than the panes so they still sit on top. Cream, ink,
+ * and edges stay solid. `prefers-reduced-transparency` and a missing
+ * `data-translucency` both restore the solid swatches, so Linux live.sh,
+ * Windows, and Reduce Transparency stay readable.
  */
 html[data-translucency="on"] {
-  --win-fill: color-mix(in srgb, var(--win) 96%, transparent);
-  --side-fill: color-mix(in srgb, var(--side) 96%, transparent);
-  --chat-fill: color-mix(in srgb, var(--chat) 97%, transparent);
+  --win: color-mix(in srgb, var(--win-solid) 92%, transparent);
+  --side: color-mix(in srgb, var(--side-solid) 92%, transparent);
+  --chat: color-mix(in srgb, var(--chat-solid) 93%, transparent);
+  --raise: color-mix(in srgb, var(--raise-solid) 96%, transparent);
+  --raise2: color-mix(in srgb, var(--raise2-solid) 95%, transparent);
+  --raise-hover: color-mix(in srgb, var(--raise-hover-solid) 94%, transparent);
+  --sunk: color-mix(in srgb, var(--sunk-solid) 96%, transparent);
+  --bub-me: color-mix(in srgb, var(--bub-me-solid) 96%, transparent);
+  --overlay: color-mix(in srgb, #000 42%, transparent);
+  --chrome-frost: blur(16px) saturate(1.12);
 }
 
 @media (prefers-reduced-transparency: reduce) {
   html[data-translucency="on"] {
-    --win-fill: var(--win);
-    --side-fill: var(--side);
-    --chat-fill: var(--chat);
+    --win: var(--win-solid);
+    --side: var(--side-solid);
+    --chat: var(--chat-solid);
+    --raise: var(--raise-solid);
+    --raise2: var(--raise2-solid);
+    --raise-hover: var(--raise-hover-solid);
+    --sunk: var(--sunk-solid);
+    --bub-me: var(--bub-me-solid);
+    --overlay: rgba(0, 0, 0, 0.55);
+    --chrome-frost: none;
   }
 }
 
