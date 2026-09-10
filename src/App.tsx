@@ -36,8 +36,6 @@ import {
   HOST_RECONNECTED,
   onNotificationActivated,
   type FolderRegisterParams,
-  CREW_DRAFT,
-  type CrewDraftEventParams,
   type HelloResult,
   type HostClient,
   HostRpcError,
@@ -64,6 +62,7 @@ import {
   type Bot,
   type BotColor,
   type BotDraft,
+  type BotTemplate,
   FoldPolicy,
   HarnessCard,
   HostTarget,
@@ -94,6 +93,7 @@ import { useDevices, type Devices } from "./views/devices";
 import { useSettings, type Settings } from "./views/settings";
 import { CrossIcon } from "./components/Icon";
 import { ChatView, LiveChatView } from "./views/ChatView";
+import { asBotColor, blankBotDraft, isUnformedBot } from "./views/shape-bot";
 import { CrewView } from "./views/CrewView";
 import { InboxView } from "./views/InboxView";
 import { PullRequestsView } from "./views/PullRequestsView";
@@ -108,6 +108,7 @@ import {
   initialMockState,
   mockHostReducer,
   needsYouCount,
+  nextBotId,
   nextThreadId,
   noticeThreadId,
   openPrCount,
@@ -202,6 +203,7 @@ function AppShell({
   const [newChatError, setNewChatError] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorState>({ open: false });
   const [editorError, setEditorError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState>(null);
   const [leaving, setLeaving] = useState<readonly string[]>([]);
   const [addFolder, setAddFolder] = useState(false);
@@ -638,39 +640,68 @@ function AppShell({
     setEditorError(null);
   }
 
+  /** Primary create: a blank bot and its standing chat, not the editor form. */
+  function startChatCreate() {
+    setCreateError(null);
+    const existing = bots.find((bot) => isUnformedBot(bot) && !bot.isChief);
+    if (existing) {
+      setSelection({ view: "bot", botId: existing.id });
+      return;
+    }
+    const draft = blankBotDraft(bots, enabledHarnesses);
+    if (!draft.harnessId) {
+      setCreateError("Enable a harness in Settings to add a bot.");
+      setSelection({ view: "crew" });
+      return;
+    }
+    if (crew.bots) {
+      crew
+        .save(null, draft)
+        .then((bot) => setSelection({ view: "bot", botId: bot.id }))
+        .catch((err) => {
+          setCreateError(formatError(err));
+          setSelection({ view: "crew" });
+        });
+      return;
+    }
+    const botId = nextBotId(state);
+    dispatch({ type: "saveBot", botId: null, draft });
+    setSelection({ view: "bot", botId });
+  }
+
+  function shapeBot(botId: string, draft: BotDraft): void | Promise<void> {
+    if (crew.bots) return crew.save(botId, draft).then(() => undefined);
+    dispatch({ type: "saveBot", botId, draft });
+  }
+
+  function acceptDraft(draftId: string) {
+    const pending = (crew.drafts ?? []).find((row) => row.draftId === draftId);
+    if (!pending) return;
+    setCreateError(null);
+    crew
+      .saveDraft(pending.draftId, pending.revision, {
+        name: pending.name,
+        color: asBotColor(pending.color),
+        instructions: pending.instructions,
+        tools: pending.tools,
+        harnessId: pending.harnessId,
+        templateId: pending.templateId ?? null,
+      })
+      .catch((err) => {
+        setCreateError(formatError(err));
+        throw err;
+      })
+      .then((result) => {
+        if (result) setSelection({ view: "bot", botId: result.bot.botId });
+      })
+      .catch(() => {
+        // Reason already on createError; stay on this chat.
+      });
+  }
+
   const reviewDraft = useCallback((draftId: string) => {
     setEditor({ open: true, botId: null, draftId });
   }, []);
-
-  useEffect(() => {
-    if (!client) return;
-    try {
-      return client.onNotification((notification) => {
-        if (notification.method !== CREW_DRAFT) return;
-        if (!isCrewDraftNotice(notification.params)) return;
-        if (notification.params.status !== "pending_review") return;
-        const { sourceThreadId, sourceBotId, draftId } = notification.params;
-        if (
-          selection.view === "thread" &&
-          sourceThreadId &&
-          selection.threadId === sourceThreadId
-        ) {
-          const current =
-            hostThreads.find((thread) => thread.id === sourceThreadId) ??
-            (resolved?.id === sourceThreadId ? resolved : undefined);
-          if (current?.state === "folded") return;
-          reviewDraft(draftId);
-          return;
-        }
-        // Standing crew chats are selected as the bot, not as their thread id.
-        if (selection.view === "bot" && selection.botId === sourceBotId) {
-          reviewDraft(draftId);
-        }
-      });
-    } catch {
-      return;
-    }
-  }, [client, selection, hostThreads, resolved, reviewDraft]);
 
   /** Like the bot editor, the schedule editor *is* the record: the modal stays
       open until the host has taken it, because a refused cron is something to
@@ -789,6 +820,7 @@ function AppShell({
           setSelection({ view: "thread", threadId })
         }
         onOpenCrew={() => setSelection({ view: "crew" })}
+        onAddBot={startChatCreate}
         onOpenInbox={() => setSelection({ view: "inbox" })}
         onOpenPullRequests={() => setSelection({ view: "prs" })}
         onOpenSchedules={() => setSelection({ view: "schedules" })}
@@ -873,6 +905,7 @@ function AppShell({
               setScheduleEditor({ open: true, scheduleId })
             }
             bots={bots}
+            templates={templates}
             tools={[...toolChips, ...hostToolChips]}
             harnesses={harnesses}
             hostThreads={hostThreads}
@@ -903,8 +936,11 @@ function AppShell({
               }
             }}
             onEditBot={(botId) => setEditor({ open: true, botId })}
-            onAddBot={() => setEditor({ open: true, botId: null })}
+            onAddBot={startChatCreate}
             onRemoveBot={(botId) => removeBot(botId, false)}
+            onShapeBot={shapeBot}
+            onAcceptDraft={acceptDraft}
+            createError={createError}
             drafts={crew.drafts ?? []}
             onReviewDraft={reviewDraft}
             onRunSetup={onRunSetup}
@@ -1033,6 +1069,7 @@ function MainView({
   onSignIn,
   onEditSchedule,
   bots,
+  templates,
   tools,
   harnesses,
   hostThreads,
@@ -1049,7 +1086,10 @@ function MainView({
   onEditBot,
   onAddBot,
   onRemoveBot,
+  onShapeBot,
+  onAcceptDraft,
   onReviewDraft,
+  createError = null,
   drafts = [],
   onRunSetup,
 }: {
@@ -1079,6 +1119,7 @@ function MainView({
   onEditSchedule: (scheduleId: string) => void;
   /** The crew, host-owned once `crew/list` has answered (#17). */
   bots: readonly Bot[];
+  templates: readonly BotTemplate[];
   /** Every chip a crew card may have to name: the MCP catalog plus Chief's
       host tools, which are in no `tools/list`. */
   tools: readonly ToolOption[];
@@ -1104,6 +1145,9 @@ function MainView({
   onEditBot: (botId: string) => void;
   onAddBot: () => void;
   onRemoveBot: (botId: string) => void;
+  onShapeBot: (botId: string, draft: BotDraft) => void | Promise<void>;
+  onAcceptDraft: (draftId: string) => void;
+  createError?: string | null;
   drafts?: readonly import("./host").BotDraftView[];
   onReviewDraft?: (draftId: string) => void;
   /** Re-enter first-run setup without wiping the stored record. */
@@ -1121,6 +1165,7 @@ function MainView({
           harnesses={harnesses}
           tools={tools}
           drafts={drafts}
+          error={createError}
           onEdit={onEditBot}
           onAdd={onAddBot}
           onRemove={onRemoveBot}
@@ -1257,6 +1302,22 @@ function MainView({
     case "bot": {
       const bot = bots.find((b) => b.id === selection.botId);
       if (!bot) return <div className="view" />;
+      const pendingDraft =
+        drafts.find(
+          (draft) =>
+            draft.sourceBotId === bot.id &&
+            (draft.status === "pending_review" || draft.status === "stale"),
+        ) ?? null;
+      const chatExtras = {
+        bots,
+        templates,
+        pendingDraft,
+        onShape: (draft: BotDraft) => onShapeBot(bot.id, draft),
+        onSelectBot: (botId: string) => onSelect({ view: "bot", botId }),
+        onOpenSettings: () => onEditBot(bot.id),
+        onAcceptDraft,
+        onReviewDraft,
+      };
       // A bot the host serves gets its real standing thread (#24). The
       // fixtures stay as the fallback for the same reason the thread case
       // keeps them — the shell renders before a host has answered — and the
@@ -1265,7 +1326,13 @@ function MainView({
       // own fixtures is a better answer than an error where a chat should be.
       if (client && typeof client.botThread === "function") {
         return (
-          <LiveChatView key={bot.id} client={client} bot={bot} host={host} />
+          <LiveChatView
+            key={bot.id}
+            client={client}
+            bot={bot}
+            host={host}
+            {...chatExtras}
+          />
         );
       }
       return (
@@ -1276,6 +1343,7 @@ function MainView({
           items={(fixtures && state.transcripts[bot.id]) || []}
           onSend={(text) => onSend(bot.id, text)}
           onAction={(itemId, actionId) => onNotice(bot.id, itemId, actionId)}
+          {...chatExtras}
         />
       );
     }
@@ -1375,16 +1443,6 @@ function hostLine(
   if (connecting) return "Connecting to host…";
   if (hello && !hostError) return "";
   return hostError ?? "Host unreachable";
-}
-
-function isCrewDraftNotice(value: unknown): value is CrewDraftEventParams {
-  if (!value || typeof value !== "object") return false;
-  const rec = value as Record<string, unknown>;
-  return (
-    typeof rec.draftId === "string" &&
-    typeof rec.status === "string" &&
-    typeof rec.sourceBotId === "string"
-  );
 }
 
 function formatError(err: unknown): string {

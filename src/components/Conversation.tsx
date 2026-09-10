@@ -15,7 +15,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUpIcon } from "./Icon";
 import { Composer } from "./Composer";
 import { Transcript } from "./Transcript";
-import type { TranscriptItem } from "./types";
+import type { Bot, TranscriptItem } from "./types";
 
 /** How close to the bottom still counts as being at it. Sub-pixel rounding and
     a streaming bubble growing between frames both put the exact bottom a few
@@ -26,6 +26,8 @@ const STICK_THRESHOLD = 32;
 export function Conversation({
   header,
   items,
+  bots,
+  onSelectBot,
   composerPlaceholder,
   onSend,
   onAction,
@@ -41,6 +43,9 @@ export function Conversation({
 }: {
   header: ReactNode;
   items: readonly TranscriptItem[];
+  /** Crew for in-thread mention pills and the composer @ picker. */
+  bots?: readonly Bot[];
+  onSelectBot?: (botId: string) => void;
   composerPlaceholder: string;
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
@@ -132,6 +137,8 @@ export function Conversation({
       <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         <Transcript
           items={items}
+          bots={bots}
+          onSelectBot={onSelectBot}
           onAction={onAction}
           onReact={onReact}
           onBranch={onBranch}
@@ -184,6 +191,7 @@ export function Conversation({
         busy={busy}
         onCancel={onCancel}
         disabled={disabled}
+        mentionBots={bots}
       />
     </div>
   );

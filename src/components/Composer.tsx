@@ -9,7 +9,14 @@
 
 import { useState, type FormEvent } from "react";
 
+import { AgentPill } from "./AgentPill";
 import { MicIcon, PlusIcon, StopIcon } from "./Icon";
+import type { Bot } from "./types";
+import {
+  filterMentionBots,
+  insertMention,
+  mentionQuery,
+} from "../views/shape-bot";
 
 export function Composer({
   placeholder,
@@ -17,6 +24,7 @@ export function Composer({
   disabled = false,
   busy = false,
   onCancel,
+  mentionBots,
 }: {
   placeholder: string;
   onSend: (text: string) => void;
@@ -24,8 +32,13 @@ export function Composer({
   /** A turn is running: offer to stop it. */
   busy?: boolean;
   onCancel?: () => void;
+  /** Crew to offer as @mention pills while the query is open. */
+  mentionBots?: readonly Bot[];
 }) {
   const [text, setText] = useState("");
+  const query = mentionBots ? mentionQuery(text) : null;
+  const suggestions =
+    query !== null && mentionBots ? filterMentionBots(mentionBots, query) : [];
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -35,8 +48,29 @@ export function Composer({
     onSend(trimmed);
   }
 
+  function pickMention(bot: Bot) {
+    setText(insertMention(text, bot.name));
+  }
+
   return (
     <div className="composer">
+      {suggestions.length > 0 && (
+        <div
+          className="composer-mentions"
+          role="group"
+          aria-label="Mention an agent"
+        >
+          {suggestions.map((bot) => (
+            <AgentPill
+              key={bot.id}
+              bot={bot}
+              variant="mention"
+              actionLabel={`Mention ${bot.name}`}
+              onClick={() => pickMention(bot)}
+            />
+          ))}
+        </div>
+      )}
       <form onSubmit={submit}>
         <button
           type="button"

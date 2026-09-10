@@ -804,6 +804,11 @@ export function nextThreadId(state: MockState): string {
   return `thread-${state.seq}`;
 }
 
+/** The id a fixture `saveBot` create will produce. */
+export function nextBotId(state: MockState): string {
+  return `bot-${state.seq}`;
+}
+
 function startThread(state: MockState, draft: NewChatDraft): MockState {
   const id = nextThreadId(state);
   const folder = state.folders.find((f) => f.id === draft.folderId);

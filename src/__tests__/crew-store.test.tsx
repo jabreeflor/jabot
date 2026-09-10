@@ -834,24 +834,36 @@ describe("App, once the host has answered with a crew", () => {
     expect(screen.queryByLabelText("NAME")).not.toBeInTheDocument();
   });
 
-  it("adds a bot from a template through the host", async () => {
+  it("adds a bot through a shaping chat, not the editor form", async () => {
     await openCrew();
     await waitFor(() => expect(card("Writer")).toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: /Add a bot/ }));
-    await userEvent.selectOptions(
-      screen.getByLabelText("START FROM A TEMPLATE"),
-      "expense",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(createBot).toHaveBeenCalledWith(
       expect.objectContaining({
-        templateId: "expense",
-        name: "Expense Manager",
+        name: "New bot",
+        instructions: "",
       }),
     );
-    await waitFor(() => expect(card("Expense Manager")).toBeInTheDocument());
+    expect(screen.queryByLabelText("WHAT IT DOES")).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "New bot" }),
+    ).toBeInTheDocument();
+
+    await userEvent.type(
+      screen.getByLabelText("Name them, and say what they do"),
+      "You're Scout, a research assistant.{Enter}",
+    );
+
+    await waitFor(() =>
+      expect(updateBot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Scout",
+          instructions: "You're Scout, a research assistant.",
+        }),
+      ),
+    );
   });
 
   it("removes a worker and stops showing it", async () => {
