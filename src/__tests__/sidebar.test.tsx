@@ -106,6 +106,18 @@ describe("Sidebar", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps Crew and Settings as distinct controls", () => {
+    renderSidebar({ onOpenSettings: vi.fn() });
+
+    expect(screen.getByRole("button", { name: "Crew" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Settings and advanced/ }),
+    ).toBeNull();
+  });
+
   it("marks the Settings gear as current when the pane is open", () => {
     renderSidebar({
       onOpenSettings: vi.fn(),

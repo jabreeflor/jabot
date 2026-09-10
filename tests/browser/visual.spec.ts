@@ -21,7 +21,7 @@ import {
   seedPermissionAsk,
   seedSchedule,
 } from "./support/seed";
-import { agentBubble } from "./ui";
+import { agentBubble, settingsButton } from "./ui";
 
 /** Logged-out fixture `gh` so the board does not inherit a developer login. */
 const prVisual = browserTest(() => ({
@@ -156,7 +156,7 @@ test.describe("stable states @visual", () => {
       for (const windowSize of sizes) {
         const opened = await openApp(browser, app, { theme, windowSize });
         try {
-          await opened.page.getByRole("button", { name: "Settings" }).click();
+          await settingsButton(opened.page).click();
           await expect(
             opened.page.getByRole("heading", { name: "Settings" }),
           ).toBeVisible();

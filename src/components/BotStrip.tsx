@@ -67,13 +67,14 @@ export function BotStrip({
       <button
         type="button"
         className="bot-row"
+        aria-label="Crew"
         aria-current={selection.view === "crew"}
         onClick={onOpenCrew}
       >
         <CrewAvatar />
         <span className="who">
           <span className="nm">Crew</span>
-          <span className="say">Settings and advanced edit</span>
+          <span className="say">Advanced edit</span>
         </span>
       </button>
     </div>
