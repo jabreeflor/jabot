@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat-first bot create and agent pills</title>
+  <style>
+    :root {
+      --ink: #ececec;
+      --dim: #a8a8ad;
+      --win: #141416;
+      --raise: #2a2a2c;
+      --cream: #e8dcc8;
+    }
+    html, body { margin: 0; background: #0e0e10; color: var(--ink); font: 16px/1.5 ui-sans-serif, system-ui, sans-serif; }
+    main { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
+    h1 { font-size: 28px; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .lede { color: var(--dim); margin: 0 0 32px; }
+    h2 { font-size: 18px; margin: 36px 0 12px; }
+    p, li { color: #d4d4d8; }
+    .flow { display: grid; gap: 10px; margin: 16px 0 24px; }
+    .step {
+      background: var(--raise);
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+    .step strong { color: var(--cream); }
+    code { font: 13px ui-monospace, monospace; background: #1c1c1f; padding: 1px 6px; border-radius: 6px; }
+    .files { display: grid; gap: 8px; }
+    .files div { background: var(--raise); border-radius: 12px; padding: 12px 14px; }
+    .files code { display: block; margin-bottom: 4px; color: var(--cream); background: none; padding: 0; }
+    .note { color: var(--dim); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Chat-first bot create and agent pills</h1>
+    <p class="lede">A bot is a chat you talk to. Create opens a thread; pills are how agents show up inside it.</p>
+
+    <h2>How it works</h2>
+    <div class="flow">
+      <div class="step"><strong>Before.</strong> Crew → Add a bot opened <code>BotEditorModal</code>. The first field that mattered was WHAT IT DOES. The bot existed only after Save.</div>
+      <div class="step"><strong>Now.</strong> New bot / Add a bot writes a blank crew row (name “New bot”, empty instructions, next unused colour id) and opens its standing chat.</div>
+      <div class="step"><strong>Shape.</strong> The first message is parsed for a name (<code>You're Scout…</code>, <code>Name:</code>, or a short title line). The whole message becomes instructions via <code>crew/update</code>. Optional role pills apply a template without the form.</div>
+      <div class="step"><strong>Presence.</strong> <code>AgentPill</code> is BotMark + name. Header title, other crew as presence, <code>@Name</code> in bubbles, composer <code>@</code> picker. Colour IDs still select the silhouette.</div>
+      <div class="step"><strong>Secondary.</strong> The gear / Crew Edit still opens the editor. A Recruiter <code>draft_bot</code> proposal is an in-chat card (Start chatting / Settings), not an auto-opened modal.</div>
+    </div>
+
+    <h2>What to look at</h2>
+    <div class="files">
+      <div><code>src/views/shape-bot.ts</code> Unformed detection, name parse, mention split, ready-harness pick.</div>
+      <div><code>src/components/AgentPill.tsx</code> The compact BotMark + name control.</div>
+      <div><code>src/views/ChatView.tsx</code> Welcome, starters, header presence, first-send shape.</div>
+      <div><code>src/App.tsx</code> <code>startChatCreate</code> is the happy path; the editor is Edit / Settings only.</div>
+    </div>
+
+    <h2>How to verify</h2>
+    <ol>
+      <li><code>./scripts/live.sh up</code> then click <strong>New bot</strong>. You should land in a chat, not a dialog.</li>
+      <li>Type <code>You're Scout, a research assistant.</code> The title pill and sidebar row should become Scout.</li>
+      <li>Open Chief. Header pills and typing <code>@</code> should offer crew as pills.</li>
+      <li>Crew → Edit still opens the old form (advanced).</li>
+      <li><code>./scripts/verify.sh</code></li>
+    </ol>
+    <p class="note">Deferred: deleting the editor, shaping after the first message, auto-creating a draft_bot proposal.</p>
+  </main>
+</body>
+</html>

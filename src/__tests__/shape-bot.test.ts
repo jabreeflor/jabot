@@ -10,6 +10,7 @@ import {
   mentionQuery,
   mentionedBots,
   nextBotColor,
+  pickCreateHarness,
   shapeFromMessage,
   splitMentions,
 } from "../views/shape-bot";
@@ -62,6 +63,15 @@ describe("blankBotDraft", () => {
         color: "b-yellow",
       }),
     );
+  });
+
+  it("skips a harness the Doctor has already said is missing", () => {
+    expect(
+      pickCreateHarness([
+        { id: "claude", available: false },
+        { id: "fake-acp", available: true },
+      ]),
+    ).toBe("fake-acp");
   });
 });
 

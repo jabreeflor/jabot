@@ -41,16 +41,28 @@ export function nextBotColor(bots: readonly Pick<Bot, "color">[]): BotColor {
   );
 }
 
+/** Prefer a harness the Doctor has confirmed; never pick a known-missing one. */
+export function pickCreateHarness(
+  harnesses: readonly Pick<HarnessCard, "id" | "available">[],
+): string {
+  return (
+    harnesses.find((harness) => harness.available === true)?.id ??
+    harnesses.find((harness) => harness.available !== false)?.id ??
+    harnesses[0]?.id ??
+    ""
+  );
+}
+
 export function blankBotDraft(
   bots: readonly Pick<Bot, "color">[],
-  harnesses: readonly Pick<HarnessCard, "id">[],
+  harnesses: readonly Pick<HarnessCard, "id" | "available">[],
 ): BotDraft {
   return {
     name: UNFORMED_BOT_NAME,
     color: nextBotColor(bots),
     instructions: "",
     tools: [],
-    harnessId: harnesses[0]?.id ?? "",
+    harnessId: pickCreateHarness(harnesses),
   };
 }
 
