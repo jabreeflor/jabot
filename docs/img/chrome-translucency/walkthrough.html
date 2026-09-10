@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Give the desktop chrome a slight glass treatment</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ink: #1c1c1e;
+        --dim: #5c5c63;
+        --line: #d8d7d3;
+        --raise: #fff;
+        --accent: #2a7a3d;
+        --page: #f6f6f4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #f2f2f2;
+          --dim: #98989e;
+          --line: #303033;
+          --raise: #2a2a2c;
+          --accent: #8ee09a;
+          --page: #151516;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 32px 28px 64px;
+        font: 16px / 1.5 ui-sans-serif, system-ui, sans-serif;
+        color: var(--ink);
+        background: var(--page);
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.02em;
+        margin: 0 0 8px;
+      }
+      .lede {
+        color: var(--dim);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 32px 0 10px;
+      }
+      code {
+        font: 13px / 1.4 ui-monospace, Menlo, monospace;
+        background: var(--raise);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .flow {
+        display: grid;
+        gap: 10px;
+        margin: 16px 0 8px;
+      }
+      .step {
+        background: var(--raise);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .step strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .step span {
+        color: var(--dim);
+        font-size: 14px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-top: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        color: var(--dim);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Give the desktop chrome a slight glass treatment</h1>
+      <p class="lede">
+        Extends #250 so every chrome surface — panes, raised chips, composer,
+        and modals — shares one slight mix. Cream, ink, and BotMark art stay
+        solid.
+      </p>
+
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>1. Same on-switch as #250</strong>
+          <span>
+            <code>bootTranslucency()</code> still paints
+            <code>data-translucency="on"</code> only when native under-window
+            vibrancy stuck, or when live.sh asks for
+            <code>?translucency=preview</code>. Reduce Transparency, Linux, and
+            Windows stay on the solid swatches.
+          </span>
+        </div>
+        <div class="step">
+          <strong>2. One pair of tokens per surface</strong>
+          <span>
+            Each paint color has a <code>--*-solid</code> swatch. Semantic
+            names (<code>--side</code>, <code>--raise</code>,
+            <code>--sunk</code>, <code>--bub-me</code>) alias it until glass is
+            on, then become a 92–96% <code>color-mix</code>. Light theme only
+            reassigns the solids, so there is no second palette.
+          </span>
+        </div>
+        <div class="step">
+          <strong>3. Raised stays above the pane</strong>
+          <span>
+            Panes mix more (92–93%) than chips (94–96%) so search, selected
+            rows, and the composer still read as raised. Cream buttons, ink,
+            and hairlines never mix.
+          </span>
+        </div>
+        <div class="step">
+          <strong>4. Frost only on floating chrome</strong>
+          <span>
+            <code>--chrome-frost</code> is <code>blur(16px) saturate(1.12)</code>
+            on modals, menus, and input pills. Panes mix without a filter so
+            the desktop hint stays a faint grid, not a muddy wash. Overlay
+            dims via <code>--overlay</code> without a second blur.
+          </span>
+        </div>
+      </div>
+
+      <h2>What to look at</h2>
+      <table>
+        <tr>
+          <th>File</th>
+          <th>Why it matters</th>
+        </tr>
+        <tr>
+          <td><code>src/styles/tokens.css</code></td>
+          <td>Solid swatches, mix percents, frost token, Reduce Transparency reset.</td>
+        </tr>
+        <tr>
+          <td><code>src/styles/shell.css</code></td>
+          <td>Where <code>backdrop-filter</code> is applied — floating chrome only.</td>
+        </tr>
+        <tr>
+          <td><code>src/styles/modal.css</code></td>
+          <td>Overlay reads <code>--overlay</code> so the dimmer follows the same switch.</td>
+        </tr>
+        <tr>
+          <td><code>src/translucency.ts</code></td>
+          <td>Unchanged decision: native, preview, or opaque.</td>
+        </tr>
+      </table>
+
+      <h2>How to verify</h2>
+      <ol>
+        <li>
+          On a Mac: <code>npm run tauri dev</code>, park the window over a light
+          wallpaper, then a dark one. Both themes. Search, composer, and a modal
+          should hint through without losing contrast.
+        </li>
+        <li>Turn on Reduce Transparency — every surface should go fully opaque.</li>
+        <li>
+          On Linux:
+          <code>./scripts/live.sh shot --out /tmp/after.png --desktop light --translucency preview --click 'text=Chief'</code>
+        </li>
+        <li><code>./scripts/verify.sh</code> on the pushed tree.</li>
+      </ol>
+    </main>
+  </body>
+</html>

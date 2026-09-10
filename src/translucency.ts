@@ -4,7 +4,8 @@
 //! macOS-only. This file is the renderer half: paint `data-translucency`
 //! when that material is actually behind the webview (or when a live.sh
 //! shot asks for a preview), and stay fully opaque otherwise — including
-//! Reduce Transparency, Linux, Windows, and a unit test.
+//! Reduce Transparency, Linux, Windows, and a unit test. Styles then mix
+//! pane *and* raised chrome tokens plus a light backdrop-filter frost.
 
 import { invoke } from "@tauri-apps/api/core";
 

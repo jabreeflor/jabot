@@ -835,7 +835,7 @@ button.react-badge:focus-visible {
   /* Sticky at the foot of the scroller, so it stays reachable however far up
      the reader has gone. It sits *over* the transcript — there is nowhere
      else for it to be — so it has to read as chrome rather than as a word in
-     somebody's message: opaque, raised, and shadowed off the column. The
+     somebody's message: raised, bordered, and shadowed off the column. The
      first screenshot had it flat, and it looked like text inside a bubble. */
   position: sticky;
   z-index: 1;

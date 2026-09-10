@@ -4,6 +4,7 @@
  * window effect; this file is the renderer decision.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   applyTranslucency,
@@ -148,5 +149,35 @@ describe("probeNativeTranslucency / bootTranslucency", () => {
     expect(prefersReducedTransparency()).toBe(false);
     const stop = subscribeReducedTransparency(() => {});
     stop();
+  });
+});
+
+describe("chrome mix tokens", () => {
+  const css = readFileSync("src/styles/tokens.css", "utf8");
+  const glass = css.slice(css.indexOf('html[data-translucency="on"]'));
+  const reduced = glass.slice(
+    glass.indexOf("@media (prefers-reduced-transparency"),
+  );
+
+  it("mixes raised chrome from solid swatches, not a second palette", () => {
+    expect(css).toMatch(/--raise-solid:\s*#2a2a2c/);
+    expect(glass).toMatch(
+      /--raise:\s*color-mix\(in srgb,\s*var\(--raise-solid\) 96%,\s*transparent\)/,
+    );
+    expect(glass).toMatch(
+      /--side:\s*color-mix\(in srgb,\s*var\(--side-solid\) 92%,\s*transparent\)/,
+    );
+    expect(glass).toMatch(/--chrome-frost:\s*blur\(/);
+  });
+
+  it("keeps cream and ink solid in the glass block", () => {
+    const glassRules = glass.slice(0, glass.indexOf("@media"));
+    expect(glassRules).not.toMatch(/--cream:/);
+    expect(glassRules).not.toMatch(/--ink:/);
+  });
+
+  it("restores solids and drops frost when Reduce Transparency is on", () => {
+    expect(reduced).toMatch(/--raise:\s*var\(--raise-solid\)/);
+    expect(reduced).toMatch(/--chrome-frost:\s*none/);
   });
 });
