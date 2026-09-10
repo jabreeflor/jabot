@@ -15,6 +15,7 @@ export function CrewView({
   harnesses,
   tools,
   drafts = [],
+  error = null,
   onEdit,
   onAdd,
   onRemove,
@@ -25,6 +26,8 @@ export function CrewView({
   harnesses: readonly HarnessCard[];
   tools: readonly ToolOption[];
   drafts?: readonly BotDraftView[];
+  /** Why the last chat-first create was refused. */
+  error?: string | null;
   onEdit: (botId: string) => void;
   onAdd: () => void;
   onRemove: (botId: string) => void;
@@ -38,7 +41,10 @@ export function CrewView({
         <div className="page">
           <div className="page-top">
             <h1>Your Crew</h1>
-            <p>Edit, add, or remove bots — each one is yours to customize</p>
+            <p>
+              Each bot is a chat. Add one by talking — Edit opens advanced
+              settings.
+            </p>
             {onRunSetup && (
               <button
                 type="button"
@@ -49,6 +55,12 @@ export function CrewView({
               </button>
             )}
           </div>
+
+          {error && (
+            <p className="modal-error" role="alert">
+              {error}
+            </p>
+          )}
 
           {drafts.length > 0 && (
             <div className="pending-drafts" aria-label="Pending bot drafts">

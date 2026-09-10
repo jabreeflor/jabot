@@ -82,14 +82,14 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
     const opened = await openApp(browser, app);
     try {
       await opened.page.getByRole("button", { name: /^Crew/ }).click();
-      const opener = opened.page.getByRole("button", { name: "Add a bot" });
+      const opener = opened.page.getByRole("button", { name: "Edit" }).first();
       await expect(opener).toBeVisible();
       await opener.focus();
       await opener.click();
 
       const dialog = opened.page.getByRole("dialog");
       await expect(dialog).toBeVisible();
-      await expect(dialog).toHaveAccessibleName("Add a bot");
+      await expect(dialog).toHaveAccessibleName(/Customize /);
 
       await expect
         .poll(async () =>

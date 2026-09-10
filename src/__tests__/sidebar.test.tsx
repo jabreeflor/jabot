@@ -162,6 +162,15 @@ describe("Sidebar", () => {
     expect(within(code).getByTestId("unread-dot")).toBeInTheDocument();
   });
 
+  it("starts a bot from the list without opening the editor", async () => {
+    const onAddBot = vi.fn();
+    renderSidebar({ onAddBot });
+
+    await userEvent.click(screen.getByRole("button", { name: /^New bot/ }));
+    expect(onAddBot).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   /** #207: the vertical list kept the row layout and lost the drawings.
       Each persisted color id is a distinct animated silhouette, not a fill. */
   it("draws animated bot silhouettes on the vertical chat rows", () => {

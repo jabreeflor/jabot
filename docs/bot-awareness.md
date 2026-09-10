@@ -48,7 +48,9 @@ run, connect a provider, or add a schedule.
 
 Save is a full-device UI RPC (`crew/drafts/save`). It is not an agent tool.
 Approver phones cannot call it. Child proposals cannot include `draft_bot` or
-`get_bot_draft`.
+`get_bot_draft`. The standing chat shows the proposal as an agent pill with
+**Start chatting** (save and open) and **Settings** (the editor). The editor
+is no longer auto-opened on the notification.
 
 Pending drafts survive Close, navigation, and restart. Close is not Dismiss.
 Stale drafts (source bot gone or grant revoked) remain reviewable; Save is a

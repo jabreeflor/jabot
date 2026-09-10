@@ -75,6 +75,186 @@
   font-weight: 600;
 }
 
+/* Agent presence: BotMark + name, native to the chat chrome. Colour IDs
+   still pick the monochrome silhouette — these are not colour circles. */
+.agent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 3px 10px 3px 3px;
+  background: var(--raise);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  --blob-size: 20px;
+}
+
+button.agent-pill {
+  cursor: pointer;
+}
+
+button.agent-pill:hover,
+button.agent-pill:focus-visible {
+  background: var(--raise-hover);
+}
+
+button.agent-pill:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.agent-pill.is-selected,
+.agent-pill[aria-current="true"] {
+  background: var(--raise-hover);
+}
+
+.agent-pill-name {
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agent-pill-title {
+  font-size: var(--fs-title);
+  padding: 4px 14px 4px 4px;
+  --blob-size: 28px;
+}
+
+.agent-pill-mention {
+  --blob-size: 16px;
+  padding: 2px 8px 2px 2px;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.agent-pill-starter {
+  --blob-size: 22px;
+}
+
+.msg .bubble .agent-pill {
+  margin: 0 2px;
+}
+
+html[data-translucency="on"] .agent-pill {
+  background: color-mix(in srgb, var(--raise) 82%, transparent);
+}
+
+html[data-translucency="on"] button.agent-pill:hover,
+html[data-translucency="on"] button.agent-pill:focus-visible,
+html[data-translucency="on"] .agent-pill.is-selected,
+html[data-translucency="on"] .agent-pill[aria-current="true"] {
+  background: color-mix(in srgb, var(--raise-hover) 82%, transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  html[data-translucency="on"] .agent-pill,
+  html[data-translucency="on"] button.agent-pill:hover,
+  html[data-translucency="on"] button.agent-pill:focus-visible,
+  html[data-translucency="on"] .agent-pill.is-selected,
+  html[data-translucency="on"] .agent-pill[aria-current="true"] {
+    background: var(--raise);
+  }
+}
+
+.agent-presence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.chat-head-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.chat-head-end .host-picker {
+  margin-left: 0;
+}
+
+.chat-settings {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.chat-settings:hover,
+.chat-settings:focus-visible {
+  color: var(--ink);
+  background: var(--raise2);
+}
+
+.chat-settings svg {
+  width: 15px;
+  height: 15px;
+}
+
+.chat-shape {
+  max-width: var(--thread-max);
+  margin: 0 auto;
+  padding: 0 var(--sp-6) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.shape-starters p,
+.bot-proposal p {
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--fs-meta);
+}
+
+.shape-starter-row,
+.mention-pills,
+.composer-mentions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.bot-proposal {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--raise);
+}
+
+html[data-translucency="on"] .bot-proposal {
+  background: color-mix(in srgb, var(--raise) 82%, transparent);
+}
+
+.bot-proposal-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.composer-mentions {
+  max-width: var(--thread-max);
+  margin: 0 auto var(--sp-2);
+  padding: 0 2px;
+}
+
 .chat-head .codeav {
   width: 28px;
   height: 28px;

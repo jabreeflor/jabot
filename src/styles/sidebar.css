@@ -204,6 +204,23 @@
   --blob-size: 42px;
 }
 
+.bot-row-add {
+  display: grid;
+  place-items: center;
+  color: var(--dim);
+  background: var(--raise);
+  border-radius: 28%;
+}
+
+.bot-row-add svg {
+  width: 16px;
+  height: 16px;
+}
+
+html[data-translucency="on"] .bot-row-add {
+  background: color-mix(in srgb, var(--raise) 82%, transparent);
+}
+
 /* Highlight the selected avatar once, without outlining each Crew member.
    Direct children only: a cluster holds three nested `.av`s, and a descendant
    selector would ring every silhouette instead of the tile. */

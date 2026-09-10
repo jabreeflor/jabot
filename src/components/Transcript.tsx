@@ -19,9 +19,11 @@ import {
   SmileIcon,
   SparkIcon,
 } from "./Icon";
+import { AgentPill } from "./AgentPill";
 import { renderMarkdown } from "./markdown";
 import { REACTION_CHOICES, reactionName } from "./reactions";
-import type { ToolCall, ToolKind, TranscriptItem } from "./types";
+import type { Bot, ToolCall, ToolKind, TranscriptItem } from "./types";
+import { mentionedBots, splitMentions } from "../views/shape-bot";
 
 /**
  * How many grouped entries are rendered from the tail to begin with, and how
@@ -36,12 +38,17 @@ const WINDOW = 80;
 
 export function Transcript({
   items,
+  bots,
+  onSelectBot,
   onAction,
   onReact,
   onBranch,
   branchingSeq,
 }: {
   items: readonly TranscriptItem[];
+  /** Crew used to turn `@Name` in a bubble into an agent pill. */
+  bots?: readonly Bot[];
+  onSelectBot?: (botId: string) => void;
   /** A notice card's button — a fold offer today, a permission reply in #20. */
   onAction?: (itemId: string, actionId: string) => void;
   /** Toggle an emoji on an agent bubble (#265). */
@@ -92,6 +99,8 @@ export function Transcript({
           <TranscriptEntry
             key={entry.item.id}
             item={entry.item}
+            bots={bots}
+            onSelectBot={onSelectBot}
             onAction={onAction}
             onReact={onReact}
             onBranch={onBranch}
@@ -138,13 +147,72 @@ const ToolBlock = memo(ToolBlockRow, (before, after) =>
  * token reparses one bubble and re-renders nothing else. Parsing inline in the
  * switch would reparse the whole conversation on every chunk.
  */
+function MentionLine({
+  text,
+  bots,
+  onSelectBot,
+}: {
+  text: string;
+  bots: readonly Bot[];
+  onSelectBot?: (botId: string) => void;
+}) {
+  const mentioned = mentionedBots(text, bots);
+  if (mentioned.length === 0) return null;
+  return (
+    <div className="mention-pills" aria-label="Mentioned agents">
+      {mentioned.map((bot) => (
+        <AgentPill
+          key={bot.id}
+          bot={bot}
+          variant="mention"
+          onClick={onSelectBot ? () => onSelectBot(bot.id) : undefined}
+        />
+      ))}
+    </div>
+  );
+}
+
+function UserText({
+  text,
+  bots,
+  onSelectBot,
+}: {
+  text: string;
+  bots?: readonly Bot[];
+  onSelectBot?: (botId: string) => void;
+}) {
+  if (!bots || bots.length === 0) return text;
+  const parts = splitMentions(text, bots);
+  if (parts.every((part) => part.type === "text")) return text;
+  return (
+    <>
+      {parts.map((part, index) =>
+        part.type === "text" ? (
+          <span key={index}>{part.value}</span>
+        ) : (
+          <AgentPill
+            key={`${part.bot.id}-${index}`}
+            bot={part.bot}
+            variant="mention"
+            onClick={onSelectBot ? () => onSelectBot(part.bot.id) : undefined}
+          />
+        ),
+      )}
+    </>
+  );
+}
+
 function AgentBubble({
   item,
+  bots,
+  onSelectBot,
   onReact,
   onBranch,
   branchingSeq,
 }: {
   item: Extract<TranscriptItem, { kind: "agent" }>;
+  bots?: readonly Bot[];
+  onSelectBot?: (botId: string) => void;
   onReact?: (itemId: string, emoji: string) => void;
   onBranch?: (itemId: string, seq: number) => void;
   branchingSeq?: number | null;
@@ -159,6 +227,9 @@ function AgentBubble({
         <div className="bubble" data-streaming={item.streaming || undefined}>
           {nodes}
         </div>
+        {bots && (
+          <MentionLine text={item.text} bots={bots} onSelectBot={onSelectBot} />
+        )}
       </div>
       {(item.text.length > 0 ||
         showBranch ||
@@ -371,12 +442,16 @@ const TranscriptEntry = memo(TranscriptRow);
 
 function TranscriptRow({
   item,
+  bots,
+  onSelectBot,
   onAction,
   onReact,
   onBranch,
   branchingSeq,
 }: {
   item: Exclude<TranscriptItem, { kind: "tool" }>;
+  bots?: readonly Bot[];
+  onSelectBot?: (botId: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
   onReact?: (itemId: string, emoji: string) => void;
   onBranch?: (itemId: string, seq: number) => void;
@@ -394,7 +469,9 @@ function TranscriptRow({
     case "user":
       return (
         <div className="msg me">
-          <div className="bubble">{item.text}</div>
+          <div className="bubble">
+            <UserText text={item.text} bots={bots} onSelectBot={onSelectBot} />
+          </div>
           {canOfferBranch(onBranch, item.seq) &&
             onBranch &&
             item.seq !== undefined && (
@@ -417,6 +494,8 @@ function TranscriptRow({
       return (
         <AgentBubble
           item={item}
+          bots={bots}
+          onSelectBot={onSelectBot}
           onReact={onReact}
           onBranch={onBranch}
           branchingSeq={branchingSeq}
