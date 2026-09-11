@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Windows NSIS packaging and release artifacts</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222c;
+      --ink: #e8eef5;
+      --muted: #93a1b1;
+      --line: #2a3644;
+      --mac: #7dd3fc;
+      --win: #86efac;
+      --warn: #fbbf24;
+      --accent: #c4b5fd;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+    main { max-width: 920px; margin: 0 auto; padding: 40px 28px 64px; }
+    h1 { font-size: 28px; letter-spacing: -0.01em; margin: 0 0 8px; word-spacing: 0.06em; }
+    .lede { color: var(--muted); font-size: 18px; margin: 0 0 28px; }
+    h2 { font-size: 18px; margin: 36px 0 12px; color: var(--accent); }
+    p, li { color: #d5deea; }
+    code {
+      font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #0b1016;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+    .card h3 { margin: 0 0 10px; font-size: 15px; }
+    .mac { border-top: 3px solid var(--mac); }
+    .win { border-top: 3px solid var(--win); }
+    .warn { border-top: 3px solid var(--warn); }
+    ul { margin: 8px 0 0; padding-left: 18px; }
+    .pipe {
+      margin: 20px 0;
+      padding: 16px;
+      background: #111821;
+      border-radius: 12px;
+      border: 1px dashed var(--line);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      white-space: pre;
+      overflow-x: auto;
+      color: #c9d4e0;
+    }
+    .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; }
+    .tag.mac { background: #0b3a4f; color: var(--mac); }
+    .tag.win { background: #12361f; color: var(--win); }
+    .files { display: grid; gap: 8px; }
+    .file { display: grid; grid-template-columns: 280px 1fr; gap: 12px; padding: 10px 12px; background: var(--panel); border-radius: 8px; }
+    .file strong { font-size: 13px; font-family: ui-monospace, Menlo, monospace; }
+    .file span { color: var(--muted); font-size: 14px; }
+    .verify code { display: inline-block; margin: 2px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Windows NSIS packaging and release artifacts</h1>
+    <p class="lede">#281 / PR: add a Windows installer next to the existing macOS dmg, without letting that job rewrite <code>latest.json</code>.</p>
+
+    <h2 id="how-it-works">How it works</h2>
+    <div class="flow">
+      <section class="card mac">
+        <h3><span class="tag mac">Before / still true</span></h3>
+        <ul>
+          <li><code>tauri.conf.json</code> targets stay <code>["app", "dmg"]</code> (D-005).</li>
+          <li>One macOS job builds <code>universal-apple-darwin</code>, signs, notarizes, writes <code>latest.json</code>.</li>
+          <li>Updater plugin remains macOS-only. Identifier <code>com.jabot.app</code>, name <code>JaBot</code>.</li>
+        </ul>
+      </section>
+      <section class="card win">
+        <h3><span class="tag win">After</span></h3>
+        <ul>
+          <li><code>tauri.windows.conf.json</code> overlays <code>targets: ["nsis"]</code> on Windows only.</li>
+          <li>Sibling <code>windows</code> job on <code>windows-latest</code> uploads <code>*-setup.exe</code>.</li>
+          <li><code>uploadUpdaterJson: false</code>, no <code>createUpdaterArtifacts</code>, no <code>APPLE_*</code>, no <code>TAURI_SIGNING_*</code>.</li>
+          <li>Same <code>releaseBody</code> as macos (draft notes race). npm <code>script-shell</code> = Git Bash before <code>tauri build</code>.</li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="pipe">tag vX.Y.Z
+  ├─ macos   → .dmg + .app.tar.gz + .sig + latest.json + install.sh
+  │            (writes full releaseBody)
+  └─ windows → JaBot_*_x64-setup.exe
+         │     uploadUpdaterJson: false
+         │     same releaseBody (tauri-action will not update a draft)
+         └─ same draft GitHub Release
+            latest.json is written only by macos</div>
+
+    <section class="card warn">
+      <h3>Why NSIS is not in the base targets array</h3>
+      <p>Putting <code>nsis</code> next to <code>app</code>/<code>dmg</code> would make a macOS <code>tauri build</code> see a Windows target. The overlay file is merged only on a Windows host, so D-005 stays intact: losing <code>app</code> still ships an unupdatable macOS feed. Release CI also passes <code>--bundles nsis</code> so the installer is explicit if the overlay is ignored.</p>
+    </section>
+
+    <h2 id="what-to-look-at">What to look at</h2>
+    <div class="files">
+      <div class="file"><strong>src-tauri/tauri.windows.conf.json</strong><span>NSIS-only targets, current-user install, WebView2 download bootstrapper.</span></div>
+      <div class="file"><strong>.github/workflows/release.yml</strong><span>Renamed job <code>macos</code>; sibling <code>windows</code> with <code>uploadUpdaterJson: false</code>, shared <code>releaseBody</code>, Git Bash <code>script-shell</code>.</span></div>
+      <div class="file"><strong>scripts/windows-packaging.sh</strong><span>Offline verify gate plus refusal fixtures: overlay, draft notes, updater JSON, adapter staging.</span></div>
+      <div class="file"><strong>package.json</strong><span><code>bundle:adapters</code> now runs through <code>bash</code> so Windows npm can stage the ACP adapter.</span></div>
+      <div class="file"><strong>docs/packaging.md</strong><span>Build, install, unsigned/SmartScreen follow-up, cargo-xwin last-resort path.</span></div>
+    </div>
+
+    <h2 id="how-to-verify">How to verify</h2>
+    <p class="verify">
+      <code>./scripts/windows-packaging.sh check</code><br />
+      <code>npm run test:windows-packaging</code><br />
+      <code>./scripts/verify.sh</code><br />
+      On a Windows box or the release runner: <code>npm run tauri build</code> → <code>src-tauri/target/release/bundle/nsis/*-setup.exe</code>
+    </p>
+    <p>The Windows installer is unsigned. SmartScreen will warn until an Authenticode cert exists — that is not the updater's <code>TAURI_SIGNING_*</code> key. Runtime Windows work is #282–#286. Merge after #290; hand-merge <code>tauri.windows.conf.json</code> with #294.</p>
+  </main>
+</body>
+</html>

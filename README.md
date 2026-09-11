@@ -24,16 +24,21 @@ Prefer doing it by hand? Download the `.dmg` from
 to Applications. Either way, installed copies update themselves after that —
 the script is a one-time thing.
 
-### Windows (in progress)
+### Windows
 
-Windows 10/11 **x64**: when
-[#281](https://github.com/jabreeflor/jabot/issues/281) publishes it, download
-`JaBot_*_x64-setup.exe` from the same
+Windows 10/11 **x64**: download `JaBot_*_x64-setup.exe` from the same
 [Releases](https://github.com/jabreeflor/jabot/releases/latest) page and run
-it (NSIS, current-user, **not** Authenticode-signed — SmartScreen will
-warn). This is **not** macOS parity. Install steps, `tauri dev`
-prerequisites, the gap list (glass, Dock hide, signing/SmartScreen,
-notify), and the smoke checklist: [docs/windows.md](docs/windows.md)
+it. The installer is NSIS, current-user (no admin). WebView2 is required —
+Windows 11 already has it; the installer downloads it on Windows 10 if
+needed.
+
+The Windows build is **not Authenticode-signed**. SmartScreen will show
+"Windows protected your PC"; choose More info → Run anyway. That warning
+is expected until a code-signing certificate exists (follow-up on #281 /
+#280). Windows auto-update is not shipped yet — install a newer setup.exe
+by hand. This is **not** macOS parity. Install steps, `tauri dev`
+prerequisites, the gap list, and the smoke checklist:
+[docs/windows.md](docs/windows.md)
 ([#287](https://github.com/jabreeflor/jabot/issues/287) /
 [#280](https://github.com/jabreeflor/jabot/issues/280)).
 

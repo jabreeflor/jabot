@@ -126,11 +126,15 @@ release-manual.
 
 ### Release
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs
-`updater-artifacts` against the universal bundle output after
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) `macos`
+job runs `updater-artifacts` against the universal bundle output after
 `createUpdaterArtifacts` is merged in. That is archive + signature presence.
 Installing a signed update into a real `JaBot.app` is the checklist item, on
 a controlled fixture, never against a contributor's production install.
+
+The sibling `windows` job uploads an unsigned NSIS `*-setup.exe` and runs
+`scripts/windows-packaging.sh artifacts`. It does not write `latest.json`.
+See [docs/packaging.md](packaging.md#windows-nsis-installer) (#281).
 
 ---
 

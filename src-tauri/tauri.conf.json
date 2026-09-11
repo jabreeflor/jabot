@@ -28,6 +28,9 @@
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
+    "publisher": "JaBot",
+    "shortDescription": "Bot-crew messenger for coding harnesses",
+    "homepage": "https://github.com/jabreeflor/jabot",
     "resources": ["vendor/adapters/node_modules/**/*"],
     "createUpdaterArtifacts": false,
     "icon": [
