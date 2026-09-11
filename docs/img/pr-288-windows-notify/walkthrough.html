@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Windows Inbox toasts (or soft-fail) — never panic</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ink: #1c1c1e;
+        --dim: #5c5c63;
+        --line: #d8d7d3;
+        --raise: #fff;
+        --accent: #2a7a3d;
+        --page: #f6f6f4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #f2f2f2;
+          --dim: #98989e;
+          --line: #303033;
+          --raise: #2a2a2c;
+          --accent: #8ee09a;
+          --page: #151516;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 32px 28px 64px;
+        font: 16px / 1.5 ui-sans-serif, system-ui, sans-serif;
+        color: var(--ink);
+        background: var(--page);
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.02em;
+        margin: 0 0 8px;
+      }
+      .lede {
+        color: var(--dim);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 32px 0 10px;
+      }
+      code {
+        font: 13px / 1.4 ui-monospace, Menlo, monospace;
+        background: var(--raise);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .flow {
+        display: grid;
+        gap: 10px;
+        margin: 16px 0 8px;
+      }
+      .step {
+        background: var(--raise);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .step strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .step span {
+        color: var(--dim);
+        font-size: 14px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-top: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        color: var(--dim);
+        font-weight: 600;
+      }
+      .diag {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr auto 1fr;
+        gap: 8px;
+        align-items: stretch;
+        margin: 16px 0 8px;
+      }
+      .box {
+        background: var(--raise);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-size: 14px;
+      }
+      .box strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .arrow {
+        color: var(--dim);
+        align-self: center;
+        font-size: 20px;
+      }
+      .note {
+        color: var(--dim);
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Windows Inbox toasts (or soft-fail)</h1>
+      <p class="lede">
+        #284 / #280. Windows now has its own notify backend. It posts an Action
+        Center toast, or it logs and returns. It never panics, and it never
+        borrows the Linux no-op. macOS <code>mac.rs</code> is untouched.
+      </p>
+
+      <h2>How it works</h2>
+      <div class="diag" aria-hidden="true">
+        <div class="box">
+          <strong>Inbox write</strong>
+          persist-then-notify. The card is already on disk.
+        </div>
+        <div class="arrow">→</div>
+        <div class="box">
+          <strong><code>notify::plan</code></strong>
+          portable. Same title/body/kinds on every OS.
+        </div>
+        <div class="arrow">→</div>
+        <div class="box">
+          <strong>backend</strong>
+          mac / win / unsupported. Chosen at compile time.
+        </div>
+      </div>
+      <p class="note">
+        A refused toast costs the interruption and nothing else. That is
+        decision #5, unchanged.
+      </p>
+
+      <div class="flow">
+        <div class="step">
+          <strong>1. Windows is a third backend, not a silent Linux</strong>
+          <span>
+            <code>mod.rs</code> now splits <code>mac</code> /
+            <code>win</code> / <code>unsupported</code>. Linux CI still
+            compiles the no-op. Windows reports <code>supported: true</code>
+            and <code>notDetermined</code> until a toast is accepted.
+          </span>
+        </div>
+        <div class="step">
+          <strong>2. WinRT toast, title and body from the existing plan</strong>
+          <span>
+            <code>win.rs</code> calls <code>tauri-winrt-notification</code>
+            with the same <code>NativeNotification</code> macOS uses. Only
+            <code>needs_you</code>, <code>done</code>, and <code>failed</code>
+            ring.
+          </span>
+        </div>
+        <div class="step">
+          <strong>3. AUMID, then a documented fallback</strong>
+          <span>
+            Try <code>com.jabot.app</code> (the Tauri identifier). If WinRT
+            refuses — typical for unpackaged <code>tauri dev</code> until
+            #281 registers the id — retry once as PowerShell's well-known
+            id and say so in the log. Any remaining error is
+            <code>eprintln</code> and return.
+          </span>
+        </div>
+        <div class="step">
+          <strong>4. Click uses the macOS sink, while the process is alive</strong>
+          <span>
+            Toast <code>on_activated</code> calls
+            <code>dispatch_click</code>. <code>lib.rs</code> focuses
+            <code>main</code> and emits <code>notification-activated</code>.
+            After quit, Windows does not relaunch — that is installer/COM
+            work. The card is already in the Inbox.
+          </span>
+        </div>
+      </div>
+
+      <h2>What to look at</h2>
+      <table>
+        <tr>
+          <th>File</th>
+          <th>Why it matters</th>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/notify/win.rs</code></td>
+          <td>New Windows backend. Soft-fail, AUMID fallback, click hook.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/notify/mod.rs</code></td>
+          <td>Compile-time split. Decision layer and tests stay portable.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/notify/mac.rs</code></td>
+          <td>Not in the diff. That is the point of #284's macOS constraint.</td>
+        </tr>
+        <tr>
+          <td><code>docs/requirements/native-notifications.md</code></td>
+          <td>Click-focus table and the Windows smoke checklist.</td>
+        </tr>
+      </table>
+
+      <h2>How to verify</h2>
+      <ol>
+        <li><code>./scripts/verify.sh</code> on Linux — unsupported path + portable tests.</li>
+        <li>
+          <code>./scripts/verify.sh --check-mac</code> — <code>mac.rs</code>
+          still lints. <code>win.rs</code> is <code>cfg(windows)</code> and
+          is not this scratch crate.
+        </li>
+        <li>
+          On a logged-in Windows 10/11 session: fold a thread or wait for
+          <code>needs_you</code> / <code>done</code> / <code>failed</code>.
+          Confirm the toast title/body, click it while JaBot is running, then
+          turn notifications off and confirm the host does not crash.
+        </li>
+      </ol>
+    </main>
+  </body>
+</html>
