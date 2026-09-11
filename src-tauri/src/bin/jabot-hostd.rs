@@ -150,8 +150,14 @@ fn main() {
     // Bound *before* the first byte of stdio is read, and that ordering is the
     // whole readiness protocol: a client that has had an answer on stdio knows
     // the socket is accepting, so nothing has to poll for the file or parse a
-    // banner line out of the protocol stream.
+    // banner line out of the protocol stream. Off Unix `--listen` fatals here
+    // (`bind_listener` is `-> !`); there is no accept loop to start.
+    #[cfg(unix)]
     let listener = socket_path.as_deref().map(bind_listener);
+    #[cfg(not(unix))]
+    if let Some(path) = socket_path.as_deref() {
+        bind_listener(path);
+    }
 
     let session = match &data_dir {
         Some(dir) => {
@@ -173,6 +179,7 @@ fn main() {
     let session = Arc::new(Mutex::new(session));
     let clients = Arc::new(Mutex::new(Clients::default()));
     spawn_acp_pump(Arc::clone(&session), Arc::clone(&clients), wake);
+    #[cfg(unix)]
     if let Some(listener) = listener {
         spawn_accept_loop(Arc::clone(&session), Arc::clone(&clients), listener);
     }
