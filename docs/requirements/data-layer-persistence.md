@@ -35,16 +35,6 @@ never sit in plaintext SQLite rows.
    credential-store prompt is [`StoreError::SecretsDenied`] (logged and
    returned), not a silent miss. Linux has no OS backend yet and fails
    closed (`SecretsUnavailable`) unless `JABOT_SECRETS_BACKEND=memory`.
-
-## Where secret bytes live
-
-| Platform | Store | How to find them |
-|---|---|---|
-| **macOS** | Keychain generic password, service `com.jabot.app` (overridable with `JABOT_KEYCHAIN_SERVICE`) | Keychain Access → login keychain → service `com.jabot.app` |
-| **Windows** | Credential Manager generic credential (`keyring` `windows-native`). Target name is `{account}.{service}`, e.g. `jabot.secret.<id>.com.jabot.app` | Control Panel → Credential Manager → **Windows Credentials** |
-| **Linux / CI** | None. `host/hello` reports `secretsBackend: "unavailable"` | Use `JABOT_SECRETS_BACKEND=memory` only for tests; bytes die with the process |
-
-Acceptance isolation (`JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.<id>`) applies on both macOS and Windows so a probe never reads or writes the user's production items. The live OS round-trip is `os_secret_round_trip_put_get_delete` in `secrets.rs`; `scripts/windows-secrets-check.sh` is the named Windows entry (#286 can invoke it on a Windows runner).
 4. `catalog.rs` persists the harness/tool catalog state; `overlay.rs`
    persists the thread fold/state overlay described in
    [thread-state-and-runs.md](thread-state-and-runs.md).
@@ -63,3 +53,13 @@ Acceptance isolation (`JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.<id>`) ap
    delivery failure must never lose a result (restated from the fold/run
    decision; enforced here because this is where the ordering is
    implemented).
+
+## Where secret bytes live
+
+| Platform | Store | How to find them |
+|---|---|---|
+| **macOS** | Keychain generic password, service `com.jabot.app` (overridable with `JABOT_KEYCHAIN_SERVICE`) | Keychain Access → login keychain → service `com.jabot.app` |
+| **Windows** | Credential Manager generic credential (`keyring` `windows-native`). Target name is `{account}.{service}`, e.g. `jabot.secret.<id>.com.jabot.app`. Wincred blob cap is 2560 bytes; `set_password` stores UTF-16 (~1280 ASCII chars). Oversize is `StoreError::SecretsTooLong`. | Control Panel → Credential Manager → **Windows Credentials** |
+| **Linux / CI** | None. `host/hello` reports `secretsBackend: "unavailable"` | Use `JABOT_SECRETS_BACKEND=memory` only for tests; bytes die with the process |
+
+Acceptance isolation (`JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.<id>`) applies on both macOS and Windows so a probe never reads or writes the user's production items. The live OS round-trip is `os_secret_round_trip_put_get_delete` in `secrets.rs`; `scripts/windows-secrets-check.sh` is the named Windows entry (#286 can invoke it on a Windows runner).

@@ -10,7 +10,8 @@ macOS Keychain (`keyring` `apple-native`, service `com.jabot.app`) and
 Windows Credential Manager (`keyring` `windows-native`, generic credential
 target `{account}.{service}`). Linux still fails closed. Same host
 `put` / `get` / `delete` APIs on every target; a denied store is
-`StoreError::SecretsDenied`. See
+`StoreError::SecretsDenied`. Wincred's 2560-byte UTF-16 blob cap
+(~1280 ASCII chars) is `StoreError::SecretsTooLong`. See
 [data-layer-persistence.md](../../requirements/data-layer-persistence.md#where-secret-bytes-live).
 
 ## Decision

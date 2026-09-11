@@ -6,7 +6,15 @@
 //! - **Windows:** Credential Manager generic credential via `keyring`
 //!   `windows-native`. Target name is `{account}.{service}` (for example
 //!   `jabot.secret.<id>.com.jabot.app`). Control Panel → Credential Manager
-//!   → Windows Credentials.
+//!   → Windows Credentials. Wincred
+//!   [`CRED_MAX_CREDENTIAL_BLOB_SIZE`](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)
+//!   is 2560 bytes; `keyring` `windows-native` `set_password` stores UTF-16,
+//!   so a typical ASCII secret is limited to ~1280 characters. A full
+//!   `TokenBundle` (access + refresh + `token_endpoint` + `resources` +
+//!   `client_id` + optional `client_secret`) can approach or exceed that.
+//!   Oversize is [`StoreError::SecretsTooLong`] (`keyring::Error::TooLong`
+//!   or Windows 1783 / `ERROR_INVALID_USER_BUFFER`), not a generic invalid.
+//!   macOS Keychain does not share this cap.
 //! - **Linux / other:** no OS store yet. [`Secrets::put`] fails closed
 //!   ([`StoreError::SecretsUnavailable`]) unless `JABOT_SECRETS_BACKEND=memory`.
 //!
@@ -187,6 +195,7 @@ impl Secrets {
 pub(crate) enum OsSecretFailure {
     NotFound,
     Denied(String),
+    TooLong(String),
     Other(String),
 }
 
@@ -198,6 +207,7 @@ pub(crate) fn store_error_from_os(account: &str, failure: OsSecretFailure) -> St
             eprintln!("secrets: credential store denied access ({account}): {detail}");
             StoreError::SecretsDenied(detail)
         }
+        OsSecretFailure::TooLong(detail) => StoreError::SecretsTooLong(detail),
         OsSecretFailure::Other(detail) => {
             StoreError::invalid(format!("credential store: {detail}"))
         }
@@ -217,15 +227,33 @@ pub(crate) fn looks_like_access_denied(text: &str) -> bool {
         || lower.contains("0x80070005")
 }
 
+/// Wincred `CRED_MAX_CREDENTIAL_BLOB_SIZE` is 2560 bytes of UTF-16
+/// (`keyring` `set_password`). Oversize often surfaces as
+/// `keyring::Error::TooLong`, or as Windows 1783
+/// (`ERROR_INVALID_USER_BUFFER`) / "too long" in a platform error.
+#[cfg(any(test, target_os = "macos", target_os = "windows"))]
+pub(crate) fn looks_like_too_long(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("too long")
+        || lower.contains("1783")
+        || lower.contains("error_invalid_user_buffer")
+        || lower.contains("error_bad_length")
+}
+
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn classify_keyring_error(err: keyring::Error) -> OsSecretFailure {
     match err {
         keyring::Error::NoEntry => OsSecretFailure::NotFound,
         keyring::Error::NoStorageAccess(inner) => OsSecretFailure::Denied(inner.to_string()),
+        keyring::Error::TooLong(item, max) => {
+            OsSecretFailure::TooLong(format!("{item} exceeds {max} bytes"))
+        }
         other => {
             let text = other.to_string();
             if looks_like_access_denied(&text) {
                 OsSecretFailure::Denied(text)
+            } else if looks_like_too_long(&text) {
+                OsSecretFailure::TooLong(text)
             } else {
                 OsSecretFailure::Other(text)
             }
@@ -529,14 +557,93 @@ mod tests {
     }
 
     #[test]
+    fn oversize_phrases_classify_as_too_long() {
+        for phrase in [
+            "credential too long",
+            "ERROR_INVALID_USER_BUFFER",
+            "CredWrite failed: 1783",
+            "ERROR_BAD_LENGTH",
+        ] {
+            assert!(
+                looks_like_too_long(phrase),
+                "{phrase} should classify as too long"
+            );
+        }
+        assert!(!looks_like_too_long("no such entry"));
+        assert!(!looks_like_too_long("access is denied"));
+    }
+
+    #[test]
     fn os_not_found_and_other_failures_stay_distinct_from_denied() {
         assert!(matches!(
             store_error_from_os("acct", OsSecretFailure::NotFound),
             StoreError::SecretNotFound(_)
         ));
-        let other = store_error_from_os("acct", OsSecretFailure::Other("target too long".into()));
+        let other = store_error_from_os("acct", OsSecretFailure::Other("platform failed".into()));
         assert!(matches!(other, StoreError::Invalid(_)), "{other}");
         assert!(!other.to_string().contains("denied access"), "{other}");
+        assert!(!other.to_string().contains("too long"), "{other}");
+    }
+
+    #[test]
+    fn too_long_is_explicit_and_never_embeds_secret_bytes() {
+        let secret = "sk-ant-not-a-real-token";
+        let err = store_error_from_os(
+            "jabot.secret.test",
+            OsSecretFailure::TooLong("password exceeds 2560 bytes".into()),
+        );
+        match err {
+            StoreError::SecretsTooLong(detail) => {
+                assert!(detail.contains("2560"), "{detail}");
+                assert!(!detail.contains(secret), "{detail}");
+            }
+            other => panic!("expected SecretsTooLong, got {other}"),
+        }
+        let rendered = StoreError::SecretsTooLong("Wincred blob limit".into()).to_string();
+        assert!(
+            rendered.contains("too long"),
+            "RPC/UI must see an explicit size failure: {rendered}"
+        );
+        assert!(!rendered.contains(secret), "{rendered}");
+    }
+
+    /// Wincred `CRED_MAX_CREDENTIAL_BLOB_SIZE` is 2560 UTF-16 bytes
+    /// (~1280 ASCII chars via `keyring` `set_password`). A representative
+    /// Google grant — access + refresh + endpoints + resources — sits near
+    /// that budget; this fixture documents the risk rather than writing
+    /// CredMan (Linux compiles that path out).
+    #[test]
+    fn representative_google_grant_approaches_wincred_utf16_budget() {
+        const WINCRED_ASCII_BUDGET: usize = 2560 / 2;
+        let bundle = serde_json::json!({
+            "accessToken": format!("ya29.{}", "A".repeat(400)),
+            "refreshToken": format!("1//0{}", "B".repeat(200)),
+            "tokenType": "Bearer",
+            "expiresAt": "2026-09-11T03:00:00Z",
+            "scopes": [
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "https://www.googleapis.com/auth/calendar.readonly"
+            ],
+            "clientId": "123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com",
+            "clientSecret": "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ue",
+            "tokenEndpoint": "https://oauth2.googleapis.com/token",
+            "resources": [
+                "https://gmail.googleapis.com/",
+                "https://www.googleapis.com/auth/calendar"
+            ],
+            "account": "user@example.com"
+        });
+        let json = serde_json::to_string(&bundle).expect("serialize fixture");
+        assert!(
+            json.len() > 800,
+            "fixture should look like a real grant, got {} bytes",
+            json.len()
+        );
+        assert!(
+            json.len() < WINCRED_ASCII_BUDGET + 400,
+            "fixture drifted far past the Wincred budget ({} vs {WINCRED_ASCII_BUDGET})",
+            json.len()
+        );
     }
 
     /// Live Keychain / Credential Manager put → get → delete. Linux compiles
@@ -554,14 +661,27 @@ mod tests {
                 .unwrap_or(0)
         );
         let secret = "jabot-test-not-a-user-credential";
+        struct Cleanup {
+            account: String,
+        }
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let mut vault = Secrets::Os;
+                let _ = vault.delete(&self.account);
+            }
+        }
+        let _cleanup = Cleanup {
+            account: account.clone(),
+        };
         let mut vault = Secrets::Os;
         vault
             .put(&account, secret)
             .expect("OS credential store must accept a test put");
         let got = vault.get(&account).expect("OS credential store must load");
-        let deleted = vault.delete(&account);
         assert_eq!(got, secret, "round-trip must not change bytes");
-        deleted.expect("OS credential store must delete the test item");
+        vault
+            .delete(&account)
+            .expect("OS credential store must delete the test item");
         assert!(
             matches!(vault.get(&account), Err(StoreError::SecretNotFound(_))),
             "delete must remove the item"

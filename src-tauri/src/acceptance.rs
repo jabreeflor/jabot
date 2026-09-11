@@ -311,7 +311,7 @@ fn keychain_probe() -> Result<Value, String> {
     let service = keychain_service();
     let mut vault = Secrets::platform();
     let backend = vault.backend().as_str().to_string();
-    let account = "macos-acceptance-probe";
+    let account = "acceptance-probe";
     let secret = "jabot-acceptance-not-a-user-credential";
     match vault.put(account, secret) {
         Ok(()) => {}
