@@ -161,7 +161,7 @@ What you should expect **today**, before the child issues land:
 - A WebView2 window, not WKWebView.
 - Opaque chrome (no glass / Mica).
 - Closing the last window **quits** the process (no hide-to-Dock).
-- Secrets `put` fails closed (`SecretsUnavailable`) — not Credential Manager.
+- Secrets `put` / `get` / `delete` use Credential Manager (`keyring` `windows-native`, #283). Isolated service `JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.*`. Linux still fails closed.
 - Inbox cards persist; **no** toast banner (`notify` is the unsupported no-op).
 - ACP children can start; killing the tree on quit is [#285](https://github.com/jabreeflor/jabot/issues/285), not proven.
 
@@ -183,7 +183,7 @@ any row. Closing a row is the linked child issue, plus the matching cell on
 | **Dock hide** | Close of the last window hides; Dock click / Reopen shows it again (#4) | **Close quits.** `lib.rs` only intercepts `CloseRequested` on macOS. No hide-to-tray, no Dock equivalent | [#280](https://github.com/jabreeflor/jabot/issues/280) (behavior), [#282](https://github.com/jabreeflor/jabot/issues/282) (chrome) |
 | **Signing / SmartScreen** | Developer ID + notarization + stapled ticket; `install.sh` refuses anything else | **Unsigned.** SmartScreen will warn. No Authenticode secret in this repo | [#281](https://github.com/jabreeflor/jabot/issues/281) (artifact); signing is called out there as follow-up |
 | **Notify** | `UNUserNotificationCenter` banners; click-to-thread | **Unsupported no-op** (`notify/unsupported.rs`). Inbox still records the card (persist-then-notify) | [#284](https://github.com/jabreeflor/jabot/issues/284) |
-| Secrets | macOS Keychain, service `com.jabot.app` | `Secrets::Unavailable` — `put` fails closed. In-memory backend is tests/CI only, not persistence | [#283](https://github.com/jabreeflor/jabot/issues/283) |
+| Secrets | macOS Keychain, service `com.jabot.app` | Credential Manager generic credential (`keyring` `windows-native`). Target `{account}.{service}`. In-memory backend is tests/CI only, not persistence | [#283](https://github.com/jabreeflor/jabot/issues/283) (this PR) |
 | Adapter kill tree | Process-group SIGTERM then SIGKILL | `CREATE_NEW_PROCESS_GROUP` on spawn; terminate falls through to `Child::kill()` (parent only). Job objects are the planned fix | [#285](https://github.com/jabreeflor/jabot/issues/285) |
 | Installer / release | `.dmg` + `install.sh` + updater archives from `release.yml` | NSIS `*-setup.exe` from the sibling `windows` release job ([#281](https://github.com/jabreeflor/jabot/issues/281) / [PR #291](https://github.com/jabreeflor/jabot/pull/291)); published after a `v*` tag | [#281](https://github.com/jabreeflor/jabot/issues/281) |
 | Auto-update | `tauri-plugin-updater` registered on macOS only | Plugin is not registered; no `windows-*` feed entry | [#281](https://github.com/jabreeflor/jabot/issues/281) (artifacts first) |

@@ -33,7 +33,7 @@ matrix() {
 cell	stage	owner	evidence
 launch	run (Windows)	human on Win10/11 x64	native window + Tauri IPC. Not live.sh. Not Playwright.
 create-open-bot-chat	run (Windows)	human	standing thread / composer screenshot
-secret-round-trip	run (Windows)	human; blocked on #283	Credential Manager item, isolated service. memory backend is not a pass.
+secret-round-trip	run (Windows)	human; host APIs on #283	Credential Manager item, isolated service. memory backend is not a pass.
 adapter-spawn	run (Windows)	human	fake-acp-agent child pid or adapter stderr
 quit-no-orphans	run (Windows)	human; blocked on #285	no JaBot.exe / adapter / leftover node after exit
 glass-vibrancy	gap	#282	opaque until #282. Do not claim macOS glass.
