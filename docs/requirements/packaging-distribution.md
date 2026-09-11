@@ -1,7 +1,7 @@
 # Packaging: signing, notarization, updater
 
-**Issue:** #12
-**Status:** Partially implemented — `src-tauri/entitlements.plist`, `src-tauri/tauri.conf.json`, `src-tauri/icons/`, `docs/packaging.md`, `scripts/install.sh`
+**Issue:** #12, #281
+**Status:** Partially implemented — `src-tauri/entitlements.plist`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.windows.conf.json`, `src-tauri/icons/`, `docs/packaging.md`, `scripts/install.sh`, `scripts/windows-packaging.sh`
 
 ## What it is
 
@@ -44,9 +44,15 @@ last mile between "builds locally" and "someone else can run it."
    (see the "Working on it" section of the top-level
    [`README.md`](../../README.md)) — packaging must be verifiable via
    local scripts/tooling, not assumed to run on every PR.
+9. Windows ships one NSIS installer (`*-setup.exe`) from the release
+   `windows` job. Identifier and product name stay `com.jabot.app` /
+   `JaBot`. Authenticode / SmartScreen reputation are documented
+   follow-up, not a prerequisite for the unsigned artifact. The Windows
+   job must not write `latest.json`. See [`docs/packaging.md`](../packaging.md).
 
 Windows install, the gap list vs macOS, and the smoke checklist are
 [#287](https://github.com/jabreeflor/jabot/issues/287) /
 [`docs/windows.md`](../windows.md), under tracking epic
-[#280](https://github.com/jabreeflor/jabot/issues/280). This file stays the
-macOS #12 requirements; it does not claim a Windows ship.
+[#280](https://github.com/jabreeflor/jabot/issues/280). This file is the
+macOS #12 + Windows #281 packaging requirements; it does not claim macOS
+parity on Windows.

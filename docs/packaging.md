@@ -1,24 +1,32 @@
-# Packaging: Developer ID signing, notarization, updater
+# Packaging: Developer ID signing, notarization, updater, Windows NSIS
 
-Runbook for [#12](https://github.com/jabreeflor/jabot/issues/12). What ships,
-what secrets it needs, how to cut a release, and how to prove the result is
-actually notarized rather than merely built.
+Runbook for [#12](https://github.com/jabreeflor/jabot/issues/12) (macOS) and
+[#281](https://github.com/jabreeflor/jabot/issues/281) (Windows installer).
+What ships, what secrets it needs, how to cut a release, and how to prove
+the macOS result is actually notarized rather than merely built.
 
-**Channel:** direct download of a signed and notarized universal `.dmg`. Not
-the Mac App Store — the store requires App Sandbox, and a sandboxed app cannot
-exec a harness from the user's PATH or supervise its process group. The
-reasoning is in
+**macOS channel:** direct download of a signed and notarized universal `.dmg`.
+Not the Mac App Store — the store requires App Sandbox, and a sandboxed app
+cannot exec a harness from the user's PATH or supervise its process group.
+The reasoning is in
 [app-shell/process-architecture](research/app-shell/process-architecture.md#packaging).
+
+**Windows channel:** NSIS `*-setup.exe` from the same GitHub Release. One
+primary installer for MVP (not MSI). The build is **unsigned** until an
+Authenticode certificate exists — SmartScreen will warn; that is expected,
+not a packaging bug. See [Windows](#windows-nsis-installer) below.
 
 | Piece | Where it lives |
 |---|---|
-| Release pipeline | [`.github/workflows/release.yml`](../.github/workflows/release.yml) |
+| Release pipeline | [`.github/workflows/release.yml`](../.github/workflows/release.yml) (`macos` + `windows` jobs) |
 | Bundle + updater config | [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json) |
+| Windows bundle overlay | [`src-tauri/tauri.windows.conf.json`](../src-tauri/tauri.windows.conf.json) (NSIS only; merged on Windows) |
 | Entitlements (and the audit) | [`src-tauri/entitlements.plist`](../src-tauri/entitlements.plist) |
-| Update feed | `https://github.com/jabreeflor/jabot/releases/latest/download/latest.json` |
-| Installer (`curl \| bash`) | [`scripts/install.sh`](../scripts/install.sh), uploaded as a release asset |
+| Update feed | `https://github.com/jabreeflor/jabot/releases/latest/download/latest.json` (macOS only) |
+| macOS installer (`curl \| bash`) | [`scripts/install.sh`](../scripts/install.sh), uploaded as a release asset |
 | Packaged-app acceptance (#235) | [`docs/macos-acceptance.md`](macos-acceptance.md), [`scripts/macos-acceptance.sh`](../scripts/macos-acceptance.sh) |
 | Windows install + gaps (#287) | [`docs/windows.md`](windows.md), smoke checklist [`windows-acceptance.md`](windows-acceptance.md). Tracking epic [#280](https://github.com/jabreeflor/jabot/issues/280). |
+| Windows packaging gate (#281) | [`scripts/windows-packaging.sh`](../scripts/windows-packaging.sh) |
 
 ---
 
@@ -175,14 +183,22 @@ headless macOS bundle job, or a Playwright WebKit run, as that step.
    git tag v0.2.0 && git push origin v0.2.0
    ```
 
-4. The `Release` workflow builds `universal-apple-darwin`, signs with hardened
-   runtime and `entitlements.plist`, notarizes through `notarytool`, staples
-   the ticket, and uploads to a **draft** GitHub Release: the `.dmg`, the
-   `.app.tar.gz` + `.sig`, `latest.json`, and `install.sh`.
-5. Download the `.dmg` and run the verification below.
+4. The `Release` workflow runs two sibling jobs against the same draft:
+   - **macos** builds `universal-apple-darwin`, signs with hardened runtime
+     and `entitlements.plist`, notarizes through `notarytool`, staples the
+     ticket, and uploads the `.dmg`, the `.app.tar.gz` + `.sig`,
+     `latest.json`, and `install.sh`.
+   - **windows** builds `x86_64-pc-windows-msvc` with `--bundles nsis` and
+     uploads `JaBot_*_x64-setup.exe`. It does **not** merge
+     `createUpdaterArtifacts` and does not see `TAURI_SIGNING_*` or
+     `APPLE_*`, so it cannot rewrite the macOS feed.
+5. Download the `.dmg` and run the verification below. On a Windows box,
+   run the `*-setup.exe` (SmartScreen → More info → Run anyway) and confirm
+   JaBot lands under the current-user install directory.
 6. **Publish the draft.** Publishing is the act of shipping: it is what makes
-   `releases/latest/download/latest.json` point here, and every installed copy
-   starts offering the update immediately.
+   `releases/latest/download/latest.json` point here, and every installed
+   *macOS* copy starts offering the update immediately. Windows installs do
+   not auto-update yet.
 
 Notarization is the slow part — usually a few minutes, occasionally hours on a
 brand new team. The build waits for it.
@@ -220,12 +236,18 @@ config leaves it off and `release.yml` merges it in with `--config`. If
 `ci.yml`'s bundle job ever grows a `--no-sign` flag, this can move back into
 `tauri.conf.json` where it reads more naturally.
 
-`bundle.targets` is `["app", "dmg"]` for a related reason: on macOS the
-bundler only emits the updater archive when the plain `app` target is in the
-list. With `["dmg"]` alone the build succeeds, logs one warning, and publishes
-a release with no `.app.tar.gz` — a feed nobody can update from. The raw
-`.app` is not uploaded twice; tauri-action drops it once the signed
-`.app.tar.gz` exists.
+`bundle.targets` in `tauri.conf.json` is `["app", "dmg"]` for a related
+reason: on macOS the bundler only emits the updater archive when the plain
+`app` target is in the list. With `["dmg"]` alone the build succeeds, logs
+one warning, and publishes a release with no `.app.tar.gz` — a feed nobody
+can update from. The raw `.app` is not uploaded twice; tauri-action drops it
+once the signed `.app.tar.gz` exists.
+
+Windows NSIS is **not** added to that array. It lives in
+[`tauri.windows.conf.json`](../src-tauri/tauri.windows.conf.json), which
+Tauri merges only on a Windows host, so a macOS `tauri build` never sees
+`nsis` and D-005 stays intact. The release windows job also passes
+`--bundles nsis` so the installer is explicit if the overlay is ignored.
 
 ### Why the test binaries are behind a cargo feature
 
@@ -403,24 +425,120 @@ bolt a post-upload staple onto a file that is already published.
 
 ---
 
-## Windows
+## Windows NSIS installer
 
-The `.dmg` / `install.sh` path above is unchanged. Windows MVP is **one
-NSIS installer** (`JaBot_*_x64-setup.exe`, current-user, unsigned). MSI is
-not built. The overlay, sibling `windows` release job, and artifact checks
-are [#281](https://github.com/jabreeflor/jabot/issues/281) /
-[PR #291](https://github.com/jabreeflor/jabot/pull/291) — that PR extends
-this runbook; do not fork a second copy here.
+[#281](https://github.com/jabreeflor/jabot/issues/281), under the Windows
+desktop tracking epic [#280](https://github.com/jabreeflor/jabot/issues/280).
+NSIS is the one primary Windows installer for MVP. MSI / WiX is not built.
+User-facing install, `tauri dev` prerequisites, the gap list vs macOS, and
+the five-cell smoke checklist live in [`docs/windows.md`](windows.md)
+([#287](https://github.com/jabreeflor/jabot/issues/287)). Sibling Windows
+PRs should update that page rather than contradict this runbook.
+Base `bundle.targets` stays `["app", "dmg"]`; NSIS is the Windows overlay,
+not a second entry in that array (D-005).
 
-User-facing install, the gap list vs macOS (glass, Dock hide,
-signing/SmartScreen, notify), `tauri dev` prerequisites, and the five-cell
-smoke checklist live in [`docs/windows.md`](windows.md) (#287) under
-tracking epic [#280](https://github.com/jabreeflor/jabot/issues/280).
-Sibling Windows PRs should update that page rather than contradict it.
+| | |
+|---|---|
+| Artifact | `JaBot_<version>_x64-setup.exe` |
+| Target | `x86_64-pc-windows-msvc` (Windows 10/11 x64) |
+| Install mode | current user (no admin / UAC) |
+| WebView2 | `downloadBootstrapper` — Windows 11 has it; the installer fetches it on Windows 10 if needed |
+| Signing | **none.** SmartScreen will warn. Authenticode + reputation are a follow-up once a certificate exists. |
+| Auto-update | **not shipped.** The updater plugin is macOS-only (`src-tauri/Cargo.toml` / `lib.rs`). Install a newer setup.exe by hand. |
+| Publisher | `bundle.publisher` in `tauri.conf.json` is `"JaBot"` — a placeholder until there is a legal entity on the cert |
 
-A green macOS release is not a Windows ship. Base `bundle.targets` stays
-`["app", "dmg"]`; NSIS is the Windows overlay, not a second entry in that
-array (D-005).
+Identifier (`com.jabot.app`) and product name (`JaBot`) stay the same as
+macOS. Do not override them in the Windows overlay.
+
+### Build on a Windows machine
+
+Needs the [Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/)
+(MSVC Build Tools, WebView2, Node 26, Rust stable) and Git Bash on `PATH`
+so `npm run bundle:adapters` can run the staging script.
+
+```bat
+npm install
+npm run tauri build
+```
+
+`tauri.windows.conf.json` is merged on that host, so the command produces
+NSIS only — not `app`/`dmg`. Output:
+
+```
+src-tauri/target/release/bundle/nsis/JaBot_<version>_x64-setup.exe
+```
+
+The documented equivalent with an explicit triple (what release CI runs):
+
+```bat
+npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
+```
+
+Do **not** pass `--config {"bundle":{"createUpdaterArtifacts":true}}` on
+Windows. That flag is how the macOS job writes `latest.json`. A Windows
+build that emits updater artifacts would race the macOS job for the same
+asset, and the updater plugin looks up `darwin-*` only.
+
+### Cross-build from Linux or macOS
+
+Possible with NSIS + `cargo-xwin`, not what we run in CI, and not as well
+tested as a Windows runner. Last resort only:
+
+```sh
+rustup target add x86_64-pc-windows-msvc
+cargo install --locked cargo-xwin
+npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
+```
+
+The output then lands under
+`src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/`.
+See [Tauri's Windows installer guide](https://v2.tauri.app/distribute/windows-installer/).
+
+### What the release job does
+
+`.github/workflows/release.yml` `windows` job, on `windows-latest`, parallel
+with `macos`:
+
+1. Same version preflight as macOS (tag must match `tauri.conf.json`).
+2. `npm ci` then tauri-action with `--target x86_64-pc-windows-msvc --bundles nsis`.
+3. Upload the setup.exe to the **same draft** GitHub Release.
+4. `./scripts/windows-packaging.sh artifacts` — the file exists and is
+   non-empty. Not Authenticode, not SmartScreen, not a launched app.
+
+`scripts/windows-packaging.sh check` (inside `./scripts/verify.sh`) is the
+offline gate: overlay targets stay NSIS, macOS `app`/`dmg` stay in the
+base config, the windows job still cannot see `APPLE_*` or `TAURI_SIGNING_*`,
+and it still does not merge `createUpdaterArtifacts`.
+
+### Authenticode / SmartScreen (follow-up)
+
+Not blocked on #281, and not available in this repo today. When a cert
+exists:
+
+1. Store the certificate (or Azure Trusted Signing credentials) as
+   repository secrets. Do **not** commit a thumbprint of a cert we do not
+   have.
+2. Set `bundle.windows.certificateThumbprint` / `signCommand` (or the
+   `TAURI_SIGNING_*` Windows equivalents Tauri documents) only in the
+   windows job, never in the macos job.
+3. Keep `createUpdaterArtifacts` off on Windows until the updater plugin
+   is actually registered there.
+4. Budget time for SmartScreen reputation: a newly signed publisher still
+   warns until enough users have run the binary.
+
+Until then, the release notes and the README tell the user to use More
+info → Run anyway. Do not add a "disable SmartScreen" flag.
+
+### Runtime gaps (not this document)
+
+A Windows installer is not a working Windows product. The rest of #280:
+
+- #282 window chrome without macOS private API / vibrancy — landed (#294)
+- #283 secrets via Credential Manager
+- #284 notifications — landed (#288)
+- #285 ACP adapter process lifecycle (Job Objects)
+- #286 CI verify so the port does not rot (#290, still open)
+- #287 install docs and acceptance checklist — landed (#289)
 
 ## Entitlements
 
