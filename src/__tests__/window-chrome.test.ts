@@ -35,15 +35,21 @@ describe("previewWindowChrome", () => {
 });
 
 describe("inferredWindowChrome", () => {
-  it("is decorated only on a Windows UA", () => {
+  it("stays overlay for a Windows UA outside Tauri (Playwright Desktop Chrome)", () => {
     expect(
-      inferredWindowChrome("Mozilla/5.0 (Macintosh; Intel Mac OS X)"),
+      inferredWindowChrome("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", false),
     ).toBe("overlay");
-    expect(inferredWindowChrome("Mozilla/5.0 (X11; Linux x86_64)")).toBe(
+    expect(inferredWindowChrome("Mozilla/5.0 (X11; Linux x86_64)", false)).toBe(
       "overlay",
     );
+  });
+
+  it("is decorated only for a Windows Tauri webview", () => {
     expect(
-      inferredWindowChrome("Mozilla/5.0 (Windows NT 10.0; Win64; x64)"),
+      inferredWindowChrome("Mozilla/5.0 (Macintosh; Intel Mac OS X)", true),
+    ).toBe("overlay");
+    expect(
+      inferredWindowChrome("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", true),
     ).toBe("decorated");
   });
 });
@@ -58,6 +64,7 @@ describe("resolveWindowChrome", () => {
         null,
         "?chrome=overlay",
         "Mozilla/5.0 (Windows NT 10.0)",
+        true,
       ),
     ).toBe("overlay");
   });
@@ -67,10 +74,13 @@ describe("resolveWindowChrome", () => {
     expect(resolveWindowChrome("overlay", "")).toBe("overlay");
   });
 
-  it("falls back to the UA, then overlay", () => {
-    expect(resolveWindowChrome(null, "", "Mozilla/5.0 (Windows NT 10.0)")).toBe(
-      "decorated",
-    );
+  it("falls back to Tauri+Windows, then overlay", () => {
+    expect(
+      resolveWindowChrome(null, "", "Mozilla/5.0 (Windows NT 10.0)", true),
+    ).toBe("decorated");
+    expect(
+      resolveWindowChrome(null, "", "Mozilla/5.0 (Windows NT 10.0)", false),
+    ).toBe("overlay");
     expect(resolveWindowChrome(null, "", "Mozilla/5.0 (X11; Linux)")).toBe(
       "overlay",
     );

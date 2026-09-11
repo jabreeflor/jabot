@@ -114,12 +114,13 @@
           </span>
         </div>
         <div class="step">
-          <strong>2. Cargo feature is macos-only</strong>
+          <strong>2. Private API is unused off macOS</strong>
           <span>
-            The untargeted <code>tauri</code> dep has no
-            <code>macos-private-api</code>. The
-            <code>cfg(target_os = "macos")</code> spec turns it on for the
-            overlay frame. A Windows/Linux compile does not take the feature.
+            <code>macos-private-api</code> stays on the untargeted
+            <code>tauri</code> dep because tauri-build's allowlist reads the
+            TOML (a Mac clippy fails without it). Windows/Linux never call
+            it: <code>window.rs</code> returns before clearing the fill, and
+            the Windows config is a decorated opaque window.
           </span>
         </div>
         <div class="step">
@@ -166,8 +167,7 @@
           <tr>
             <td><code>src-tauri/Cargo.toml</code></td>
             <td>
-              <code>macos-private-api</code> only under
-              <code>cfg(target_os = "macos")</code>.
+              Allowlist string for tauri-build; unused off macOS.
             </td>
           </tr>
           <tr>

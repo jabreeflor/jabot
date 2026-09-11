@@ -30,10 +30,13 @@ dev-bins = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# macos-private-api stays off this untargeted line. Windows/Linux builds
-# must not take it (#282); the macos-only spec below turns it on for the
-# overlay title bar and under-window vibrancy.
-tauri = { version = "2" }
+# tauri-build's allowlist reads this features list from the TOML, not the
+# resolved target graph. macOSPrivateApi lives in tauri.macos.conf.json, so
+# `cargo clippy --lib` on a Mac fails unless the string is here. The
+# Windows/Linux *window* does not use the API: platform configs stay
+# decorated/opaque, and window.rs returns before touching the webview fill
+# (#282). Off Apple the feature is a compile flag, not a private-API call.
+tauri = { version = "2", features = ["macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -43,7 +46,6 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 rfd = "0.15"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2", features = ["macos-private-api"] }
 keyring = { version = "3", default-features = false, features = ["apple-native"] }
 # Ships the update check against the signed release feed configured in
 # tauri.conf.json. macOS-only alongside keyring so the Linux e2e build of

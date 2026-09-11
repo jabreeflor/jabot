@@ -554,15 +554,15 @@ for (const want of ['jabot-hostd', 'fake-acp-agent']) {
   if (!bins.some((t) => t.name === want)) bad(`${C}: bin target ${want} is gone; scripts/verify.sh builds it`);
 }
 
-// #282: macos-private-api on the untargeted tauri dep makes every
-// Windows/Linux compile take a feature those platforms do not need.
+// #282: tauri-build's allowlist reads the untargeted tauri features
+// list, not the resolved target graph. macOSPrivateApi is in
+// tauri.macos.conf.json, so a Mac `cargo clippy --lib` dies unless
+// macos-private-api is spelled here. Windows chrome still does not
+// *use* the API — that is the platform configs + window.rs cfg!.
 const cargoToml = fs.readFileSync(C, 'utf8');
 const untargeted = cargoToml.split(/\[target\./)[0];
-if (/tauri\s*=\s*\{[^}]*macos-private-api/.test(untargeted)) {
-  bad(`${C}: macos-private-api is on the default tauri dependency; Windows/Linux builds must not require it (#282)`);
-}
-if (!/target_os\s*=\s*"macos"[\s\S]*macos-private-api/.test(cargoToml)) {
-  bad(`${C}: macos-private-api must stay on the macos-only tauri dependency (#282)`);
+if (!/tauri\s*=\s*\{[^}]*macos-private-api/.test(untargeted)) {
+  bad(`${C}: macos-private-api must stay on the untargeted tauri dependency — tauri-build's allowlist reads the TOML, and a Mac clippy fails without it when ${macT} sets macOSPrivateApi (#282)`);
 }
 
 if (errs.length) {

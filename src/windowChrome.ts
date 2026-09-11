@@ -29,27 +29,39 @@ export function previewWindowChrome(
   }
 }
 
+/** True only inside the Tauri webview, never in live.sh / Playwright / jsdom. */
+export function isTauriRuntime(
+  global: object | null = typeof window === "undefined" ? null : window,
+): boolean {
+  return global !== null && "__TAURI_INTERNALS__" in global;
+}
+
 /**
- * First-paint guess before the host answers. Windows UA is decorated so
- * the title-bar inset does not flash on; everything else stays overlay
- * (live.sh on Linux/macOS, jsdom, the shipping Mac app).
+ * First-paint guess before the host answers. Decorated only for a real
+ * Windows Tauri webview — Playwright's Desktop Chrome device uses a
+ * Windows UA on Linux, and that must stay the overlay shell or every
+ * Chromium visual baseline shifts.
  */
 export function inferredWindowChrome(
   userAgent: string = typeof navigator === "undefined"
     ? ""
     : navigator.userAgent,
+  inTauri: boolean = isTauriRuntime(),
 ): WindowChrome {
-  return /Windows/i.test(userAgent) ? "decorated" : "overlay";
+  return inTauri && /Windows/i.test(userAgent) ? "decorated" : "overlay";
 }
 
-/** Preview wins, then the host, then the UA guess, then overlay. */
+/** Preview wins, then the host, then the Tauri+Windows guess, then overlay. */
 export function resolveWindowChrome(
   native: WindowChrome | null,
   search?: string,
   userAgent?: string,
+  inTauri?: boolean,
 ): WindowChrome {
   return (
-    previewWindowChrome(search) ?? native ?? inferredWindowChrome(userAgent)
+    previewWindowChrome(search) ??
+    native ??
+    inferredWindowChrome(userAgent, inTauri)
   );
 }
 
