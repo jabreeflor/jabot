@@ -347,6 +347,7 @@ mod windows_job {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn process_alive(pid: u32) -> bool {
         // SAFETY: query-only; we close the handle before returning.
         unsafe {

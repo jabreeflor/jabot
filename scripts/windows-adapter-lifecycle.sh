@@ -47,6 +47,10 @@ check() {
   need_text src-tauri/src/host/procgroup.rs '#[cfg(windows)]'
   need_text src-tauri/src/host/acp/spawn.rs 'kill_group_reaps_grandchild'
   need_text src-tauri/src/host/acp/spawn.rs 'kill_job_reaps_grandchild'
+  # `cargo test --features dev-bins` builds jabot-hostd. The accept loop is
+  # unix-only; the call site must stay behind the same cfg so Windows compiles.
+  need_text src-tauri/src/bin/jabot-hostd.rs '#[cfg(unix)]'
+  need_text src-tauri/src/bin/jabot-hostd.rs 'spawn_accept_loop'
   need_text src-tauri/src/host/harness/mod.rs 'PATHEXT'
   need_text src-tauri/src/host/harness/mod.rs 'resolve_in_dir'
   need_text .github/workflows/ci.yml 'windows-latest'
