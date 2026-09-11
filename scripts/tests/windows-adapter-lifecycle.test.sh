@@ -56,10 +56,38 @@ script_is_executable() {
   [[ -x "$SCRIPT" ]] || { fail "$SCRIPT is not executable"; return 1; }
 }
 
+run_rejects_zero_matches() {
+  grep -q 'running 0 tests' "$SCRIPT" \
+    || { fail "run does not reject libtest 0-match success"; return 1; }
+  grep -q 'require_tests_ran' "$SCRIPT" \
+    || { fail "run lost require_tests_ran"; return 1; }
+}
+
+filters_are_platform_gated() {
+  grep -Eq 'on_windows|Windows_NT|MINGW' "$SCRIPT" \
+    || { fail "run does not platform-gate unix/windows filters"; return 1; }
+  grep -q 'unix_only' "$SCRIPT" \
+    || { fail "run lost the unix-only filter list"; return 1; }
+  grep -q 'windows_only' "$SCRIPT" \
+    || { fail "run lost the windows-only filter list"; return 1; }
+}
+
+birth_into_job_is_contracted() {
+  grep -q 'CREATE_SUSPENDED' "$REPO_ROOT/src-tauri/src/host/procgroup.rs" \
+    || { fail "procgroup.rs lost CREATE_SUSPENDED birth-into-job"; return 1; }
+  grep -q 'ResumeThread' "$REPO_ROOT/src-tauri/src/host/procgroup.rs" \
+    || { fail "procgroup.rs lost ResumeThread"; return 1; }
+  grep -q 'job_assigned' "$REPO_ROOT/src-tauri/src/host/acp/spawn.rs" \
+    || { fail "spawn.rs lost the job_assigned assertion"; return 1; }
+}
+
 run_case "check_passes"              check_passes
 run_case "check_names_job_objects"   check_names_job_objects
 run_case "unknown_command_fails"     unknown_command_fails
 run_case "script_is_executable"      script_is_executable
+run_case "run_rejects_zero_matches"  run_rejects_zero_matches
+run_case "filters_are_platform_gated" filters_are_platform_gated
+run_case "birth_into_job_is_contracted" birth_into_job_is_contracted
 
 printf '\n%d cases, %d failed\n' "$COUNT" "$FAILURES"
 [[ "$FAILURES" -eq 0 ]]

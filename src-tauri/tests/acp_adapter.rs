@@ -461,6 +461,34 @@ fn shutdown_kills_adapter() {
     );
 }
 
+/// Parse `tasklist /FO CSV /NH` and match the PID *field*, not a substring
+/// (`123` must not match `1234`).
+fn tasklist_csv_reports_pid(stdout: &str, pid: u32) -> bool {
+    let pid_s = pid.to_string();
+    stdout.lines().any(|line| {
+        let mut fields = line.split(',');
+        let Some(_image) = fields.next() else {
+            return false;
+        };
+        let Some(pid_field) = fields.next() else {
+            return false;
+        };
+        pid_field.trim().trim_matches('"') == pid_s
+    })
+}
+
+#[test]
+fn tasklist_csv_matches_the_pid_field_not_a_substring() {
+    let row = "\"ping.exe\",\"1234\",\"Console\",\"1\",\"2,345 K\"\r\n";
+    assert!(tasklist_csv_reports_pid(row, 1234));
+    assert!(!tasklist_csv_reports_pid(row, 123));
+    assert!(!tasklist_csv_reports_pid(row, 12345));
+    assert!(!tasklist_csv_reports_pid(
+        "INFO: No tasks are running which match the specified criteria.\r\n",
+        1234
+    ));
+}
+
 fn process_is_running(pid: u32) -> bool {
     #[cfg(unix)]
     {
@@ -484,7 +512,7 @@ fn process_is_running(pid: u32) -> bool {
         match output {
             Ok(output) => {
                 let text = String::from_utf8_lossy(&output.stdout);
-                text.contains(&pid.to_string())
+                tasklist_csv_reports_pid(&text, pid)
             }
             Err(_) => false,
         }

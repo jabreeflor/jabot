@@ -224,6 +224,9 @@ mod tests {
     /// `UseShellExecute = $false` (CreateProcess, stays in the job) dies when
     /// we terminate the adapter. `Start-Process` without that flag can break
     /// away — that is the footgun this test is aimed at.
+    ///
+    /// Asserts `job_assigned` so a nested-job assign failure cannot hide
+    /// behind `taskkill /T` and still look like Job Object proof.
     #[cfg(windows)]
     #[test]
     fn kill_job_reaps_grandchild() {
@@ -280,12 +283,105 @@ mod tests {
             process_alive(grandchild),
             "grandchild {grandchild} should be running before kill"
         );
+        assert!(
+            spawned.child.job_assigned(),
+            "Job Object assign failed ({}); parent job likely forbids nesting. \
+             taskkill /T is not Job Object proof — this test must not pass via fallback.",
+            spawned
+                .child
+                .job_assign_error()
+                .unwrap_or("no error recorded")
+        );
 
         terminate_process_group(&mut spawned.child);
         thread::sleep(Duration::from_millis(200));
         assert!(
             !process_alive(grandchild),
             "grandchild {grandchild} survived Job Object kill"
+        );
+    }
+
+    /// Nested-job / CI-sandbox path: the wrapper exits during the grace
+    /// window and the job was never assigned. `taskkill /T` must still reap
+    /// the grandchild — the leak #293 called out.
+    #[cfg(windows)]
+    #[test]
+    fn taskkill_fallback_reaps_grandchild_after_wrapper_exits() {
+        use crate::host::procgroup::spawn_unassigned_for_test;
+
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("grand.pid");
+        let script = dir.path().join("grand.ps1");
+        std::fs::write(
+            &script,
+            format!(
+                "$info = New-Object System.Diagnostics.ProcessStartInfo\n\
+                 $info.FileName = 'ping.exe'\n\
+                 $info.Arguments = '-n 120 127.0.0.1'\n\
+                 $info.UseShellExecute = $false\n\
+                 $info.CreateNoWindow = $true\n\
+                 $p = [System.Diagnostics.Process]::Start($info)\n\
+                 Set-Content -LiteralPath '{}' -Value $p.Id\n\
+                 exit 0\n",
+                pidfile.display()
+            ),
+        )
+        .unwrap();
+        let mut cmd = Command::new("powershell");
+        cmd.args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script.display().to_string(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+        let mut child = spawn_unassigned_for_test(&mut cmd).unwrap();
+        assert!(
+            !child.job_assigned(),
+            "fixture must be the unassigned taskkill path"
+        );
+
+        let mut grandchild = None;
+        let mut wrapper_exited = false;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if grandchild.is_none() {
+                if let Ok(raw) = std::fs::read_to_string(&pidfile) {
+                    if let Ok(pid) = raw.trim().parse::<u32>() {
+                        grandchild = Some(pid);
+                    }
+                }
+            }
+            if !wrapper_exited {
+                match child.try_wait() {
+                    Ok(Some(_)) => wrapper_exited = true,
+                    Ok(None) => {}
+                    Err(_) => wrapper_exited = true,
+                }
+            }
+            if grandchild.is_some() && wrapper_exited {
+                break;
+            }
+            thread::sleep(Duration::from_millis(40));
+        }
+        let grandchild = grandchild.expect("grandchild pid file");
+        assert!(
+            wrapper_exited,
+            "wrapper must have exited before terminate so this is the leak case"
+        );
+        assert!(
+            process_alive(grandchild),
+            "grandchild {grandchild} should be running after wrapper exit"
+        );
+
+        crate::host::procgroup::terminate(&mut child);
+        thread::sleep(Duration::from_millis(200));
+        assert!(
+            !process_alive(grandchild),
+            "grandchild {grandchild} survived taskkill fallback after wrapper exit"
         );
     }
 

@@ -835,6 +835,11 @@ mod tests {
         assert!(looks_like_path(std::path::Path::new("foo/bar")));
         assert!(!looks_like_path(std::path::Path::new("node")));
         assert!(!looks_like_path(std::path::Path::new("claude-agent-acp")));
+        #[cfg(windows)]
+        {
+            assert!(looks_like_path(std::path::Path::new(r"foo\bar")));
+            assert!(looks_like_path(std::path::Path::new(r"C:\Users\acp")));
+        }
     }
 
     fn mark_executable(path: &std::path::Path) {

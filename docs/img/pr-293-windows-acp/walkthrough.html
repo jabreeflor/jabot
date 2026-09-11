@@ -83,7 +83,8 @@
       thread and killed a Unix process group. Windows only set
       <code>CREATE_NEW_PROCESS_GROUP</code> and then <code>Child::kill()</code> —
       one PID, so Node/.cmd grandchildren leaked. This PR adds a real kill-tree
-      and fixes PATHEXT / path separators. Unix is unchanged.
+      and fixes PATHEXT / path separators. Unix teardown is the original
+      SIGTERM-then-return (no immediate SIGKILL of the group).
     </p>
 
     <h2>How it works</h2>
@@ -98,15 +99,18 @@
       <div class="box">
         <span class="tag win">Windows (#285)</span>
         <strong>Job Object</strong>
-        Nameless job with <code>KILL_ON_JOB_CLOSE</code>. Assign after spawn.
-        Descendants inherit unless they break away.
+        Nameless job with <code>KILL_ON_JOB_CLOSE</code>.
+        <code>CREATE_SUSPENDED</code> → assign → <code>ResumeThread</code>
+        (birth-into-job). Descendants inherit unless they break away.
       </div>
       <div class="arrow">→</div>
       <div class="box">
         <span class="tag warn">Then teardown</span>
         <strong>CTRL_BREAK + terminate</strong>
-        Grace via <code>GenerateConsoleCtrlEvent</code>, then
-        <code>TerminateJobObject</code>. Fallback: <code>taskkill /T /F</code>.
+        Grace via <code>GenerateConsoleCtrlEvent</code> (skipped when it
+        fails), then <code>TerminateJobObject</code>. Fallback:
+        <code>taskkill /T /F</code> whenever the job was not assigned —
+        including after the wrapper pid has already exited.
       </div>
     </div>
 
@@ -171,7 +175,7 @@
     <div class="card">
       <ul>
         <li><code>./scripts/windows-adapter-lifecycle.sh check</code> — offline contract (Job Object docs, cfg branches, PATHEXT, CI job). In <code>verify.sh</code>.</li>
-        <li><code>./scripts/windows-adapter-lifecycle.sh run</code> — cargo tests. On Linux: Unix kill-group + portable PATHEXT/CRLF. On <code>windows-latest</code>: Job Object kill-tree + stdio teardown.</li>
+        <li><code>./scripts/windows-adapter-lifecycle.sh run</code> — cargo tests. Required filters that match 0 tests fail. Unix-only names are not invoked on Windows. On <code>windows-latest</code>: Job Object kill-tree must assert <code>job.assigned</code>; separate <code>taskkill</code> fallback coverage.</li>
         <li><code>cargo test --manifest-path src-tauri/Cargo.toml --features dev-bins --test acp_adapter -- shutdown_kills_adapter</code></li>
         <li><code>./scripts/verify.sh</code> — the usual gate. Screenshot evidence skipped: no visual surface.</li>
       </ul>

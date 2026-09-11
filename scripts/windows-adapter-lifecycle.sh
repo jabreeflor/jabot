@@ -5,9 +5,10 @@
 #   check  Offline contract: Job Objects are still the documented kill-tree,
 #          cfg(unix) / cfg(windows) stay explicit, PATHEXT is consulted, and
 #          CI still has a windows-latest job. Runs on Linux.
-#   run    cargo test the spawn + teardown cases. On windows-latest that is
-#          the Job Object proof; on Unix it is the process-group cases plus
-#          the portable PATHEXT / CRLF tests. Needs a Rust toolchain.
+#   run    cargo test the spawn + teardown cases. Required filters that match
+#          0 tests fail the run (libtest exits 0 on no matches). Unix-only
+#          names are not invoked on Windows and vice versa. Needs a Rust
+#          toolchain.
 #
 # Not the full Windows verify (#286). This script is only the adapter
 # lifecycle slice the issue asked for.
@@ -17,7 +18,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
 
 usage() {
-  sed -n '3,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '3,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 die() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
@@ -34,6 +35,13 @@ need_text() {
   grep -Fq -- "$needle" "$path" || die "$path does not mention $needle"
 }
 
+on_windows() {
+  case "${OS:-}$(uname -s 2>/dev/null || true)" in
+    Windows_NT*|MINGW*|MSYS*|CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 check() {
   need_file src-tauri/src/host/procgroup.rs
   need_file src-tauri/src/host/acp/spawn.rs
@@ -42,11 +50,16 @@ check() {
 
   need_text src-tauri/src/host/procgroup.rs 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE'
   need_text src-tauri/src/host/procgroup.rs 'CREATE_NEW_PROCESS_GROUP'
+  need_text src-tauri/src/host/procgroup.rs 'CREATE_SUSPENDED'
+  need_text src-tauri/src/host/procgroup.rs 'ResumeThread'
   need_text src-tauri/src/host/procgroup.rs 'taskkill'
   need_text src-tauri/src/host/procgroup.rs '#[cfg(unix)]'
   need_text src-tauri/src/host/procgroup.rs '#[cfg(windows)]'
+  need_text src-tauri/src/host/procgroup.rs 'Ok(Some(_)) => return'
   need_text src-tauri/src/host/acp/spawn.rs 'kill_group_reaps_grandchild'
   need_text src-tauri/src/host/acp/spawn.rs 'kill_job_reaps_grandchild'
+  need_text src-tauri/src/host/acp/spawn.rs 'job_assigned'
+  need_text src-tauri/src/host/acp/spawn.rs 'taskkill_fallback_reaps_grandchild'
   # `cargo test --features dev-bins` builds jabot-hostd. The accept loop is
   # unix-only; the call site must stay behind the same cfg so Windows compiles.
   need_text src-tauri/src/bin/jabot-hostd.rs '#[cfg(unix)]'
@@ -64,31 +77,82 @@ check() {
   pass "windows adapter lifecycle contract"
 }
 
+# libtest exits 0 on zero matches. A renamed required filter used to keep
+# CI green. Fail that case explicitly.
+require_tests_ran() {
+  local filter=$1
+  local out=$2
+  if printf '%s\n' "$out" | grep -Eq 'running 0 tests'; then
+    die "required filter '$filter' matched 0 tests (libtest exits 0 on no matches)"
+  fi
+}
+
+run_required_lib_test() {
+  local name=$1
+  local out status
+  printf '> cargo test --lib %s\n' "$name"
+  set +e
+  out=$(cargo test "${CARGO_TEST_MANIFEST[@]}" --lib -- "$name" 2>&1)
+  status=$?
+  set -e
+  printf '%s\n' "$out"
+  require_tests_ran "$name" "$out"
+  [[ "$status" -eq 0 ]] || die "cargo test --lib $name failed"
+}
+
+run_required_integration_test() {
+  local harness=$1
+  local name=$2
+  local out status
+  printf '> cargo test --test %s %s\n' "$harness" "$name"
+  set +e
+  out=$(cargo test "${CARGO_TEST_MANIFEST[@]}" --test "$harness" -- "$name" 2>&1)
+  status=$?
+  set -e
+  printf '%s\n' "$out"
+  require_tests_ran "$name" "$out"
+  [[ "$status" -eq 0 ]] || die "cargo test --test $harness $name failed"
+}
+
 run_tests() {
   # One cargo invocation per filter. A single `a|b|c` string is a libtest
   # regex only after `--`, and a cargo TESTNAME otherwise — keep them
   # separate so a typo in one name cannot silently skip the rest.
-  local manifest=(--manifest-path src-tauri/Cargo.toml --features dev-bins --locked)
+  # Not `local`: helpers above read this array.
+  CARGO_TEST_MANIFEST=(--manifest-path src-tauri/Cargo.toml --features dev-bins --locked)
   local name
-  for name in \
-    kill_group_reaps_grandchild \
-    kill_job_reaps_grandchild \
-    stderr_log_accepts_windows \
-    snapshotted_env \
-    pathext_ \
-    excerpt_treats_crlf \
-    windows_cmd_not_recognized \
-    probe_finds_sh \
-    resolve_finds_a_binary \
-    a_name_with_separators \
+  local portable=(
+    stderr_log_accepts_windows
+    pathext_
+    excerpt_treats_crlf
+    windows_cmd_not_recognized
+    probe_finds_sh
+    resolve_finds_a_binary
+    a_name_with_separators
     an_absolute_path_is_taken
-  do
-    printf '> cargo test --lib %s\n' "$name"
-    cargo test "${manifest[@]}" --lib -- "$name"
-  done
+    extra_windows_dirs
+  )
+  local unix_only=(
+    kill_group_reaps_grandchild
+    snapshotted_env
+  )
+  local windows_only=(
+    kill_job_reaps_grandchild
+    taskkill_fallback_reaps_grandchild
+  )
 
-  printf '> cargo test --test acp_adapter shutdown_kills_adapter\n'
-  cargo test "${manifest[@]}" --test acp_adapter -- shutdown_kills_adapter
+  if on_windows; then
+    for name in "${windows_only[@]}" "${portable[@]}"; do
+      run_required_lib_test "$name"
+    done
+  else
+    for name in "${unix_only[@]}" "${portable[@]}"; do
+      run_required_lib_test "$name"
+    done
+  fi
+
+  run_required_integration_test acp_adapter shutdown_kills_adapter
+  run_required_integration_test acp_adapter tasklist_csv
 }
 
 case "${1:-check}" in
