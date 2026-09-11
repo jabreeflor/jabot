@@ -69,7 +69,7 @@
         <div><strong>bot chat</strong>Create or open a standing thread.</div>
         <div><strong>secret</strong>OS store round-trip. Memory backend is not a pass. #283.</div>
         <div><strong>adapter</strong>ACP child starts. fake-acp is enough.</div>
-        <div><strong>quit</strong>No JaBot.exe / leftover node. #285.</div>
+        <div><strong>quit</strong>Close last window (no File menu). No leftover node. #285.</div>
       </div>
     </section>
 
@@ -95,8 +95,8 @@
         <tbody>
           <tr><td>Release NSIS <code>JaBot_*_x64-setup.exe</code></td><td>Not on <code>main</code> until #281. Current-user, unsigned. SmartScreen → More info → Run anyway. No MSI.</td></tr>
           <tr><td><code>scripts/install.sh</code></td><td>macOS-only (<code>hdiutil</code>, <code>codesign</code>, <code>spctl</code>). Do not invent a Windows <code>curl | bash</code>.</td></tr>
-          <tr><td><code>npm run tauri dev</code></td><td>MSVC build tools + Windows SDK, WebView2, Rust <code>x86_64-pc-windows-msvc</code>, Node 26, <code>bundle:adapters</code>.</td></tr>
-          <tr><td><code>scripts/live.sh</code></td><td>Renderer + <code>jabot-hostd</code> on any OS. Not a native <code>.exe</code>. Not this checklist.</td></tr>
+          <tr><td><code>npm run tauri dev</code></td><td>MSVC + SDK, WebView2, Rust MSVC, Node 26. <code>bundle:adapters</code> is bash (<code>bundle-adapters.sh</code>) — Git Bash, or blocked until #281 / PR #291.</td></tr>
+          <tr><td><code>scripts/live.sh</code></td><td>Bash-only. <code>setup</code> is Linux/Darwin; MINGW/MSYS is unknown platform and does not install Windows build tools. Not a native <code>.exe</code>.</td></tr>
         </tbody>
       </table>
     </section>

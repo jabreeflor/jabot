@@ -20,17 +20,9 @@ die() { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 say() { printf '%s\n' "$*"; }
 ok()  { printf '\033[32mPASS\033[0m %s\n' "$*"; }
 
-FAILED=()
 CMD=${1:-}
 [[ -n "$CMD" ]] || { sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 shift || true
-
-is_windows() {
-  case "$(uname -s 2>/dev/null || true)" in
-    MINGW*|MSYS*|CYGWIN*|Windows_NT) return 0 ;;
-  esac
-  [[ -n "${WINDIR:-}" ]] || return 1
-}
 
 # ---------------------------------------------------------------------------
 # Matrix. Five cells only. Growing this without updating the docs is a fail.
@@ -61,7 +53,7 @@ Parent: #280. Smaller than macos-acceptance.md. This is not macOS parity.
 - [ ] create/open bot chat — standing thread visible, composer works
 - [ ] secret round-trip — isolated Credential Manager item (#283); memory backend does not count
 - [ ] adapter spawn — fake-acp-agent (or a real harness) is a live child
-- [ ] quit, no orphans — after exit, no JaBot.exe / adapter / leftover node from that session
+- [ ] quit, no orphans — after closing the last window, no JaBot.exe / adapter / leftover node from that session
 
 Gaps to record, not to paper over:
 
@@ -112,8 +104,32 @@ for (const word of [
   '#281',
   'packaging.md',
   'windows-acceptance.md',
+  'NSIS',
+  'JaBot_*_x64-setup.exe',
+  'current-user',
 ]) {
   if (!docs.includes(word)) bad(`docs/windows.md is missing "${word}"`);
+}
+
+if (!readme.includes('JaBot_*_x64-setup.exe')) {
+  bad('README.md does not name the NSIS artifact JaBot_*_x64-setup.exe');
+}
+
+if (/\[#281\]\([^)]*\/pull\//.test(docs) || /\[#281\]\([^)]*\/pull\//.test(accept)
+    || /\[#281\]\([^)]*\/pull\//.test(readme) || /\[#281\]\([^)]*\/pull\//.test(packaging)) {
+  bad('#281 must link to /issues/281, not a /pull/ URL (PR #291 is named separately)');
+}
+
+if (/File → Exit/.test(accept) || /File -> Exit/.test(accept)) {
+  bad('docs/windows-acceptance.md must not invent a File → Exit menu');
+}
+
+if (/works on Windows the same way it does on Linux/.test(docs)) {
+  bad('docs/windows.md must not claim live.sh Windows parity with Linux');
+}
+
+if (!/Git Bash/.test(docs) || !/bundle-adapters\.sh/.test(docs)) {
+  bad('docs/windows.md must say bundle:adapters is bash / Git Bash, not a PowerShell copy-paste');
 }
 
 if (!docs.includes('does **not** claim macOS parity')
@@ -258,9 +274,3 @@ case "$CMD" in
   -h|--help) sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
   *) die "unknown command: $CMD (try --help)" ;;
 esac
-
-if [[ ${#FAILED[@]} -gt 0 ]]; then
-  printf '\033[31m=== %d failed ===\033[0m\n' "${#FAILED[@]}"
-  printf '  - %s\n' "${FAILED[@]}"
-  exit 1
-fi

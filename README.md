@@ -47,7 +47,7 @@ The scaffold (#7) lives at the repo root:
 ```bash
 # Node 26 (Current). `.nvmrc` / `.node-version` match CI.
 npm install
-npm run tauri dev    # macOS dev (requires Tauri prerequisites)
+npm run tauri dev    # native window (macOS today; Windows: docs/windows.md)
 npm run build        # frontend-only build (CI / Linux)
 ```
 

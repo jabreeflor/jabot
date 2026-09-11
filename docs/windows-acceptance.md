@@ -30,7 +30,7 @@ touch Credential Manager, and never prove a process tree died with the
 | **create/open bot chat** | New or existing bot thread opens and can take a message | UI is shared; WebView2 must actually paint it | Screenshot of the standing thread / composer |
 | **secret round-trip** | `put` then `get` of a throwaway secret via the **OS** store | [#283](https://github.com/jabreeflor/jabot/issues/283). Today `Secrets::Unavailable` | Credential Manager item under an isolated service, not `JABOT_SECRETS_BACKEND=memory` |
 | **adapter spawn** | An ACP child starts for that thread (`fake-acp-agent` is enough) | Spawn flags exist; tree-kill is [#285](https://github.com/jabreeflor/jabot/issues/285) | Adapter stderr log or a live child pid |
-| **quit, no orphans** | File → Exit / closing the last window leaves no `JaBot.exe` and no adapter / `node` grandchild | [#285](https://github.com/jabreeflor/jabot/issues/285). Close already quits the host; grandchildren may leak | `tasklist` / Process Explorer empty of those pids |
+| **quit, no orphans** | Closing the last window leaves no `JaBot.exe` and no adapter / `node` grandchild. There is no native File menu and no Exit item; `CloseRequested` is intercepted on macOS only, so last-window close quits | [#285](https://github.com/jabreeflor/jabot/issues/285). Close already quits the host; grandchildren may leak | `tasklist` / Process Explorer empty of those pids |
 
 Owner of every cell: a human on a Windows 10/11 x64 box. Linux CI can only
 prove this document and the script still *name* the cells
@@ -100,7 +100,7 @@ Printable copy: `./scripts/windows-acceptance.sh checklist`.
 - [ ] **create/open bot chat** — standing thread visible, composer works
 - [ ] **secret round-trip** — isolated Credential Manager item (#283); memory backend does not count
 - [ ] **adapter spawn** — `fake-acp-agent` (or a real harness) is a live child
-- [ ] **quit, no orphans** — after exit, no `JaBot.exe` / adapter / leftover `node` from that session
+- [ ] **quit, no orphans** — after closing the last window, no `JaBot.exe` / adapter / leftover `node` from that session
 
 Also record, so the gap list stays honest:
 

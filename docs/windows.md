@@ -15,15 +15,17 @@ what is actually wired.
 | Smoke checklist | [windows-acceptance.md](windows-acceptance.md) |
 | macOS packaged-app gate (not this) | [macos-acceptance.md](macos-acceptance.md) |
 | macOS signing / notarization / updater | [packaging.md](packaging.md) |
-| Any-OS renderer + host (no native window) | [CONTRIBUTING.md](../CONTRIBUTING.md) (`scripts/live.sh`) |
+| Renderer + host without a native window | [CONTRIBUTING.md](../CONTRIBUTING.md) (`scripts/live.sh`; bash, not Windows-tooling setup) |
 
 Sibling Windows PRs should **update the gap table below** rather than open a
 second Windows install page.
 
-- [#281](https://github.com/jabreeflor/jabot/pull/291) owns the NSIS overlay
-  (`tauri.windows.conf.json`), the `windows` release job, and the packaging
-  runbook in [packaging.md](packaging.md). This page is the user/dev install
-  + gaps + smoke list that PR points at.
+- [#281](https://github.com/jabreeflor/jabot/issues/281) is the packaging
+  ticket. [PR #291](https://github.com/jabreeflor/jabot/pull/291) is the
+  implementation: the NSIS overlay (`tauri.windows.conf.json` once that PR
+  lands), the `windows` release job, and the packaging runbook in
+  [packaging.md](packaging.md). This page is the user/dev install + gaps +
+  smoke list that PR should point at.
 - [#282](https://github.com/jabreeflor/jabot/issues/282)–[#286](https://github.com/jabreeflor/jabot/issues/286)
   close chrome, secrets, toasts, kill-tree, and CI. When they land, flip the
   matching row here instead of restating install.
@@ -39,20 +41,23 @@ second Windows install page.
 | Webview | Edge **WebView2** (preinstalled on Windows 11 and current Windows 10) |
 | Not yet | ARM64 Windows, Windows Server, Windows 10 LTSC without WebView2, 32-bit |
 
-Those floors match [Tauri 2's Windows prerequisites](https://v2.tauri.app/start/prerequisites/).
-They are a proposal until a Windows installer actually ships (#281); do not
-treat them as a tested compatibility matrix.
+[Tauri 2's Windows prerequisites](https://v2.tauri.app/start/prerequisites/)
+document **Windows 7+**. The **1803 / 17134** line above is JaBot's
+proposed floor (WebView2 preinstalled on current Windows 10), not Tauri's
+OS floor. They are a proposal until a Windows installer actually ships
+(#281); do not treat them as a tested compatibility matrix.
 
 ---
 
 ## Install the artifact
 
 **Primary installer: NSIS `JaBot_*_x64-setup.exe`.** MSI / WiX is not an
-MVP target. The macOS `bundle.targets` stay `["app", "dmg"]`; Windows NSIS
-lives in `src-tauri/tauri.windows.conf.json` and is merged only on a
-Windows build ([#281](https://github.com/jabreeflor/jabot/issues/281) /
-[PR #291](https://github.com/jabreeflor/jabot/pull/291)). Until that PR
-is on `main`, GitHub Releases will not have a Windows asset.
+MVP target. The macOS `bundle.targets` stay `["app", "dmg"]`. Windows NSIS
+will live in the `src-tauri/tauri.windows.conf.json` overlay
+[PR #291](https://github.com/jabreeflor/jabot/pull/291) adds for
+[#281](https://github.com/jabreeflor/jabot/issues/281), and is merged only
+on a Windows build. Until that PR is on `main`, the overlay is not in this
+tree and GitHub Releases will not have a Windows asset.
 
 When the asset exists:
 
@@ -98,7 +103,11 @@ release can claim.
 
 Native `npm run tauri dev` on Windows needs the Tauri 2 Windows toolchain.
 The renderer-plus-host loop without a native window is still
-`./scripts/live.sh` and works on Windows the same way it does on Linux.
+`./scripts/live.sh`. That script is **bash**. `setup` installs system libs
+on Linux and Darwin only; MINGW/MSYS is an unknown platform and assumes
+Tauri deps are already present — it does **not** install Windows build
+tools. Run it from Git Bash if you want the Vite + `jabot-hostd` loop.
+That is not Linux `live.sh` parity and is not a native `JaBot.exe`.
 
 ### Prerequisites
 
@@ -120,12 +129,26 @@ VBSCRIPT (an optional Windows feature) is only required if you build an
 
 ### First run
 
-In a Developer PowerShell / "x64 Native Tools" prompt so `link.exe` is on
-`PATH`:
+`tauri dev` needs `link.exe` on `PATH`, so use a Developer PowerShell /
+"x64 Native Tools" prompt for the native build.
 
-```powershell
+On current `main`, `npm run bundle:adapters` is
+`./scripts/bundle-adapters.sh`. That is **not** a PowerShell or `cmd`
+command — it fails with "not recognized." [PR #291](https://github.com/jabreeflor/jabot/pull/291)
+(#281) is the change that routes it through bash. Until that lands, run
+the adapter step from **Git Bash**, or skip it and treat Claude as
+unbundled.
+
+In **Git Bash**:
+
+```bash
 npm install
 npm run bundle:adapters
+```
+
+Then in Developer PowerShell:
+
+```powershell
 npm run tauri dev
 ```
 
@@ -144,9 +167,10 @@ What you should expect **today**, before the child issues land:
 - ACP children can start; killing the tree on quit is [#285](https://github.com/jabreeflor/jabot/issues/285), not proven.
 
 `npm run tauri build` on a Windows box produces the NSIS installer only
-after #281's `tauri.windows.conf.json` is on the tree. Do not add `nsis`
-to the base `bundle.targets` from this docs PR (D-005: macOS updater
-archives need `app` + `dmg` there).
+after the overlay [PR #291](https://github.com/jabreeflor/jabot/pull/291)
+adds (`tauri.windows.conf.json`, for #281) is on the tree. Do not add
+`nsis` to the base `bundle.targets` from this docs PR (D-005: macOS
+updater archives need `app` + `dmg` there).
 
 ---
 
@@ -179,7 +203,7 @@ and the installer.
 | Surface | You may claim |
 |---|---|
 | This page + `windows-acceptance.sh check` | The install story, the gap list, and the smoke cells are still named |
-| `scripts/live.sh` on Windows | Renderer + `jabot-hostd` over the Vite transport — **not** a native `.exe` |
+| `scripts/live.sh` on Windows | Git Bash only. Renderer + `jabot-hostd` over Vite — **not** a native `.exe`. `setup` does not install Windows build tools; MINGW/MSYS is unknown platform |
 | Playwright | Same as on Linux: not Tauri, not WebView2-in-JaBot |
 | `tauri dev` on a Windows box | A native window launched, with the gaps above still true |
 | A GitHub Release `.exe` / `.msi` | **Nothing until #281 uploads one** |

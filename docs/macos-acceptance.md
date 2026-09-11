@@ -16,8 +16,8 @@ Cell ids used by the gate: `tauri-ipc`, `synthetic-turn`, `close-to-dock`,
 `quit-relaunch`, notify, keychain, packaged adapter, updater.
 
 Windows is a **separate, smaller** smoke list
-([docs/windows-acceptance.md](windows-acceptance.md), #287 / tracking #280).
-It is not this gate and does not claim macOS parity.
+([docs/windows.md](windows.md), [docs/windows-acceptance.md](windows-acceptance.md),
+#287 / tracking #280). It is not this gate and does not claim macOS parity.
 
 Related: D-019 ([#73](https://github.com/jabreeflor/jabot/issues/73)) — a Linux
 box can type-check `notify/mac.rs` and prove the decision layer. It cannot
