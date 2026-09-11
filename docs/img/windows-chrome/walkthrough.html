@@ -95,22 +95,24 @@
     <main>
       <h1>Windows window chrome without macOS private API</h1>
       <p class="lede">
-        A usable Win10/11 window that does not take
-        <code>macos-private-api</code>, overlay title bar, or under-window
-        vibrancy. Closes #282. Parent tracking issue #280.
+        A usable Win10/11 window that does not use an overlay title bar
+        or under-window vibrancy. The cargo feature stays for
+        tauri-build's allowlist; Windows never calls the API. Closes
+        #282. Parent tracking issue #280.
       </p>
 
       <h2>How it works</h2>
       <div class="flow">
         <div class="step">
-          <strong>1. Shared config is portable</strong>
+          <strong>1. Shared config is a decorated opaque window</strong>
           <span>
-            <code>tauri.conf.json</code> keeps size and title only. Overlay,
-            <code>macOSPrivateApi</code>, transparency, and
-            <code>underWindowBackground</code> live in
-            <code>tauri.macos.conf.json</code>. Windows merges
-            <code>tauri.windows.conf.json</code>: <code>decorations: true</code>,
-            <code>transparent: false</code>.
+            <code>tauri.conf.json</code> holds size, title, and
+            <code>macOSPrivateApi: true</code> (the allowlist pair — see
+            step 2). Overlay, transparency, and
+            <code>underWindowBackground</code> live only in
+            <code>tauri.macos.conf.json</code>. Windows inherits the shared
+            window; <code>tauri.windows.conf.json</code> is left for #291
+            (NSIS), not chrome.
           </span>
         </div>
         <div class="step">
@@ -174,10 +176,13 @@
           <tr>
             <td>
               <code>src-tauri/tauri.conf.json</code> +
-              <code>tauri.macos.conf.json</code> +
-              <code>tauri.windows.conf.json</code>
+              <code>tauri.macos.conf.json</code>
             </td>
-            <td>Platform merge. Overlay never reaches a Windows build.</td>
+            <td>
+              Shared window is decorated/opaque.
+              <code>macOSPrivateApi</code> stays shared. Overlay never
+              reaches a Windows build.
+            </td>
           </tr>
           <tr>
             <td><code>src-tauri/src/window.rs</code></td>

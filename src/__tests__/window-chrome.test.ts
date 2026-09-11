@@ -4,7 +4,7 @@
  * renderer decision and the CSS contract.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import {
   applyWindowChrome,
@@ -168,12 +168,8 @@ describe("shared window config stays portable", () => {
   const macos = JSON.parse(
     readFileSync("src-tauri/tauri.macos.conf.json", "utf8"),
   );
-  const windows = JSON.parse(
-    readFileSync("src-tauri/tauri.windows.conf.json", "utf8"),
-  );
   const baseWin = base.app.windows[0];
   const macWin = macos.app.windows[0];
-  const winWin = windows.app.windows[0];
 
   it("keeps overlay and vibrancy out of the shared window", () => {
     expect(base.app.macOSPrivateApi).toBe(true);
@@ -183,20 +179,23 @@ describe("shared window config stays portable", () => {
   });
 
   it("keeps the macOS overlay frame in the macos merge file", () => {
-    expect(macos.app.macOSPrivateApi).toBe(true);
     expect(macWin.titleBarStyle).toBe("Overlay");
     expect(macWin.transparent).toBe(true);
     expect(macWin.windowEffects.effects).toContain("underWindowBackground");
   });
 
-  it("declares a decorated opaque Windows window", () => {
-    expect(winWin.decorations).toBe(true);
-    expect(winWin.transparent).toBe(false);
-    expect(winWin.titleBarStyle).toBeUndefined();
+  it("does not require a Windows chrome overlay (#291 owns that path for NSIS)", () => {
+    const winPath = "src-tauri/tauri.windows.conf.json";
+    if (!existsSync(winPath)) return;
+    const windows = JSON.parse(readFileSync(winPath, "utf8"));
+    const winWin = windows.app?.windows?.[0];
+    if (!winWin) return;
+    expect(winWin.transparent).not.toBe(true);
+    expect(winWin.titleBarStyle).not.toBe("Overlay");
     expect(winWin.windowEffects).toBeUndefined();
   });
 
-  it("keeps the window size in lockstep across the three files", () => {
+  it("keeps the macos overlay window size in lockstep with the shared file", () => {
     for (const key of [
       "label",
       "title",
@@ -206,7 +205,6 @@ describe("shared window config stays portable", () => {
       "minHeight",
     ] as const) {
       expect(macWin[key]).toBe(baseWin[key]);
-      expect(winWin[key]).toBe(baseWin[key]);
     }
   });
 });

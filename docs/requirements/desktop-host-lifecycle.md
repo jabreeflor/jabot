@@ -55,17 +55,17 @@ relitigated per feature.
 
 ## Window chrome
 
-macOS keeps the overlay title bar, private API, and under-window vibrancy
-in [`src-tauri/tauri.macos.conf.json`](../../src-tauri/tauri.macos.conf.json).
+macOS keeps the overlay title bar, transparency, and under-window
+vibrancy in
+[`src-tauri/tauri.macos.conf.json`](../../src-tauri/tauri.macos.conf.json).
 The shared [`tauri.conf.json`](../../src-tauri/tauri.conf.json) is a
-portable decorated window; Windows merges
-[`tauri.windows.conf.json`](../../src-tauri/tauri.windows.conf.json)
-(`decorations: true`, `transparent: false`). `macOSPrivateApi` stays
-in the shared config and `macos-private-api` stays on the untargeted
-`tauri` dep: tauri-build's allowlist is bidirectional and reads one
-Cargo.toml, so Linux and Mac clippy both need the pair to match.
-Windows/Linux never *call* the API: `window.rs` returns before clearing
-the webview fill.
+portable decorated opaque window and also holds `macOSPrivateApi: true`
+so tauri-build's bidirectional allowlist matches `macos-private-api` on
+the untargeted `tauri` dep (Linux and Mac clippy both need the pair).
+Windows inherits that shared window — this change does not add
+`tauri.windows.conf.json` (#291 owns that path for NSIS). Windows/Linux
+never *call* the private API: `window.rs` returns before clearing the
+webview fill.
 
 The renderer reads `window_chrome` and paints `data-window-chrome`.
 Decorated chrome zeros `--titlebar-h` / `--traffic-lights-w` so agent

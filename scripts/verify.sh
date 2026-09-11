@@ -473,7 +473,11 @@ const loadJson = (p) => {
   catch (e) { bad(`${p} does not parse: ${e.message}`); return null; }
 };
 const macConf = loadJson(macT);
-const winConf = loadJson(winT);
+// #291 owns this path for NSIS packaging. Missing, or present as
+// bundle-only (no app.windows), is fine. Do not require size lockstep
+// unless a windows array exists — a chrome-only file here would collide
+// with #291's bundle overlay.
+const winConf = fs.existsSync(winT) ? loadJson(winT) : null;
 const baseWin = (conf.app && conf.app.windows && conf.app.windows[0]) || {};
 if (!(conf.app && conf.app.macOSPrivateApi === true)) {
   bad(`${T}: macOSPrivateApi must stay true — tauri-build's allowlist matches it against macos-private-api in Cargo.toml on every OS (#282)`);
@@ -505,16 +509,18 @@ if (macConf) {
   }
 }
 if (winConf) {
-  const wWin = ((winConf.app || {}).windows || [])[0] || {};
-  if (wWin.decorations === false) {
-    bad(`${winT}: decorations must stay on so Win10/11 draw a real title bar (#282)`);
-  }
-  if (wWin.transparent === true || wWin.titleBarStyle === 'Overlay' || wWin.windowEffects) {
-    bad(`${winT}: Windows chrome must be a decorated opaque window — no overlay, no vibrancy (#282)`);
-  }
-  for (const key of ['label', 'title', 'width', 'height', 'minWidth', 'minHeight']) {
-    if (wWin[key] !== baseWin[key]) {
-      bad(`${winT}: window.${key} is ${JSON.stringify(wWin[key])}, ${T} has ${JSON.stringify(baseWin[key])} — merge replaces the whole windows array`);
+  const wWin = ((winConf.app || {}).windows || [])[0];
+  if (wWin) {
+    if (wWin.decorations === false) {
+      bad(`${winT}: decorations must stay on so Win10/11 draw a real title bar (#282)`);
+    }
+    if (wWin.transparent === true || wWin.titleBarStyle === 'Overlay' || wWin.windowEffects) {
+      bad(`${winT}: Windows chrome must be a decorated opaque window — no overlay, no vibrancy (#282)`);
+    }
+    for (const key of ['label', 'title', 'width', 'height', 'minWidth', 'minHeight']) {
+      if (wWin[key] !== undefined && wWin[key] !== baseWin[key]) {
+        bad(`${winT}: window.${key} is ${JSON.stringify(wWin[key])}, ${T} has ${JSON.stringify(baseWin[key])} — merge replaces the whole windows array`);
+      }
     }
   }
 }
@@ -557,10 +563,10 @@ for (const want of ['jabot-hostd', 'fake-acp-agent']) {
 }
 
 // #282: tauri-build's allowlist reads the untargeted tauri features
-// list, not the resolved target graph. macOSPrivateApi is in
-// tauri.macos.conf.json, so a Mac `cargo clippy --lib` dies unless
-// macos-private-api is spelled here. Windows chrome still does not
-// *use* the API — that is the platform configs + window.rs cfg!.
+// list, not the resolved target graph. macOSPrivateApi stays in the
+// shared tauri.conf.json so Linux and Mac clippy both match
+// macos-private-api. Windows chrome still does not *use* the API —
+// that is the portable shared window + window.rs cfg!.
 const cargoToml = fs.readFileSync(C, 'utf8');
 const untargeted = cargoToml.split(/\[target\./)[0];
 if (!/tauri\s*=\s*\{[^}]*macos-private-api/.test(untargeted)) {
