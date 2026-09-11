@@ -4,14 +4,15 @@
 #
 #   check  Offline contract: Job Objects are still the documented kill-tree,
 #          cfg(unix) / cfg(windows) stay explicit, PATHEXT is consulted, and
-#          CI still has a windows-latest job. Runs on Linux.
+#          CI still has a windows-latest job in windows.yml. Runs on Linux.
 #   run    cargo test the spawn + teardown cases. Required filters that match
 #          0 tests fail the run (libtest exits 0 on no matches). Unix-only
 #          names are not invoked on Windows and vice versa. Needs a Rust
 #          toolchain.
 #
 # Not the full Windows verify (#286). This script is only the adapter
-# lifecycle slice the issue asked for.
+# lifecycle slice. CI runs `run` from windows.yml as `windows-adapter-lifecycle`
+# when the #286 planner says host/CI paths changed.
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -46,7 +47,7 @@ check() {
   need_file src-tauri/src/host/procgroup.rs
   need_file src-tauri/src/host/acp/spawn.rs
   need_file src-tauri/src/host/harness/mod.rs
-  need_file .github/workflows/ci.yml
+  need_file .github/workflows/windows.yml
 
   need_text src-tauri/src/host/procgroup.rs 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE'
   need_text src-tauri/src/host/procgroup.rs 'CREATE_NEW_PROCESS_GROUP'
@@ -67,8 +68,8 @@ check() {
   need_text src-tauri/src/bin/jabot-hostd.rs 'spawn_accept_loop'
   need_text src-tauri/src/host/harness/mod.rs 'PATHEXT'
   need_text src-tauri/src/host/harness/mod.rs 'resolve_in_dir'
-  need_text .github/workflows/ci.yml 'windows-latest'
-  need_text .github/workflows/ci.yml 'windows-adapter-lifecycle'
+  need_text .github/workflows/windows.yml 'windows-latest'
+  need_text .github/workflows/windows.yml 'windows-adapter-lifecycle'
 
   # Unix process-group kill must still be the SIGTERM / SIGKILL pair, not a
   # Windows-shaped rewrite that leaked into the unix branch.

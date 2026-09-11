@@ -84,10 +84,11 @@ jobs, not by `verify.sh` and not by a per-PR bundle — see
 [`docs/macos-lint.md`](docs/macos-lint.md). Windows toasts (`notify/win.rs`,
 #284) are `cfg(windows)` and are not that Linux scratch crate; smoke steps
 live in [native-notifications.md](docs/requirements/native-notifications.md).
-Windows host compile is a path-filtered `windows-latest` job so
+Windows host compile is a path-filtered `windows-latest` pair so
 `#[cfg(windows)]` cannot rot
-([`docs/windows-ci.md`](docs/windows-ci.md), #286); it is not a copy of
-this gate and not a substitute for a human smoke on a real PC.
+([`docs/windows-ci.md`](docs/windows-ci.md), #286) — `windows verify` plus
+the Job Object `windows-adapter-lifecycle` slice (#285). Neither is a copy
+of this gate or a substitute for a human smoke on a real PC.
 
 The renderer-against-real-host suite is Playwright, not the default gate:
 

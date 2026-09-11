@@ -38,8 +38,10 @@ check_passes() {
 check_names_job_objects() {
   grep -q 'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE' "$REPO_ROOT/src-tauri/src/host/procgroup.rs" \
     || { fail "procgroup.rs lost the Job Object limit"; return 1; }
-  grep -q 'windows-latest' "$REPO_ROOT/.github/workflows/ci.yml" \
-    || { fail "ci.yml has no windows-latest job"; return 1; }
+  grep -q 'windows-latest' "$REPO_ROOT/.github/workflows/windows.yml" \
+    || { fail "windows.yml has no windows-latest job"; return 1; }
+  grep -q 'windows-adapter-lifecycle' "$REPO_ROOT/.github/workflows/windows.yml" \
+    || { fail "windows.yml lost windows-adapter-lifecycle"; return 1; }
 }
 
 unknown_command_fails() {

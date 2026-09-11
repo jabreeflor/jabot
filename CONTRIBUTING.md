@@ -66,8 +66,9 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh --check-mac` | local repro of the PR `mac notify cross-check` — **run it when you touch `src-tauri/src/notify/`** so you find rot before CI does |
 | `./scripts/check-macos-clippy.sh` | on a Mac, local repro of the PR `macos clippy` job — Keychain + `lib.rs` cfg(macos) branches |
 | `./scripts/macos-acceptance.sh check` | packaged-app matrix / isolation (Linux). **`run` needs a Mac** — [docs/macos-acceptance.md](docs/macos-acceptance.md), #235 |
-| `./scripts/windows-needed.sh --base origin/main` | which host/CI paths would start the 2x `windows verify` job — [docs/windows-ci.md](docs/windows-ci.md), #286 |
-| `./scripts/windows-verify.sh` | local repro of that job (Git Bash on Windows; on Linux it is a subset of this gate) |
+| `./scripts/windows-needed.sh --base origin/main` | which host/CI paths would start the 2x `windows verify` and `windows-adapter-lifecycle` jobs — [docs/windows-ci.md](docs/windows-ci.md), #286 / #285 |
+| `./scripts/windows-verify.sh` | local repro of the compile + portable-test job (Git Bash on Windows; on Linux it is a subset of this gate) |
+| `./scripts/windows-adapter-lifecycle.sh check` | #285 Job Object / PATHEXT contract (Linux). **`run` needs Windows** — CI job `windows-adapter-lifecycle` |
 | `./scripts/windows-acceptance.sh check` | Windows install-docs + smoke-checklist integrity (Linux). **Not** a launched `JaBot.exe` — [docs/windows-acceptance.md](docs/windows-acceptance.md), #287 |
 | `./scripts/verify.sh --check-browser` | Playwright visual + browser axe + smoke; also a dedicated `browser` CI job |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
@@ -157,7 +158,7 @@ one run tells you everything that is wrong.
 | `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 | `macos acceptance` | #235: the packaged-app matrix still names Tauri IPC, Dock, Keychain, adapters, and updater archives; isolation still refuses production app data; Playwright WebKit is not this gate | you changed the script, the docs, or the workflows; `./scripts/macos-acceptance.sh check` and `./scripts/tests/macos-acceptance.test.sh` name the cell that moved. Launching `JaBot.app` is `run` on a Mac — D-019 is why that is not this stage |
 | `windows acceptance` | #287: Windows install docs + five-cell smoke checklist still name launch, bot chat, secret round-trip, adapter spawn, quit-no-orphans, and the glass / Dock / SmartScreen / notify gaps; no macOS-parity claim | you changed `docs/windows.md`, the checklist, or the script; `./scripts/windows-acceptance.sh check` and `./scripts/tests/windows-acceptance.test.sh`. Launching `JaBot.exe` is not this Linux stage (#281 ships the installer; `run` still refuses here) |
-| `windows adapter lifecycle` | #285: Job Object / PATHEXT / cfg(unix) vs Windows contract still holds; CI still has `windows-latest` spawn+teardown | you changed `procgroup.rs`, command resolution, or the Windows job; `./scripts/windows-adapter-lifecycle.sh check` and `./scripts/tests/windows-adapter-lifecycle.test.sh`. `run` needs a Windows kernel (CI `windows-adapter-lifecycle`) |
+| `windows adapter lifecycle` | #285: Job Object / PATHEXT / cfg(unix) vs Windows contract still holds; CI still has `windows-latest` spawn+teardown in `windows.yml` | you changed `procgroup.rs`, command resolution, or the Windows job; `./scripts/windows-adapter-lifecycle.sh check` and `./scripts/tests/windows-adapter-lifecycle.test.sh`. `run` needs a Windows kernel (CI `windows-adapter-lifecycle`) |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
@@ -423,7 +424,9 @@ filing or "fixing" a gap.
   a cheap Linux planner on every PR, and `windows-latest` only when
   `src-tauri/`, the toolchain, or the Windows scripts change. It runs
   `scripts/windows-verify.sh` (check + clippy `-D warnings` + portable
-  `cargo test`, including the Credential Manager check). Failures are
+  `cargo test`, including the Credential Manager check) **and** the #285
+  `windows-adapter-lifecycle` job (`scripts/windows-adapter-lifecycle.sh
+  run` — Job Object assign, membership, 0-match fail). Failures are
   real — no `continue-on-error`. An unsigned NSIS build is opt-in
   (`windows-package` label or `workflow_dispatch` with `package=true`),
   not every PR. Tag NSIS is `release.yml` (#281). Linux/macOS jobs stay

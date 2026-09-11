@@ -127,30 +127,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # ACP adapter spawn + Job Object teardown on a real Windows kernel (#285).
-  # Not the full verify gate — that is #286. windows-latest bills at 1x
-  # (unlike the macOS bundle job) and this job only compiles the host tests
-  # that prove spawn / stdio / kill-tree. A stub under vendor/adapters keeps
-  # tauri-build's resource glob happy without `npm ci`.
-  windows-adapter-lifecycle:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          prefix-key: windows-adapter-lifecycle
-      - name: Stub bundled adapters so tauri-build's resource glob matches
-        shell: bash
-        run: |
-          mkdir -p src-tauri/vendor/adapters/node_modules/_stub
-          printf 'stub\n' > src-tauri/vendor/adapters/node_modules/_stub/keep
-      - name: Spawn + teardown
-        shell: bash
-        run: ./scripts/windows-adapter-lifecycle.sh run
-
   # The thing users actually install. macOS-only because that is the target —
   # and macOS minutes bill at 10x, so this does NOT run per pull-request commit.
   #

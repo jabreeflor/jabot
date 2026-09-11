@@ -126,6 +126,18 @@ planner_secrets_check_runs() {
   assert_eq 'verify=1' "$out" "windows-secrets-check.sh" && pass
 }
 
+planner_adapter_lifecycle_runs() {
+  local out
+  out=$(plan scripts/windows-adapter-lifecycle.sh) || { fail "planner exited $?"; return; }
+  assert_eq 'verify=1' "$out" "windows-adapter-lifecycle.sh" && pass
+}
+
+planner_adapter_lifecycle_test_runs() {
+  local out
+  out=$(plan scripts/tests/windows-adapter-lifecycle.test.sh) || { fail "planner exited $?"; return; }
+  assert_eq 'verify=1' "$out" "windows-adapter-lifecycle.test.sh" && pass
+}
+
 planner_linux_ci_does_not_start_windows() {
   local out
   out=$(plan .github/workflows/ci.yml .github/workflows/macos-native.yml) || {
@@ -179,6 +191,8 @@ workflow_uses_windows_latest_without_continue_on_error() {
   assert_contains "$wf" 'windows-latest' "verify/package run on windows-latest" || return
   assert_contains "$wf" 'windows-needed.sh' "planner is wired" || return
   assert_contains "$wf" 'windows-verify.sh' "verify job runs the script" || return
+  assert_contains "$wf" 'windows-adapter-lifecycle' "adapter lifecycle job is named" || return
+  assert_contains "$wf" 'windows-adapter-lifecycle.sh' "adapter lifecycle script is wired" || return
   assert_contains "$wf" 'windows-package' "package label is named" || return
   assert_contains "$wf" '--bundles nsis' "optional package is NSIS" || return
   assert_contains "$wf" 'workflow_dispatch' "dispatch avoids burning PR minutes" || return
@@ -258,6 +272,8 @@ run_case planner_verify_script_runs planner_verify_script_runs
 run_case planner_needed_script_runs planner_needed_script_runs
 run_case planner_ci_test_runs planner_ci_test_runs
 run_case planner_secrets_check_runs planner_secrets_check_runs
+run_case planner_adapter_lifecycle_runs planner_adapter_lifecycle_runs
+run_case planner_adapter_lifecycle_test_runs planner_adapter_lifecycle_test_runs
 run_case planner_linux_ci_does_not_start_windows planner_linux_ci_does_not_start_windows
 run_case planner_force_verify planner_force_verify
 run_case planner_unknown_flag_fails planner_unknown_flag_fails

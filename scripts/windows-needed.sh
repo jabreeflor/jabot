@@ -58,7 +58,9 @@ VERIFY_PATHS=(
   scripts/windows-verify.sh
   scripts/windows-needed.sh
   scripts/windows-secrets-check.sh
+  scripts/windows-adapter-lifecycle.sh
   scripts/tests/windows-ci.test.sh
+  scripts/tests/windows-adapter-lifecycle.test.sh
   .github/workflows/windows.yml
 )
 
