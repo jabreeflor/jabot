@@ -9,7 +9,8 @@
 #   ./scripts/verify.sh --check-browser    # Playwright visual + axe + smoke (needs browsers)
 #
 # Packaged-app matrix/isolation is a default stage; see
-# docs/macos-acceptance.md (#235).
+# docs/macos-acceptance.md (#235). Windows install docs + smoke checklist
+# integrity is the sibling stage (#287 / docs/windows-acceptance.md).
 #
 # This is the only gate. CI's `verify` job is `npm ci` + this script, and the
 # macOS `bundle` job does not run on pull requests (.github/workflows/ci.yml
@@ -27,6 +28,7 @@
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   2c. install script — the release installer's pins, delivery, and refusals
 #   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
+#   2d2. windows-acceptance — install docs + smoke checklist, no Windows (#287)
 #   2e. macos lint    — planner/path tests for the before-merge macOS jobs
 #   2f. coverage policy — include/exclude/thresholds still fail when they should
 #   3. tsc            — renderer types
@@ -687,6 +689,30 @@ macos_acceptance() {
 }
 
 # ---------------------------------------------------------------------------
+# 2d2. Windows install docs + smoke checklist (#287)
+#
+# Smaller than macos-acceptance: five cells (launch, bot chat, secret
+# round-trip, adapter spawn, quit with no orphans) plus the gap list vs
+# macOS. The default path cannot launch JaBot.exe (no Windows, no
+# installer yet — #281), so what runs here is the part that can rot on
+# Linux: the docs still name every cell and every gap, README / packaging
+# still point at them, isolation still refuses production AppData, and
+# `run` still refuses rather than pretending. scripts/tests/windows-acceptance.test.sh
+# is the behaviour.
+# ---------------------------------------------------------------------------
+windows_acceptance() {
+  local ok=0
+  local sh='scripts/windows-acceptance.sh'
+  if [[ ! -x "$sh" ]]; then
+    printf '  %s is missing or not executable\n' "$sh"
+    return 1
+  fi
+  "$sh" check || ok=1
+  ./scripts/tests/windows-acceptance.test.sh || ok=1
+  return $ok
+}
+
+# ---------------------------------------------------------------------------
 # 2e. macos lint planner
 #
 # CI decides whether to run the Linux notify cross-check or the native macOS
@@ -767,6 +793,7 @@ run "binary set"     binary_set
 run "commit guards"  guards
 run "install script" install_script
 run "macos acceptance" macos_acceptance
+run "windows acceptance" windows_acceptance
 run "macos lint tests" macos_lint_tests
 run "coverage policy" coverage_policy
 run "typecheck"      npx tsc --noEmit

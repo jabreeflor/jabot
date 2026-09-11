@@ -18,6 +18,7 @@ reasoning is in
 | Update feed | `https://github.com/jabreeflor/jabot/releases/latest/download/latest.json` |
 | Installer (`curl \| bash`) | [`scripts/install.sh`](../scripts/install.sh), uploaded as a release asset |
 | Packaged-app acceptance (#235) | [`docs/macos-acceptance.md`](macos-acceptance.md), [`scripts/macos-acceptance.sh`](../scripts/macos-acceptance.sh) |
+| Windows install + gaps (#287) | [`docs/windows.md`](windows.md), smoke checklist [`windows-acceptance.md`](windows-acceptance.md). Tracking epic [#280](https://github.com/jabreeflor/jabot/issues/280). |
 
 ---
 
@@ -401,6 +402,25 @@ want it, the honest fix is to build and upload in two steps rather than to
 bolt a post-upload staple onto a file that is already published.
 
 ---
+
+## Windows
+
+The `.dmg` / `install.sh` path above is unchanged. Windows MVP is **one
+NSIS installer** (`JaBot_*_x64-setup.exe`, current-user, unsigned). MSI is
+not built. The overlay, sibling `windows` release job, and artifact checks
+are [#281](https://github.com/jabreeflor/jabot/issues/281) /
+[PR #291](https://github.com/jabreeflor/jabot/pull/291) — that PR extends
+this runbook; do not fork a second copy here.
+
+User-facing install, the gap list vs macOS (glass, Dock hide,
+signing/SmartScreen, notify), `tauri dev` prerequisites, and the five-cell
+smoke checklist live in [`docs/windows.md`](windows.md) (#287) under
+tracking epic [#280](https://github.com/jabreeflor/jabot/issues/280).
+Sibling Windows PRs should update that page rather than contradict it.
+
+A green macOS release is not a Windows ship. Base `bundle.targets` stays
+`["app", "dmg"]`; NSIS is the Windows overlay, not a second entry in that
+array (D-005).
 
 ## Entitlements
 

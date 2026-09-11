@@ -24,6 +24,19 @@ Prefer doing it by hand? Download the `.dmg` from
 to Applications. Either way, installed copies update themselves after that —
 the script is a one-time thing.
 
+### Windows (in progress)
+
+Windows 10/11 **x64**: when
+[#281](https://github.com/jabreeflor/jabot/issues/281) publishes it, download
+`JaBot_*_x64-setup.exe` from the same
+[Releases](https://github.com/jabreeflor/jabot/releases/latest) page and run
+it (NSIS, current-user, **not** Authenticode-signed — SmartScreen will
+warn). This is **not** macOS parity. Install steps, `tauri dev`
+prerequisites, the gap list (glass, Dock hide, signing/SmartScreen,
+notify), and the smoke checklist: [docs/windows.md](docs/windows.md)
+([#287](https://github.com/jabreeflor/jabot/issues/287) /
+[#280](https://github.com/jabreeflor/jabot/issues/280)).
+
 ## Desktop app (Tauri 2)
 
 The scaffold (#7) lives at the repo root:
@@ -34,7 +47,7 @@ The scaffold (#7) lives at the repo root:
 ```bash
 # Node 26 (Current). `.nvmrc` / `.node-version` match CI.
 npm install
-npm run tauri dev    # macOS dev (requires Tauri prerequisites)
+npm run tauri dev    # native window (macOS today; Windows: docs/windows.md)
 npm run build        # frontend-only build (CI / Linux)
 ```
 

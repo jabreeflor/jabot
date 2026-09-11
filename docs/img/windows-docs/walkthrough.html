@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add Windows install docs and smoke acceptance checklist</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#63d6b3; --bad:#f85149; --ok:#3fb950; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 "Noto Sans","DejaVu Sans",Arial,Helvetica,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:40px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 44px 1fr; gap:14px; align-items:stretch; }
+    .state { padding:18px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 12px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:28px; }
+    .stages { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:18px; }
+    .stages div { padding:12px 10px; background:#0f141a; border-radius:9px; font-size:13px; }
+    .stages strong { display:block; margin-bottom:6px; color:var(--accent); }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    .ok { color:var(--ok); }
+    .no { color:var(--bad); }
+    .gap { color:var(--warn); }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    @media (max-width:800px) { .flow,.stages { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #289 · issues #287 / #280</div>
+    <h1>Add Windows install docs and smoke acceptance checklist</h1>
+    <p>macOS already has a packaged-app gate. Windows is the #280 tracking epic and is <strong>not</strong> macOS parity. This PR names how to install (when an artifact exists), how to run <code>tauri dev</code>, the gaps vs the Mac app, and five smoke cells — without claiming a shipped <code>.exe</code>.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Before</h3>
+          <ul>
+            <li>README and <code>install.sh</code> were macOS-only.</li>
+            <li><code>bundle.targets</code> is still <code>app</code> / <code>dmg</code>. Release builds <code>universal-apple-darwin</code>.</li>
+            <li>Gaps (glass, Dock hide, SmartScreen, notify) lived only in child issues.</li>
+            <li>Nothing stopped a later PR from inventing a second Windows page.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>After</h3>
+          <ul>
+            <li><code>docs/windows.md</code> is the one install + gap page. Sibling PRs update the table, not a fork.</li>
+            <li>Five smoke cells, not Dock / Keychain / updater archives.</li>
+            <li>Linux <code>check</code> refuses production <code>%APPDATA%\com.jabot.app</code> and the production secret service.</li>
+            <li><code>run</code> dies on purpose until #281 publishes an installer.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="stages">
+        <div><strong>launch</strong>Native window + Tauri IPC. Not live.sh.</div>
+        <div><strong>bot chat</strong>Create or open a standing thread.</div>
+        <div><strong>secret</strong>OS store round-trip. Memory backend is not a pass. #283.</div>
+        <div><strong>adapter</strong>ACP child starts. fake-acp is enough.</div>
+        <div><strong>quit</strong>Close last window (no File menu). No leftover node. #285.</div>
+      </div>
+    </section>
+
+    <section id="gaps">
+      <h2>Gaps vs macOS (do not paper over)</h2>
+      <p>The renderer and SQLite store are shared. The native host is not. A green Linux <code>verify.sh</code> closes none of these rows.</p>
+      <table>
+        <thead><tr><th>Surface</th><th>macOS today</th><th>Windows today</th><th>Owner</th></tr></thead>
+        <tbody>
+          <tr><td>Glass / vibrancy</td><td class="ok">Under-window material</td><td class="gap">Opaque — <code>set_effects</code> off</td><td>#282</td></tr>
+          <tr><td>Dock hide</td><td class="ok">Close hides; Dock reopens</td><td class="gap">Close quits. No tray.</td><td>#280 / #282</td></tr>
+          <tr><td>Signing / SmartScreen</td><td class="ok">Developer ID + notarized</td><td class="gap">Unsigned. SmartScreen will warn.</td><td>#281</td></tr>
+          <tr><td>Notify</td><td class="ok">UNUserNotificationCenter</td><td class="no">Unsupported no-op. Inbox still records.</td><td>#284</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="install">
+      <h2>Install and tauri dev</h2>
+      <p>Supported proposal: Windows 10/11 <strong>x64</strong>, WebView2. No ARM64 claim. No published installer until #281.</p>
+      <table>
+        <thead><tr><th>Path</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td>Release NSIS <code>JaBot_*_x64-setup.exe</code></td><td>Not on <code>main</code> until #281. Current-user, unsigned. SmartScreen → More info → Run anyway. No MSI.</td></tr>
+          <tr><td><code>scripts/install.sh</code></td><td>macOS-only (<code>hdiutil</code>, <code>codesign</code>, <code>spctl</code>). Do not invent a Windows <code>curl | bash</code>.</td></tr>
+          <tr><td><code>npm run tauri dev</code></td><td>MSVC + SDK, WebView2, Rust MSVC, Node 26. <code>bundle:adapters</code> is bash (<code>bundle-adapters.sh</code>) — Git Bash, or blocked until #281 / PR #291.</td></tr>
+          <tr><td><code>scripts/live.sh</code></td><td>Bash-only. <code>setup</code> is Linux/Darwin; MINGW/MSYS is unknown platform and does not install Windows build tools. Not a native <code>.exe</code>.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <ul>
+        <li><code>docs/windows.md</code> — versions, install, prerequisites, gap table, what you may claim.</li>
+        <li><code>docs/windows-acceptance.md</code> — five cells, isolation, “Playwright is not this list”.</li>
+        <li><code>scripts/windows-acceptance.sh</code> — <code>check</code> / <code>matrix</code> / <code>checklist</code>; <code>run</code> refuses.</li>
+        <li><code>README.md</code> + <code>docs/packaging.md</code> — pointers so #281 does not grow a second story.</li>
+      </ul>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>./scripts/verify.sh</code> — new Linux <code>windows acceptance</code> stage.</li>
+        <li><code>./scripts/windows-acceptance.sh check</code> and <code>./scripts/tests/windows-acceptance.test.sh</code>.</li>
+        <li>Walking the five cells needs a Windows 10/11 x64 box and, for a packaged <code>.exe</code>, #281. That is not this PR.</li>
+      </ul>
+      <p>Playwright is not this list. A green compile is not a launched JaBot.exe. This is not macOS parity.</p>
+    </section>
+  </main>
+</body>
+</html>

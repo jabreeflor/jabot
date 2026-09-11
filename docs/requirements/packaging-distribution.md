@@ -44,3 +44,9 @@ last mile between "builds locally" and "someone else can run it."
    (see the "Working on it" section of the top-level
    [`README.md`](../../README.md)) — packaging must be verifiable via
    local scripts/tooling, not assumed to run on every PR.
+
+Windows install, the gap list vs macOS, and the smoke checklist are
+[#287](https://github.com/jabreeflor/jabot/issues/287) /
+[`docs/windows.md`](../windows.md), under tracking epic
+[#280](https://github.com/jabreeflor/jabot/issues/280). This file stays the
+macOS #12 requirements; it does not claim a Windows ship.
