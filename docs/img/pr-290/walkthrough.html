@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Windows CI verify so the port does not rot</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff; --ok:#3fb950; --warn:#d29922; --bad:#f85149; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:940px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:40px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 36px 1fr 36px 1fr; gap:10px; align-items:stretch; }
+    .state { padding:16px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 10px; font-size:12px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:26px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .ok { color:var(--ok); font-weight:650; }
+    .no { color:var(--bad); font-weight:650; }
+    .maybe { color:var(--warn); font-weight:650; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    .files li { margin:10px 0; }
+    @media (max-width:800px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); height:28px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR #290 · issues #286 / #280</div>
+    <h1>Windows CI verify so the port does not rot</h1>
+    <p>Linux <code>verify</code> compiles straight past <code>#[cfg(windows)]</code>. This PR adds a lean <code>windows-latest</code> compile + portable test job, and an unsigned NSIS build that is opt-in — not every PR. Minutes stay cheap; failures stay real.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>1. Plan (Linux, always)</h3>
+          <ul>
+            <li><code>windows-needed.sh</code> classifies the PR diff.</li>
+            <li>Docs / renderer-only → <code>verify=0</code>.</li>
+            <li>Host / toolchain / this workflow → <code>verify=1</code>.</li>
+            <li>Tags and dispatch force verify.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>2. Verify (Windows, gated)</h3>
+          <ul>
+            <li>Stub adapters (no <code>npm ci</code>).</li>
+            <li><code>cargo check --locked</code> without <code>dev-bins</code>.</li>
+            <li>Clippy <code>-D warnings</code> on all targets.</li>
+            <li>Portable <code>cargo test</code>.</li>
+            <li>No <code>continue-on-error:</code>.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>3. Package (opt-in)</h3>
+          <ul>
+            <li>Unsigned NSIS only.</li>
+            <li>On <code>v*</code> tags, <code>windows-package</code>, or dispatch <code>package=true</code>.</li>
+            <li><code>--bundles nsis</code> does not change macOS <code>app</code>/<code>dmg</code>.</li>
+            <li>Full release path is still #281.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="guarantees">
+      <h2>What a green job means</h2>
+      <table>
+        <thead>
+          <tr><th>Claim</th><th>CI</th><th>Human PC</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>The Tauri/host crate compiles on Windows</td><td class="ok">Yes</td><td>—</td></tr>
+          <tr><td>Portable Rust tests pass</td><td class="ok">Yes</td><td>—</td></tr>
+          <tr><td>Unsigned NSIS can be produced</td><td class="maybe">Opt-in</td><td>—</td></tr>
+          <tr><td>Window chrome / tray / close</td><td class="no">No</td><td class="ok">#282 / #287</td></tr>
+          <tr><td>Credential Manager secrets</td><td class="no">No</td><td class="ok">#283</td></tr>
+          <tr><td>Toasts</td><td class="no">No</td><td class="ok">#284</td></tr>
+          <tr><td>ACP Job Object kill tree</td><td class="no">Compiled only</td><td class="ok">#285</td></tr>
+          <tr><td>Playwright visual / axe</td><td class="no">Ubuntu <code>browser</code></td><td>—</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:16px">Do not call a green <code>windows verify</code> “the app works on Windows.” That sentence is in <code>docs/windows-ci.md</code>.</p>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <ul class="files">
+        <li><code>.github/workflows/windows.yml</code> — sibling workflow; Ubuntu and macOS jobs are untouched.</li>
+        <li><code>scripts/windows-needed.sh</code> + <code>scripts/tests/windows-ci.test.sh</code> — the path list that spends 2x minutes, tested so it cannot silently stop matching.</li>
+        <li><code>scripts/windows-verify.sh</code> — the exact cargo stages CI runs.</li>
+        <li><code>docs/windows-ci.md</code> — guarantees vs human smoke.</li>
+        <li><code>src-tauri/tests/common/mod.rs</code> and two host tests — <code>.exe</code>, <code>git</code>, and Unix symlink so the Windows job can stay red-means-broken.</li>
+      </ul>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>./scripts/tests/windows-ci.test.sh</code> — 17 offline cases; part of <code>./scripts/verify.sh</code>.</li>
+        <li><code>./scripts/windows-needed.sh --base origin/main</code> — would this PR start a Windows runner?</li>
+        <li>On the PR: <code>windows plan</code> is green; <code>windows verify</code> runs because this change touches <code>src-tauri/</code> and the new workflow.</li>
+        <li>Label <code>windows-package</code> only if you want an unsigned NSIS artifact. That is not required to land #286.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
