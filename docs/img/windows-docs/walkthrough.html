@@ -93,7 +93,7 @@
       <table>
         <thead><tr><th>Path</th><th>What it is</th></tr></thead>
         <tbody>
-          <tr><td>Release <code>.exe</code> / <code>.msi</code></td><td>Does not exist. When it does: download from Releases, run it, expect SmartScreen on unsigned builds.</td></tr>
+          <tr><td>Release NSIS <code>JaBot_*_x64-setup.exe</code></td><td>Not on <code>main</code> until #281. Current-user, unsigned. SmartScreen → More info → Run anyway. No MSI.</td></tr>
           <tr><td><code>scripts/install.sh</code></td><td>macOS-only (<code>hdiutil</code>, <code>codesign</code>, <code>spctl</code>). Do not invent a Windows <code>curl | bash</code>.</td></tr>
           <tr><td><code>npm run tauri dev</code></td><td>MSVC build tools + Windows SDK, WebView2, Rust <code>x86_64-pc-windows-msvc</code>, Node 26, <code>bundle:adapters</code>.</td></tr>
           <tr><td><code>scripts/live.sh</code></td><td>Renderer + <code>jabot-hostd</code> on any OS. Not a native <code>.exe</code>. Not this checklist.</td></tr>

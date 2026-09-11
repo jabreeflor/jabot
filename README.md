@@ -26,13 +26,16 @@ the script is a one-time thing.
 
 ### Windows (in progress)
 
-Windows 10/11 **x64** is the proposed second desktop target
-([#280](https://github.com/jabreeflor/jabot/issues/280)). There is **no**
-shipped Windows installer yet ([#281](https://github.com/jabreeflor/jabot/issues/281)),
-and this is **not** macOS parity — glass/vibrancy, Dock hide,
-signing/SmartScreen, and notifications are documented gaps. Install, `tauri
-dev` prerequisites, and the smoke checklist:
-[docs/windows.md](docs/windows.md) (#287).
+Windows 10/11 **x64**: when
+[#281](https://github.com/jabreeflor/jabot/issues/281) publishes it, download
+`JaBot_*_x64-setup.exe` from the same
+[Releases](https://github.com/jabreeflor/jabot/releases/latest) page and run
+it (NSIS, current-user, **not** Authenticode-signed — SmartScreen will
+warn). This is **not** macOS parity. Install steps, `tauri dev`
+prerequisites, the gap list (glass, Dock hide, signing/SmartScreen,
+notify), and the smoke checklist: [docs/windows.md](docs/windows.md)
+([#287](https://github.com/jabreeflor/jabot/issues/287) /
+[#280](https://github.com/jabreeflor/jabot/issues/280)).
 
 ## Desktop app (Tauri 2)
 

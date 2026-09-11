@@ -17,11 +17,16 @@ what is actually wired.
 | macOS signing / notarization / updater | [packaging.md](packaging.md) |
 | Any-OS renderer + host (no native window) | [CONTRIBUTING.md](../CONTRIBUTING.md) (`scripts/live.sh`) |
 
-Sibling Windows PRs (#281 packaging, #282 chrome, #283 secrets, #284 notify,
-#285 adapter lifecycle, #286 CI) should **update the gap table below** rather
-than open a second Windows install page. If an installer asset name or
-bundle target changes in #281, change the [Install](#install-the-artifact)
-section here and the pointer in [packaging.md](packaging.md) together.
+Sibling Windows PRs should **update the gap table below** rather than open a
+second Windows install page.
+
+- [#281](https://github.com/jabreeflor/jabot/pull/291) owns the NSIS overlay
+  (`tauri.windows.conf.json`), the `windows` release job, and the packaging
+  runbook in [packaging.md](packaging.md). This page is the user/dev install
+  + gaps + smoke list that PR points at.
+- [#282](https://github.com/jabreeflor/jabot/issues/282)–[#286](https://github.com/jabreeflor/jabot/issues/286)
+  close chrome, secrets, toasts, kill-tree, and CI. When they land, flip the
+  matching row here instead of restating install.
 
 ---
 
@@ -42,27 +47,37 @@ treat them as a tested compatibility matrix.
 
 ## Install the artifact
 
-**There is no published Windows installer yet.**
-`bundle.targets` in `src-tauri/tauri.conf.json` is still `["app", "dmg"]`,
-and [`.github/workflows/release.yml`](../.github/workflows/release.yml) builds
-`universal-apple-darwin` only. Adding an NSIS and/or MSI target and uploading
-it next to the macOS `.dmg` is [#281](https://github.com/jabreeflor/jabot/issues/281).
+**Primary installer: NSIS `JaBot_*_x64-setup.exe`.** MSI / WiX is not an
+MVP target. The macOS `bundle.targets` stay `["app", "dmg"]`; Windows NSIS
+lives in `src-tauri/tauri.windows.conf.json` and is merged only on a
+Windows build ([#281](https://github.com/jabreeflor/jabot/issues/281) /
+[PR #291](https://github.com/jabreeflor/jabot/pull/291)). Until that PR
+is on `main`, GitHub Releases will not have a Windows asset.
 
-When that artifact exists, the intended path is:
+When the asset exists:
 
-1. Open the GitHub
-   [Releases](https://github.com/jabreeflor/jabot/releases/latest) page.
-2. Download the Windows installer #281 publishes (Tauri's usual primary is
-   an NSIS `*-setup.exe`; MSI is optional). Do not invent a `curl \| bash`
+1. Open
+   [Releases](https://github.com/jabreeflor/jabot/releases/latest).
+2. Download `JaBot_*_x64-setup.exe`. Do **not** invent a `curl | bash`
    Windows installer to match `scripts/install.sh` — that script is
    macOS-only (`hdiutil`, `codesign`, `spctl`).
-3. Run the installer. WebView2 is already on current Windows 10/11; a
-   missing runtime should be bootstrapped by Tauri's installer, not by us
-   bundling Edge.
-4. Launch **JaBot** from the Start menu or the install directory.
+3. Run it. It is **current-user** (no admin). WebView2 is required:
+   Windows 11 already has it; on Windows 10 the installer downloads the
+   Evergreen bootstrapper if needed.
+4. Launch **JaBot** from the Start menu.
 
-Until #281 lands, a Windows user cannot install a release build. A
-cross-compiled binary from macOS or Linux is not a supported install.
+Until #281 is merged and a release is cut, a Windows user cannot install
+a release build. A cross-compiled binary from macOS or Linux is not a
+supported install. Local production of the same artifact, once the
+overlay exists:
+
+```powershell
+npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
+```
+
+Cross-build via `cargo-xwin` is last-resort only — see
+[packaging.md](packaging.md) once #281 lands. Do not add `nsis` to the
+base `bundle.targets` array from this docs PR.
 
 ### Signing and SmartScreen
 
@@ -128,8 +143,10 @@ What you should expect **today**, before the child issues land:
 - Inbox cards persist; **no** toast banner (`notify` is the unsupported no-op).
 - ACP children can start; killing the tree on quit is [#285](https://github.com/jabreeflor/jabot/issues/285), not proven.
 
-`npm run tauri build` will not produce a Windows installer until #281 adds
-`nsis` / `msi` to `bundle.targets`. Do not add those targets in a docs PR.
+`npm run tauri build` on a Windows box produces the NSIS installer only
+after #281's `tauri.windows.conf.json` is on the tree. Do not add `nsis`
+to the base `bundle.targets` from this docs PR (D-005: macOS updater
+archives need `app` + `dmg` there).
 
 ---
 
@@ -147,7 +164,7 @@ any row. Closing a row is the linked child issue, plus the matching cell on
 | **Notify** | `UNUserNotificationCenter` banners; click-to-thread | **Unsupported no-op** (`notify/unsupported.rs`). Inbox still records the card (persist-then-notify) | [#284](https://github.com/jabreeflor/jabot/issues/284) |
 | Secrets | macOS Keychain, service `com.jabot.app` | `Secrets::Unavailable` — `put` fails closed. In-memory backend is tests/CI only, not persistence | [#283](https://github.com/jabreeflor/jabot/issues/283) |
 | Adapter kill tree | Process-group SIGTERM then SIGKILL | `CREATE_NEW_PROCESS_GROUP` on spawn; terminate falls through to `Child::kill()` (parent only). Job objects are the planned fix | [#285](https://github.com/jabreeflor/jabot/issues/285) |
-| Installer / release | `.dmg` + `install.sh` + updater archives from `release.yml` | No Windows bundle target, no Windows release job | [#281](https://github.com/jabreeflor/jabot/issues/281) |
+| Installer / release | `.dmg` + `install.sh` + updater archives from `release.yml` | NSIS `*-setup.exe` from a sibling `windows` release job — not on `main` until [#281](https://github.com/jabreeflor/jabot/issues/281) / [PR #291](https://github.com/jabreeflor/jabot/pull/291) | [#281](https://github.com/jabreeflor/jabot/issues/281) |
 | Auto-update | `tauri-plugin-updater` registered on macOS only | Plugin is not registered; no `windows-*` feed entry | [#281](https://github.com/jabreeflor/jabot/issues/281) (artifacts first) |
 | CI so the port does not rot | Linux `verify` + scoped macOS lint / packaged-acceptance | No Windows compile/verify job | [#286](https://github.com/jabreeflor/jabot/issues/286) |
 

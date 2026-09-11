@@ -26,7 +26,7 @@ touch Credential Manager, and never prove a process tree died with the
 
 | Cell | What it proves | Blocked by today | Evidence |
 |---|---|---|---|
-| **launch** | Native window starts; renderer reaches the host through Tauri IPC (`host_rpc` / `host/hello`) | Packaged `.exe`: [#281](https://github.com/jabreeflor/jabot/issues/281). Local: `tauri dev` prerequisites in [windows.md](windows.md) | Screenshot of the window past "Connecting to host…"; pid of `JaBot.exe` |
+| **launch** | Native window starts; renderer reaches the host through Tauri IPC (`host_rpc` / `host/hello`) | Packaged NSIS `.exe`: [#281](https://github.com/jabreeflor/jabot/issues/281) / [PR #291](https://github.com/jabreeflor/jabot/pull/291). Local: `tauri dev` prerequisites in [windows.md](windows.md) | Screenshot of the window past "Connecting to host…"; pid of `JaBot.exe` |
 | **create/open bot chat** | New or existing bot thread opens and can take a message | UI is shared; WebView2 must actually paint it | Screenshot of the standing thread / composer |
 | **secret round-trip** | `put` then `get` of a throwaway secret via the **OS** store | [#283](https://github.com/jabreeflor/jabot/issues/283). Today `Secrets::Unavailable` | Credential Manager item under an isolated service, not `JABOT_SECRETS_BACKEND=memory` |
 | **adapter spawn** | An ACP child starts for that thread (`fake-acp-agent` is enough) | Spawn flags exist; tree-kill is [#285](https://github.com/jabreeflor/jabot/issues/285) | Adapter stderr log or a live child pid |
