@@ -20,30 +20,26 @@ pub fn fake_agent() -> String {
     // Same target dir that built *this* test. Prefer it over a leftover
     // `llvm-cov-target` binary from an earlier coverage run — that stale
     // copy may not speak the modes the current suite asks for.
-    let bin = if cfg!(windows) {
-        "fake-acp-agent.exe"
-    } else {
-        "fake-acp-agent"
-    };
+    let bin = format!("fake-acp-agent{}", std::env::consts::EXE_SUFFIX);
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            candidates.push(dir.join(bin));
+            candidates.push(dir.join(&bin));
             if let Some(debug_dir) = dir.parent() {
-                candidates.push(debug_dir.join(bin));
+                candidates.push(debug_dir.join(&bin));
             }
         }
     }
     if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        candidates.push(PathBuf::from(dir).join("debug").join(bin));
+        candidates.push(PathBuf::from(dir).join("debug").join(&bin));
     }
-    candidates.push(manifest.join("target/llvm-cov-target/debug").join(bin));
-    candidates.push(manifest.join("target/debug").join(bin));
-    candidates.push(manifest.join("../target/debug").join(bin));
+    candidates.push(manifest.join("target/llvm-cov-target/debug").join(&bin));
+    candidates.push(manifest.join("target/debug").join(&bin));
+    candidates.push(manifest.join("../target/debug").join(&bin));
 
     candidates
         .into_iter()
         .find(|p| p.exists())
-        .unwrap_or_else(|| manifest.join("target/debug").join(bin))
+        .unwrap_or_else(|| manifest.join("target/debug").join(&bin))
         .to_string_lossy()
         .into_owned()
 }

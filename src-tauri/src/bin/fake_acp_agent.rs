@@ -72,12 +72,7 @@ use std::process::{Command, Stdio};
 fn main() {
     let mode = std::env::args().nth(1).unwrap_or_else(|| "echo".into());
     if mode == "grandchild" {
-        let _ = Command::new("sleep")
-            .arg("120")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+        spawn_linger_grandchild(std::env::args().nth(2));
     }
 
     let stdin = io::stdin();
@@ -376,8 +371,7 @@ fn main() {
                     // stdout, so the host's reader never sees EOF and only a
                     // waitpid can notice the adapter is a corpse.
                     "orphan-stdout" => {
-                        let _ = Command::new("sleep")
-                            .arg("120")
+                        let _ = linger_command()
                             .stdin(Stdio::null())
                             .stderr(Stdio::null())
                             .spawn();
@@ -844,6 +838,36 @@ fn ask_permission(
             ]
         }),
     );
+}
+
+/// Long-lived child used by `grandchild` / `orphan-stdout`. Must *not* start
+/// its own process group or Job Object: it has to stay in the adapter's tree
+/// so a host kill reaps it (#285).
+fn linger_command() -> Command {
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("ping");
+        cmd.args(["-n", "120", "127.0.0.1"]);
+        cmd
+    }
+    #[cfg(not(windows))]
+    {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("120");
+        cmd
+    }
+}
+
+fn spawn_linger_grandchild(pidfile: Option<String>) {
+    let mut cmd = linger_command();
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Ok(child) = cmd.spawn() {
+        if let Some(path) = pidfile {
+            let _ = std::fs::write(path, child.id().to_string());
+        }
+    }
 }
 
 fn request(

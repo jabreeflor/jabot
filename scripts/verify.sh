@@ -29,6 +29,7 @@
 #   2c. install script — the release installer's pins, delivery, and refusals
 #   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
 #   2d2. windows-acceptance — install docs + smoke checklist, no Windows (#287)
+#   2d3. windows adapter lifecycle — Job Object / PATHEXT contract, no Windows (#285)
 #   2g. windows packaging — NSIS config + release sibling job, no Windows (#281)
 #   2e. macos lint    — planner/path tests for the before-merge macOS jobs
 #   2f. windows ci    — planner/workflow contract for the Windows verify job (#286)
@@ -792,6 +793,27 @@ windows_acceptance() {
 }
 
 # ---------------------------------------------------------------------------
+# 2d3. Windows ACP adapter lifecycle contract (#285)
+#
+# The kill-tree itself runs on windows-latest (CI job
+# `windows-adapter-lifecycle`, `scripts/windows-adapter-lifecycle.sh run`).
+# What can rot on Linux is the contract: Job Objects still documented,
+# cfg(unix)/cfg(windows) still explicit, PATHEXT still consulted, CI still
+# has the Windows job. Offline, ~1s.
+# ---------------------------------------------------------------------------
+windows_adapter_lifecycle() {
+  local ok=0
+  local sh='scripts/windows-adapter-lifecycle.sh'
+  if [[ ! -x "$sh" ]]; then
+    printf '  %s is missing or not executable\n' "$sh"
+    return 1
+  fi
+  "$sh" check || ok=1
+  ./scripts/tests/windows-adapter-lifecycle.test.sh || ok=1
+  return $ok
+}
+
+# ---------------------------------------------------------------------------
 # 2g. windows NSIS packaging (#281)
 #
 # The Windows installer is produced on windows-latest at tag time, which this
@@ -910,6 +932,7 @@ run "commit guards"  guards
 run "install script" install_script
 run "macos acceptance" macos_acceptance
 run "windows acceptance" windows_acceptance
+run "windows adapter lifecycle" windows_adapter_lifecycle
 run "windows packaging" windows_packaging
 run "macos lint tests" macos_lint_tests
 run "windows ci"       windows_ci_tests

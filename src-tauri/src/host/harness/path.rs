@@ -41,11 +41,17 @@ const HOME_RELATIVE: &[&str] = &[".local/bin", "bin", ".cargo/bin", ".bun/bin"];
 pub fn search_path() -> &'static [PathBuf] {
     static CACHE: OnceLock<Vec<PathBuf>> = OnceLock::new();
     CACHE.get_or_init(|| {
-        augment(
+        let mut dirs = augment(
             std::env::var_os("PATH").as_deref(),
             login_shell_path().as_deref(),
             home_dir().as_deref(),
-        )
+        );
+        for dir in extra_well_known() {
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+        dirs
     })
 }
 
@@ -132,8 +138,38 @@ fn parse_version(name: &str) -> Vec<u32> {
         .collect()
 }
 
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+/// `$HOME` on Unix; `USERPROFILE` on a Windows box that never set `HOME`.
+pub(crate) fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+/// Directories a Windows GUI launch does not inherit, joined with `Path::join`
+/// so we never hard-code `\` vs `/`.
+fn extra_well_known() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        let mut out = Vec::new();
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            let local = PathBuf::from(local);
+            out.push(local.join("fnm"));
+            out.push(local.join("Programs").join("Git").join("cmd"));
+        }
+        if let Some(roaming) = std::env::var_os("APPDATA") {
+            out.push(PathBuf::from(roaming).join("npm"));
+        }
+        if let Some(pf) = std::env::var_os("ProgramFiles") {
+            let pf = PathBuf::from(pf);
+            out.push(pf.join("nodejs"));
+            out.push(pf.join("Git").join("cmd"));
+        }
+        out
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
 }
 
 /// Ask the user's login shell what PATH it would have.
@@ -159,8 +195,7 @@ fn login_shell_path() -> Option<String> {
     // Its own group, because a login shell runs the user's rc files and those
     // routinely start background work. On the timeout path below, killing the
     // shell alone would leave that work orphaned.
-    super::super::procgroup::own_group(&mut cmd);
-    let mut child = cmd.spawn().ok()?;
+    let mut child = super::super::procgroup::spawn(&mut cmd).ok()?;
     let deadline = std::time::Instant::now() + LOGIN_SHELL_TIMEOUT;
     loop {
         match child.try_wait() {

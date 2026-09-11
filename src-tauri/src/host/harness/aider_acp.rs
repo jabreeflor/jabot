@@ -54,7 +54,7 @@ pub trait AiderExec: Send + Sync + 'static {
 pub struct RealAider;
 
 struct RealChild {
-    child: std::process::Child,
+    child: procgroup::GroupedChild,
     stderr: Option<thread::JoinHandle<String>>,
 }
 
@@ -114,10 +114,8 @@ impl AiderExec for RealAider {
         for (key, value) in ENV_FLOOR {
             cmd.env(key, value);
         }
-        procgroup::own_group(&mut cmd);
-        let mut child = cmd
-            .spawn()
-            .map_err(|err| format!("failed to spawn aider: {err}"))?;
+        let mut child =
+            procgroup::spawn(&mut cmd).map_err(|err| format!("failed to spawn aider: {err}"))?;
         let stderr_pipe = child.stderr.take();
         let stderr = Some(thread::spawn(move || {
             let mut buf = String::new();

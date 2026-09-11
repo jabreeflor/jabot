@@ -60,8 +60,7 @@ pub fn install(params: InstallParams) -> Result<InstallStatus, RpcError> {
     }
     let npm = super::resolve_command("npm")
         .ok_or_else(|| RpcError::InvalidParams("Install Node.js and npm, then retry.".into()))?;
-    let prefix = std::env::var_os("HOME")
-        .map(PathBuf::from)
+    let prefix = super::path::home_dir()
         .ok_or_else(|| RpcError::Internal("Home directory unavailable.".into()))?
         .join(".local");
     let status = InstallStatus {
@@ -87,16 +86,15 @@ fn run(npm: PathBuf, prefix: PathBuf, package: &str) -> Result<(), String> {
     // No shell, no sudo and no caller-supplied package/command. Discard output
     // rather than risk a filled pipe blocking the installer or exposing tokens.
     let mut command = Command::new(npm);
-    super::super::procgroup::own_group(&mut command);
-    let mut child = command
+    command
         .args(["install", "--global", "--prefix"])
         .arg(prefix)
         .args(["--no-audit", "--no-fund", package])
         .env("PATH", super::path::joined())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    let mut child = super::super::procgroup::spawn(&mut command)
         .map_err(|e| format!("Could not start npm: {e}. Retry after installing Node.js."))?;
     let deadline = Instant::now() + Duration::from_secs(180);
     loop {

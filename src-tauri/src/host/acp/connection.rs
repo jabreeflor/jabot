@@ -18,7 +18,6 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::Child;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -26,6 +25,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
+use super::super::procgroup::GroupedChild;
 use super::super::protocol::error::RpcError;
 use super::super::protocol::frame::encode_frame;
 use super::super::protocol::jsonrpc::{
@@ -84,7 +84,7 @@ pub enum Inbound {
 }
 
 pub(crate) struct AcpConnection {
-    child: Child,
+    child: GroupedChild,
     stdin: Arc<Mutex<std::process::ChildStdin>>,
     pending: Arc<Mutex<HashMap<i64, Sender<JsonRpcResponse>>>>,
     inbound_rx: Receiver<Inbound>,

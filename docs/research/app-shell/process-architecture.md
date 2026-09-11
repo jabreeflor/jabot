@@ -81,8 +81,11 @@ kill the adapter and keep the `sessionId` for resume. That policy belongs
 to session-lifecycle; the shell just has to be able to kill a PGID.
 
 On Unix, spawn adapters in their **own process group** and kill the group
-(Buzz `runtime.rs` does this). Otherwise `claude` grandchildren survive
-JaBot and hold files/ports. This is a host concern, not a UI concern.
+(Buzz `runtime.rs` does this). On Windows (#285), assign each adapter to a
+Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (and
+`CREATE_NEW_PROCESS_GROUP` for a `CTRL_BREAK` grace); if assignment fails,
+`taskkill /T /F`. Otherwise `claude` grandchildren survive JaBot and hold
+files/ports. This is a host concern, not a UI concern.
 
 ## Sidecar vs PATH spawn
 

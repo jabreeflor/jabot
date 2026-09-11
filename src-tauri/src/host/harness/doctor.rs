@@ -754,8 +754,7 @@ impl SystemProbe {
         // user opened the Doctor — and every one of these CLIs is a wrapper
         // that forks work of its own. Killing the pid alone would leave that
         // subtree running for the rest of the session.
-        procgroup::own_group(&mut cmd);
-        let mut child = match cmd.spawn() {
+        let mut child = match procgroup::spawn(&mut cmd) {
             Ok(child) => child,
             Err(err) => {
                 return ProbeOutput {
@@ -820,8 +819,7 @@ impl SystemProbe {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        procgroup::own_group(&mut cmd);
-        let mut child = match cmd.spawn() {
+        let mut child = match procgroup::spawn(&mut cmd) {
             Ok(child) => child,
             Err(err) => return Err(ProbeRun::Failed(err.to_string())),
         };
@@ -1371,7 +1369,7 @@ mod tests {
             .expect("a pid");
         std::thread::sleep(Duration::from_millis(100));
         assert!(
-            !crate::host::procgroup::process_alive(grandchild),
+            !crate::host::procgroup::process_alive(grandchild as u32),
             "grandchild {grandchild} outlived the probe that started it"
         );
     }
