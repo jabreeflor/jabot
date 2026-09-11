@@ -153,7 +153,7 @@ one run tells you everything that is wrong.
 | `browser visual + a11y + smoke` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd` (smoke journey, axe with contrast, keyboard, visual baselines). CI's `browser` job is the required PR check | `npx playwright install chromium webkit`, then `npm run test:browser`. Needs the host binaries (`npm run host:build`). |
 | `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 | `macos acceptance` | #235: the packaged-app matrix still names Tauri IPC, Dock, Keychain, adapters, and updater archives; isolation still refuses production app data; Playwright WebKit is not this gate | you changed the script, the docs, or the workflows; `./scripts/macos-acceptance.sh check` and `./scripts/tests/macos-acceptance.test.sh` name the cell that moved. Launching `JaBot.app` is `run` on a Mac — D-019 is why that is not this stage |
-| `windows acceptance` | #287: Windows install docs + five-cell smoke checklist still name launch, bot chat, secret round-trip, adapter spawn, quit-no-orphans, and the glass / Dock / SmartScreen / notify gaps; no macOS-parity claim | you changed `docs/windows.md`, the checklist, or the script; `./scripts/windows-acceptance.sh check` and `./scripts/tests/windows-acceptance.test.sh`. Launching `JaBot.exe` is not this stage — there is no packaged installer yet (#281) |
+| `windows acceptance` | #287: Windows install docs + five-cell smoke checklist still name launch, bot chat, secret round-trip, adapter spawn, quit-no-orphans, and the glass / Dock / SmartScreen / notify gaps; no macOS-parity claim | you changed `docs/windows.md`, the checklist, or the script; `./scripts/windows-acceptance.sh check` and `./scripts/tests/windows-acceptance.test.sh`. Launching `JaBot.exe` is not this Linux stage (#281 ships the installer; `run` still refuses here) |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
@@ -408,8 +408,8 @@ filing or "fixing" a gap.
   label a PR `macos-acceptance` to opt into the expensive Mac job. Do not call
   Playwright WebKit a Tauri acceptance run. Windows install + the five-cell
   smoke list is `#287` / [docs/windows.md](docs/windows.md); it does not claim
-  macOS parity and `windows-acceptance.sh run` is not wired until #281 ships
-  an installer.
+  macOS parity and `windows-acceptance.sh run` is still not wired on Linux
+  (no WebView2 / `JaBot.exe` here; #281 is the installer).
 - A test that cannot fail when the thing it covers breaks is worse than no
   test, because it reads as coverage. Break it once and watch it fail before
   you trust it.
