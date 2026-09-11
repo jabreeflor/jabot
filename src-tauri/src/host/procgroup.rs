@@ -61,13 +61,13 @@ impl GroupedChild {
     /// True when `AssignProcessToJobObject` succeeded. Tests that claim to
     /// prove the Job Object path must assert this — `taskkill /T` is not
     /// that proof.
-    #[cfg(windows)]
+    #[cfg(all(test, windows))]
     pub(crate) fn job_assigned(&self) -> bool {
         self.job.is_assigned()
     }
 
     /// Why assign failed, when it did. For honest skip/fail messages.
-    #[cfg(windows)]
+    #[cfg(all(test, windows))]
     pub(crate) fn job_assign_error(&self) -> Option<&str> {
         self.job.assign_error()
     }
@@ -136,7 +136,7 @@ pub(crate) fn spawn(cmd: &mut Command) -> io::Result<GroupedChild> {
 
     #[cfg(windows)]
     {
-        return spawn_windows(cmd, true);
+        spawn_windows(cmd, true)
     }
 
     #[cfg(not(windows))]
@@ -273,8 +273,10 @@ mod windows_job {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    #[cfg(test)]
+    use windows_sys::Win32::Foundation::STILL_ACTIVE;
     use windows_sys::Win32::Foundation::{
-        CloseHandle, GetLastError, FALSE, HANDLE, INVALID_HANDLE_VALUE, STILL_ACTIVE,
+        CloseHandle, GetLastError, FALSE, HANDLE, INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::System::Console::{GenerateConsoleCtrlEvent, CTRL_BREAK_EVENT};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
@@ -282,15 +284,19 @@ mod windows_job {
         PROCESSENTRY32W, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD, THREADENTRY32,
     };
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicProcessIdList,
-        JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
-        TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
-    use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, OpenThread, ResumeThread,
-        PROCESS_QUERY_LIMITED_INFORMATION, THREAD_SUSPEND_RESUME,
+    #[cfg(test)]
+    use windows_sys::Win32::System::JobObjects::{
+        JobObjectBasicProcessIdList, QueryInformationJobObject,
     };
+    #[cfg(test)]
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
 
     pub(super) struct Job {
         handle: HANDLE,
@@ -298,6 +304,7 @@ mod windows_job {
         /// Direct child pid, for the unassigned `taskkill /T` fallback (and
         /// Drop). 0 means unset — never pass it to taskkill (pid 0 is Idle).
         pid: u32,
+        #[cfg(test)]
         assign_error: Option<String>,
         /// After an explicit [`Job::terminate`], Drop must not taskkill again
         /// on a pid that `wait` already reaped — harmless, but skip it.
@@ -314,6 +321,7 @@ mod windows_job {
                 handle: std::ptr::null_mut(),
                 assigned: false,
                 pid: 0,
+                #[cfg(test)]
                 assign_error: None,
                 terminated: false,
             }
@@ -323,10 +331,12 @@ mod windows_job {
             self.handle.is_null() || self.handle == INVALID_HANDLE_VALUE
         }
 
+        #[cfg(test)]
         pub(super) fn is_assigned(&self) -> bool {
             self.assigned
         }
 
+        #[cfg(test)]
         pub(super) fn assign_error(&self) -> Option<&str> {
             self.assign_error.as_deref()
         }
@@ -360,6 +370,7 @@ mod windows_job {
                     handle,
                     assigned: false,
                     pid: 0,
+                    #[cfg(test)]
                     assign_error: None,
                     terminated: false,
                 })
@@ -369,7 +380,10 @@ mod windows_job {
         pub(super) fn assign(&mut self, child: &Child) -> io::Result<()> {
             if self.is_empty() {
                 let err = io::Error::other("job object was not created");
-                self.assign_error = Some(err.to_string());
+                #[cfg(test)]
+                {
+                    self.assign_error = Some(err.to_string());
+                }
                 return Err(err);
             }
             // SAFETY: `child` is a live process we just spawned (still
@@ -379,7 +393,10 @@ mod windows_job {
                 let ok = AssignProcessToJobObject(self.handle, process);
                 if ok == FALSE {
                     let err = io::Error::from_raw_os_error(GetLastError() as i32);
-                    self.assign_error = Some(err.to_string());
+                    #[cfg(test)]
+                    {
+                        self.assign_error = Some(err.to_string());
+                    }
                     return Err(err);
                 }
             }
