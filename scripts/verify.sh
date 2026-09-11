@@ -459,9 +459,11 @@ for (const k of ['productName', 'identifier']) {
   if (!conf[k]) bad(`${T}: ${k} is not set`);
 }
 
-// #282: overlay title bar, private API, and under-window vibrancy are
-// macOS-only. The shared config must stay a decorated opaque window so a
-// Windows build does not inherit transparent holes or require
+// #282: overlay title bar and under-window vibrancy are macOS-only.
+// The shared window must stay decorated and opaque so Windows does not
+// inherit transparent holes. macOSPrivateApi stays in the shared file:
+// tauri-build's allowlist is bidirectional and reads one Cargo.toml, so
+// Linux clippy and Mac clippy both need the flag to match
 // macos-private-api. Platform files merge on top (JSON Merge Patch
 // replaces the windows array, so sizes have to stay in lockstep).
 const macT = 'src-tauri/tauri.macos.conf.json';
@@ -473,8 +475,8 @@ const loadJson = (p) => {
 const macConf = loadJson(macT);
 const winConf = loadJson(winT);
 const baseWin = (conf.app && conf.app.windows && conf.app.windows[0]) || {};
-if (conf.app && conf.app.macOSPrivateApi) {
-  bad(`${T}: macOSPrivateApi must live in ${macT} so Windows/Linux builds do not require macos-private-api (#282)`);
+if (!(conf.app && conf.app.macOSPrivateApi === true)) {
+  bad(`${T}: macOSPrivateApi must stay true — tauri-build's allowlist matches it against macos-private-api in Cargo.toml on every OS (#282)`);
 }
 if (baseWin.transparent === true) {
   bad(`${T}: transparent:true punches holes on Windows; keep it in ${macT} (#282)`);

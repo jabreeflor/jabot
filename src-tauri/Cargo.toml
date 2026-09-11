@@ -30,12 +30,11 @@ dev-bins = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# tauri-build's allowlist reads this features list from the TOML, not the
-# resolved target graph. macOSPrivateApi lives in tauri.macos.conf.json, so
-# `cargo clippy --lib` on a Mac fails unless the string is here. The
-# Windows/Linux *window* does not use the API: platform configs stay
-# decorated/opaque, and window.rs returns before touching the webview fill
-# (#282). Off Apple the feature is a compile flag, not a private-API call.
+# tauri-build's allowlist is bidirectional and reads this list from the
+# TOML: macOSPrivateApi in tauri.conf.json and this feature must match on
+# every OS. The Windows/Linux *window* does not use the API: platform
+# configs stay decorated/opaque, and window.rs returns before touching
+# the webview fill (#282). Off Apple the feature is a compile flag.
 tauri = { version = "2", features = ["macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

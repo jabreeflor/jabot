@@ -116,11 +116,12 @@
         <div class="step">
           <strong>2. Private API is unused off macOS</strong>
           <span>
+            <code>macOSPrivateApi</code> stays in the shared config and
             <code>macos-private-api</code> stays on the untargeted
-            <code>tauri</code> dep because tauri-build's allowlist reads the
-            TOML (a Mac clippy fails without it). Windows/Linux never call
-            it: <code>window.rs</code> returns before clearing the fill, and
-            the Windows config is a decorated opaque window.
+            <code>tauri</code> dep: tauri-build's allowlist is bidirectional.
+            Windows/Linux never call the API — <code>window.rs</code> returns
+            before clearing the fill, and the Windows window is decorated
+            and opaque.
           </span>
         </div>
         <div class="step">

@@ -175,8 +175,8 @@ describe("shared window config stays portable", () => {
   const macWin = macos.app.windows[0];
   const winWin = windows.app.windows[0];
 
-  it("keeps overlay / private API / vibrancy out of the shared config", () => {
-    expect(base.app.macOSPrivateApi).toBeUndefined();
+  it("keeps overlay and vibrancy out of the shared window", () => {
+    expect(base.app.macOSPrivateApi).toBe(true);
     expect(baseWin.transparent).toBeUndefined();
     expect(baseWin.titleBarStyle).toBeUndefined();
     expect(baseWin.windowEffects).toBeUndefined();

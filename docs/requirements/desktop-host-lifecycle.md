@@ -60,11 +60,12 @@ in [`src-tauri/tauri.macos.conf.json`](../../src-tauri/tauri.macos.conf.json).
 The shared [`tauri.conf.json`](../../src-tauri/tauri.conf.json) is a
 portable decorated window; Windows merges
 [`tauri.windows.conf.json`](../../src-tauri/tauri.windows.conf.json)
-(`decorations: true`, `transparent: false`). `macos-private-api` stays
-on the untargeted `tauri` dep because tauri-build's allowlist reads the
-TOML (a Mac `cargo clippy --lib` fails without it once
-`tauri.macos.conf.json` sets `macOSPrivateApi`). Windows/Linux never
-*call* the API: `window.rs` returns before clearing the webview fill.
+(`decorations: true`, `transparent: false`). `macOSPrivateApi` stays
+in the shared config and `macos-private-api` stays on the untargeted
+`tauri` dep: tauri-build's allowlist is bidirectional and reads one
+Cargo.toml, so Linux and Mac clippy both need the pair to match.
+Windows/Linux never *call* the API: `window.rs` returns before clearing
+the webview fill.
 
 The renderer reads `window_chrome` and paints `data-window-chrome`.
 Decorated chrome zeros `--titlebar-h` / `--traffic-lights-w` so agent
