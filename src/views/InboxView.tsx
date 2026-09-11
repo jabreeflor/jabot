@@ -32,13 +32,17 @@ const TABS: readonly TabSpec<InboxTab>[] = [
  * Only `denied` earns a line, and only on a platform that has a Notification
  * Center to refuse. The distinction matters:
  *
- * - `unsupported` is a Linux build or a dev build outside `JaBot.app` — there
- *   was never anything to permit, so a line about System Settings would send
- *   the user somewhere that cannot help.
- * - `notDetermined` means nobody has been asked yet. The first banner asks;
- *   pre-emptively saying "notifications are off" would be wrong the moment it
- *   is read.
- * - `granted` has nothing to report.
+ * - `unsupported` is a Linux build or any host that is neither macOS nor
+ *   Windows — there was never anything to permit, so a line about System
+ *   Settings would send the user somewhere that cannot help. Windows toasts
+ *   (#284) are a real backend and do not use this value.
+ * - `notDetermined` means nobody has been asked yet. On macOS the first
+ *   banner asks; on Windows there is no prompt and Settings-off is not
+ *   reported as `denied` (cheap MVP), so this value is also "we have not
+ *   proved a toast yet". Pre-emptively saying "notifications are off"
+ *   would be wrong the moment it is read.
+ * - `granted` has nothing to report. Windows reaches this after a toast
+ *   `Show` succeeds; Action Center can still hide the banner.
  *
  * The copy leads with the consequence and closes with the reassurance,
  * because the card is written first and always (decision #5): a refused

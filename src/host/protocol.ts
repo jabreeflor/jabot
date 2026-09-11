@@ -1324,8 +1324,9 @@ export interface InboxEventParams extends Envelope {
 
 // ---- Native notifications (#27) ---------------------------------------
 
-/** `unsupported` is not a refusal: it is a Linux build, or a dev build running
-    outside `JaBot.app`, neither of which has a Notification Center to ask. */
+/** `unsupported` is not a refusal: it is a Linux build or any host that is
+    neither macOS nor Windows, none of which has a banner API to ask.
+    Windows reports a real toast backend (#284), not this value. */
 export type NotifyAuthorization =
   "granted" | "denied" | "notDetermined" | "unsupported";
 

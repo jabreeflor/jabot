@@ -34,7 +34,7 @@ the issue number is noted so it can be cross-referenced against
 | [chief-of-staff-bot.md](chief-of-staff-bot.md) | Chief of Staff bot + handoff/spawn/status tools | #24 |
 | [schedules.md](schedules.md) | In-process cron schedules delivered to Inbox | #25 |
 | [fold-and-wait.md](fold-and-wait.md) | Fold & "Wait for Inbox" wired to real sessions | #26 |
-| [native-notifications.md](native-notifications.md) | macOS native notifications | #27 |
+| [native-notifications.md](native-notifications.md) | Native notifications (macOS + Windows toasts) | #27, #284 |
 | [pull-requests.md](pull-requests.md) | Pull Requests view + thread↔PR linkage | #28 |
 | [mobile-inbox.md](mobile-inbox.md) | Mobile Inbox client (MVP2) | #29 |
 
