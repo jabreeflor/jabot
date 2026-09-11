@@ -1136,7 +1136,7 @@ mod tests {
         );
         let backend = value["store"]["secretsBackend"].as_str().unwrap();
         assert!(
-            backend == "keychain" || backend == "unavailable",
+            backend == "keychain" || backend == "credential-manager" || backend == "unavailable",
             "unexpected secrets backend {backend}"
         );
     }

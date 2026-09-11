@@ -16,7 +16,7 @@ the issue number is noted so it can be cross-referenced against
 |---|---|---|
 | [desktop-host-lifecycle.md](desktop-host-lifecycle.md) | Desktop host process, window/Dock/Quit lifecycle | #4, #7, #21, #282 |
 | [host-api-protocol.md](host-api-protocol.md) | Typed JSON-RPC host API | #8 |
-| [data-layer-persistence.md](data-layer-persistence.md) | SQLite data layer + OS keychain secrets | #9 |
+| [data-layer-persistence.md](data-layer-persistence.md) | SQLite data layer + OS credential-store secrets | #9, #283 |
 | [harness-adapter-layer.md](harness-adapter-layer.md) | ACP harness adapters + catalog/Doctor | #10, #13 |
 | [ui-shell.md](ui-shell.md) | React/TS UI shell ported from the HTML prototype | #11 |
 | [packaging-distribution.md](packaging-distribution.md) | macOS signing, notarization, updater; Windows NSIS | #12, #281 |

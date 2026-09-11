@@ -160,7 +160,7 @@ See [docs/packaging.md](packaging.md#windows-nsis-installer) (#281).
 | Variable | Production | Acceptance |
 |---|---|---|
 | App data | `~/Library/Application Support/com.jabot.app` | `JABOT_APP_DATA_DIR` under `/tmp/jabot-acceptance-*` |
-| Keychain service | `com.jabot.app` | `JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.<id>` plus a throwaway keychain |
+| Credential-store service | `com.jabot.app` | `JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.<id>` plus a throwaway keychain (macOS) or isolated Credential Manager target (Windows, #283) |
 | Agent | user's Claude / Codex / … | `fake-acp-agent` (`dev-bins`) |
 | Credentials | never | never |
 
