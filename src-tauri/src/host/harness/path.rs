@@ -184,12 +184,20 @@ fn login_shell_path() -> Option<String> {
 mod tests {
     use super::*;
 
+    /// `augment` splits with the host separator. A colon-joined string is one
+    /// entry on Windows, so the fixtures have to be built with `join_paths`.
+    fn joined_path(dirs: &[&str]) -> std::ffi::OsString {
+        std::env::join_paths(dirs.iter().map(PathBuf::from)).expect("test dirs have no separator")
+    }
+
     #[test]
     fn login_shell_and_home_dirs_are_added_to_a_launchd_path() {
         let home = tempfile::tempdir().unwrap();
+        let process = joined_path(&["/usr/bin", "/bin"]);
+        let login = joined_path(&["/opt/homebrew/bin", "/usr/bin"]);
         let merged = augment(
-            Some(OsStr::new("/usr/bin:/bin")),
-            Some("/opt/homebrew/bin:/usr/bin"),
+            Some(process.as_os_str()),
+            Some(login.to_str().expect("test paths are utf-8")),
             Some(home.path()),
         );
 
@@ -203,9 +211,11 @@ mod tests {
 
     #[test]
     fn duplicates_collapse_to_the_first_occurrence() {
+        let process = joined_path(&["/usr/bin", "/bin"]);
+        let login = joined_path(&["/bin", "/usr/bin", "/opt/homebrew/bin"]);
         let merged = augment(
-            Some(OsStr::new("/usr/bin:/bin")),
-            Some("/bin:/usr/bin:/opt/homebrew/bin"),
+            Some(process.as_os_str()),
+            Some(login.to_str().expect("test paths are utf-8")),
             None,
         );
         let usr_bin = merged
