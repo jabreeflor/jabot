@@ -48,7 +48,9 @@ last mile between "builds locally" and "someone else can run it."
    `windows` job. Identifier and product name stay `com.jabot.app` /
    `JaBot`. Authenticode / SmartScreen reputation are documented
    follow-up, not a prerequisite for the unsigned artifact. The Windows
-   job must not write `latest.json`. See [`docs/packaging.md`](../packaging.md).
+   job must not write `latest.json` (`uploadUpdaterJson: false`; no
+   `TAURI_SIGNING_*` — that is the updater minisign key, not Authenticode).
+   See [`docs/packaging.md`](../packaging.md).
 
 Windows install, the gap list vs macOS, and the smoke checklist are
 [#287](https://github.com/jabreeflor/jabot/issues/287) /

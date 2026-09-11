@@ -797,8 +797,9 @@ windows_acceptance() {
 # Linux gate cannot run. What can rot silently is the config that job reads
 # and the sibling-job rules that keep it from writing latest.json: platform
 # targets still NSIS-only, publisher still set, icon.ico still present,
-# bundle:adapters still goes through bash, and release.yml still has a
-# windows job that does not see APPLE_* or TAURI_SIGNING_*.
+# bundle:adapters still goes through bash, npm script-shell is still Git
+# Bash, and release.yml still has a windows job with uploadUpdaterJson:
+# false, a releaseBody, and no APPLE_* / TAURI_SIGNING_*.
 # scripts/tests/windows-packaging.test.sh is the behaviour (~1s).
 # ---------------------------------------------------------------------------
 windows_packaging() {

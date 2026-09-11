@@ -189,9 +189,12 @@ headless macOS bundle job, or a Playwright WebKit run, as that step.
      ticket, and uploads the `.dmg`, the `.app.tar.gz` + `.sig`,
      `latest.json`, and `install.sh`.
    - **windows** builds `x86_64-pc-windows-msvc` with `--bundles nsis` and
-     uploads `JaBot_*_x64-setup.exe`. It does **not** merge
-     `createUpdaterArtifacts` and does not see `TAURI_SIGNING_*` or
-     `APPLE_*`, so it cannot rewrite the macOS feed.
+     uploads `JaBot_*_x64-setup.exe`. It sets `uploadUpdaterJson: false`,
+     does **not** merge `createUpdaterArtifacts`, and does not see
+     `TAURI_SIGNING_*` or `APPLE_*`, so it cannot rewrite the macOS feed.
+     Both jobs carry the same `releaseBody`: pinned tauri-action will not
+     update name/body on an existing draft, so whoever creates the draft
+     writes the full notes (macOS `curl | bash` + unsigned / SmartScreen).
 5. Download the `.dmg` and run the verification below. On a Windows box,
    run the `*-setup.exe` (SmartScreen → More info → Run anyway) and confirm
    JaBot lands under the current-user install directory.
@@ -475,9 +478,14 @@ npm run tauri build -- --target x86_64-pc-windows-msvc --bundles nsis
 ```
 
 Do **not** pass `--config {"bundle":{"createUpdaterArtifacts":true}}` on
-Windows. That flag is how the macOS job writes `latest.json`. A Windows
-build that emits updater artifacts would race the macOS job for the same
-asset, and the updater plugin looks up `darwin-*` only.
+Windows, and do **not** set `uploadUpdaterJson: true` (that is the
+tauri-action default). `createUpdaterArtifacts` is how the macOS *bundler*
+emits `.sig` archives; `uploadUpdaterJson` is how the *action* rewrites
+`latest.json` if it sees a `.sig` on the draft. A Windows job that leaves
+the upload default on would race the macOS job for the same asset the
+moment a signature file exists. The updater plugin looks up `darwin-*`
+only. `TAURI_SIGNING_*` is that feed's minisign key — it is not
+Authenticode and does not belong on this runner.
 
 ### Cross-build from Linux or macOS
 
@@ -497,32 +505,51 @@ See [Tauri's Windows installer guide](https://v2.tauri.app/distribute/windows-in
 ### What the release job does
 
 `.github/workflows/release.yml` `windows` job, on `windows-latest`, parallel
-with `macos`:
+with `macos` (both write the same `releaseBody` onto the shared draft):
 
 1. Same version preflight as macOS (tag must match `tauri.conf.json`).
-2. `npm ci` then tauri-action with `--target x86_64-pc-windows-msvc --bundles nsis`.
-3. Upload the setup.exe to the **same draft** GitHub Release.
-4. `./scripts/windows-packaging.sh artifacts` — the file exists and is
+2. Point npm's `script-shell` at Git Bash (`npm config set script-shell
+   "$(command -v bash)"`). `beforeBuildCommand` is spawned by the Tauri
+   CLI, not this job's `defaults.run.shell`; without this, `bundle:adapters`
+   does not run on `windows-latest`.
+3. `npm ci` then tauri-action with `--target x86_64-pc-windows-msvc
+   --bundles nsis` and `uploadUpdaterJson: false`.
+4. Upload the setup.exe to the **same draft** GitHub Release.
+5. `./scripts/windows-packaging.sh artifacts` — the file exists and is
    non-empty. Not Authenticode, not SmartScreen, not a launched app.
 
 `scripts/windows-packaging.sh check` (inside `./scripts/verify.sh`) is the
 offline gate: overlay targets stay NSIS, macOS `app`/`dmg` stay in the
 base config, the windows job still cannot see `APPLE_*` or `TAURI_SIGNING_*`,
-and it still does not merge `createUpdaterArtifacts`.
+it still does not merge `createUpdaterArtifacts`, `uploadUpdaterJson` is
+false, `releaseBody` still carries the SmartScreen warning, and npm's
+script-shell is still pointed at bash.
+
+If a PR is labelled `windows-package` (#290) and a `v*` tag is cut later,
+NSIS may be built twice (CI artifact + this release upload). Wasteful, not
+conflicting; tag NSIS is this job.
 
 ### Authenticode / SmartScreen (follow-up)
 
-Not blocked on #281, and not available in this repo today. When a cert
-exists:
+Not blocked on #281, and not available in this repo today. Authenticode
+(the Windows OS signature SmartScreen looks at) is a **different key**
+from the updater's `TAURI_SIGNING_*` Ed25519 pair. Do not put the updater
+key on the windows runner just because a code-signing cert now exists —
+that would make `uploadUpdaterJson`'s implicit skip fail and race
+`latest.json`.
+
+When an Authenticode cert exists:
 
 1. Store the certificate (or Azure Trusted Signing credentials) as
    repository secrets. Do **not** commit a thumbprint of a cert we do not
    have.
-2. Set `bundle.windows.certificateThumbprint` / `signCommand` (or the
-   `TAURI_SIGNING_*` Windows equivalents Tauri documents) only in the
-   windows job, never in the macos job.
-3. Keep `createUpdaterArtifacts` off on Windows until the updater plugin
-   is actually registered there.
+2. Set `bundle.windows.certificateThumbprint` and/or `signCommand` (Azure
+   Trusted Signing goes through `signCommand`) only in the windows job,
+   never in the macos job. Those are Authenticode knobs.
+3. Keep `TAURI_SIGNING_*` off this runner. Keep `createUpdaterArtifacts`
+   off and `uploadUpdaterJson: false` until the updater plugin is actually
+   registered on Windows. The updater key signs `latest.json`; it does
+   not silence SmartScreen.
 4. Budget time for SmartScreen reputation: a newly signed publisher still
    warns until enough users have run the binary.
 

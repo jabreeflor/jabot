@@ -77,7 +77,7 @@
     <h1>Windows NSIS packaging and release artifacts</h1>
     <p class="lede">#281 / PR: add a Windows installer next to the existing macOS dmg, without letting that job rewrite <code>latest.json</code>.</p>
 
-    <h2>How it works</h2>
+    <h2 id="how-it-works">How it works</h2>
     <div class="flow">
       <section class="card mac">
         <h3><span class="tag mac">Before / still true</span></h3>
@@ -92,15 +92,18 @@
         <ul>
           <li><code>tauri.windows.conf.json</code> overlays <code>targets: ["nsis"]</code> on Windows only.</li>
           <li>Sibling <code>windows</code> job on <code>windows-latest</code> uploads <code>*-setup.exe</code>.</li>
-          <li>No <code>createUpdaterArtifacts</code>, no <code>APPLE_*</code>, no <code>TAURI_SIGNING_*</code> on that runner.</li>
+          <li><code>uploadUpdaterJson: false</code>, no <code>createUpdaterArtifacts</code>, no <code>APPLE_*</code>, no <code>TAURI_SIGNING_*</code>.</li>
+          <li>Same <code>releaseBody</code> as macos (draft notes race). npm <code>script-shell</code> = Git Bash before <code>tauri build</code>.</li>
         </ul>
       </section>
     </div>
 
     <div class="pipe">tag vX.Y.Z
   ├─ macos   → .dmg + .app.tar.gz + .sig + latest.json + install.sh
+  │            (writes full releaseBody)
   └─ windows → JaBot_*_x64-setup.exe
-         │
+         │     uploadUpdaterJson: false
+         │     same releaseBody (tauri-action will not update a draft)
          └─ same draft GitHub Release
             latest.json is written only by macos</div>
 
@@ -109,23 +112,23 @@
       <p>Putting <code>nsis</code> next to <code>app</code>/<code>dmg</code> would make a macOS <code>tauri build</code> see a Windows target. The overlay file is merged only on a Windows host, so D-005 stays intact: losing <code>app</code> still ships an unupdatable macOS feed. Release CI also passes <code>--bundles nsis</code> so the installer is explicit if the overlay is ignored.</p>
     </section>
 
-    <h2>What to look at</h2>
+    <h2 id="what-to-look-at">What to look at</h2>
     <div class="files">
       <div class="file"><strong>src-tauri/tauri.windows.conf.json</strong><span>NSIS-only targets, current-user install, WebView2 download bootstrapper.</span></div>
-      <div class="file"><strong>.github/workflows/release.yml</strong><span>Renamed job <code>macos</code>; new sibling <code>windows</code> that cannot write the updater feed.</span></div>
-      <div class="file"><strong>scripts/windows-packaging.sh</strong><span>Offline verify gate: overlay, sibling-job rules, <code>*-setup.exe</code> presence.</span></div>
+      <div class="file"><strong>.github/workflows/release.yml</strong><span>Renamed job <code>macos</code>; sibling <code>windows</code> with <code>uploadUpdaterJson: false</code>, shared <code>releaseBody</code>, Git Bash <code>script-shell</code>.</span></div>
+      <div class="file"><strong>scripts/windows-packaging.sh</strong><span>Offline verify gate plus refusal fixtures: overlay, draft notes, updater JSON, adapter staging.</span></div>
       <div class="file"><strong>package.json</strong><span><code>bundle:adapters</code> now runs through <code>bash</code> so Windows npm can stage the ACP adapter.</span></div>
       <div class="file"><strong>docs/packaging.md</strong><span>Build, install, unsigned/SmartScreen follow-up, cargo-xwin last-resort path.</span></div>
     </div>
 
-    <h2>How to verify</h2>
+    <h2 id="how-to-verify">How to verify</h2>
     <p class="verify">
       <code>./scripts/windows-packaging.sh check</code><br />
       <code>npm run test:windows-packaging</code><br />
       <code>./scripts/verify.sh</code><br />
       On a Windows box or the release runner: <code>npm run tauri build</code> → <code>src-tauri/target/release/bundle/nsis/*-setup.exe</code>
     </p>
-    <p>The Windows installer is unsigned. SmartScreen will warn until an Authenticode cert exists — documented follow-up, not a packaging bug. Runtime Windows work is #282–#286.</p>
+    <p>The Windows installer is unsigned. SmartScreen will warn until an Authenticode cert exists — that is not the updater's <code>TAURI_SIGNING_*</code> key. Runtime Windows work is #282–#286. Merge after #290; hand-merge <code>tauri.windows.conf.json</code> with #294.</p>
   </main>
 </body>
 </html>

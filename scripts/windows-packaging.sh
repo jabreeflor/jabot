@@ -8,7 +8,9 @@
 # This is the packaging contract, not a launched Windows app. Window chrome
 # (#282), Credential Manager (#283), toasts (#284), and Job Objects (#285)
 # are separate. A green check here means `tauri build` on windows-latest is
-# still aimed at NSIS and cannot clobber the macOS updater feed.
+# still aimed at NSIS, writes the same draft notes as macos, and cannot
+# clobber the macOS updater feed (uploadUpdaterJson is false; no
+# TAURI_SIGNING_*).
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -150,12 +152,33 @@ const windowsCode = windows.replace(/^\s*#.*$/gm, '').replace(/\\\n/g, ' ');
 if (/createUpdaterArtifacts/.test(windowsCode)) {
   bad(`${Y}: windows job merges createUpdaterArtifacts — it would race the macOS job for latest.json, which the updater plugin looks up by darwin-* only`);
 }
+// Pinned tauri-action defaults uploadUpdaterJson to true and will rewrite
+// latest.json if it sees a .sig on the draft. createUpdaterArtifacts being
+// off is not that write path. The value must be the literal false.
+if (!/^\s+uploadUpdaterJson:\s*false\s*$/m.test(windows)) {
+  bad(`${Y}: windows job must set uploadUpdaterJson: false — tauri-action defaults to true and would rewrite latest.json if a .sig is on the draft`);
+}
+if (/^\s+uploadUpdaterJson:\s*true\s*$/m.test(windows)) {
+  bad(`${Y}: windows job sets uploadUpdaterJson: true — that job must not touch latest.json`);
+}
+// Pinned tauri-action does not update name/body on an existing draft. If
+// windows creates the draft first, macos leaves the body alone. Both jobs
+// must carry the full notes, including the unsigned / SmartScreen warning.
+if (!/^\s+releaseBody:\s*\|?\s*$/m.test(windows)) {
+  bad(`${Y}: windows job has no releaseBody — pinned tauri-action will not update an existing draft; if windows creates it first the notes (and SmartScreen warning) stay empty`);
+}
+if (!/SmartScreen/.test(windows) || !/Authenticode|unsigned/i.test(windows)) {
+  bad(`${Y}: windows releaseBody must carry the unsigned / SmartScreen warning (same notes as macos)`);
+}
+if (!/script-shell/.test(windows) || !/command -v bash/.test(windows)) {
+  bad(`${Y}: windows job must run npm config set script-shell "$(command -v bash)" before tauri-action — beforeBuildCommand is spawned by the Tauri CLI, not defaults.run.shell, and npm's script-shell on windows-latest is cmd.exe`);
+}
 const assigned = (body, prefix) => new RegExp(`^\\s+${prefix}[A-Z0-9_]*:\\s*\\$\\{\\{`, 'm').test(body);
 if (assigned(windows, 'APPLE_')) {
   bad(`${Y}: windows job lists an APPLE_* secret — those belong only on the macOS runner`);
 }
 if (assigned(windows, 'TAURI_SIGNING_')) {
-  bad(`${Y}: windows job lists TAURI_SIGNING_* — Windows does not emit updater archives; keep the key off this runner`);
+  bad(`${Y}: windows job lists TAURI_SIGNING_* — that is the updater minisign key, not Authenticode; keep it off this runner`);
 }
 
 const readme = fs.readFileSync(R, 'utf8');
@@ -180,7 +203,7 @@ if (errs.length) {
   process.exit(1);
 }
 console.log(`  ${W}: targets=${JSON.stringify(winTargets)}, installMode=${nsis.installMode}, publisher=${publisher}`);
-console.log(`  ${Y}: macos + windows sibling jobs; latest.json stays on macos`);
+console.log(`  ${Y}: macos + windows sibling jobs; uploadUpdaterJson false; latest.json stays on macos`);
 NODE
   [[ $ok -eq 0 ]] || return 1
   ok "windows packaging config"
