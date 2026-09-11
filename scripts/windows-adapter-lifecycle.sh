@@ -62,6 +62,15 @@ check() {
   need_text src-tauri/src/host/acp/spawn.rs 'job_assigned'
   need_text src-tauri/src/host/acp/spawn.rs 'job_contains'
   need_text src-tauri/src/host/acp/spawn.rs 'taskkill_fallback_reaps_grandchild'
+  # The tests module must compile on Windows. `#[cfg(all(test, unix))]`
+  # above `mod tests` hides every Job Object case; libtest then prints
+  # `running 0 tests` and a required-filter check is the only thing that
+  # fails (cade3a0 / run 34563853452).
+  if grep -B1 -- '^mod tests' src-tauri/src/host/acp/spawn.rs \
+      | grep -Fq 'all(test, unix)'; then
+    die 'spawn.rs tests module is #[cfg(all(test, unix))]; Windows Job Object tests will match 0 tests'
+  fi
+  need_text src-tauri/src/host/acp/spawn.rs '#[cfg(test)]'
   # `cargo test --features dev-bins` builds jabot-hostd. The accept loop is
   # unix-only; the call site must stay behind the same cfg so Windows compiles.
   need_text src-tauri/src/bin/jabot-hostd.rs '#[cfg(unix)]'

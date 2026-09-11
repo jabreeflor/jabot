@@ -128,7 +128,10 @@ pub fn terminate_process_group(child: &mut GroupedChild) {
     procgroup::terminate(child);
 }
 
-#[cfg(all(test, unix))]
+// Must be `#[cfg(test)]`, not `all(test, unix)`. The Windows Job Object
+// cases live in this module; a unix-only wrap compiles them out of the
+// windows-latest binary (`kill_job_reaps_grandchild` → 0 matches).
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::host::acp::runtime::HarnessRuntime;

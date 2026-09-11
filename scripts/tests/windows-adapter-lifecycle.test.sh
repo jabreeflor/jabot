@@ -83,6 +83,16 @@ birth_into_job_is_contracted() {
     || { fail "spawn.rs lost the job_assigned assertion"; return 1; }
 }
 
+spawn_tests_module_is_not_unix_only() {
+  if grep -B1 -- '^mod tests' "$REPO_ROOT/src-tauri/src/host/acp/spawn.rs" \
+      | grep -Fq 'all(test, unix)'; then
+    fail "spawn.rs tests module is unix-only; kill_job_reaps_grandchild will not compile on Windows"
+    return 1
+  fi
+  grep -q '#\[cfg(test)\]' "$REPO_ROOT/src-tauri/src/host/acp/spawn.rs" \
+    || { fail "spawn.rs lost #[cfg(test)] on the tests module"; return 1; }
+}
+
 run_case "check_passes"              check_passes
 run_case "check_names_job_objects"   check_names_job_objects
 run_case "unknown_command_fails"     unknown_command_fails
@@ -90,6 +100,7 @@ run_case "script_is_executable"      script_is_executable
 run_case "run_rejects_zero_matches"  run_rejects_zero_matches
 run_case "filters_are_platform_gated" filters_are_platform_gated
 run_case "birth_into_job_is_contracted" birth_into_job_is_contracted
+run_case "spawn_tests_module_is_not_unix_only" spawn_tests_module_is_not_unix_only
 
 printf '\n%d cases, %d failed\n' "$COUNT" "$FAILURES"
 [[ "$FAILURES" -eq 0 ]]
