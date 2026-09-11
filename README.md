@@ -56,7 +56,7 @@ npm run tauri dev    # native window (macOS today; Windows: docs/windows.md)
 npm run build        # frontend-only build (CI / Linux)
 ```
 
-macOS MVP: overlay title bar, hide-to-Dock on window close (#4). Windows: a decorated opaque title bar; close exits (no tray) (#282). The renderer talks **JSON-RPC 2.0** to the Rust host (`host_rpc` + `host-rpc` events) — same messages a Unix socket will carry later (#8). Thread overlay, crew, and Inbox live in host-owned **SQLite** (`jabot.sqlite`, WAL); secret bytes stay in the **OS keychain** (#9). The host spawns **one ACP adapter subprocess per live thread** (stdio JSON-RPC, process-group kill, stderr logs) (#10).
+macOS MVP: overlay title bar, hide-to-Dock on window close (#4). Windows: a decorated opaque title bar; close exits (no tray) (#282). The renderer talks **JSON-RPC 2.0** to the Rust host (`host_rpc` + `host-rpc` events) — same messages a Unix socket will carry later (#8). Thread overlay, crew, and Inbox live in host-owned **SQLite** (`jabot.sqlite`, WAL); secret bytes stay in the **OS credential store** — macOS Keychain or Windows Credential Manager (#9, #283). The host spawns **one ACP adapter subprocess per live thread** (stdio JSON-RPC, process-group kill, stderr logs) (#10).
 
 ## Working on it
 

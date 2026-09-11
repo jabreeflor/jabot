@@ -13,8 +13,9 @@
 //!   + Tauri IPC, and must not be labelled as this gate.
 //!
 //! Isolation is load-bearing. The process refuses to start the probe if the
-//! data directory is the production app-support path or if the Keychain
-//! service is still `com.jabot.app`.
+//! data directory is the production app-support path or if the credential-store
+//! service is still `com.jabot.app` (macOS Keychain or Windows Credential
+//! Manager).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -177,8 +178,9 @@ pub fn record_ipc(method: &str) {
     );
 }
 
-/// Host-side cells that do not need the webview: synthetic turn, Keychain,
-/// notify/status, bundled adapter path, quit/relaunch durability.
+/// Host-side cells that do not need the webview: synthetic turn, isolated
+/// OS credential store (Keychain / Credential Manager), notify/status,
+/// bundled adapter path, quit/relaunch durability.
 pub fn spawn_host_probe(state: Arc<Mutex<HostSession>>) {
     if !requested() {
         return;
@@ -309,7 +311,7 @@ fn keychain_probe() -> Result<Value, String> {
     let service = keychain_service();
     let mut vault = Secrets::platform();
     let backend = vault.backend().as_str().to_string();
-    let account = "macos-acceptance-probe";
+    let account = "acceptance-probe";
     let secret = "jabot-acceptance-not-a-user-credential";
     match vault.put(account, secret) {
         Ok(()) => {}

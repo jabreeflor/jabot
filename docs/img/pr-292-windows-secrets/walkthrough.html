@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Windows secrets via Credential Manager (#283)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ink: #1c1c1e;
+        --dim: #5c5c63;
+        --line: #d8d7d3;
+        --raise: #fff;
+        --accent: #2a7a3d;
+        --page: #f6f6f4;
+        --mac: #c45c26;
+        --win: #2f6fed;
+        --linux: #6b7280;
+        --deny: #b42318;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #f2f2f2;
+          --dim: #98989e;
+          --line: #303033;
+          --raise: #2a2a2c;
+          --accent: #8ee09a;
+          --page: #151516;
+          --mac: #f0a36a;
+          --win: #8bb4ff;
+          --linux: #a1a1aa;
+          --deny: #f5a3a0;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 32px 28px 64px;
+        font: 16px / 1.5 ui-sans-serif, system-ui, sans-serif;
+        color: var(--ink);
+        background: var(--page);
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.02em;
+        margin: 0 0 8px;
+      }
+      .lede {
+        color: var(--dim);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 32px 0 10px;
+      }
+      code {
+        font: 13px / 1.4 ui-monospace, Menlo, monospace;
+        background: var(--raise);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .flow {
+        display: grid;
+        gap: 10px;
+        margin: 16px 0 8px;
+      }
+      .step {
+        background: var(--raise);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .step strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .step span {
+        color: var(--dim);
+        font-size: 14px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-top: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        color: var(--dim);
+        font-weight: 600;
+      }
+      .platforms {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 10px;
+        margin: 12px 0;
+      }
+      .plat {
+        background: var(--raise);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-size: 14px;
+      }
+      .plat .tag {
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 6px;
+      }
+      .mac .tag { color: var(--mac); }
+      .win .tag { color: var(--win); }
+      .lin .tag { color: var(--linux); }
+      .deny {
+        border-left: 3px solid var(--deny);
+      }
+      ol {
+        padding-left: 1.2rem;
+      }
+      li {
+        margin: 6px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Windows secrets via Credential Manager (#283)</h1>
+      <p class="lede">
+        Same host <code>put</code> / <code>get</code> / <code>delete</code> on
+        macOS and Windows. Bytes stay in the OS store; SQLite keeps pointers
+        only. Linux still fails closed. Parent: #280.
+      </p>
+
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>1. One vault type, two OS backends</strong>
+          <span>
+            <code>Secrets::platform()</code> returns <code>Os</code> on macOS
+            and Windows. Call sites are unguarded: pairing, tool OAuth, and
+            <code>Store::put_secret</code> all go through the same methods.
+          </span>
+        </div>
+        <div class="step">
+          <strong>2. keyring 3, feature-split by target</strong>
+          <span>
+            macOS keeps <code>apple-native</code> (Keychain generic password,
+            service <code>com.jabot.app</code>). Windows adds
+            <code>windows-native</code> (Credential Manager generic credential,
+            target <code>{account}.{service}</code>). Linux never downloads
+            either crate.
+          </span>
+        </div>
+        <div class="step">
+          <strong>3. hello reports where bytes live</strong>
+          <span>
+            <code>store.secretsBackend</code> is <code>keychain</code>,
+            <code>credential-manager</code>, <code>memory</code>, or
+            <code>unavailable</code>. Acceptance isolation still uses
+            <code>JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.*</code>.
+          </span>
+        </div>
+        <div class="step deny">
+          <strong>4. Denied access is explicit</strong>
+          <span>
+            <code>keyring::Error::NoStorageAccess</code> and Windows/macOS
+            “access denied” phrases become <code>StoreError::SecretsDenied</code>,
+            logged as <code>secrets: credential store denied access (account): …</code>
+            with no secret bytes. Pairing and tool RPC already surface
+            <code>{err}</code>.
+          </span>
+        </div>
+      </div>
+
+      <h2 id="where">Where secret bytes live</h2>
+      <div class="platforms">
+        <div class="plat mac">
+          <div class="tag">macOS</div>
+          Keychain Access → login keychain → service <code>com.jabot.app</code>
+        </div>
+        <div class="plat win">
+          <div class="tag">Windows</div>
+          Credential Manager → Windows Credentials →
+          <code>{account}.com.jabot.app</code>
+        </div>
+        <div class="plat lin">
+          <div class="tag">Linux / CI</div>
+          No OS store. <code>put</code> is <code>SecretsUnavailable</code>
+          unless <code>JABOT_SECRETS_BACKEND=memory</code>
+        </div>
+      </div>
+
+      <h2>What to look at</h2>
+      <table>
+        <tr>
+          <th>File</th>
+          <th>Why it matters</th>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/host/store/secrets.rs</code></td>
+          <td>Shared OS path, backend names, denied-access mapping, live round-trip test.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/Cargo.toml</code></td>
+          <td>Windows-only <code>keyring</code> <code>windows-native</code>; macOS Keychain unchanged.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/host/store/error.rs</code></td>
+          <td><code>SecretsDenied</code> is the user-visible / logged failure.</td>
+        </tr>
+        <tr>
+          <td><code>scripts/windows-secrets-check.sh</code></td>
+          <td>Named host check for a Windows runner (#286).</td>
+        </tr>
+        <tr>
+          <td><code>docs/requirements/data-layer-persistence.md</code></td>
+          <td>Where secrets live on each OS.</td>
+        </tr>
+      </table>
+
+      <h2>How to verify</h2>
+      <ol>
+        <li><code>./scripts/verify.sh</code> — Linux fail-closed + mapping tests (already green on this tree).</li>
+        <li><code>./scripts/windows-secrets-check.sh</code> — same portable tests; on Windows also <code>os_secret_round_trip_put_get_delete</code>.</li>
+        <li>On a Windows box: save a tool grant or pair a device, then open Credential Manager and find <code>jabot.secret.*.com.jabot.app</code>.</li>
+        <li>macOS Keychain path is unchanged; <code>macos clippy</code> still lints <code>secrets.rs</code> on this PR.</li>
+      </ol>
+    </main>
+  </body>
+</html>

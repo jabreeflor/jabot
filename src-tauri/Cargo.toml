@@ -62,6 +62,11 @@ objc2-user-notifications = "0.3"
 block2 = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# Same host APIs as macOS Keychain (#283): Windows Credential Manager
+# generic credentials, target `{account}.{service}`. Windows-only — do not
+# put the Apple objc2 crates in this table (TOML's next header owns every
+# following key, and that is what broke macos clippy on PR #292).
+keyring = { version = "3", default-features = false, features = ["windows-native"] }
 # WinRT toasts for Inbox cards (#284). Windows-only so Linux verify never
 # downloads the windows crate graph. `src/notify/win.rs` is the only file
 # that names this crate. We post and retain `ToastNotification` ourselves

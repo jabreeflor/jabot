@@ -409,7 +409,11 @@ filing or "fixing" a gap.
   Playwright WebKit a Tauri acceptance run. Windows install + the five-cell
   smoke list is `#287` / [docs/windows.md](docs/windows.md); it does not claim
   macOS parity and `windows-acceptance.sh run` is still not wired on Linux
-  (no WebView2 / `JaBot.exe` here; #281 is the installer).
+  (no WebView2 / `JaBot.exe` here; #281 is the installer). Windows
+  Credential Manager uses the same `Secrets` put/get/delete APIs as
+  macOS Keychain (#283);
+  `scripts/windows-secrets-check.sh` is the named host-level check
+  (portable tests on Linux; live round-trip on a Windows runner — #286).
 - A test that cannot fail when the thing it covers breaks is worse than no
   test, because it reads as coverage. Break it once and watch it fail before
   you trust it.

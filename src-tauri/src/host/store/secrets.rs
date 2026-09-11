@@ -1,8 +1,25 @@
-//! Secrets vault: OS keychain bytes, SQLite `secret_refs` pointers only.
+//! Secrets vault: OS credential-store bytes, SQLite `secret_refs` pointers only.
 //!
-//! MVP is macOS Keychain (bundle id service). Linux/Windows put() fails
-//! closed until a real OS store is wired. Tests use the in-memory backend.
-//! Never log secret bytes; never write them into SQLite.
+//! Production backends:
+//! - **macOS:** Keychain generic password, service [`KEYCHAIN_SERVICE`]
+//!   (`com.jabot.app`). Visible in Keychain Access under that service.
+//! - **Windows:** Credential Manager generic credential via `keyring`
+//!   `windows-native`. Target name is `{account}.{service}` (for example
+//!   `jabot.secret.<id>.com.jabot.app`). Control Panel → Credential Manager
+//!   → Windows Credentials. Wincred
+//!   [`CRED_MAX_CREDENTIAL_BLOB_SIZE`](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)
+//!   is 2560 bytes; `keyring` `windows-native` `set_password` stores UTF-16,
+//!   so a typical ASCII secret is limited to ~1280 characters. A full
+//!   `TokenBundle` (access + refresh + `token_endpoint` + `resources` +
+//!   `client_id` + optional `client_secret`) can approach or exceed that.
+//!   Oversize is [`StoreError::SecretsTooLong`] (`keyring::Error::TooLong`
+//!   or Windows 1783 / `ERROR_INVALID_USER_BUFFER`), not a generic invalid.
+//!   macOS Keychain does not share this cap.
+//! - **Linux / other:** no OS store yet. [`Secrets::put`] fails closed
+//!   ([`StoreError::SecretsUnavailable`]) unless `JABOT_SECRETS_BACKEND=memory`.
+//!
+//! Same `put` / `get` / `delete` host APIs on every target. Tests use the
+//! in-memory backend. Never log secret bytes; never write them into SQLite.
 //!
 //! This is also where the *pointers* for tool credentials live (#18). An OAuth
 //! grant is two halves: the tokens, which are vault bytes like any other
@@ -23,8 +40,8 @@ use super::{map_secret_ref, map_tool_connection, now_utc, secret_account};
 /// Set to `memory`, this makes [`Secrets::platform`] return the in-RAM vault
 /// instead of failing closed. It is not a persistence path and cannot become
 /// one: the bytes live in this process and die with it. It exists so the OAuth
-/// flow can be exercised on Linux CI, where there is no Keychain and every
-/// `put` would otherwise fail — never as a way to keep tokens on disk.
+/// flow can be exercised on Linux CI, where there is no OS credential store
+/// and every `put` would otherwise fail — never as a way to keep tokens on disk.
 const BACKEND_ENV: &str = "JABOT_SECRETS_BACKEND";
 
 pub const KEYCHAIN_SERVICE: &str = "com.jabot.app";
@@ -36,11 +53,12 @@ pub const KEYCHAIN_SERVICE: &str = "com.jabot.app";
 /// `com.jabot.app.acceptance.` — see `crate::acceptance`.
 const SERVICE_ENV: &str = "JABOT_KEYCHAIN_SERVICE";
 
-/// The Keychain service this process will read and write.
+/// The OS credential-store service this process will read and write.
 ///
 /// Production is [`KEYCHAIN_SERVICE`]. A non-empty `JABOT_KEYCHAIN_SERVICE`
 /// wins so an isolated acceptance run can use a throwaway service (and a
-/// throwaway keychain) instead of `login.keychain`'s `com.jabot.app` items.
+/// throwaway keychain / credential target) instead of the user's
+/// `com.jabot.app` items.
 pub fn keychain_service() -> String {
     match std::env::var(SERVICE_ENV) {
         Ok(value) if !value.is_empty() => value,
@@ -51,6 +69,7 @@ pub fn keychain_service() -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SecretsBackend {
     Keychain,
+    CredentialManager,
     Memory,
     Unavailable,
 }
@@ -59,14 +78,31 @@ impl SecretsBackend {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Keychain => "keychain",
+            Self::CredentialManager => "credential-manager",
             Self::Memory => "memory",
             Self::Unavailable => "unavailable",
         }
     }
+
+    /// The compiled-in OS store, or [`Self::Unavailable`] where none is wired.
+    pub fn os_native() -> Self {
+        if cfg!(target_os = "macos") {
+            Self::Keychain
+        } else if cfg!(target_os = "windows") {
+            Self::CredentialManager
+        } else {
+            Self::Unavailable
+        }
+    }
+}
+
+/// True when this compile target persists secrets in a real OS store.
+pub(crate) fn os_store_supported() -> bool {
+    cfg!(target_os = "macos") || cfg!(target_os = "windows")
 }
 
 /// In-process secret bytes. Production uses the OS store; this is for tests
-/// and for hosts where Keychain is missing (put still fails closed there).
+/// and for hosts where the OS store is missing (put still fails closed there).
 #[derive(Debug, Default)]
 pub struct MemoryVault {
     items: std::collections::HashMap<String, String>,
@@ -89,7 +125,7 @@ impl MemoryVault {
 #[derive(Debug)]
 pub enum Secrets {
     Memory(MemoryVault),
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     Os,
     Unavailable,
 }
@@ -103,12 +139,9 @@ impl Secrets {
         if std::env::var(BACKEND_ENV).is_ok_and(|value| value == "memory") {
             return Self::memory();
         }
-        #[cfg(target_os = "macos")]
-        {
+        if os_store_supported() {
             Self::Os
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
+        } else {
             Self::Unavailable
         }
     }
@@ -116,7 +149,7 @@ impl Secrets {
     pub fn backend(&self) -> SecretsBackend {
         match self {
             Self::Memory(_) => SecretsBackend::Memory,
-            Self::Os => SecretsBackend::Keychain,
+            Self::Os => SecretsBackend::os_native(),
             Self::Unavailable => SecretsBackend::Unavailable,
         }
     }
@@ -154,48 +187,123 @@ impl Secrets {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn os_put(account: &str, secret: &str) -> Result<(), StoreError> {
-    let entry = keyring::Entry::new(&keychain_service(), account)
-        .map_err(|e| StoreError::invalid(e.to_string()))?;
-    entry
-        .set_password(secret)
-        .map_err(|e| StoreError::invalid(e.to_string()))
+/// Classified OS-store failure. Compiled on macOS/Windows for the live
+/// `keyring` path, and on every target under `cfg(test)` so Linux CI can
+/// assert the mapping without compiling `keyring`.
+#[cfg(any(test, target_os = "macos", target_os = "windows"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum OsSecretFailure {
+    NotFound,
+    Denied(String),
+    TooLong(String),
+    Other(String),
 }
 
-#[cfg(target_os = "macos")]
-fn os_get(account: &str) -> Result<String, StoreError> {
-    let entry = keyring::Entry::new(&keychain_service(), account)
-        .map_err(|e| StoreError::invalid(e.to_string()))?;
-    match entry.get_password() {
-        Ok(secret) => Ok(secret),
-        Err(keyring::Error::NoEntry) => Err(StoreError::SecretNotFound(account.into())),
-        Err(err) => Err(StoreError::invalid(err.to_string())),
+#[cfg(any(test, target_os = "macos", target_os = "windows"))]
+pub(crate) fn store_error_from_os(account: &str, failure: OsSecretFailure) -> StoreError {
+    match failure {
+        OsSecretFailure::NotFound => StoreError::SecretNotFound(account.into()),
+        OsSecretFailure::Denied(detail) => {
+            eprintln!("secrets: credential store denied access ({account}): {detail}");
+            StoreError::SecretsDenied(detail)
+        }
+        OsSecretFailure::TooLong(detail) => StoreError::SecretsTooLong(detail),
+        OsSecretFailure::Other(detail) => {
+            StoreError::invalid(format!("credential store: {detail}"))
+        }
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(test, target_os = "macos", target_os = "windows"))]
+pub(crate) fn looks_like_access_denied(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("access denied")
+        || lower.contains("access is denied")
+        || lower.contains("permission denied")
+        || lower.contains("not authorized")
+        || lower.contains("errsecauthfailed")
+        || lower.contains("error_access_denied")
+        || lower.contains("error_no_such_logon_session")
+        || lower.contains("0x80070005")
+}
+
+/// Wincred `CRED_MAX_CREDENTIAL_BLOB_SIZE` is 2560 bytes of UTF-16
+/// (`keyring` `set_password`). Oversize often surfaces as
+/// `keyring::Error::TooLong`, or as Windows 1783
+/// (`ERROR_INVALID_USER_BUFFER`) / "too long" in a platform error.
+#[cfg(any(test, target_os = "macos", target_os = "windows"))]
+pub(crate) fn looks_like_too_long(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    lower.contains("too long")
+        || lower.contains("1783")
+        || lower.contains("error_invalid_user_buffer")
+        || lower.contains("error_bad_length")
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn classify_keyring_error(err: keyring::Error) -> OsSecretFailure {
+    match err {
+        keyring::Error::NoEntry => OsSecretFailure::NotFound,
+        keyring::Error::NoStorageAccess(inner) => OsSecretFailure::Denied(inner.to_string()),
+        keyring::Error::TooLong(item, max) => {
+            OsSecretFailure::TooLong(format!("{item} exceeds {max} bytes"))
+        }
+        other => {
+            let text = other.to_string();
+            if looks_like_access_denied(&text) {
+                OsSecretFailure::Denied(text)
+            } else if looks_like_too_long(&text) {
+                OsSecretFailure::TooLong(text)
+            } else {
+                OsSecretFailure::Other(text)
+            }
+        }
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn os_entry(account: &str) -> Result<keyring::Entry, StoreError> {
+    keyring::Entry::new(&keychain_service(), account)
+        .map_err(|err| store_error_from_os(account, classify_keyring_error(err)))
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn os_put(account: &str, secret: &str) -> Result<(), StoreError> {
+    let entry = os_entry(account)?;
+    entry
+        .set_password(secret)
+        .map_err(|err| store_error_from_os(account, classify_keyring_error(err)))
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn os_get(account: &str) -> Result<String, StoreError> {
+    let entry = os_entry(account)?;
+    entry
+        .get_password()
+        .map_err(|err| store_error_from_os(account, classify_keyring_error(err)))
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn os_delete(account: &str) -> Result<(), StoreError> {
-    let entry = keyring::Entry::new(&keychain_service(), account)
-        .map_err(|e| StoreError::invalid(e.to_string()))?;
+    let entry = os_entry(account)?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         Err(keyring::Error::NoEntry) => Ok(()),
-        Err(err) => Err(StoreError::invalid(err.to_string())),
+        Err(err) => Err(store_error_from_os(account, classify_keyring_error(err))),
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn os_put(_account: &str, _secret: &str) -> Result<(), StoreError> {
     Err(StoreError::SecretsUnavailable)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn os_get(_account: &str) -> Result<String, StoreError> {
     Err(StoreError::SecretsUnavailable)
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn os_delete(_account: &str) -> Result<(), StoreError> {
     Ok(())
 }
@@ -365,6 +473,218 @@ mod tests {
         assert!(
             !KEYCHAIN_SERVICE.contains("acceptance"),
             "production Keychain service must stay distinct from the acceptance prefix"
+        );
+    }
+
+    #[test]
+    fn os_native_backend_name_matches_the_compile_target() {
+        let backend = SecretsBackend::os_native();
+        if cfg!(target_os = "macos") {
+            assert_eq!(backend.as_str(), "keychain");
+        } else if cfg!(target_os = "windows") {
+            assert_eq!(backend.as_str(), "credential-manager");
+        } else {
+            assert_eq!(backend.as_str(), "unavailable");
+        }
+        assert_eq!(os_store_supported(), backend != SecretsBackend::Unavailable);
+    }
+
+    #[test]
+    fn platform_selects_the_os_store_where_one_is_wired() {
+        if std::env::var(BACKEND_ENV).is_ok() {
+            return;
+        }
+        let secrets = Secrets::platform();
+        if os_store_supported() {
+            assert_eq!(secrets.backend(), SecretsBackend::os_native());
+        } else {
+            assert_eq!(secrets.backend(), SecretsBackend::Unavailable);
+        }
+    }
+
+    #[test]
+    fn linux_os_helpers_fail_closed_when_no_store_is_wired() {
+        if os_store_supported() {
+            return;
+        }
+        let err = os_put("jabot.secret.test", "tok").unwrap_err();
+        assert!(matches!(err, StoreError::SecretsUnavailable), "{err}");
+        assert!(matches!(
+            os_get("jabot.secret.test"),
+            Err(StoreError::SecretsUnavailable)
+        ));
+        os_delete("jabot.secret.test").expect("delete is a no-op without a store");
+    }
+
+    #[test]
+    fn denied_access_is_explicit_and_never_embeds_secret_bytes() {
+        let secret = "sk-ant-not-a-real-token";
+        let err = store_error_from_os(
+            "jabot.secret.test",
+            OsSecretFailure::Denied("Windows ERROR_ACCESS_DENIED".into()),
+        );
+        match err {
+            StoreError::SecretsDenied(detail) => {
+                assert!(detail.contains("ACCESS_DENIED"), "{detail}");
+                assert!(!detail.contains(secret), "{detail}");
+            }
+            other => panic!("expected SecretsDenied, got {other}"),
+        }
+        let rendered = StoreError::SecretsDenied("user cancelled the prompt".into()).to_string();
+        assert!(
+            rendered.contains("denied access"),
+            "RPC/UI must see an explicit denial, not a generic invalid: {rendered}"
+        );
+        assert!(!rendered.contains(secret), "{rendered}");
+    }
+
+    #[test]
+    fn access_denied_phrases_classify_as_denied() {
+        for phrase in [
+            "Access is denied.",
+            "permission denied",
+            "errSecAuthFailed",
+            "ERROR_NO_SUCH_LOGON_SESSION",
+            "0x80070005",
+        ] {
+            assert!(
+                looks_like_access_denied(phrase),
+                "{phrase} should classify as denied"
+            );
+        }
+        assert!(!looks_like_access_denied("no such entry"));
+        assert!(!looks_like_access_denied("credential too long"));
+    }
+
+    #[test]
+    fn oversize_phrases_classify_as_too_long() {
+        for phrase in [
+            "credential too long",
+            "ERROR_INVALID_USER_BUFFER",
+            "CredWrite failed: 1783",
+            "ERROR_BAD_LENGTH",
+        ] {
+            assert!(
+                looks_like_too_long(phrase),
+                "{phrase} should classify as too long"
+            );
+        }
+        assert!(!looks_like_too_long("no such entry"));
+        assert!(!looks_like_too_long("access is denied"));
+    }
+
+    #[test]
+    fn os_not_found_and_other_failures_stay_distinct_from_denied() {
+        assert!(matches!(
+            store_error_from_os("acct", OsSecretFailure::NotFound),
+            StoreError::SecretNotFound(_)
+        ));
+        let other = store_error_from_os("acct", OsSecretFailure::Other("platform failed".into()));
+        assert!(matches!(other, StoreError::Invalid(_)), "{other}");
+        assert!(!other.to_string().contains("denied access"), "{other}");
+        assert!(!other.to_string().contains("too long"), "{other}");
+    }
+
+    #[test]
+    fn too_long_is_explicit_and_never_embeds_secret_bytes() {
+        let secret = "sk-ant-not-a-real-token";
+        let err = store_error_from_os(
+            "jabot.secret.test",
+            OsSecretFailure::TooLong("password exceeds 2560 bytes".into()),
+        );
+        match err {
+            StoreError::SecretsTooLong(detail) => {
+                assert!(detail.contains("2560"), "{detail}");
+                assert!(!detail.contains(secret), "{detail}");
+            }
+            other => panic!("expected SecretsTooLong, got {other}"),
+        }
+        let rendered = StoreError::SecretsTooLong("Wincred blob limit".into()).to_string();
+        assert!(
+            rendered.contains("too long"),
+            "RPC/UI must see an explicit size failure: {rendered}"
+        );
+        assert!(!rendered.contains(secret), "{rendered}");
+    }
+
+    /// Wincred `CRED_MAX_CREDENTIAL_BLOB_SIZE` is 2560 UTF-16 bytes
+    /// (~1280 ASCII chars via `keyring` `set_password`). A representative
+    /// Google grant — access + refresh + endpoints + resources — sits near
+    /// that budget; this fixture documents the risk rather than writing
+    /// CredMan (Linux compiles that path out).
+    #[test]
+    fn representative_google_grant_approaches_wincred_utf16_budget() {
+        const WINCRED_ASCII_BUDGET: usize = 2560 / 2;
+        let bundle = serde_json::json!({
+            "accessToken": format!("ya29.{}", "A".repeat(400)),
+            "refreshToken": format!("1//0{}", "B".repeat(200)),
+            "tokenType": "Bearer",
+            "expiresAt": "2026-09-11T03:00:00Z",
+            "scopes": [
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "https://www.googleapis.com/auth/calendar.readonly"
+            ],
+            "clientId": "123456789012-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com",
+            "clientSecret": "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ue",
+            "tokenEndpoint": "https://oauth2.googleapis.com/token",
+            "resources": [
+                "https://gmail.googleapis.com/",
+                "https://www.googleapis.com/auth/calendar"
+            ],
+            "account": "user@example.com"
+        });
+        let json = serde_json::to_string(&bundle).expect("serialize fixture");
+        assert!(
+            json.len() > 800,
+            "fixture should look like a real grant, got {} bytes",
+            json.len()
+        );
+        assert!(
+            json.len() < WINCRED_ASCII_BUDGET + 400,
+            "fixture drifted far past the Wincred budget ({} vs {WINCRED_ASCII_BUDGET})",
+            json.len()
+        );
+    }
+
+    /// Live Keychain / Credential Manager put → get → delete. Linux compiles
+    /// this out; `scripts/windows-secrets-check.sh` is the named entry on a
+    /// Windows runner (#283 / #286).
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[test]
+    fn os_secret_round_trip_put_get_delete() {
+        let account = format!(
+            "jabot.secret.test.os-round-trip.{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let secret = "jabot-test-not-a-user-credential";
+        struct Cleanup {
+            account: String,
+        }
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let mut vault = Secrets::Os;
+                let _ = vault.delete(&self.account);
+            }
+        }
+        let _cleanup = Cleanup {
+            account: account.clone(),
+        };
+        let mut vault = Secrets::Os;
+        vault
+            .put(&account, secret)
+            .expect("OS credential store must accept a test put");
+        let got = vault.get(&account).expect("OS credential store must load");
+        assert_eq!(got, secret, "round-trip must not change bytes");
+        vault
+            .delete(&account)
+            .expect("OS credential store must delete the test item");
+        assert!(
+            matches!(vault.get(&account), Err(StoreError::SecretNotFound(_))),
+            "delete must remove the item"
         );
     }
 }
