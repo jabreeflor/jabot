@@ -117,10 +117,11 @@ fn own_group(cmd: &mut Command) {
         // node grandchild can be born outside the job. `Command` does not
         // expose the primary thread or `PROC_THREAD_ATTRIBUTE_JOB_LIST`.
         const CREATE_SUSPENDED: u32 = 0x00000004;
-        // Leave a parent job (GHA "orphan cleanup") when that job allows
-        // breakaway, so ours is not a nested assign that CI forbids.
-        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
-        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED | CREATE_BREAKAWAY_FROM_JOB);
+        // Do not set CREATE_BREAKAWAY_FROM_JOB. GHA's orphan-cleanup job
+        // does not allow breakaway — CreateProcess then fails with
+        // ERROR_ACCESS_DENIED (5) for every spawn (258d2be on windows-latest).
+        // Nested assign already succeeds on that runner without breakaway.
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED);
     }
 
     #[cfg(not(any(unix, windows)))]
