@@ -34,7 +34,7 @@ So cfg(macos) lint is a pair of scoped PR checks, not a new default
 | `src-tauri/src/host/store/secrets.rs` (`os_put` / `os_get` / `os_delete`) | macOS Keychain via `keyring` | **macos clippy** (native) | `keyring` / Security.framework are not in the notify scratch crate. |
 | `src-tauri/src/lib.rs` (updater `.plugin()`, hide-to-Dock, Dock Reopen) | Tauri + `tauri-plugin-updater` | **macos clippy** (native) | Pulls `tauri`, which pulls `objc2-exception-helper`'s Apple `cc` build script. Linux cross-check of the whole crate fails; that is D-019, not a gap to close. |
 | `src-tauri/src/host/harness/path.rs` (`login_shell_path`) | Login-shell `PATH` probe | Linux `verify` clippy | Uses `cfg!(target_os = "macos")` (a boolean), not `#[cfg]`. Both branches type-check on Linux. **Not** a native-job trigger. |
-| `src-tauri/src/window.rs` | Under-window vibrancy (#250) | Linux `verify` clippy | Same `cfg!` pattern. `set_effects` type-checks on every desktop target and is a no-op off macOS. **Not** a native-job trigger. The call site in `lib.rs` still starts macos clippy when that file changes. |
+| `src-tauri/src/window.rs` | Under-window vibrancy (#250) + chrome (`overlay` / `decorated`, #282) | Linux `verify` clippy | Same `cfg!` pattern. `set_effects` and the chrome string type-check on every desktop target; off macOS apply returns before clearing the webview fill. **Not** a native-job trigger. The call site in `lib.rs` still starts macos clippy when that file changes. |
 
 Shared inputs that turn the relevant job(s) on: `src-tauri/Cargo.toml`,
 `src-tauri/Cargo.lock`, `src-tauri/clippy.toml`, `rust-toolchain.toml`,

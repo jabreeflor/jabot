@@ -1,7 +1,7 @@
 # Desktop host process & lifecycle
 
-**Issues:** #4 (decision), #7 (scaffold), #21 (supervisor)
-**Status:** Implemented — `src-tauri/src/host/lifecycle/`, `src-tauri/src/host/supervisor/`, `src-tauri/src/main.rs`
+**Issues:** #4 (decision), #7 (scaffold), #21 (supervisor), #282 (Windows chrome)
+**Status:** Implemented — `src-tauri/src/host/lifecycle/`, `src-tauri/src/host/supervisor/`, `src-tauri/src/main.rs`, `src-tauri/src/window.rs`
 
 ## What it is
 
@@ -23,8 +23,10 @@ relitigated per feature.
 
 ## Requirements
 
-1. Closing the last window **hides to Dock**; the host process and any
-   in-flight ACP child processes keep running.
+1. Closing the last window **hides to Dock** on macOS; the host process and any
+   in-flight ACP child processes keep running. On Windows and Linux the
+   title-bar close button **exits** — there is no system tray and no
+   hide-to-tray (#282). Minimize keeps the process; the X does not.
 2. Cmd-Q / Dock "Quit" **persists** the thread overlay (session ids,
    working directory, run state) to disk, then kills every ACP adapter
    **process group** (not just the parent PID).
@@ -51,7 +53,28 @@ relitigated per feature.
    sidecar speaking the same protocol over a real socket when that need
    arrives (MVP2, see [device-pairing.md](device-pairing.md)).
 
+## Window chrome
+
+macOS keeps the overlay title bar, transparency, and under-window
+vibrancy in
+[`src-tauri/tauri.macos.conf.json`](../../src-tauri/tauri.macos.conf.json).
+The shared [`tauri.conf.json`](../../src-tauri/tauri.conf.json) is a
+portable decorated opaque window and also holds `macOSPrivateApi: true`
+so tauri-build's bidirectional allowlist matches `macos-private-api` on
+the untargeted `tauri` dep (Linux and Mac clippy both need the pair).
+Windows inherits that shared window — this change does not add
+`tauri.windows.conf.json` (#291 owns that path for NSIS). Windows/Linux
+never *call* the private API: `window.rs` returns before clearing the
+webview fill.
+
+The renderer reads `window_chrome` and paints `data-window-chrome`.
+Decorated chrome zeros `--titlebar-h` / `--traffic-lights-w` so agent
+pills and the chat composer are not inset for traffic lights the OS
+already drew. Glass tokens stay solid when vibrancy is unsupported
+(#278 / #250). Mica/Acrylic parity is out of scope.
+
 ## Out of scope (MVP1)
 
 - A LaunchAgent/launchd job that keeps agents running after Quit.
 - A second physical host process.
+- A Windows system tray, or Mica/Acrylic glass matching macOS vibrancy.

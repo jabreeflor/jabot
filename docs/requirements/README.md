@@ -14,7 +14,7 @@ the issue number is noted so it can be cross-referenced against
 
 | File | Feature | Issue(s) |
 |---|---|---|
-| [desktop-host-lifecycle.md](desktop-host-lifecycle.md) | Desktop host process, window/Dock/Quit lifecycle | #4, #7, #21 |
+| [desktop-host-lifecycle.md](desktop-host-lifecycle.md) | Desktop host process, window/Dock/Quit lifecycle | #4, #7, #21, #282 |
 | [host-api-protocol.md](host-api-protocol.md) | Typed JSON-RPC host API | #8 |
 | [data-layer-persistence.md](data-layer-persistence.md) | SQLite data layer + OS keychain secrets | #9 |
 | [harness-adapter-layer.md](harness-adapter-layer.md) | ACP harness adapters + catalog/Doctor | #10, #13 |

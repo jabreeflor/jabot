@@ -16,8 +16,8 @@ the search field rather than as part of it.
 
 Closed is not gone. Overlay traffic lights still need a dark strip to sit
 on, and the button that brings the list back has to stay where the hand
-already is. Width is `--traffic-lights-w` (78px) so the lights never spill
-onto the chat. The list and the me-row unmount; Tab cannot wander into a
+already is. Width is `--collapsed-rail-w` (78px on overlay, 56px on
+decorated Windows — #282) so the lights never spill onto the chat. The list and the me-row unmount; Tab cannot wander into a
 column that is not on screen.
 
 The preference is `jabot.sidebarOpen` in localStorage. Only an explicit `0`
