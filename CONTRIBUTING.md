@@ -68,6 +68,7 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/macos-acceptance.sh check` | packaged-app matrix / isolation (Linux). **`run` needs a Mac** — [docs/macos-acceptance.md](docs/macos-acceptance.md), #235 |
 | `./scripts/windows-needed.sh --base origin/main` | which host/CI paths would start the 2x `windows verify` job — [docs/windows-ci.md](docs/windows-ci.md), #286 |
 | `./scripts/windows-verify.sh` | local repro of that job (Git Bash on Windows; on Linux it is a subset of this gate) |
+| `./scripts/windows-acceptance.sh check` | Windows install-docs + smoke-checklist integrity (Linux). **Not** a launched `JaBot.exe` — [docs/windows-acceptance.md](docs/windows-acceptance.md), #287 |
 | `./scripts/verify.sh --check-browser` | Playwright visual + browser axe + smoke; also a dedicated `browser` CI job |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
@@ -82,7 +83,10 @@ Only `verify.sh` is the gate. The others are conveniences around it.
 
 ## Running it live, on any machine
 
-`npm run tauri dev` needs macOS. Everything else about the product does not:
+`npm run tauri dev` opens the native window (macOS is the shipping shell;
+Windows prerequisites and the current gaps vs macOS are
+[docs/windows.md](docs/windows.md)). Everything else about the product does not
+need that window:
 the host is `jabot-hostd` on Linux in CI already, and the renderer is a web
 page. `scripts/live.sh` puts the two together so a change can be *seen*
 working on a Linux box, in a container, or in Claude Code on the web, with no
@@ -151,6 +155,7 @@ one run tells you everything that is wrong.
 | `browser visual + a11y + smoke` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd` (smoke journey, axe with contrast, keyboard, visual baselines). CI's `browser` job is the required PR check | `npx playwright install chromium webkit`, then `npm run test:browser`. Needs the host binaries (`npm run host:build`). |
 | `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 | `macos acceptance` | #235: the packaged-app matrix still names Tauri IPC, Dock, Keychain, adapters, and updater archives; isolation still refuses production app data; Playwright WebKit is not this gate | you changed the script, the docs, or the workflows; `./scripts/macos-acceptance.sh check` and `./scripts/tests/macos-acceptance.test.sh` name the cell that moved. Launching `JaBot.app` is `run` on a Mac — D-019 is why that is not this stage |
+| `windows acceptance` | #287: Windows install docs + five-cell smoke checklist still name launch, bot chat, secret round-trip, adapter spawn, quit-no-orphans, and the glass / Dock / SmartScreen / notify gaps; no macOS-parity claim | you changed `docs/windows.md`, the checklist, or the script; `./scripts/windows-acceptance.sh check` and `./scripts/tests/windows-acceptance.test.sh`. Launching `JaBot.exe` is not this stage — there is no packaged installer yet (#281) |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
@@ -399,7 +404,10 @@ filing or "fixing" a gap.
   (Linux, path-filtered — not a 10x `macos-latest` bundle). Packaged-app
   launch is `#235` / [docs/macos-acceptance.md](docs/macos-acceptance.md);
   label a PR `macos-acceptance` to opt into the expensive Mac job. Do not call
-  Playwright WebKit a Tauri acceptance run.
+  Playwright WebKit a Tauri acceptance run. Windows install + the five-cell
+  smoke list is `#287` / [docs/windows.md](docs/windows.md); it does not claim
+  macOS parity and `windows-acceptance.sh run` is not wired until #281 ships
+  an installer.
 - Windows host compile is a sibling workflow
   ([`.github/workflows/windows.yml`](.github/workflows/windows.yml), #286):
   a cheap Linux planner on every PR, and `windows-latest` only when
