@@ -81,6 +81,8 @@ birth_into_job_is_contracted() {
     || { fail "procgroup.rs lost ResumeThread"; return 1; }
   grep -q 'job_assigned' "$REPO_ROOT/src-tauri/src/host/acp/spawn.rs" \
     || { fail "spawn.rs lost the job_assigned assertion"; return 1; }
+  grep -q 'all(test, windows)' "$REPO_ROOT/src-tauri/src/host/procgroup.rs" \
+    || { fail "job_assigned helpers must stay cfg(test) so clippy -D dead_code is clean"; return 1; }
 }
 
 spawn_tests_module_is_not_unix_only() {

@@ -61,6 +61,9 @@ check() {
   need_text src-tauri/src/host/acp/spawn.rs 'kill_job_reaps_grandchild'
   need_text src-tauri/src/host/acp/spawn.rs 'job_assigned'
   need_text src-tauri/src/host/acp/spawn.rs 'job_contains'
+  # Test-only helpers must stay behind cfg(test) or windows-verify clippy
+  # (-D dead_code / unused_imports) fails the non-test lib compile.
+  need_text src-tauri/src/host/procgroup.rs 'all(test, windows)'
   need_text src-tauri/src/host/acp/spawn.rs 'taskkill_fallback_reaps_grandchild'
   # The tests module must compile on Windows. `#[cfg(all(test, unix))]`
   # above `mod tests` hides every Job Object case; libtest then prints
