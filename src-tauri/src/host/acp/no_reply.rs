@@ -277,4 +277,19 @@ mod tests {
         drop(file);
         assert_eq!(read_log_excerpt(&path).as_deref(), Some("not logged in"));
     }
+
+    #[test]
+    fn excerpt_treats_crlf_as_line_breaks() {
+        let taken = excerpt("not logged in\r\nplease run /login\r\n").unwrap();
+        assert_eq!(taken, "not logged in\nplease run /login");
+    }
+
+    #[test]
+    fn windows_cmd_not_recognized_is_a_missing_cli() {
+        let d = diagnose(
+            "'claude-agent-acp' is not recognized as an internal or external command",
+            false,
+        );
+        assert_eq!(d.stop_reason, "cli_unavailable");
+    }
 }

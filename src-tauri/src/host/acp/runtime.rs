@@ -160,9 +160,13 @@ mod tests {
 
     #[test]
     fn probe_finds_sh() {
+        #[cfg(unix)]
+        let (id, command, suffix) = ("sh", "sh", "sh");
+        #[cfg(windows)]
+        let (id, command, suffix) = ("cmd", "cmd", "cmd.exe");
         let runtime = HarnessRuntime {
-            id: "sh".into(),
-            command: "sh".into(),
+            id: id.into(),
+            command: command.into(),
             args: vec![],
             env: BTreeMap::new(),
             install_hint: None,
@@ -170,12 +174,10 @@ mod tests {
         };
         match runtime.probe() {
             ProbeResult::Installed(path) => {
-                // Windows resolves `sh` to `sh.exe` (Git for Windows). The
-                // stem is the portable name; `Path::ends_with("sh")` is not.
-                assert_eq!(
-                    path.file_stem().and_then(|name| name.to_str()),
-                    Some("sh"),
-                    "{path:?}"
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                assert!(
+                    name.eq_ignore_ascii_case(suffix),
+                    "{path:?} does not end with {suffix}"
                 );
             }
             other => panic!("expected installed, got {other:?}"),

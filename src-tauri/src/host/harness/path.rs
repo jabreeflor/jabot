@@ -41,11 +41,17 @@ const HOME_RELATIVE: &[&str] = &[".local/bin", "bin", ".cargo/bin", ".bun/bin"];
 pub fn search_path() -> &'static [PathBuf] {
     static CACHE: OnceLock<Vec<PathBuf>> = OnceLock::new();
     CACHE.get_or_init(|| {
-        augment(
+        let mut dirs = augment(
             std::env::var_os("PATH").as_deref(),
             login_shell_path().as_deref(),
             home_dir().as_deref(),
-        )
+        );
+        for dir in extra_well_known() {
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+        dirs
     })
 }
 
@@ -132,8 +138,71 @@ fn parse_version(name: &str) -> Vec<u32> {
         .collect()
 }
 
-fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+/// `$HOME` on Unix; `USERPROFILE` on a Windows box that never set `HOME`.
+pub(crate) fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+/// Directories a Windows GUI launch does not inherit, joined with `Path::join`
+/// so we never hard-code `\` vs `/`.
+fn extra_well_known() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        extra_windows_dirs(
+            std::env::var_os("LOCALAPPDATA").as_deref().map(Path::new),
+            std::env::var_os("APPDATA").as_deref().map(Path::new),
+            std::env::var_os("ProgramFiles").as_deref().map(Path::new),
+            std::env::var_os("ProgramFiles(x86)")
+                .as_deref()
+                .map(Path::new),
+            std::env::var_os("NVM_HOME").as_deref().map(Path::new),
+            std::env::var_os("NVM_SYMLINK").as_deref().map(Path::new),
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+/// Windows GUI extras. Pure so Linux tests can prove nvm-windows / fnm /
+/// ProgramFiles(x86) are on the list without a Windows kernel.
+#[cfg(any(test, windows))]
+fn extra_windows_dirs(
+    local_appdata: Option<&Path>,
+    roaming: Option<&Path>,
+    program_files: Option<&Path>,
+    program_files_x86: Option<&Path>,
+    nvm_home: Option<&Path>,
+    nvm_symlink: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(local) = local_appdata {
+        out.push(local.join("fnm"));
+        out.push(local.join("fnm_multishells"));
+        out.push(local.join("nvm"));
+        out.push(local.join("Programs").join("Git").join("cmd"));
+    }
+    if let Some(roaming) = roaming {
+        out.push(roaming.join("npm"));
+        out.push(roaming.join("nvm"));
+    }
+    if let Some(nvm_home) = nvm_home {
+        out.push(nvm_home.to_path_buf());
+    }
+    if let Some(nvm_symlink) = nvm_symlink {
+        out.push(nvm_symlink.to_path_buf());
+    }
+    if let Some(pf) = program_files {
+        out.push(pf.join("nodejs"));
+        out.push(pf.join("Git").join("cmd"));
+    }
+    if let Some(pf86) = program_files_x86 {
+        out.push(pf86.join("nodejs"));
+    }
+    out
 }
 
 /// Ask the user's login shell what PATH it would have.
@@ -159,8 +228,7 @@ fn login_shell_path() -> Option<String> {
     // Its own group, because a login shell runs the user's rc files and those
     // routinely start background work. On the timeout path below, killing the
     // shell alone would leave that work orphaned.
-    super::super::procgroup::own_group(&mut cmd);
-    let mut child = cmd.spawn().ok()?;
+    let mut child = super::super::procgroup::spawn(&mut cmd).ok()?;
     let deadline = std::time::Instant::now() + LOGIN_SHELL_TIMEOUT;
     loop {
         match child.try_wait() {
@@ -253,5 +321,28 @@ mod tests {
     fn a_missing_nvm_is_not_an_error() {
         let home = tempfile::tempdir().unwrap();
         assert!(nvm_bin_dirs(home.path()).is_empty());
+    }
+
+    #[test]
+    fn extra_windows_dirs_include_nvm_and_fnm_locations() {
+        let local = Path::new(r"C:\Users\me\AppData\Local");
+        let roaming = Path::new(r"C:\Users\me\AppData\Roaming");
+        let pf = Path::new(r"C:\Program Files");
+        let pf86 = Path::new(r"C:\Program Files (x86)");
+        let nvm_home = Path::new(r"C:\Users\me\AppData\Roaming\nvm");
+        let nvm_symlink = Path::new(r"C:\Program Files\nodejs");
+        let dirs = extra_windows_dirs(
+            Some(local),
+            Some(roaming),
+            Some(pf),
+            Some(pf86),
+            Some(nvm_home),
+            Some(nvm_symlink),
+        );
+        assert!(dirs.contains(&local.join("fnm_multishells")), "{dirs:?}");
+        assert!(dirs.contains(&roaming.join("nvm")), "{dirs:?}");
+        assert!(dirs.contains(&nvm_home.to_path_buf()), "{dirs:?}");
+        assert!(dirs.contains(&nvm_symlink.to_path_buf()), "{dirs:?}");
+        assert!(dirs.contains(&pf86.join("nodejs")), "{dirs:?}");
     }
 }

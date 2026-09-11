@@ -754,8 +754,7 @@ impl SystemProbe {
         // user opened the Doctor — and every one of these CLIs is a wrapper
         // that forks work of its own. Killing the pid alone would leave that
         // subtree running for the rest of the session.
-        procgroup::own_group(&mut cmd);
-        let mut child = match cmd.spawn() {
+        let mut child = match procgroup::spawn(&mut cmd) {
             Ok(child) => child,
             Err(err) => {
                 return ProbeOutput {
@@ -820,8 +819,7 @@ impl SystemProbe {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
-        procgroup::own_group(&mut cmd);
-        let mut child = match cmd.spawn() {
+        let mut child = match procgroup::spawn(&mut cmd) {
             Ok(child) => child,
             Err(err) => return Err(ProbeRun::Failed(err.to_string())),
         };
@@ -1370,6 +1368,53 @@ mod tests {
             .parse()
             .expect("a pid");
         std::thread::sleep(Duration::from_millis(100));
+        assert!(
+            !crate::host::procgroup::process_alive(grandchild as u32),
+            "grandchild {grandchild} outlived the probe that started it"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_probe_that_times_out_takes_its_grandchildren_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("grand.pid");
+        let script = dir.path().join("grand.ps1");
+        std::fs::write(
+            &script,
+            format!(
+                "$info = New-Object System.Diagnostics.ProcessStartInfo\n\
+                 $info.FileName = 'ping.exe'\n\
+                 $info.Arguments = '-n 120 127.0.0.1'\n\
+                 $info.UseShellExecute = $false\n\
+                 $info.CreateNoWindow = $true\n\
+                 $p = [System.Diagnostics.Process]::Start($info)\n\
+                 Set-Content -LiteralPath '{}' -Value $p.Id\n\
+                 Start-Sleep -Seconds 120\n",
+                pidfile.display()
+            ),
+        )
+        .unwrap();
+
+        let run = SystemProbe.run_until(
+            "powershell",
+            &[
+                "-NoProfile".into(),
+                "-ExecutionPolicy".into(),
+                "Bypass".into(),
+                "-File".into(),
+                script.display().to_string(),
+            ],
+            Duration::from_millis(2500),
+        );
+        assert_eq!(run, ProbeRun::TimedOut);
+
+        let grandchild: u32 = std::fs::read_to_string(&pidfile)
+            .expect("the probe's grandchild wrote its pid")
+            .trim()
+            .parse()
+            .expect("a pid");
+        std::thread::sleep(Duration::from_millis(200));
         assert!(
             !crate::host::procgroup::process_alive(grandchild),
             "grandchild {grandchild} outlived the probe that started it"

@@ -8,8 +8,9 @@ window chrome (#282 / #294), Action Center toasts (#284 / #288), NSIS
 packaging (#281 / #291), Credential Manager (#283 / #292), and install
 docs (#287 / #289) are on `main`; this job compiles those
 `#[cfg(windows)]` paths and runs the portable host tests, including the
-named secrets check. It does not launch the app. Job-object kill is
-still a sibling (#285).
+named secrets check. It does not launch the app. Job-object spawn +
+teardown is the sibling `windows-adapter-lifecycle` job in this same
+workflow (#285).
 
 ## Why a second gate exists
 
@@ -34,6 +35,7 @@ Ubuntu `verify` does not mean the Windows crate compiled.
 | --- | --- | --- | --- |
 | `windows plan` | Linux | `scripts/windows-needed.sh` | Every PR, tag, and `workflow_dispatch`. Writes the verify output. |
 | `windows verify` | `windows-latest` | `scripts/windows-verify.sh` | Plan says `verify=1` and the event is not `labeled`, or a tag / dispatch (forced). |
+| `windows adapter lifecycle` | `windows-latest` | `scripts/windows-adapter-lifecycle.sh run` | Same planner as verify. Spawn + Job Object teardown; required filters that match 0 tests fail (#285). |
 | `windows package` | `windows-latest` | `npm run tauri -- build --bundles nsis` | A PR labelled `windows-package`, or dispatch with `package=true`. Tag NSIS is `release.yml` (#281). |
 
 `windows-verify.sh` is the Windows-safe subset:
@@ -64,7 +66,7 @@ still need a person at a real Windows PC — tracked on #280 / #287:
 | Window chrome / close / tray | Headless runner. Decorated opaque chrome + close-exits is on `main` (#282 / #294); CI cannot launch a window. |
 | Secrets in Credential Manager | Compiled and unit-tested (#283 / #292). `windows-secrets-check.sh` runs the live `os_secret_round_trip` on this runner; Control Panel visibility is still a desktop smoke. |
 | Toast notifications | `notify/win.rs` is compiled (#284 / #288); Action Center delivery is a desktop smoke, not this job. |
-| ACP adapter kill tree | `CREATE_NEW_PROCESS_GROUP` is compiled; Job Objects are #285 |
+| ACP adapter kill tree in a launched app | Job Object assign + membership is CI-tested (`windows-adapter-lifecycle`, #285). Quit-no-orphans on a real `JaBot.exe` is still a desktop smoke. |
 | Playwright visual / axe / WebKit | Out of scope for the first cut; Ubuntu `browser` stays the suite |
 
 Do not call a green `windows verify` "the app works on Windows."
@@ -82,7 +84,7 @@ Turns **verify** on:
 
 - `src-tauri/` (host crate, Tauri config, lock, icons, adapters manifest)
 - `rust-toolchain.toml`
-- `scripts/windows-verify.sh`, `scripts/windows-needed.sh`, `scripts/windows-secrets-check.sh`, `scripts/tests/windows-ci.test.sh`
+- `scripts/windows-verify.sh`, `scripts/windows-needed.sh`, `scripts/windows-secrets-check.sh`, `scripts/windows-adapter-lifecycle.sh`, `scripts/tests/windows-ci.test.sh`, `scripts/tests/windows-adapter-lifecycle.test.sh`
 - `.github/workflows/windows.yml`
 
 Does **not** turn verify on (Linux `verify` / `browser` already cover them):
@@ -149,4 +151,4 @@ These are not missing coverage; they are the cost and honesty limits from
   This workflow passes `--bundles nsis` so the macOS `app`/`dmg` list stays
   the release default.
 - **Code signing / SmartScreen / a published Windows release asset.** #281.
-- **Runtime QA of chrome, toasts, and kill trees.** Chrome and toasts are compiled (#294 / #288); Job Objects are #285. Credential Manager is compiled and unit-tested here (#292); Control Panel / a launched app is still a human smoke.
+- **Runtime QA of chrome, toasts, and a launched kill-tree.** Chrome and toasts are compiled (#294 / #288). Job Object spawn + teardown is CI-tested (`windows-adapter-lifecycle`, #285). Credential Manager is compiled and unit-tested here (#292); Control Panel / a launched app is still a human smoke.

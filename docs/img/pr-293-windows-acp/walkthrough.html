@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Windows ACP adapter process lifecycle (Job Objects / kill-tree)</title>
+  <style>
+    :root {
+      --ink: #1a1f24;
+      --muted: #5b6773;
+      --line: #d7dde3;
+      --bg: #f7f5f0;
+      --card: #fff;
+      --unix: #1f7a4d;
+      --win: #2f6fed;
+      --warn: #c45c26;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 16px/1.5 "Liberation Sans", "DejaVu Sans", Inter, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    main { max-width: 880px; margin: 0 auto; padding: 40px 24px 80px; }
+    h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 8px; }
+    h2 { font-size: 1.15rem; margin: 2.2rem 0 0.6rem; }
+    p.lede { color: var(--muted); font-size: 1.05rem; margin: 0 0 1.5rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin: 12px 0;
+    }
+    .flow {
+      display: grid;
+      grid-template-columns: 1fr 28px 1fr 28px 1fr;
+      gap: 0;
+      align-items: stretch;
+      margin: 16px 0;
+    }
+    .flow .box {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 0.92rem;
+    }
+    .flow .box strong { display: block; margin-bottom: 4px; }
+    .flow .arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 1.4rem; }
+    .tag {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      padding: 2px 7px;
+      border-radius: 999px;
+      margin-bottom: 6px;
+    }
+    .tag.unix { background: #e4f5ec; color: var(--unix); }
+    .tag.win { background: #e4edff; color: var(--win); }
+    .tag.warn { background: #fde8d8; color: var(--warn); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86em; background: #efece4; padding: 1px 5px; border-radius: 4px; }
+    ul { margin: 0.4rem 0 0; padding-left: 1.2rem; }
+    li { margin: 0.25rem 0; }
+    .note { color: var(--muted); font-size: 0.92rem; }
+    @media (max-width: 720px) {
+      .flow { grid-template-columns: 1fr; }
+      .flow .arrow { transform: rotate(90deg); height: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Windows ACP adapter process lifecycle (Job Objects / kill-tree)</h1>
+    <p class="lede">
+      Issue #285 (parent #280). The host already spawned one ACP adapter per live
+      thread and killed a Unix process group. Windows only set
+      <code>CREATE_NEW_PROCESS_GROUP</code> and then <code>Child::kill()</code> —
+      one PID, so Node/.cmd grandchildren leaked. This PR adds a real kill-tree
+      and fixes PATHEXT / path separators. Unix teardown is the original
+      SIGTERM-then-return (no immediate SIGKILL of the group).
+    </p>
+
+    <h2>How it works</h2>
+    <div class="flow">
+      <div class="box">
+        <span class="tag unix">Unix (unchanged)</span>
+        <strong>process_group(0)</strong>
+        Child pid becomes the pgid. <code>SIGTERM</code> the group; if the
+        direct child exits, return. <code>SIGKILL</code> only if it is still
+        alive after grace.
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <span class="tag win">Windows (#285)</span>
+        <strong>Job Object</strong>
+        Nameless job with <code>KILL_ON_JOB_CLOSE</code>.
+        <code>CREATE_SUSPENDED</code> → assign → <code>ResumeThread</code>
+        (birth-into-job). Descendants inherit unless they break away.
+      </div>
+      <div class="arrow">→</div>
+      <div class="box">
+        <span class="tag warn">Then teardown</span>
+        <strong>CTRL_BREAK + terminate</strong>
+        Grace via <code>GenerateConsoleCtrlEvent</code> (skipped when it
+        fails), then <code>TerminateJobObject</code>. Fallback:
+        <code>taskkill /T /F</code> whenever the job was not assigned —
+        including after the wrapper pid has already exited.
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>Why not CREATE_NEW_PROCESS_GROUP alone?</strong>
+      <p class="note" style="margin: 8px 0 0;">
+        That flag only affects Ctrl+Break delivery. It does not put children in
+        a killable group the way a Unix pgid does. <code>Child::kill()</code> is
+        still <code>TerminateProcess</code> on the pid we spawned. Job Objects
+        are the Windows equivalent Buzz already documented
+        (<code>KILL_ON_JOB_CLOSE</code>, then <code>taskkill /T /F</code> if
+        assignment fails because a parent job forbids nesting).
+      </p>
+    </div>
+
+    <h2>Path and PATHEXT</h2>
+    <div class="card">
+      <p style="margin:0 0 8px;">
+        Doctor and spawn used to disagree on Windows: resolve only appended
+        <code>.exe</code>, but npm adapters are <code>.cmd</code> shims.
+        <code>CreateProcess</code> walks <code>PATHEXT</code>; now so do we.
+      </p>
+      <ul>
+        <li>Walk <code>.COM;.EXE;.BAT;.CMD</code> (or the process <code>PATHEXT</code>).</li>
+        <li>Do not double-extend: <code>node.exe</code> is not <code>node.exe.exe</code>.</li>
+        <li>Try both <code>.CMD</code> and <code>.cmd</code> so a case-sensitive volume (WSL) still finds npm shims.</li>
+        <li>Join with <code>Path::join</code> — never hard-code <code>\</code> vs <code>/</code>.</li>
+        <li>Home is <code>$HOME</code> or <code>USERPROFILE</code>. Well-known Windows dirs (<code>%APPDATA%\npm</code>, <code>%ProgramFiles%\nodejs</code>) are appended the same way.</li>
+      </ul>
+    </div>
+
+    <h2>What to look at</h2>
+    <table>
+      <thead>
+        <tr><th>File</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>src-tauri/src/host/procgroup.rs</code></td>
+          <td>Explicit <code>cfg(unix)</code> / <code>cfg(windows)</code>. <code>GroupedChild</code> holds the Job handle. This is the kill-tree.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/host/acp/spawn.rs</code></td>
+          <td>Resolves the program through PATHEXT, then <code>procgroup::spawn</code>. Unix grandchild test unchanged; Windows job test added.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/host/harness/mod.rs</code></td>
+          <td>PATHEXT walk shared by Doctor and the spawner so they cannot disagree.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/tests/acp_adapter.rs</code></td>
+          <td>Host-level stdio session: shutdown must reap the linger grandchild, not just drop the handle.</td>
+        </tr>
+        <tr>
+          <td><code>.github/workflows/windows.yml</code></td>
+          <td><code>windows-adapter-lifecycle</code> on <code>windows-latest</code> — spawn + teardown only, same planner as <code>windows verify</code> (#286).</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>How to verify</h2>
+    <div class="card">
+      <ul>
+        <li><code>./scripts/windows-adapter-lifecycle.sh check</code> — offline contract (Job Object docs, cfg branches, PATHEXT, CI job). In <code>verify.sh</code>.</li>
+        <li><code>./scripts/windows-adapter-lifecycle.sh run</code> — cargo tests. Required filters that match 0 tests fail. Unix-only names are not invoked on Windows. On <code>windows-latest</code>: Job Object kill-tree must assert <code>job.assigned</code>; separate <code>taskkill</code> fallback coverage.</li>
+        <li><code>cargo test --manifest-path src-tauri/Cargo.toml --features dev-bins --test acp_adapter -- shutdown_kills_adapter</code></li>
+        <li><code>./scripts/verify.sh</code> — the usual gate. Screenshot evidence skipped: no visual surface.</li>
+      </ul>
+    </div>
+  </main>
+</body>
+</html>

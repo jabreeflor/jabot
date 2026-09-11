@@ -182,6 +182,8 @@ fn main() {
     let session = Arc::new(Mutex::new(session));
     let clients = Arc::new(Mutex::new(Clients::default()));
     spawn_acp_pump(Arc::clone(&session), Arc::clone(&clients), wake);
+    // `--listen` is Unix-only. bind_listener is `-> !` off Unix, so there is
+    // no listener binding and no accept loop to name here (#285 / #286).
     #[cfg(unix)]
     if let Some(listener) = listener {
         spawn_accept_loop(Arc::clone(&session), Arc::clone(&clients), listener);

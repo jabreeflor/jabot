@@ -145,9 +145,7 @@ pub fn spawn(spec: Spawn<'_>) -> Result<Output, RunError> {
     for (key, value) in env {
         cmd.env(key, value);
     }
-    procgroup::own_group(&mut cmd);
-
-    let mut child = cmd.spawn().map_err(|e| RunError::Failed(e.to_string()))?;
+    let mut child = procgroup::spawn(&mut cmd).map_err(|e| RunError::Failed(e.to_string()))?;
     if let Some(payload) = stdin {
         // Written and closed before anything is read back: the payloads this
         // takes are one line long, so the pipe cannot fill, and the child is

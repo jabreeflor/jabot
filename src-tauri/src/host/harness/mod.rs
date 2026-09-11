@@ -45,29 +45,145 @@ const REQUIRED_ACP_VERSION: u64 = 1;
 ///
 /// Everything that asks "is this harness here?" goes through one function, so
 /// the Doctor and the spawner can never disagree about what is installed.
+///
+/// On Windows this walks `PATHEXT` (`.exe`, `.cmd`, `.bat`, …) rather than
+/// appending `.exe` only: npm-shipped adapters are `.cmd` shims, and a probe
+/// that cannot see them reports "not installed" for a binary `CreateProcess`
+/// would have found. A name that already has a `PATHEXT` suffix is not
+/// double-extended (`node.exe` does not become `node.exe.exe`). Separators
+/// (`\` or `/`) mean "this is a path", not a PATH search — `Path::join` is
+/// the only concatenation, so we never invent a slash style.
 pub fn resolve_command(command: &str) -> Option<PathBuf> {
     let command = command.trim();
     if command.is_empty() {
         return None;
     }
     let as_path = std::path::Path::new(command);
-    if as_path.components().count() > 1 {
-        return as_path.is_file().then(|| as_path.to_path_buf());
+    if looks_like_path(as_path) {
+        return resolve_path_candidate(as_path, &pathext());
     }
     for dir in path::search_path() {
-        let candidate = dir.join(command);
-        if is_executable(&candidate) {
-            return Some(candidate);
+        if let Some(found) = resolve_in_dir(dir, command, &pathext()) {
+            return Some(found);
         }
-        #[cfg(windows)]
-        {
-            let exe = dir.join(format!("{command}.exe"));
-            if is_executable(&exe) {
-                return Some(exe);
+    }
+    None
+}
+
+/// A slash or a drive-absolute path — not a bare command name to look up.
+fn looks_like_path(command: &std::path::Path) -> bool {
+    command.is_absolute() || command.components().count() > 1
+}
+
+/// `PATHEXT` entries, each starting with a dot, in the order Windows would try.
+///
+/// Injected in tests so Linux CI can prove the Windows walk without a Windows
+/// kernel. An empty / missing value still yields the four extensions every
+/// Windows box has had since `cmd.exe`.
+#[cfg(any(test, windows))]
+pub(crate) fn pathext_from(raw: Option<&str>) -> Vec<String> {
+    let raw = raw
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(".COM;.EXE;.BAT;.CMD");
+    raw.split(';')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            if part.starts_with('.') {
+                part.to_string()
+            } else {
+                format!(".{part}")
+            }
+        })
+        .collect()
+}
+
+fn pathext() -> Vec<String> {
+    #[cfg(windows)]
+    {
+        pathext_from(std::env::var("PATHEXT").ok().as_deref())
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+fn has_pathext_suffix(name: &str, extensions: &[String]) -> bool {
+    let Some(ext) = std::path::Path::new(name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+    else {
+        return false;
+    };
+    let dotted = format!(".{ext}");
+    extensions
+        .iter()
+        .any(|known| known.eq_ignore_ascii_case(&dotted))
+}
+
+/// Look for `command` (and each `PATHEXT` variant) inside `dir`.
+pub(crate) fn resolve_in_dir(
+    dir: &std::path::Path,
+    command: &str,
+    extensions: &[String],
+) -> Option<PathBuf> {
+    let candidate = dir.join(command);
+    if is_executable(&candidate) {
+        return Some(candidate);
+    }
+    if has_pathext_suffix(command, extensions) {
+        return None;
+    }
+    for ext in extensions {
+        for name in pathext_names(command, ext) {
+            let candidate = dir.join(name);
+            if is_executable(&candidate) {
+                return Some(candidate);
             }
         }
     }
     None
+}
+
+/// PATHEXT is usually `.CMD`; npm writes `claude-agent-acp.cmd`. Windows
+/// does not care. A case-sensitive volume (WSL, this test) does, so try both.
+fn pathext_names(command: &str, ext: &str) -> Vec<String> {
+    pathext_suffixes(ext)
+        .into_iter()
+        .map(|suffix| format!("{command}{suffix}"))
+        .collect()
+}
+
+fn resolve_path_candidate(path: &std::path::Path, extensions: &[String]) -> Option<PathBuf> {
+    if is_executable(path) {
+        return Some(path.to_path_buf());
+    }
+    let name = path.file_name().and_then(|name| name.to_str())?;
+    if has_pathext_suffix(name, extensions) {
+        return None;
+    }
+    for ext in extensions {
+        for suffix in pathext_suffixes(ext) {
+            let mut with_ext = path.as_os_str().to_os_string();
+            with_ext.push(&suffix);
+            let candidate = PathBuf::from(with_ext);
+            if is_executable(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn pathext_suffixes(ext: &str) -> Vec<String> {
+    let lower = ext.to_ascii_lowercase();
+    if ext == lower {
+        vec![ext.to_string()]
+    } else {
+        vec![ext.to_string(), lower]
+    }
 }
 
 fn is_executable(path: &std::path::Path) -> bool {
@@ -645,19 +761,96 @@ mod tests {
 
     #[test]
     fn resolve_finds_a_binary_on_the_augmented_path() {
-        // `git` is on PATH in Linux CI, Windows CI, and a normal laptop.
-        // `sh` is not a fair Windows probe.
-        assert!(resolve_command("git").is_some());
+        #[cfg(unix)]
+        assert!(resolve_command("sh").is_some());
+        #[cfg(windows)]
+        assert!(resolve_command("cmd").is_some());
         assert!(resolve_command("jabot-definitely-not-on-path-xyz").is_none());
         assert!(resolve_command("  ").is_none());
     }
 
     #[test]
     fn an_absolute_path_is_taken_at_its_word() {
-        let existing = std::env::current_exe().expect("test executable");
-        let path = existing.to_str().expect("utf-8 path");
-        assert!(resolve_command(path).is_some());
-        assert!(resolve_command("/bin/definitely-not-here").is_none());
+        #[cfg(unix)]
+        {
+            assert!(resolve_command("/bin/sh").is_some());
+            assert!(resolve_command("/bin/definitely-not-here").is_none());
+        }
+        #[cfg(windows)]
+        {
+            let windir = std::env::var("WINDIR").expect("WINDIR");
+            let cmd = format!("{windir}\\System32\\cmd.exe");
+            assert!(resolve_command(&cmd).is_some(), "{cmd}");
+            assert!(resolve_command(&format!("{windir}\\definitely-not-here.exe")).is_none());
+        }
+    }
+
+    #[test]
+    fn pathext_from_normalizes_dots_and_skips_empties() {
+        assert_eq!(
+            pathext_from(Some(".COM;.EXE;;BAT;.CMD")),
+            [".COM", ".EXE", ".BAT", ".CMD"]
+        );
+        assert_eq!(
+            pathext_from(None)[0],
+            ".COM",
+            "missing PATHEXT still has the Windows floor"
+        );
+    }
+
+    /// npm's Windows shims are `.cmd`, not `.exe`. A walk that only appends
+    /// `.exe` would miss the adapter `CreateProcess` is about to find.
+    #[test]
+    fn resolve_in_dir_walks_pathext_and_does_not_double_extend() {
+        let dir = tempfile::tempdir().unwrap();
+        // npm writes `.cmd`; PATHEXT is usually `.CMD`. The walk has to
+        // find the file on a case-sensitive volume the way Windows would.
+        let cmd = dir.path().join("claude-agent-acp.cmd");
+        let exe = dir.path().join("node.exe");
+        std::fs::write(&cmd, b"@echo off\r\n").unwrap();
+        std::fs::write(&exe, b"").unwrap();
+        mark_executable(&cmd);
+        mark_executable(&exe);
+        let extensions = [".EXE".to_string(), ".CMD".to_string()];
+        let found_cmd = resolve_in_dir(dir.path(), "claude-agent-acp", &extensions).unwrap();
+        assert!(
+            found_cmd
+                .file_name()
+                .unwrap()
+                .eq_ignore_ascii_case("claude-agent-acp.cmd"),
+            "{found_cmd:?}"
+        );
+        let found_exe = resolve_in_dir(dir.path(), "node", &extensions).unwrap();
+        assert!(
+            found_exe
+                .file_name()
+                .unwrap()
+                .eq_ignore_ascii_case("node.exe"),
+            "{found_exe:?}"
+        );
+    }
+
+    #[test]
+    fn a_name_with_separators_is_a_path_not_a_path_search() {
+        assert!(looks_like_path(std::path::Path::new("foo/bar")));
+        assert!(!looks_like_path(std::path::Path::new("node")));
+        assert!(!looks_like_path(std::path::Path::new("claude-agent-acp")));
+        #[cfg(windows)]
+        {
+            assert!(looks_like_path(std::path::Path::new(r"foo\bar")));
+            assert!(looks_like_path(std::path::Path::new(r"C:\Users\acp")));
+        }
+    }
+
+    fn mark_executable(path: &std::path::Path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(path, perms).unwrap();
+        }
+        let _ = path;
     }
 
     /// The floor exists so a user can override policy from their own shell.

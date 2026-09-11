@@ -29,7 +29,8 @@ relitigated per feature.
    hide-to-tray (#282). Minimize keeps the process; the X does not.
 2. Cmd-Q / Dock "Quit" **persists** the thread overlay (session ids,
    working directory, run state) to disk, then kills every ACP adapter
-   **process group** (not just the parent PID).
+   **tree** (not just the parent PID): Unix process group, Windows Job
+   Object (`KILL_ON_JOB_CLOSE`, #285).
 3. On next launch, persisted threads are **resumed** via `session/resume`
    rather than reconnected to a live PID; any run left `running` at
    persist time surfaces as interrupted/stuck rather than silently lost.

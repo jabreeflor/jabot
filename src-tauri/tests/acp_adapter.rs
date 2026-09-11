@@ -419,17 +419,107 @@ fn persists_acp_session_id_on_thread() {
 
 #[test]
 fn shutdown_kills_adapter() {
+    let dir = tempfile::tempdir().unwrap();
+    let pidfile = dir.path().join("grand.pid");
     let mut session = HostSession::ephemeral();
     hello(&mut session);
+    // Mode + pidfile: the fake agent forks a linger grandchild in the same
+    // group / Job Object and writes its pid, so teardown can be shown to
+    // reap the tree rather than just drop the host's handle (#285).
+    let mut params = prompt_params("t-kill", "hi", Some("grandchild"));
+    params["runtime"]["args"] = json!(["grandchild", pidfile.display().to_string()]);
+    params["cwd"] = json!(dir.path().to_string_lossy());
     session
-        .handle_request(req(
-            2,
-            SESSION_PROMPT,
-            Some(prompt_params("t-kill", "hi", Some("grandchild"))),
-        ))
+        .handle_request(req(2, SESSION_PROMPT, Some(params)))
         .result
         .expect("prompt");
     assert_eq!(session.live_adapter_count(), 1);
+
+    let mut grandchild = None;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if let Ok(raw) = std::fs::read_to_string(&pidfile) {
+            if let Ok(pid) = raw.trim().parse::<u32>() {
+                grandchild = Some(pid);
+                break;
+            }
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let grandchild = grandchild.expect("grandchild pid file");
+    assert!(
+        process_is_running(grandchild),
+        "grandchild {grandchild} should be running before shutdown"
+    );
+
     session.shutdown_adapters();
     assert_eq!(session.live_adapter_count(), 0);
+    thread::sleep(Duration::from_millis(200));
+    assert!(
+        !process_is_running(grandchild),
+        "grandchild {grandchild} survived adapter teardown"
+    );
+}
+
+/// Parse `tasklist /FO CSV /NH` and match the PID *field*, not a substring
+/// (`123` must not match `1234`).
+fn tasklist_csv_reports_pid(stdout: &str, pid: u32) -> bool {
+    let pid_s = pid.to_string();
+    stdout.lines().any(|line| {
+        let mut fields = line.split(',');
+        let Some(_image) = fields.next() else {
+            return false;
+        };
+        let Some(pid_field) = fields.next() else {
+            return false;
+        };
+        pid_field.trim().trim_matches('"') == pid_s
+    })
+}
+
+#[test]
+fn tasklist_csv_matches_the_pid_field_not_a_substring() {
+    let row = "\"ping.exe\",\"1234\",\"Console\",\"1\",\"2,345 K\"\r\n";
+    assert!(tasklist_csv_reports_pid(row, 1234));
+    assert!(!tasklist_csv_reports_pid(row, 123));
+    assert!(!tasklist_csv_reports_pid(row, 12345));
+    assert!(!tasklist_csv_reports_pid(
+        "INFO: No tasks are running which match the specified criteria.\r\n",
+        1234
+    ));
+}
+
+fn process_is_running(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output();
+        match output {
+            Ok(output) => {
+                let state = String::from_utf8_lossy(&output.stdout);
+                let state = state.trim();
+                !state.is_empty() && !state.starts_with('Z')
+            }
+            Err(_) => false,
+        }
+    }
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .output();
+        match output {
+            Ok(output) => {
+                let text = String::from_utf8_lossy(&output.stdout);
+                tasklist_csv_reports_pid(&text, pid)
+            }
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+        false
+    }
 }

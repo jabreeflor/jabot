@@ -8,8 +8,10 @@ name: Windows
 # e2e, and Playwright. This workflow therefore:
 #
 # * always starts a cheap Linux planner on PRs / dispatch / tags;
-# * starts `windows verify` only when host/toolchain/CI paths change
-#   (or on tags / dispatch) — docs-only PRs do not get a Windows runner;
+# * starts `windows verify` and `windows-adapter-lifecycle` only when
+#   host/toolchain/CI paths change (or on tags / dispatch) — docs-only
+#   PRs do not get a Windows runner. Adapter lifecycle is the #285
+#   spawn + Job Object teardown slice; verify is the broader compile;
 # * builds an unsigned NSIS installer only on a `windows-package` label
 #   or workflow_dispatch with `package=true`. Tag NSIS belongs to
 #   release.yml (#281 / #291), not this file.
@@ -72,6 +74,7 @@ jobs:
             echo "| check | run | why |"
             echo "| --- | --- | --- |"
             echo "| windows verify | ${{ steps.plan.outputs.verify }} | \`scripts/windows-verify.sh\` — compile + portable cargo test |"
+            echo "| windows adapter lifecycle | ${{ steps.plan.outputs.verify }} | \`scripts/windows-adapter-lifecycle.sh run\` — Job Object spawn + teardown (#285) |"
             echo "| windows package | \`windows-package\` label / dispatch \`package\` | unsigned NSIS; not every PR; tags are release.yml |"
             echo
             echo "A \`0\` means the Windows runner is not started."
@@ -98,6 +101,33 @@ jobs:
           prefix-key: windows-verify
       - name: Compile host crate and run portable tests
         run: ./scripts/windows-verify.sh
+
+  # ACP adapter spawn + Job Object teardown on a real Windows kernel (#285).
+  # Not the full verify job above — this slice fails if a required filter
+  # matches 0 tests and asserts job.assigned / job membership. Same planner
+  # as windows-verify so docs-only PRs do not start a second runner.
+  windows-adapter-lifecycle:
+    name: windows adapter lifecycle
+    needs: windows-plan
+    if: needs.windows-plan.outputs.verify == '1' && github.event.action != 'labeled'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          prefix-key: windows-adapter-lifecycle
+      - name: Stub bundled adapters so tauri-build's resource glob matches
+        run: |
+          mkdir -p src-tauri/vendor/adapters/node_modules/_stub
+          printf 'stub\n' > src-tauri/vendor/adapters/node_modules/_stub/keep
+      - name: Spawn + teardown
+        run: ./scripts/windows-adapter-lifecycle.sh run
 
   # Unsigned NSIS only. Full Windows product packaging (targets, signing,
   # release upload) is #281. MSI/WiX is not installed on this runner.
