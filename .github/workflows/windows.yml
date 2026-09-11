@@ -10,8 +10,9 @@ name: Windows
 # * always starts a cheap Linux planner on PRs / dispatch / tags;
 # * starts `windows verify` only when host/toolchain/CI paths change
 #   (or on tags / dispatch) — docs-only PRs do not get a Windows runner;
-# * builds an unsigned NSIS installer only on tags, a `windows-package`
-#   label, or workflow_dispatch with `package=true`.
+# * builds an unsigned NSIS installer only on a `windows-package` label
+#   or workflow_dispatch with `package=true`. Tag NSIS belongs to
+#   release.yml (#281 / #291), not this file.
 #
 # Failures are real: no `continue-on-error`. A red job means the Windows
 # crate or the portable tests broke. It does not mean a human smoked the
@@ -20,8 +21,9 @@ name: Windows
 on:
   pull_request:
     # `labeled` so adding `windows-package` later starts the package job
-    # without a dummy push. Unrelated labels only re-run the cheap planner
-    # unless host paths already match.
+    # without a dummy push. Verify skips `labeled`, and labeled runs sit
+    # in their own concurrency group, so `size:*` / `agent-ready` cannot
+    # cancel and re-bill an in-flight 2× verify.
     types: [opened, synchronize, reopened, labeled]
   push:
     tags: ["v*"]
@@ -33,8 +35,9 @@ on:
         default: false
 
 concurrency:
-  group: windows-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Isolate `labeled` so adding any label cannot cancel a running verify.
+  group: windows-${{ github.workflow }}-${{ github.ref }}-${{ github.event.action == 'labeled' && 'labeled' || 'head' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'labeled' }}
 
 jobs:
   windows-plan:
@@ -69,7 +72,7 @@ jobs:
             echo "| check | run | why |"
             echo "| --- | --- | --- |"
             echo "| windows verify | ${{ steps.plan.outputs.verify }} | \`scripts/windows-verify.sh\` — compile + portable cargo test |"
-            echo "| windows package | tag / \`windows-package\` label / dispatch \`package\` | unsigned NSIS; not every PR |"
+            echo "| windows package | \`windows-package\` label / dispatch \`package\` | unsigned NSIS; not every PR; tags are release.yml |"
             echo
             echo "A \`0\` means the Windows runner is not started."
             echo "See \`docs/windows-ci.md\`."
@@ -78,7 +81,7 @@ jobs:
   windows-verify:
     name: windows verify
     needs: windows-plan
-    if: needs.windows-plan.outputs.verify == '1'
+    if: needs.windows-plan.outputs.verify == '1' && github.event.action != 'labeled'
     runs-on: windows-latest
     timeout-minutes: 25
     defaults:
@@ -103,8 +106,8 @@ jobs:
     name: windows package
     if: |
       (github.event_name == 'workflow_dispatch' && inputs.package) ||
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'windows-package'))
+      (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'windows-package') ||
+      (github.event_name == 'pull_request' && github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'windows-package'))
     runs-on: windows-latest
     timeout-minutes: 45
     defaults:
@@ -132,11 +135,10 @@ jobs:
       - name: Build unsigned NSIS installer
         run: npm run tauri -- build --bundles nsis
       - name: Retain Windows installer
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-nsis
           path: |
             src-tauri/target/release/bundle/nsis/**
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14

@@ -29,8 +29,8 @@ Ubuntu `verify` does not mean the Windows crate compiled.
 | Check | Runner | Command | When it starts |
 | --- | --- | --- | --- |
 | `windows plan` | Linux | `scripts/windows-needed.sh` | Every PR, tag, and `workflow_dispatch`. Writes the verify output. |
-| `windows verify` | `windows-latest` | `scripts/windows-verify.sh` | Plan says `verify=1`, or a tag / dispatch (forced). |
-| `windows package` | `windows-latest` | `npm run tauri -- build --bundles nsis` | A `v*` tag, a PR labelled `windows-package`, or dispatch with `package=true`. |
+| `windows verify` | `windows-latest` | `scripts/windows-verify.sh` | Plan says `verify=1` and the event is not `labeled`, or a tag / dispatch (forced). |
+| `windows package` | `windows-latest` | `npm run tauri -- build --bundles nsis` | A PR labelled `windows-package`, or dispatch with `package=true`. Tag NSIS is `release.yml` (#281). |
 
 `windows-verify.sh` is the Windows-safe subset:
 
@@ -88,6 +88,19 @@ Does **not** turn verify on (Linux `verify` / `browser` already cover them):
 
 `workflow_dispatch` always runs verify. Check **Also build an unsigned NSIS
 installer** to add the package job without labelling a PR.
+
+The `labeled` trigger exists so adding `windows-package` can start the
+package job without a dummy push. Verify does **not** run on label events,
+and those runs sit in their own concurrency group, so `size:*` /
+`agent-ready` cannot cancel and re-bill an in-flight Windows verify.
+
+`windows-package` is not a pre-created repo label. The first person to apply
+it needs write access (GitHub auto-creates it then). After that, anyone who
+can label the PR can opt in. See [docs/labels.md](labels.md).
+
+Local `windows-verify.sh` on a PC needs Git for Windows (its `usr/bin` `sh` /
+`cat`). Running it from `cmd.exe` without that PATH is a red that is not a
+crate bug.
 
 ## Local reproduction
 

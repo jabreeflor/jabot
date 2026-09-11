@@ -11,13 +11,13 @@
 #   verify=0|1
 #
 # The Windows runner is 2x Linux. Docs-only and renderer-only PRs must not
-# start it. Packaging is a separate job gated by tag / label / dispatch in
+# start it. Packaging is a separate job gated by label / dispatch in
 # .github/workflows/windows.yml — this script does not turn that on.
 # See docs/windows-ci.md.
 #
 # --github-output also writes the key to $GITHUB_OUTPUT for Actions.
 # The default local verify.sh path never calls this; it stays offline.
-set -uo pipefail
+set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT=$(pwd)
@@ -106,9 +106,11 @@ if [[ $FORCE_VERIFY -eq 1 ]]; then
 else
   if [[ ${#PATHS[@]} -eq 0 ]]; then
     [[ -n "$BASE" ]] || fail "pass --base <ref>, --paths, or --force-verify"
+    # Capture first so a failed `git diff` is a red planner, not verify=0.
+    collected=$(collect_git_paths "$BASE" "$HEAD")
     while IFS= read -r line; do
       [[ -n "$line" ]] && PATHS+=("$line")
-    done < <(collect_git_paths "$BASE" "$HEAD")
+    done <<< "$collected"
   fi
   if [[ ${#PATHS[@]} -gt 0 ]]; then
     for path in "${PATHS[@]}"; do
@@ -130,7 +132,7 @@ fi
   else
     printf '  windows verify: skip (no host/CI/toolchain paths)\n'
   fi
-  printf '  windows package: decided by the workflow (tag / windows-package label / dispatch)\n'
+  printf '  windows package: decided by the workflow (windows-package label / dispatch)\n'
 } >&2
 
 printf 'verify=%s\n' "$VERIFY"

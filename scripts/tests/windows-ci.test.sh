@@ -108,6 +108,18 @@ planner_verify_script_runs() {
   assert_eq 'verify=1' "$out" "windows-verify.sh" && pass
 }
 
+planner_needed_script_runs() {
+  local out
+  out=$(plan scripts/windows-needed.sh) || { fail "planner exited $?"; return; }
+  assert_eq 'verify=1' "$out" "windows-needed.sh" && pass
+}
+
+planner_ci_test_runs() {
+  local out
+  out=$(plan scripts/tests/windows-ci.test.sh) || { fail "planner exited $?"; return; }
+  assert_eq 'verify=1' "$out" "windows-ci.test.sh" && pass
+}
+
 planner_linux_ci_does_not_start_windows() {
   local out
   out=$(plan .github/workflows/ci.yml .github/workflows/macos-native.yml) || {
@@ -126,6 +138,13 @@ planner_unknown_flag_fails() {
   local rc=0
   "$PLANNER" --nope >/dev/null 2>&1 || rc=$?
   assert_eq 1 "$rc" "unknown flag must be a failure" && pass
+}
+
+planner_bad_base_fails_closed() {
+  local rc=0 out
+  out=$("$PLANNER" --base definitely-not-a-ref 2>/dev/null) || rc=$?
+  assert_eq 1 "$rc" "unresolvable --base must fail closed" || return
+  assert_not_contains "${out:-}" 'verify=0' "failed git diff must not skip" && pass
 }
 
 # --- verify script contract -------------------------------------------------
@@ -157,6 +176,7 @@ workflow_uses_windows_latest_without_continue_on_error() {
   assert_contains "$wf" '--bundles nsis' "optional package is NSIS" || return
   assert_contains "$wf" 'workflow_dispatch' "dispatch avoids burning PR minutes" || return
   assert_contains "$wf" 'cancel-in-progress' "superseded PR runs do not keep paying" || return
+  assert_contains "$wf" "github.event.action != 'labeled'" "labeled must not start or cancel verify" || return
   assert_not_contains "$wf" 'continue-on-error:' "failures are real (no YAML key)" || return
   assert_not_contains "$wf" 'playwright' "no Playwright on Windows in the first cut" || return
   pass
@@ -166,11 +186,14 @@ workflow_package_is_opt_in() {
   local wf
   wf=$(cat "$WORKFLOW")
   assert_contains "$wf" 'inputs.package' "dispatch package input" || return
-  assert_contains "$wf" "startsWith(github.ref, 'refs/tags/v')" "tags may package" || return
   assert_contains "$wf" 'windows-package' "PR label may package" || return
-  # The verify job must not be the package job.
+  assert_contains "$wf" "github.event.label.name == 'windows-package'" "only that label starts package" || return
+  assert_contains "$wf" 'if-no-files-found: error' "missing installer is a red job" || return
+  # The verify job must not be the package job. Tags belong to release.yml.
   assert_contains "$wf" 'name: windows verify' "verify job exists" || return
   assert_contains "$wf" 'name: windows package' "package job is separate" || return
+  assert_not_contains "$wf" "startsWith(github.ref, 'refs/tags/v')" "tags must not package here" || return
+  assert_not_contains "$wf" 'if-no-files-found: warn' "warn is a false green" || return
   pass
 }
 
@@ -225,9 +248,12 @@ run_case planner_tauri_conf_runs planner_tauri_conf_runs
 run_case planner_toolchain_runs planner_toolchain_runs
 run_case planner_workflow_runs planner_workflow_runs
 run_case planner_verify_script_runs planner_verify_script_runs
+run_case planner_needed_script_runs planner_needed_script_runs
+run_case planner_ci_test_runs planner_ci_test_runs
 run_case planner_linux_ci_does_not_start_windows planner_linux_ci_does_not_start_windows
 run_case planner_force_verify planner_force_verify
 run_case planner_unknown_flag_fails planner_unknown_flag_fails
+run_case planner_bad_base_fails_closed planner_bad_base_fails_closed
 run_case verify_script_is_the_windows_gate verify_script_is_the_windows_gate
 run_case workflow_uses_windows_latest_without_continue_on_error workflow_uses_windows_latest_without_continue_on_error
 run_case workflow_package_is_opt_in workflow_package_is_opt_in

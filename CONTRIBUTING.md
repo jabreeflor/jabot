@@ -406,8 +406,9 @@ filing or "fixing" a gap.
   `src-tauri/`, the toolchain, or the Windows scripts change. It runs
   `scripts/windows-verify.sh` (check + clippy `-D warnings` + portable
   `cargo test`). Failures are real — no `continue-on-error`. An unsigned
-  NSIS build is opt-in (`windows-package` label, a `v*` tag, or
-  `workflow_dispatch` with `package=true`), not every PR. Linux/macOS jobs
+  NSIS build is opt-in (`windows-package` label or
+  `workflow_dispatch` with `package=true`), not every PR. Tag NSIS is
+  `release.yml` (#281). Linux/macOS jobs
   stay the sources of truth they are today. What that job proves, and what
   still needs a human smoke on a real PC:
   [docs/windows-ci.md](docs/windows-ci.md). Playwright on Windows is out of

@@ -67,7 +67,7 @@
           <h3>3. Package (opt-in)</h3>
           <ul>
             <li>Unsigned NSIS only.</li>
-            <li>On <code>v*</code> tags, <code>windows-package</code>, or dispatch <code>package=true</code>.</li>
+            <li>On <code>windows-package</code> or dispatch <code>package=true</code>. Tag NSIS is <code>release.yml</code>.</li>
             <li><code>--bundles nsis</code> does not change macOS <code>app</code>/<code>dmg</code>.</li>
             <li>Full release path is still #281.</li>
           </ul>
@@ -109,7 +109,7 @@
     <section id="verify">
       <h2>How to verify</h2>
       <ul>
-        <li><code>./scripts/tests/windows-ci.test.sh</code> — 17 offline cases; part of <code>./scripts/verify.sh</code>.</li>
+        <li><code>./scripts/tests/windows-ci.test.sh</code> — planner + workflow contract; part of <code>./scripts/verify.sh</code>.</li>
         <li><code>./scripts/windows-needed.sh --base origin/main</code> — would this PR start a Windows runner?</li>
         <li>On the PR: <code>windows plan</code> is green; <code>windows verify</code> runs because this change touches <code>src-tauri/</code> and the new workflow.</li>
         <li>Label <code>windows-package</code> only if you want an unsigned NSIS artifact. That is not required to land #286.</li>

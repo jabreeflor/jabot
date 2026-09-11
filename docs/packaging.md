@@ -305,12 +305,13 @@ normal gate:
 Anything added to the script that macOS-only tooling can reach needs a stub and
 a case, or it is untested: CI has no Mac.
 
-Windows packaging is a separate, opt-in job (`windows-package` label, a `v*`
-tag, or `workflow_dispatch` with `package=true`). It builds an **unsigned**
+Windows packaging on PRs is a separate, opt-in job (`windows-package` label
+or `workflow_dispatch` with `package=true`). It builds an **unsigned**
 NSIS installer so the port can be exercised without paying for NSIS on every
 PR. It does not change `bundle.targets` (`app` / `dmg`), does not upload a
-release asset, and does not replace a human smoke on a real PC. What that
-job guarantees versus what it does not is
+release asset, and does not replace a human smoke on a real PC. Tag-time
+Windows NSIS belongs to `release.yml` (#281). What the PR job guarantees
+versus what it does not is
 [docs/windows-ci.md](windows-ci.md) (#286 / #281).
 
 ---
