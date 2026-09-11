@@ -59,8 +59,13 @@ block2 = "0.6"
 [target.'cfg(target_os = "windows")'.dependencies]
 # WinRT toasts for Inbox cards (#284). Windows-only so Linux verify never
 # downloads the windows crate graph. `src/notify/win.rs` is the only file
-# that names this crate.
-tauri-winrt-notification = "0.8"
+# that names this crate. We post and retain `ToastNotification` ourselves
+# because a wrapper that drops the object after `Show` loses `Activated`.
+windows = { version = "0.62", features = [
+    "Data_Xml_Dom",
+    "Foundation",
+    "UI_Notifications",
+] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

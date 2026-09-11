@@ -47,10 +47,14 @@ fn host_rpc(
     // would see a thread's `seq` 3 before its `seq` 1 — the one thing the
     // envelope's counter is there to rule out (#14 de-duplicates a stored
     // replay against the live stream with it).
-    for notification in outbound {
-        emit_host_notification(&app, &notification);
+    for notification in &outbound {
+        emit_host_notification(&app, notification);
     }
     drop(session);
+    // OS banners are last and can block: Windows `Show` is synchronous.
+    // Do not hold `HostState` across it — the ACP pump and the next RPC
+    // must not wait on Action Center.
+    announce_host_notifications(&outbound);
     response
 }
 
@@ -58,14 +62,19 @@ fn emit_host_notification(app: &tauri::AppHandle, notification: &JsonRpcNotifica
     if let Err(err) = app.emit("host-rpc", notification) {
         eprintln!("failed to emit host-rpc notification: {err}");
     }
-    // Persist, then notify — and the OS banner is the *last* step of the
-    // second half (#27). The `inbox_events` row was written before this
-    // notification was queued, and the webview has just been told, so a
-    // refused permission or a machine with no Notification Center costs
-    // nothing but the banner. `announce` decides on its own which frames
-    // deserve one; almost none do.
-    if let Some(params) = notification.params.as_ref() {
-        notify::announce(&notification.method, params);
+}
+
+/// Persist, then notify — and the OS banner is the *last* step of the
+/// second half (#27). The `inbox_events` row was written before this
+/// notification was queued, and the webview has just been told, so a
+/// refused permission or a machine with no Notification Center costs
+/// nothing but the banner. `announce` decides on its own which frames
+/// deserve one; almost none do.
+fn announce_host_notifications(outbound: &[JsonRpcNotification]) {
+    for notification in outbound {
+        if let Some(params) = notification.params.as_ref() {
+            notify::announce(&notification.method, params);
+        }
     }
 }
 
@@ -155,10 +164,11 @@ fn spawn_acp_pump(app: tauri::AppHandle, wake: std::sync::Arc<AdapterWake>) {
             session.pump_acp();
             let outbound = session.take_outbound();
             // Under the lock, for the ordering reason in `host_rpc`.
-            for notification in outbound {
-                emit_host_notification(&app, &notification);
+            for notification in &outbound {
+                emit_host_notification(&app, notification);
             }
             drop(session);
+            announce_host_notifications(&outbound);
         })
         .expect("acp pump thread");
 }

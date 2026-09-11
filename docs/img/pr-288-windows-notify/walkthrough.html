@@ -162,10 +162,11 @@
         <div class="step">
           <strong>2. WinRT toast, title and body from the existing plan</strong>
           <span>
-            <code>win.rs</code> calls <code>tauri-winrt-notification</code>
+            <code>win.rs</code> posts a WinRT <code>ToastNotification</code>
             with the same <code>NativeNotification</code> macOS uses. Only
             <code>needs_you</code>, <code>done</code>, and <code>failed</code>
-            ring.
+            ring. The notification and its <code>Activated</code> handler
+            stay alive after <code>Show</code> so a click can still fire.
           </span>
         </div>
         <div class="step">
@@ -174,16 +175,18 @@
             Try <code>com.jabot.app</code> (the Tauri identifier). If WinRT
             refuses — typical for unpackaged <code>tauri dev</code> until
             #281 registers the id — retry once as PowerShell's well-known
-            id and say so in the log. Any remaining error is
+            id and say so in the log. A PowerShell success does not skip
+            the real id next time. Any remaining error is
             <code>eprintln</code> and return.
           </span>
         </div>
         <div class="step">
           <strong>4. Click uses the macOS sink, while the process is alive</strong>
           <span>
-            Toast <code>on_activated</code> calls
-            <code>dispatch_click</code>. <code>lib.rs</code> focuses
-            <code>main</code> and emits <code>notification-activated</code>.
+            <code>Activated</code> calls <code>dispatch_click</code>.
+            <code>lib.rs</code> focuses <code>main</code> and emits
+            <code>notification-activated</code>. The WinRT objects are
+            retained so this still works after <code>post</code> returns.
             After quit, Windows does not relaunch — that is installer/COM
             work. The card is already in the Inbox.
           </span>

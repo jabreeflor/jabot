@@ -21,8 +21,10 @@ refuse:
   Windows. There was never anything to permit, so pointing at System Settings
   would send the user somewhere that cannot help. Windows toasts (#284) are
   a real backend.
-- `notDetermined` means nobody has been asked yet — the first banner asks.
-  Saying "notifications are off" now would be wrong the moment it is read.
+- `notDetermined` means nobody has been asked yet — on macOS the first
+  banner asks; on Windows there is no prompt and Settings-off is not
+  reported as `denied`. Saying "notifications are off" now would be
+  wrong the moment it is read.
 - `granted` has nothing to report.
 
 The copy leads with the consequence and closes with the reassurance, because

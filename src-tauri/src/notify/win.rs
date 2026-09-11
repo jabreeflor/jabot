@@ -1,54 +1,75 @@
 //! Delivery through Windows Action Center toasts (#284). Windows only.
 //!
-//! **It must never panic.** `Toast::show` talks to WinRT, which can refuse an
-//! unpackaged `tauri dev` binary, a machine with notifications off, or a host
-//! without a registered AppUserModelID. Every entry point here logs and
-//! returns. The Inbox card was written before this module was called.
+//! **It must never panic.** WinRT can refuse an unpackaged `tauri dev`
+//! binary, a machine with notifications off, or a host without a registered
+//! AppUserModelID. Every entry point here logs and returns. The Inbox card
+//! was written before this module was called.
 //!
 //! **AUMID, then a documented fallback.** Packaged JaBot should toast as
 //! [`APP_USER_MODEL_ID`] (`com.jabot.app`, the Tauri identifier). Until the
 //! installer registers that id (#281), WinRT often rejects it; we then retry
 //! once with PowerShell's well-known id so a toast still appears. That retry
 //! *looks* like PowerShell. The log says so. Do not treat the fallback as
-//! the shipping identity.
+//! the shipping identity. Always try the real id first — a PowerShell
+//! success does not sticky-lock the rest of the process.
 //!
-//! **Clicks, while this process is alive.** `on_activated` calls
+//! **Clicks, while this process is alive.** Each toast's `ToastNotification`
+//! and `Activated` handler are retained for the life of the banner (a
+//! process-global list). A click then calls
 //! [`dispatch_click`](super::dispatch_click), which is the same sink macOS
-//! uses: focus the window, tell the renderer which thread to open. A click
-//! after JaBot has quit does not relaunch the app — that needs a Start Menu
-//! shortcut / COM activator the NSIS work will own. The card is already on
-//! disk either way.
+//! uses: focus the window, tell the renderer which thread to open. Dropping
+//! those objects after `Show` — what `tauri-winrt-notification` 0.8.1
+//! `show()` does after a 10 ms sleep — is why an earlier path never fired.
+//! A click after JaBot has quit does not relaunch the app — that needs a
+//! Start Menu shortcut / COM activator the NSIS work will own. The card is
+//! already on disk either way.
 //!
 //! **No permission prompt.** Windows 10+ has no `UNUserNotificationCenter`
 //! equivalent we have to call first. Settings can still suppress the banner;
 //! we do not query that (cheap MVP), so [`authorization`] reports
-//! `NotDetermined` until a toast is accepted and `Granted` after.
+//! `NotDetermined` until a toast is accepted and `Granted` after. Windows
+//! never reports [`Authorization::Denied`](super::Authorization::Denied): a
+//! Settings-off machine looks like a quiet `NotDetermined`, or `Granted`
+//! after a `Show` that Action Center then hid. InboxView's "notifications
+//! are turned off" line is therefore macOS-only in practice.
 //!
-//! **Replace-not-stack is macOS-only for now.** The toast builder we use has
-//! no Tag/Group on the happy path, so two cards on one thread may sit
-//! together in Action Center. Same noise budget as macOS; louder shelf.
+//! **Replace-not-stack is macOS-only for now.** We do not set Tag/Group on
+//! this path, so two cards on one thread may sit together in Action Center.
+//! Same noise budget as macOS; louder shelf.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
 
-use tauri_winrt_notification::{Sound, Toast};
+use windows::core::{h, IInspectable, HSTRING};
+use windows::Data::Xml::Dom::XmlDocument;
+use windows::Foundation::TypedEventHandler;
+use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
 
-use super::{Authorization, NativeNotification};
+use super::{
+    app_id_candidates, Authorization, NativeNotification, APP_USER_MODEL_ID, POWERSHELL_APP_ID,
+};
 
 const UNSUPPORTED: u8 = 0;
 const NOT_DETERMINED: u8 = 1;
 const GRANTED: u8 = 2;
 
-/// Must match `identifier` in `src-tauri/tauri.conf.json`. The installer
-/// (#281) is what makes WinRT treat this as a real app rather than a guest.
-pub const APP_USER_MODEL_ID: &str = "com.jabot.app";
+/// How many live banners we keep handlers for. Action Center can still show
+/// an older toast; past this cap its in-process click is the one we drop.
+const LIVE_CAP: usize = 64;
 
 /// The last delivery outcome we learned. Starts `NOT_DETERMINED` after
 /// [`install`]: Windows can toast, we just have not proved it yet.
 static AUTHORIZATION: AtomicU8 = AtomicU8::new(UNSUPPORTED);
 
-/// Which AUMID last succeeded. `None` means "try the real id first".
-static WORKING_APP_ID: Mutex<Option<String>> = Mutex::new(None);
+/// WinRT drops `Activated` when the `ToastNotification` (and its handler) are
+/// released. Keep both for the banner's life so a click after `post` returns
+/// still reaches [`dispatch_click`](super::dispatch_click).
+struct LiveToast {
+    _notification: ToastNotification,
+    _activated: TypedEventHandler<ToastNotification, IInspectable>,
+}
+
+static LIVE_TOASTS: Mutex<Vec<LiveToast>> = Mutex::new(Vec::new());
 
 pub fn supported() -> bool {
     true
@@ -73,7 +94,13 @@ pub fn install() {
 pub fn deliver(note: &NativeNotification) {
     match show_toast(note) {
         Ok(app_id) => {
-            remember_app_id(app_id);
+            if app_id == POWERSHELL_APP_ID {
+                eprintln!(
+                    "Windows toast posted via the PowerShell AppUserModelID; \
+                     it will look like PowerShell until the installer \
+                     registers {APP_USER_MODEL_ID} (#281)"
+                );
+            }
             store(GRANTED);
         }
         Err(err) => {
@@ -84,64 +111,69 @@ pub fn deliver(note: &NativeNotification) {
 }
 
 fn show_toast(note: &NativeNotification) -> Result<String, String> {
-    let remembered = working_app_id();
-    let candidates = app_id_candidates(remembered.as_deref());
     let mut last_err = String::from("no AppUserModelID left to try");
 
-    for app_id in candidates {
+    for app_id in app_id_candidates() {
         match post(app_id, note) {
-            Ok(()) => {
-                if app_id == Toast::POWERSHELL_APP_ID {
-                    eprintln!(
-                        "Windows toast posted via the PowerShell AppUserModelID; \
-                         it will look like PowerShell until the installer \
-                         registers {APP_USER_MODEL_ID} (#281)"
-                    );
-                }
-                return Ok(app_id.to_string());
-            }
+            Ok(()) => return Ok(app_id.to_string()),
             Err(err) => last_err = format!("{app_id}: {err}"),
         }
     }
     Err(last_err)
 }
 
-/// Real id first, PowerShell last, and skip a remembered failure path.
-fn app_id_candidates(remembered: Option<&str>) -> Vec<&'static str> {
-    match remembered {
-        Some(id) if id == APP_USER_MODEL_ID => {
-            vec![APP_USER_MODEL_ID, Toast::POWERSHELL_APP_ID]
-        }
-        Some(id) if id == Toast::POWERSHELL_APP_ID => {
-            vec![Toast::POWERSHELL_APP_ID]
-        }
-        _ => vec![APP_USER_MODEL_ID, Toast::POWERSHELL_APP_ID],
-    }
-}
+fn post(app_id: &str, note: &NativeNotification) -> windows::core::Result<()> {
+    let xml = toast_xml(note)?;
+    let notification = ToastNotification::CreateToastNotification(&xml)?;
 
-fn post(app_id: &str, note: &NativeNotification) -> tauri_winrt_notification::Result<()> {
     let thread_id = note.thread_id.clone();
     let kind = note.reason.as_str().to_string();
-    Toast::new(app_id)
-        .title(&note.title)
-        .text1(&note.body)
-        .sound(Some(Sound::Default))
-        .on_activated(move |_action| {
+    let activated =
+        TypedEventHandler::<ToastNotification, IInspectable>::new(move |_sender, _args| {
             super::dispatch_click(Some(&thread_id), Some(&kind));
             Ok(())
-        })
-        .show()
+        });
+    notification.Activated(&activated)?;
+
+    let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(app_id))?;
+    notifier.Show(&notification)?;
+
+    retain(LiveToast {
+        _notification: notification,
+        _activated: activated,
+    });
+    Ok(())
 }
 
-fn working_app_id() -> Option<String> {
-    WORKING_APP_ID
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone()
+fn toast_xml(note: &NativeNotification) -> windows::core::Result<XmlDocument> {
+    let xml = XmlDocument::new()?;
+    let toast = xml.CreateElement(h!("toast"))?;
+    let visual = xml.CreateElement(h!("visual"))?;
+    let binding = xml.CreateElement(h!("binding"))?;
+    binding.SetAttribute(h!("template"), h!("ToastGeneric"))?;
+
+    let title = xml.CreateElement(h!("text"))?;
+    title.SetAttribute(h!("id"), h!("1"))?;
+    title.SetInnerText(&HSTRING::from(note.title.as_str()))?;
+    binding.AppendChild(&title)?;
+
+    let body = xml.CreateElement(h!("text"))?;
+    body.SetAttribute(h!("id"), h!("2"))?;
+    body.SetInnerText(&HSTRING::from(note.body.as_str()))?;
+    binding.AppendChild(&body)?;
+
+    visual.AppendChild(&binding)?;
+    toast.AppendChild(&visual)?;
+    xml.AppendChild(&toast)?;
+    Ok(xml)
 }
 
-fn remember_app_id(app_id: String) {
-    *WORKING_APP_ID.lock().unwrap_or_else(|e| e.into_inner()) = Some(app_id);
+fn retain(toast: LiveToast) {
+    let mut live = LIVE_TOASTS.lock().unwrap_or_else(|e| e.into_inner());
+    if live.len() >= LIVE_CAP {
+        live.remove(0);
+    }
+    live.push(toast);
 }
 
 #[cfg(test)]
@@ -175,14 +207,10 @@ mod tests {
     }
 
     #[test]
-    fn aumid_order_prefers_jabot_then_powershell() {
-        assert_eq!(
-            app_id_candidates(None),
-            vec![APP_USER_MODEL_ID, Toast::POWERSHELL_APP_ID]
-        );
-        assert_eq!(
-            app_id_candidates(Some(Toast::POWERSHELL_APP_ID)),
-            vec![Toast::POWERSHELL_APP_ID]
-        );
+    fn denied_is_not_a_windows_authorization_state() {
+        install();
+        assert_ne!(authorization(), Authorization::Denied);
+        deliver(&sample());
+        assert_ne!(authorization(), Authorization::Denied);
     }
 }

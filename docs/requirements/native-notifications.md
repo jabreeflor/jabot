@@ -65,13 +65,19 @@ shared. `lib.rs` focuses the `main` window and emits
 | Platform | Click while JaBot is running | Click after JaBot has quit |
 | --- | --- | --- |
 | macOS | Un-hides from the Dock and opens that thread | Relaunches via the app bundle, then the same route if the payload is still there |
-| Windows | Focuses the window and opens that thread | Does **not** relaunch. A Start Menu shortcut / COM activator is installer work (#281). The Inbox card is already on disk. |
+| Windows | Focuses the window and opens that thread. `win.rs` keeps each `ToastNotification` and its `Activated` handler alive after `Show` so the click still reaches `dispatch_click`. | Does **not** relaunch. A Start Menu shortcut / COM activator is installer work (#281). The Inbox card is already on disk. |
 | Linux / other | No banner, so no click | — |
 
 Unpackaged `tauri dev` on Windows may toast under PowerShell's
 AppUserModelID (the log says so) until NSIS/MSI registers `com.jabot.app`.
+A PowerShell success does not skip `com.jabot.app` on later toasts.
 Same-thread replacement (one banner, not a stack) is macOS-only for now;
 Windows may show two toasts for two cards on one thread.
+
+Windows never reports `denied`. There is no permission prompt; Settings
+can still suppress the banner. `authorization` stays `notDetermined`
+until a `Show` is accepted, then `granted`. InboxView's "notifications
+are turned off" line is macOS-only in practice (it keys on `denied`).
 
 ## Windows notify smoke (acceptance)
 
@@ -88,5 +94,9 @@ this, for the same honesty reason as D-019 on macOS.
    running an unpackaged binary whose AUMID WinRT rejects, must not crash
    the host. Inbox still lists the card. Evidence: the process is still
    up; stderr has `could not post a Windows toast` if delivery failed.
+   Windows does **not** flip `notify/status` to `denied` when Settings
+   hide banners — that copy and the Inbox line are the macOS permission
+   path. A quiet `notDetermined` (or `granted` after a hidden `Show`)
+   with a live process is the Windows success criterion.
 5. macOS behavior is unchanged — do not treat a Windows smoke run as a
    substitute for the #73 Mac checklist.

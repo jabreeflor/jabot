@@ -36,6 +36,9 @@ use serde_json::Value;
 
 use crate::host::{INBOX_EVENT, INBOX_RESURFACE};
 
+mod aumid;
+pub use aumid::{app_id_candidates, APP_USER_MODEL_ID, POWERSHELL_APP_ID};
+
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "macos")]
@@ -497,5 +500,15 @@ mod tests {
     #[test]
     fn the_budget_is_reportable() {
         assert_eq!(notifying_kinds(), vec!["needs_you", "done", "failed"]);
+    }
+
+    /// Windows AUMID order is portable on purpose: Linux verify must see
+    /// that a PowerShell success does not sticky-lock `com.jabot.app`.
+    #[test]
+    fn windows_aumid_always_tries_the_real_id_first() {
+        assert_eq!(
+            app_id_candidates(),
+            vec![APP_USER_MODEL_ID, POWERSHELL_APP_ID]
+        );
     }
 }
