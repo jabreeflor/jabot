@@ -63,7 +63,10 @@ updater-archive checks are [docs/macos-acceptance.md](docs/macos-acceptance.md)
 (#235) — Playwright WebKit is not that gate. macOS-only Rust (`notify/mac.rs`,
 Keychain, the updater / hide-to-Dock branches) is linted on the PR by scoped
 jobs, not by `verify.sh` and not by a per-PR bundle — see
-[`docs/macos-lint.md`](docs/macos-lint.md).
+[`docs/macos-lint.md`](docs/macos-lint.md). Windows host compile is a
+path-filtered `windows-latest` job so `#[cfg(windows)]` cannot rot
+([`docs/windows-ci.md`](docs/windows-ci.md), #286); it is not a copy of
+this gate and not a substitute for a human smoke on a real PC.
 
 The renderer-against-real-host suite is Playwright, not the default gate:
 

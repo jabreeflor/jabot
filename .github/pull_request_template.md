@@ -17,3 +17,4 @@
 
 - [ ] `./scripts/verify.sh` passed on the pushed tree
 - [ ] Native-sensitive change (`notify/`, Keychain, Tauri window/IPC, bundled adapters, updater): `./scripts/verify.sh --check-mac` and/or label `macos-acceptance` for a packaged run — [docs/macos-acceptance.md](docs/macos-acceptance.md). Playwright WebKit is not Tauri acceptance.
+- [ ] Windows host/CI change: `./scripts/tests/windows-ci.test.sh` (part of `verify.sh`); label `windows-package` only if you need an unsigned NSIS artifact — [docs/windows-ci.md](docs/windows-ci.md).

@@ -1,0 +1,142 @@
+name: Windows
+
+# Targeted Windows compile/test so the desktop port does not rot (#286 / #280).
+# Split from ci.yml so this file can grow a planner without touching the
+# Ubuntu verify/browser jobs or the macOS bundle/lint jobs.
+#
+# windows-latest bills at 2x. The Linux `verify` job already owns frontend,
+# e2e, and Playwright. This workflow therefore:
+#
+# * always starts a cheap Linux planner on PRs / dispatch / tags;
+# * starts `windows verify` only when host/toolchain/CI paths change
+#   (or on tags / dispatch) — docs-only PRs do not get a Windows runner;
+# * builds an unsigned NSIS installer only on tags, a `windows-package`
+#   label, or workflow_dispatch with `package=true`.
+#
+# Failures are real: no `continue-on-error`. A red job means the Windows
+# crate or the portable tests broke. It does not mean a human smoked the
+# app on a PC — see docs/windows-ci.md.
+
+on:
+  pull_request:
+    # `labeled` so adding `windows-package` later starts the package job
+    # without a dummy push. Unrelated labels only re-run the cheap planner
+    # unless host paths already match.
+    types: [opened, synchronize, reopened, labeled]
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Also build an unsigned NSIS installer (not every run)
+        type: boolean
+        default: false
+
+concurrency:
+  group: windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  windows-plan:
+    name: windows plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      verify: ${{ steps.plan.outputs.verify }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch the PR base
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "${{ github.event.pull_request.base.sha }}"
+      - id: plan
+        name: Classify changed paths
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            ./scripts/windows-needed.sh --force-verify --github-output
+          else
+            ./scripts/windows-needed.sh \
+              --base "${{ github.event.pull_request.base.sha }}" \
+              --head HEAD \
+              --github-output
+          fi
+      - name: Summarize
+        run: |
+          {
+            echo "### Windows CI plan"
+            echo
+            echo "| check | run | why |"
+            echo "| --- | --- | --- |"
+            echo "| windows verify | ${{ steps.plan.outputs.verify }} | \`scripts/windows-verify.sh\` — compile + portable cargo test |"
+            echo "| windows package | tag / \`windows-package\` label / dispatch \`package\` | unsigned NSIS; not every PR |"
+            echo
+            echo "A \`0\` means the Windows runner is not started."
+            echo "See \`docs/windows-ci.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  windows-verify:
+    name: windows verify
+    needs: windows-plan
+    if: needs.windows-plan.outputs.verify == '1'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          prefix-key: windows-verify
+      - name: Compile host crate and run portable tests
+        run: ./scripts/windows-verify.sh
+
+  # Unsigned NSIS only. Full Windows product packaging (targets, signing,
+  # release upload) is #281. MSI/WiX is not installed on this runner.
+  # SmartScreen reputation and a real-PC smoke stay human — docs/windows-ci.md.
+  windows-package:
+    name: windows package
+    if: |
+      (github.event_name == 'workflow_dispatch' && inputs.package) ||
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'windows-package'))
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          # Current line (v26.x as of 2026-09). Same major as .nvmrc / verify.
+          node-version: 26
+          cache: npm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          prefix-key: windows-package
+      # npm's default script-shell on this runner is cmd.exe; several
+      # package.json scripts are bash. Point npm at Git Bash so
+      # `beforeBuildCommand` (`npm run build:app`) can stage adapters.
+      - name: Point npm scripts at Git Bash
+        run: npm config set script-shell "$(command -v bash)"
+      - run: npm ci
+      - run: npm run bundle:adapters
+      - name: Build unsigned NSIS installer
+        run: npm run tauri -- build --bundles nsis
+      - name: Retain Windows installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-nsis
+          path: |
+            src-tauri/target/release/bundle/nsis/**
+          if-no-files-found: warn
+          retention-days: 14

@@ -316,11 +316,11 @@ mod tests {
         assert!(!dir.path().join("tree").join("..").join("secret2").exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_symlink_is_not_followed_into_the_users_checkout() {
         let (_dir, repo, tree) = trees();
         std::fs::create_dir_all(repo.join("node_modules")).unwrap();
-        #[cfg(unix)]
         std::os::unix::fs::symlink(repo.join("node_modules"), repo.join("modules")).unwrap();
 
         let plan = Plan {

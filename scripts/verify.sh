@@ -17,8 +17,8 @@
 # offline, needs no display, no GitHub token and no macOS — except
 # --check-toolchain, --check-mac, and --check-browser, which are opt-in
 # for exactly that reason. CI still runs the notify cross-check on
-# relevant PRs (see docs/macos-lint.md) and the Playwright suite as its
-# own `browser` job.
+# relevant PRs (see docs/macos-lint.md), a path-filtered Windows compile
+# (docs/windows-ci.md), and the Playwright suite as its own `browser` job.
 #
 # Stages, cheapest first so failures surface early:
 #   0. toolchain      — versions printed, MSRV floor enforced, drift from CI warned
@@ -28,7 +28,8 @@
 #   2c. install script — the release installer's pins, delivery, and refusals
 #   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
 #   2e. macos lint    — planner/path tests for the before-merge macOS jobs
-#   2f. coverage policy — include/exclude/thresholds still fail when they should
+#   2f. windows ci    — planner/workflow contract for the Windows verify job (#286)
+#   2g. coverage policy — include/exclude/thresholds still fail when they should
 #   3. tsc            — renderer types
 #   3b. frontend lint — eslint (hooks + no-explicit-any + promises)
 #   3c. frontend format — Prettier --check on first-party TS/JS/CSS/JSON (after lint)
@@ -701,7 +702,20 @@ macos_lint_tests() {
 }
 
 # ---------------------------------------------------------------------------
-# 2e. coverage policy
+# 2f. windows CI contract (#286)
+#
+# CI decides whether to start a 2x windows-latest runner from a path list
+# (scripts/windows-needed.sh). That classifier is the only thing that turns
+# the paid runner on, so a match that silently stops matching is a coverage
+# hole that still looks green. The suite is offline: path lists, the verify
+# script's cargo stages, no continue-on-error, and packaging staying opt-in.
+# ---------------------------------------------------------------------------
+windows_ci_tests() {
+  ./scripts/tests/windows-ci.test.sh
+}
+
+# ---------------------------------------------------------------------------
+# 2g. coverage policy
 #
 # The floors in vitest.config.ts only matter if a miss actually fails, and if
 # a new production file that no test imports still counts. scripts/tests/
@@ -768,6 +782,7 @@ run "commit guards"  guards
 run "install script" install_script
 run "macos acceptance" macos_acceptance
 run "macos lint tests" macos_lint_tests
+run "windows ci"       windows_ci_tests
 run "coverage policy" coverage_policy
 run "typecheck"      npx tsc --noEmit
 run "frontend lint"  npm run lint

@@ -66,6 +66,8 @@ to nobody. `verify.sh` warns when it is not set.
 | `./scripts/verify.sh --check-mac` | local repro of the PR `mac notify cross-check` — **run it when you touch `src-tauri/src/notify/`** so you find rot before CI does |
 | `./scripts/check-macos-clippy.sh` | on a Mac, local repro of the PR `macos clippy` job — Keychain + `lib.rs` cfg(macos) branches |
 | `./scripts/macos-acceptance.sh check` | packaged-app matrix / isolation (Linux). **`run` needs a Mac** — [docs/macos-acceptance.md](docs/macos-acceptance.md), #235 |
+| `./scripts/windows-needed.sh --base origin/main` | which host/CI paths would start the 2x `windows verify` job — [docs/windows-ci.md](docs/windows-ci.md), #286 |
+| `./scripts/windows-verify.sh` | local repro of that job (Git Bash on Windows; on Linux it is a subset of this gate) |
 | `./scripts/verify.sh --check-browser` | Playwright visual + browser axe + smoke; also a dedicated `browser` CI job |
 | `./scripts/checkpoint.sh -m "message"` | verify **and** commit, atomically (below) |
 | `git push` | the `pre-push` hook re-checks unless you just verified these exact bytes, and refuses a push it cannot check |
@@ -133,6 +135,7 @@ one run tells you everything that is wrong.
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
 | `macos lint tests` | the path planner that turns CI's macOS jobs on still matches what `docs/macos-lint.md` claims (`scripts/tests/macos-lint.test.sh`) | you changed the planner or the notify/native check scripts; run `./scripts/tests/macos-lint.test.sh` |
+| `windows ci` | the path planner that turns CI's Windows verify job on still matches what `docs/windows-ci.md` claims, and the workflow still treats failures as real (`scripts/tests/windows-ci.test.sh`) | you changed the planner, `windows-verify.sh`, or `.github/workflows/windows.yml`; run `./scripts/tests/windows-ci.test.sh` |
 | `coverage policy` | the frontend include/exclude list and 90/85/80 floors still fail a fixture that violates them (`scripts/tests/coverage.test.sh`) | you changed coverage config or CI upload wiring; run `npm run test:coverage:policy`. Scope and the unit-vs-e2e split: [docs/coverage.md](docs/coverage.md) |
 | `typecheck` | `tsc --noEmit`, strict: implicit any, unused locals, unused parameters, no fallthrough | fix the types. Unused-variable errors (TS6133) are errors here, exactly as in CI. `tsc` does **not** reject an explicit `any` annotation or an `as any` cast — that is the linter, below. |
 | `frontend lint` | shared ESLint: Rules of Hooks, exhaustive-deps, `@typescript-eslint/no-explicit-any`, and type-aware `no-floating-promises` / `no-misused-promises` | replace `any` with a concrete type, a generic, or `unknown` plus narrowing. A discarded promise needs `await`, a returned promise, or `void` plus an explicit error strategy. `npm run lint` is the same command; `npm run lint:fix` applies safe fixes (`no-explicit-any` is not auto-fixable). A clean tree does not prove the rules are on — `scripts/tests/lint-probe.mjs` and `scripts/tests/lint-rules.mjs` do. |
@@ -397,6 +400,18 @@ filing or "fixing" a gap.
   launch is `#235` / [docs/macos-acceptance.md](docs/macos-acceptance.md);
   label a PR `macos-acceptance` to opt into the expensive Mac job. Do not call
   Playwright WebKit a Tauri acceptance run.
+- Windows host compile is a sibling workflow
+  ([`.github/workflows/windows.yml`](.github/workflows/windows.yml), #286):
+  a cheap Linux planner on every PR, and `windows-latest` only when
+  `src-tauri/`, the toolchain, or the Windows scripts change. It runs
+  `scripts/windows-verify.sh` (check + clippy `-D warnings` + portable
+  `cargo test`). Failures are real — no `continue-on-error`. An unsigned
+  NSIS build is opt-in (`windows-package` label, a `v*` tag, or
+  `workflow_dispatch` with `package=true`), not every PR. Linux/macOS jobs
+  stay the sources of truth they are today. What that job proves, and what
+  still needs a human smoke on a real PC:
+  [docs/windows-ci.md](docs/windows-ci.md). Playwright on Windows is out of
+  scope for the first cut.
 - A test that cannot fail when the thing it covers breaks is worse than no
   test, because it reads as coverage. Break it once and watch it fail before
   you trust it.

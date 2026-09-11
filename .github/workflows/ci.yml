@@ -10,6 +10,10 @@ on:
 
 # Minutes are metered on this private repo and have been exhausted once
 # already. A superseded push should not keep paying for the run it replaced.
+#
+# Windows compile/test is a sibling workflow (.github/workflows/windows.yml,
+# docs/windows-ci.md, #286). It is not a job here so a Windows path filter
+# or planner can never suppress this Ubuntu verify.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

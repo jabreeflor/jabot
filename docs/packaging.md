@@ -18,6 +18,7 @@ reasoning is in
 | Update feed | `https://github.com/jabreeflor/jabot/releases/latest/download/latest.json` |
 | Installer (`curl \| bash`) | [`scripts/install.sh`](../scripts/install.sh), uploaded as a release asset |
 | Packaged-app acceptance (#235) | [`docs/macos-acceptance.md`](macos-acceptance.md), [`scripts/macos-acceptance.sh`](../scripts/macos-acceptance.sh) |
+| Windows CI compile / optional NSIS (#286) | [`docs/windows-ci.md`](windows-ci.md), [`.github/workflows/windows.yml`](../.github/workflows/windows.yml) |
 
 ---
 
@@ -303,6 +304,14 @@ normal gate:
 
 Anything added to the script that macOS-only tooling can reach needs a stub and
 a case, or it is untested: CI has no Mac.
+
+Windows packaging is a separate, opt-in job (`windows-package` label, a `v*`
+tag, or `workflow_dispatch` with `package=true`). It builds an **unsigned**
+NSIS installer so the port can be exercised without paying for NSIS on every
+PR. It does not change `bundle.targets` (`app` / `dmg`), does not upload a
+release asset, and does not replace a human smoke on a real PC. What that
+job guarantees versus what it does not is
+[docs/windows-ci.md](windows-ci.md) (#286 / #281).
 
 ---
 
