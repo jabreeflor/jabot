@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Windows window chrome without macOS private API</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --ink: #1c1c1e;
+        --dim: #5c5c63;
+        --line: #d8d7d3;
+        --raise: #fff;
+        --accent: #2a7a3d;
+        --page: #f6f6f4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ink: #f2f2f2;
+          --dim: #98989e;
+          --line: #303033;
+          --raise: #2a2a2c;
+          --accent: #8ee09a;
+          --page: #151516;
+        }
+      }
+      body {
+        margin: 0;
+        padding: 32px 28px 64px;
+        font: 16px / 1.5 ui-sans-serif, system-ui, sans-serif;
+        color: var(--ink);
+        background: var(--page);
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.02em;
+        margin: 0 0 8px;
+      }
+      .lede {
+        color: var(--dim);
+        margin: 0 0 28px;
+      }
+      h2 {
+        font-size: 18px;
+        margin: 32px 0 10px;
+      }
+      code {
+        font: 13px / 1.4 ui-monospace, Menlo, monospace;
+        background: var(--raise);
+        border-radius: 5px;
+        padding: 1px 5px;
+      }
+      .flow {
+        display: grid;
+        gap: 10px;
+        margin: 16px 0 8px;
+      }
+      .step {
+        background: var(--raise);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .step strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      .step span {
+        color: var(--dim);
+        font-size: 14px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-top: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        color: var(--dim);
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Windows window chrome without macOS private API</h1>
+      <p class="lede">
+        A usable Win10/11 window that does not use an overlay title bar
+        or under-window vibrancy. The cargo feature stays for
+        tauri-build's allowlist; Windows never calls the API. Closes
+        #282. Parent tracking issue #280.
+      </p>
+
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="step">
+          <strong>1. Shared config is a decorated opaque window</strong>
+          <span>
+            <code>tauri.conf.json</code> holds size, title, and
+            <code>macOSPrivateApi: true</code> (the allowlist pair — see
+            step 2). Overlay, transparency, and
+            <code>underWindowBackground</code> live only in
+            <code>tauri.macos.conf.json</code>. Windows inherits the shared
+            window; <code>tauri.windows.conf.json</code> is left for #291
+            (NSIS), not chrome.
+          </span>
+        </div>
+        <div class="step">
+          <strong>2. Private API is unused off macOS</strong>
+          <span>
+            <code>macOSPrivateApi</code> stays in the shared config and
+            <code>macos-private-api</code> stays on the untargeted
+            <code>tauri</code> dep: tauri-build's allowlist is bidirectional.
+            Windows/Linux never call the API — <code>window.rs</code> returns
+            before clearing the fill, and the Windows window is decorated
+            and opaque.
+          </span>
+        </div>
+        <div class="step">
+          <strong>3. Host reports the frame it drew</strong>
+          <span>
+            <code>window_chrome</code> returns <code>overlay</code> or
+            <code>decorated</code> (<code>cfg!</code>, same pattern as
+            translucency). <code>apply()</code> returns before clearing the
+            webview fill off macOS, so a decorated window cannot show the
+            desktop through a hole.
+          </span>
+        </div>
+        <div class="step">
+          <strong>4. Renderer drops overlay insets</strong>
+          <span>
+            <code>data-window-chrome="decorated"</code> zeros
+            <code>--titlebar-h</code> / <code>--traffic-lights-w</code>, hides
+            the drag strip, and sets <code>--collapsed-rail-w</code> to 56px
+            (toggle-wide). Chat and agent pills sit flush under the OS title
+            bar. live.sh uses <code>?chrome=decorated</code> / overlay to
+            shoot both frames on Linux.
+          </span>
+        </div>
+        <div class="step">
+          <strong>5. Close exits on Windows</strong>
+          <span>
+            macOS still hides to Dock (#4). Windows / Linux: the title-bar
+            close button exits. No system tray, no hide-to-tray. Minimize
+            keeps the process. Glass stays solid when vibrancy is unsupported
+            (#278). Mica/Acrylic is out of scope.
+          </span>
+        </div>
+      </div>
+
+      <h2>What to look at</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Why it matters</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>src-tauri/Cargo.toml</code></td>
+            <td>
+              Allowlist string for tauri-build; unused off macOS.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <code>src-tauri/tauri.conf.json</code> +
+              <code>tauri.macos.conf.json</code>
+            </td>
+            <td>
+              Shared window is decorated/opaque.
+              <code>macOSPrivateApi</code> stays shared. Overlay never
+              reaches a Windows build.
+            </td>
+          </tr>
+          <tr>
+            <td><code>src-tauri/src/window.rs</code></td>
+            <td>
+              <code>chrome()</code> / <code>apply()</code> — no transparent
+              fill off macOS.
+            </td>
+          </tr>
+          <tr>
+            <td><code>src-tauri/src/lib.rs</code></td>
+            <td>Close-exits documented next to hide-to-Dock.</td>
+          </tr>
+          <tr>
+            <td><code>src/windowChrome.ts</code> + tokens / shell / sidebar</td>
+            <td>
+              <code>data-window-chrome</code> drives the inset tokens.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>How to verify</h2>
+      <p>
+        <code>./scripts/verify.sh</code> — already green on this tree.
+        <code>./scripts/live.sh shot --chrome decorated --out …</code> is the
+        Windows layout without a Windows box. On a Windows machine:
+        <code>npm run tauri dev</code> should open a normal title bar; X
+        quits; glass stays opaque.
+      </p>
+    </main>
+  </body>
+</html>

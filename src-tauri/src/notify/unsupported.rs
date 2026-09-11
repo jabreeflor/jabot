@@ -1,8 +1,11 @@
-//! The non-macOS backend: a real no-op, not a stub that pretends.
+//! The non-desktop-notify backend: a real no-op, not a stub that pretends.
 //!
-//! CI's verify job runs on Linux and `jabot-hostd` builds there, so this file
-//! is what makes "#27 is macOS-only" a compile-time fact instead of a runtime
-//! branch. It reports `Unsupported` rather than `Denied` because the two mean
+//! Linked on Linux and any OS that is neither macOS nor Windows. CI's verify
+//! job runs on Linux and `jabot-hostd` builds there, so this file is what
+//! makes "no Notification Center here" a compile-time fact instead of a
+//! runtime branch. Windows is **not** this file — see `win.rs` (#284).
+//!
+//! It reports `Unsupported` rather than `Denied` because the two mean
 //! different things to the UI: denied is a permission the user can change,
 //! unsupported is a platform that has nowhere to put a banner.
 

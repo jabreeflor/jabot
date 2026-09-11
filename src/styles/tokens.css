@@ -132,6 +132,10 @@
   --page-max: 680px;
   --titlebar-h: 28px;
   --traffic-lights-w: 78px;
+  /* Collapsed rail matches the lights strip on overlay; decorated chrome
+     overrides this to a toggle-wide column so Windows does not reserve
+     78px for buttons the OS already drew (#282). */
+  --collapsed-rail-w: var(--traffic-lights-w);
 
   /* radii */
   --r-sm: 8px;
@@ -245,6 +249,20 @@ body,
 
 html {
   background: transparent;
+}
+
+/*
+ * Decorated chrome (#282): the OS title bar sits outside the webview.
+ * Drop the overlay inset, hide the drag strip (CSS in shell.css), and
+ * paint a solid page fill so a leftover transparent window cannot show
+ * the desktop through. The collapsed rail stays wide enough for the
+ * sidebar toggle (32px + 12px padding either side).
+ */
+html[data-window-chrome="decorated"] {
+  background: var(--win-solid);
+  --titlebar-h: 0px;
+  --traffic-lights-w: 0px;
+  --collapsed-rail-w: 56px;
 }
 
 body {

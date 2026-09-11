@@ -17,15 +17,17 @@
 //! event at all (D-006), and a cancel the user asked for never produces one
 //! (`lifecycle::resurface`).
 //!
-//! **macOS only, and a genuine no-op everywhere else.** Delivery is
-//! [`mac`], compiled only on macOS exactly like the hide-to-Dock branch and the
-//! updater plugin in `lib.rs`. Every other platform links [`unsupported`],
-//! which really does nothing — CI's verify job runs on Linux, so "compiles and
-//! tests there" is a hard requirement, not a courtesy.
+//! **macOS and Windows deliver; everything else is a genuine no-op.** Delivery
+//! is [`mac`] on macOS and [`win`] on Windows. Every other platform links
+//! [`unsupported`], which really does nothing — CI's verify job runs on Linux,
+//! so "compiles and tests there" is a hard requirement, not a courtesy.
+//! Windows is never silently folded into that no-op once toasts ship (#284).
 //!
 //! The decision layer — which events notify, what the payload says, where a
 //! click goes — is portable and unit-tested on every platform. What cannot be
-//! tested off a Mac is delivery itself; see https://github.com/jabreeflor/jabot/issues/73.
+//! tested off a Mac is UNUserNotificationCenter delivery; see
+//! https://github.com/jabreeflor/jabot/issues/73. WinRT toasts are the same
+//! class: Linux can prove the decision layer, not that Action Center rang.
 
 use std::sync::Mutex;
 
@@ -34,14 +36,22 @@ use serde_json::Value;
 
 use crate::host::{INBOX_EVENT, INBOX_RESURFACE};
 
+mod aumid;
+pub use aumid::{app_id_candidates, toast_tag, APP_USER_MODEL_ID, POWERSHELL_APP_ID};
+
 #[cfg(target_os = "macos")]
 mod mac;
 #[cfg(target_os = "macos")]
 use mac as backend;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+mod win;
+#[cfg(target_os = "windows")]
+use win as backend;
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 mod unsupported;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 use unsupported as backend;
 
 /// `userInfo` keys on the delivered notification. Namespaced because the
@@ -295,6 +305,9 @@ impl Authorization {
 }
 
 /// Whether this build can deliver a banner at all.
+///
+/// True on macOS (inside a real app bundle) and on Windows (Action Center
+/// toasts). False on Linux CI and any other host that links [`unsupported`].
 pub fn supported() -> bool {
     backend::supported()
 }
@@ -461,19 +474,39 @@ mod tests {
         assert!(recorded.contains(&"thread-sink".to_string()));
     }
 
-    /// Off macOS the whole thing is inert, and `announce` must still be safe to
-    /// call — the host emits the same notifications on every platform.
-    #[cfg(not(target_os = "macos"))]
+    /// Linux (and any other host without a banner API) is inert, and `announce`
+    /// must still be safe to call — the host emits the same notifications on
+    /// every platform. Windows is *not* this path (#284).
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     #[test]
-    fn a_non_macos_build_is_a_real_no_op() {
+    fn a_host_without_banners_is_a_real_no_op() {
         assert!(!supported());
         assert_eq!(authorization(), Authorization::Unsupported);
         install();
         announce(INBOX_RESURFACE, &resurface("done"));
     }
 
+    /// Windows must claim the toast backend rather than inherit the Linux
+    /// no-op. Delivery itself can still fail soft; panicking is the bug.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_windows_build_is_a_toast_host() {
+        assert!(supported());
+        install();
+        assert_eq!(authorization(), Authorization::NotDetermined);
+        announce(INBOX_RESURFACE, &resurface("done"));
+    }
+
     #[test]
     fn the_budget_is_reportable() {
         assert_eq!(notifying_kinds(), vec!["needs_you", "done", "failed"]);
+    }
+
+    /// Windows AUMID order is portable on purpose: Linux verify must see
+    /// that an unregistered `com.jabot.app` is not treated as a visible toast.
+    #[test]
+    fn windows_aumid_skips_an_unregistered_real_id() {
+        assert_eq!(app_id_candidates(true), vec![APP_USER_MODEL_ID]);
+        assert_eq!(app_id_candidates(false), vec![POWERSHELL_APP_ID]);
     }
 }

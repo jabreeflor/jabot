@@ -161,6 +161,9 @@ Line % from the same run:
 
 - **`notify/mac.rs`** — `cfg(target_os = "macos")`. Invisible on Linux CI
   (only `notify/unsupported.rs` appears). Same class as `--check-mac`.
+- **`notify/win.rs`** — `cfg(target_os = "windows")`. Same Linux-invisibility
+  as `mac.rs`. Windows toast delivery is a desktop smoke step, not this
+  coverage run.
 - **Process mains (0%)** — `bin/jabot-hostd.rs`, `bin/fake_acp_agent.rs`,
   `lib.rs` (Tauri `host_rpc` / window wiring), `main.rs`. Exercised by e2e
   and the real app, not by `cargo test` of the library.

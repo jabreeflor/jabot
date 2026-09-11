@@ -8,10 +8,13 @@
 # WHY THIS EXISTS
 #
 # `src-tauri/src/notify/mod.rs` gates `mod mac;` behind
-# `#[cfg(target_os = "macos")]`, so nothing in the default ./scripts/verify.sh
-# path — offline, Linux — ever compiles or lints that file. CI's `bundle` job
-# is packaging, post-merge, and not a Clippy gate. This script is the lint;
-# CI's `mac notify cross-check` job runs it on relevant PRs (docs/macos-lint.md).
+# `#[cfg(target_os = "macos")]` and `mod win;` behind
+# `#[cfg(target_os = "windows")]`, so nothing in the default ./scripts/verify.sh
+# path — offline, Linux — ever compiles or lints those files. The Windows
+# backend is WinRT and is not this scratch crate (docs/macos-lint.md). CI's
+# `bundle` job is packaging, post-merge, and not a Clippy gate. This script
+# is the macOS lint; CI's `mac notify cross-check` job runs it on relevant
+# PRs (docs/macos-lint.md).
 #
 # WHY A SCRATCH CRATE AND NOT `cargo clippy --target x86_64-apple-darwin`
 #

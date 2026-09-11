@@ -1,12 +1,16 @@
 /*
- * The window frame. The prototype drew fake traffic lights in a .winbar; the
- * real app gets `titleBarStyle: "Overlay"` from tauri.conf.json, so the OS
- * draws the buttons over our content. Two consequences live here:
+ * The window frame. macOS uses `titleBarStyle: "Overlay"` from
+ * tauri.macos.conf.json, so the OS draws the traffic lights over our
+ * content. Two consequences live here:
  *
  *   1. A drag region across the top, inset past the native buttons so it never
  *      swallows their clicks.
  *   2. Both columns pad down by --titlebar-h, or the first sidebar row would
  *      sit under the lights.
+ *
+ * Windows (#282) is a decorated opaque window. `data-window-chrome="decorated"`
+ * zeros those tokens and hides the drag strip — the OS title bar already
+ * moves, minimizes, maximizes, and closes the window.
  */
 
 .app-shell {
@@ -21,6 +25,10 @@
   right: 0;
   height: var(--titlebar-h);
   z-index: 100;
+}
+
+html[data-window-chrome="decorated"] .titlebar-drag {
+  display: none;
 }
 
 .main {

@@ -21,7 +21,10 @@ Windows is a **separate, smaller** smoke list
 
 Related: D-019 ([#73](https://github.com/jabreeflor/jabot/issues/73)) — a Linux
 box can type-check `notify/mac.rs` and prove the decision layer. It cannot
-honestly claim a banner was delivered or clicked. The macOS CI cost tradeoff
+honestly claim a banner was delivered or clicked. Windows Action Center
+toasts (#284) are a different desktop smoke list — see
+[native-notifications.md](requirements/native-notifications.md#windows-notify-smoke-acceptance).
+The macOS CI cost tradeoff
 in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) still holds:
 `macos-latest` bills at **10x**, and the old per-PR `bundle` job was ~86% of
 spend while catching almost nothing `verify.sh` did not.

@@ -24,7 +24,7 @@
 }
 
 .sidebar-slot.is-collapsed {
-  width: var(--traffic-lights-w);
+  width: var(--collapsed-rail-w);
   z-index: 40;
 }
 
@@ -125,13 +125,14 @@
 /*
  * Closed is not gone. Overlay traffic lights still need a dark strip to sit
  * on, and the toggle that brings the list back has to stay where the hand
- * already is. Width matches --traffic-lights-w so the lights never spill
- * onto the chat.
+ * already is. Width is --collapsed-rail-w (the lights strip on macOS, a
+ * toggle-wide column on decorated Windows) so the lights never spill onto
+ * the chat and Windows does not reserve empty chrome (#282).
  */
 .sidebar.is-collapsed {
   position: absolute;
   inset: 0 auto 0 0;
-  width: var(--traffic-lights-w);
+  width: var(--collapsed-rail-w);
   overflow: hidden;
   transition:
     width var(--t-sidebar) var(--ease-sidebar),

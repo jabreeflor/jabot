@@ -47,10 +47,14 @@ fn host_rpc(
     // would see a thread's `seq` 3 before its `seq` 1 — the one thing the
     // envelope's counter is there to rule out (#14 de-duplicates a stored
     // replay against the live stream with it).
-    for notification in outbound {
-        emit_host_notification(&app, &notification);
+    for notification in &outbound {
+        emit_host_notification(&app, notification);
     }
     drop(session);
+    // OS banners are last and can block: Windows `Show` is synchronous.
+    // Do not hold `HostState` across it — the ACP pump and the next RPC
+    // must not wait on Action Center.
+    announce_host_notifications(&outbound);
     response
 }
 
@@ -58,14 +62,19 @@ fn emit_host_notification(app: &tauri::AppHandle, notification: &JsonRpcNotifica
     if let Err(err) = app.emit("host-rpc", notification) {
         eprintln!("failed to emit host-rpc notification: {err}");
     }
-    // Persist, then notify — and the OS banner is the *last* step of the
-    // second half (#27). The `inbox_events` row was written before this
-    // notification was queued, and the webview has just been told, so a
-    // refused permission or a machine with no Notification Center costs
-    // nothing but the banner. `announce` decides on its own which frames
-    // deserve one; almost none do.
-    if let Some(params) = notification.params.as_ref() {
-        notify::announce(&notification.method, params);
+}
+
+/// Persist, then notify — and the OS banner is the *last* step of the
+/// second half (#27). The `inbox_events` row was written before this
+/// notification was queued, and the webview has just been told, so a
+/// refused permission or a machine with no Notification Center costs
+/// nothing but the banner. `announce` decides on its own which frames
+/// deserve one; almost none do.
+fn announce_host_notifications(outbound: &[JsonRpcNotification]) {
+    for notification in outbound {
+        if let Some(params) = notification.params.as_ref() {
+            notify::announce(&notification.method, params);
+        }
     }
 }
 
@@ -155,10 +164,11 @@ fn spawn_acp_pump(app: tauri::AppHandle, wake: std::sync::Arc<AdapterWake>) {
             session.pump_acp();
             let outbound = session.take_outbound();
             // Under the lock, for the ordering reason in `host_rpc`.
-            for notification in outbound {
-                emit_host_notification(&app, &notification);
+            for notification in &outbound {
+                emit_host_notification(&app, notification);
             }
             drop(session);
+            announce_host_notifications(&outbound);
         })
         .expect("acp pump thread");
 }
@@ -199,19 +209,22 @@ pub fn run() {
             app.manage(HostState(Arc::clone(&state)));
             spawn_acp_pump(app.handle().clone(), wake);
             // Ask for notification permission and start listening for clicks
-            // (#27). A refusal is not an error: the Inbox is the record and
-            // this is only the tap on the shoulder. Off macOS `install` is a
-            // genuine no-op, and no click can ever arrive to reach the sink.
+            // (#27, #284). A refusal is not an error: the Inbox is the record
+            // and this is only the tap on the shoulder. Off macOS and Windows
+            // `install` is a genuine no-op, and no click can ever arrive to
+            // reach the sink. On Windows a toast click uses the same sink.
             route_notification_clicks(app.handle().clone());
             notify::install();
             // Under-window vibrancy (#250). False off macOS and when the
             // material cannot be applied; the renderer stays opaque then.
+            // Windows never clears the webview fill (#282).
             window::apply(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             host_rpc,
             window::window_translucency_applied,
+            window::window_chrome,
             host::repo::workspace::pick_workspace,
             host::repo::workspace::pick_sources,
             host::repo::workspace::github_repositories,
@@ -220,8 +233,10 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Hide-to-Dock (macOS only, MVP per #4): closing the last window hides
-                // instead of quitting. On other platforms, close quits the app.
+                // macOS (#4): the red traffic light hides to Dock; Cmd-Q /
+                // Dock Quit is the real exit. Windows / Linux (#282): the
+                // title-bar close button exits. There is no system tray and
+                // no hide-to-tray; minimize keeps the process, X does not.
                 #[cfg(target_os = "macos")]
                 {
                     api.prevent_close();
@@ -231,7 +246,6 @@ pub fn run() {
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
-                    // Non-macOS closes for real; nothing to intercept.
                     let _ = (window, api);
                 }
             }

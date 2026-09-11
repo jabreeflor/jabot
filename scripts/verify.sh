@@ -462,6 +462,72 @@ for (const k of ['productName', 'identifier']) {
   if (!conf[k]) bad(`${T}: ${k} is not set`);
 }
 
+// #282: overlay title bar and under-window vibrancy are macOS-only.
+// The shared window must stay decorated and opaque so Windows does not
+// inherit transparent holes. macOSPrivateApi stays in the shared file:
+// tauri-build's allowlist is bidirectional and reads one Cargo.toml, so
+// Linux clippy and Mac clippy both need the flag to match
+// macos-private-api. Platform files merge on top (JSON Merge Patch
+// replaces the windows array, so sizes have to stay in lockstep).
+const macT = 'src-tauri/tauri.macos.conf.json';
+const winT = 'src-tauri/tauri.windows.conf.json';
+const loadJson = (p) => {
+  try { return JSON.parse(fs.readFileSync(p, 'utf8')); }
+  catch (e) { bad(`${p} does not parse: ${e.message}`); return null; }
+};
+const macConf = loadJson(macT);
+// #291 owns this path for NSIS packaging. Missing, or present as
+// bundle-only (no app.windows), is fine. Do not require size lockstep
+// unless a windows array exists — a chrome-only file here would collide
+// with #291's bundle overlay.
+const winConf = fs.existsSync(winT) ? loadJson(winT) : null;
+const baseWin = (conf.app && conf.app.windows && conf.app.windows[0]) || {};
+if (!(conf.app && conf.app.macOSPrivateApi === true)) {
+  bad(`${T}: macOSPrivateApi must stay true — tauri-build's allowlist matches it against macos-private-api in Cargo.toml on every OS (#282)`);
+}
+if (baseWin.transparent === true) {
+  bad(`${T}: transparent:true punches holes on Windows; keep it in ${macT} (#282)`);
+}
+if (baseWin.titleBarStyle === 'Overlay') {
+  bad(`${T}: Overlay titleBarStyle is macOS-only; keep it in ${macT} (#282)`);
+}
+if (baseWin.windowEffects) {
+  bad(`${T}: windowEffects belong in ${macT} (#282)`);
+}
+if (macConf) {
+  const macWin = ((macConf.app || {}).windows || [])[0] || {};
+  if (macConf.app.macOSPrivateApi !== true) {
+    bad(`${macT}: macOSPrivateApi must be true — overlay + under-window vibrancy need it`);
+  }
+  if (macWin.titleBarStyle !== 'Overlay' || macWin.transparent !== true) {
+    bad(`${macT}: macOS overlay chrome is missing (titleBarStyle Overlay, transparent)`);
+  }
+  if (!(((macWin.windowEffects || {}).effects || []).includes('underWindowBackground'))) {
+    bad(`${macT}: windowEffects must include underWindowBackground`);
+  }
+  for (const key of ['label', 'title', 'width', 'height', 'minWidth', 'minHeight']) {
+    if (macWin[key] !== baseWin[key]) {
+      bad(`${macT}: window.${key} is ${JSON.stringify(macWin[key])}, ${T} has ${JSON.stringify(baseWin[key])} — merge replaces the whole windows array`);
+    }
+  }
+}
+if (winConf) {
+  const wWin = ((winConf.app || {}).windows || [])[0];
+  if (wWin) {
+    if (wWin.decorations === false) {
+      bad(`${winT}: decorations must stay on so Win10/11 draw a real title bar (#282)`);
+    }
+    if (wWin.transparent === true || wWin.titleBarStyle === 'Overlay' || wWin.windowEffects) {
+      bad(`${winT}: Windows chrome must be a decorated opaque window — no overlay, no vibrancy (#282)`);
+    }
+    for (const key of ['label', 'title', 'width', 'height', 'minWidth', 'minHeight']) {
+      if (wWin[key] !== undefined && wWin[key] !== baseWin[key]) {
+        bad(`${winT}: window.${key} is ${JSON.stringify(wWin[key])}, ${T} has ${JSON.stringify(baseWin[key])} — merge replaces the whole windows array`);
+      }
+    }
+  }
+}
+
 // ---- src-tauri/Cargo.toml -------------------------------------------------
 // Asked of cargo, not of a regex over Cargo.toml. Cargo auto-discovers
 // binaries it was never told about — `src/bin/<name>.rs`, `src/bin/<name>/main.rs`,
@@ -497,6 +563,17 @@ if (!bins.some((t) => t.name === 'jabot')) {
 }
 for (const want of ['jabot-hostd', 'fake-acp-agent']) {
   if (!bins.some((t) => t.name === want)) bad(`${C}: bin target ${want} is gone; scripts/verify.sh builds it`);
+}
+
+// #282: tauri-build's allowlist reads the untargeted tauri features
+// list, not the resolved target graph. macOSPrivateApi stays in the
+// shared tauri.conf.json so Linux and Mac clippy both match
+// macos-private-api. Windows chrome still does not *use* the API —
+// that is the portable shared window + window.rs cfg!.
+const cargoToml = fs.readFileSync(C, 'utf8');
+const untargeted = cargoToml.split(/\[target\./)[0];
+if (!/tauri\s*=\s*\{[^}]*macos-private-api/.test(untargeted)) {
+  bad(`${C}: macos-private-api must stay on the untargeted tauri dependency — tauri-build's allowlist reads the TOML, and a Mac clippy fails without it when ${macT} sets macOSPrivateApi (#282)`);
 }
 
 if (errs.length) {

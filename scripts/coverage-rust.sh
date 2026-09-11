@@ -36,8 +36,9 @@ This report is **Rust unit + crate integration tests** (`cargo test` under
 
 - frontend Vitest coverage (`coverage/frontend/`)
 - the TypeScript-to-`jabot-hostd` e2e project
-- macOS-only code (`src-tauri/src/notify/mac.rs`), which is `cfg`'d out on
-  the Linux CI runner and so does not appear here
+- macOS-only code (`src-tauri/src/notify/mac.rs`) and Windows-only code
+  (`src-tauri/src/notify/win.rs`), which are `cfg`'d out on the Linux CI
+  runner and so do not appear here
 
 There is **no Rust coverage threshold** yet. High-risk gaps are listed in
 `docs/coverage.md`; a floor comes after those are understood, not before.

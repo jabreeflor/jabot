@@ -31,6 +31,7 @@
 //   --first-run                 do not seed the onboarding record; show setup
 //   --theme light|dark|system   seed jabot.theme before load (default dark)
 //   --translucency preview      ?translucency=preview so chrome fills mix
+//   --chrome overlay|decorated  ?chrome= so shots can be the Windows frame
 //   --desktop light|dark        paint a fake desktop behind the page so a
 //                               translucent fill has something to bleed
 //   --timeout <ms>              per-step and readiness limit, default 15000
@@ -73,6 +74,7 @@ function parse(argv) {
     firstRun: false,
     theme: null,
     translucency: null,
+    chrome: null,
     desktop: null,
     timeout: 15_000,
     rpc: [],
@@ -116,6 +118,14 @@ function parse(argv) {
         const mode = value();
         if (mode !== "preview") usage("--translucency wants preview");
         options.translucency = mode;
+        break;
+      }
+      case "--chrome": {
+        const chrome = value();
+        if (chrome !== "overlay" && chrome !== "decorated") {
+          usage("--chrome wants overlay or decorated");
+        }
+        options.chrome = chrome;
         break;
       }
       case "--desktop": {
@@ -213,9 +223,14 @@ function desktopStyle(kind) {
 async function main() {
   const { options, steps } = parse(process.argv.slice(2));
 
-  if (options.translucency === "preview") {
+  if (options.translucency === "preview" || options.chrome) {
     const previewed = new URL(options.url);
-    previewed.searchParams.set("translucency", "preview");
+    if (options.translucency === "preview") {
+      previewed.searchParams.set("translucency", "preview");
+    }
+    if (options.chrome) {
+      previewed.searchParams.set("chrome", options.chrome);
+    }
     options.url = previewed.toString();
   }
 

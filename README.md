@@ -51,7 +51,7 @@ npm run tauri dev    # native window (macOS today; Windows: docs/windows.md)
 npm run build        # frontend-only build (CI / Linux)
 ```
 
-macOS MVP: overlay title bar, hide-to-Dock on window close (#4). The renderer talks **JSON-RPC 2.0** to the Rust host (`host_rpc` + `host-rpc` events) — same messages a Unix socket will carry later (#8). Thread overlay, crew, and Inbox live in host-owned **SQLite** (`jabot.sqlite`, WAL); secret bytes stay in the **OS keychain** (#9). The host spawns **one ACP adapter subprocess per live thread** (stdio JSON-RPC, process-group kill, stderr logs) (#10).
+macOS MVP: overlay title bar, hide-to-Dock on window close (#4). Windows: a decorated opaque title bar; close exits (no tray) (#282). The renderer talks **JSON-RPC 2.0** to the Rust host (`host_rpc` + `host-rpc` events) — same messages a Unix socket will carry later (#8). Thread overlay, crew, and Inbox live in host-owned **SQLite** (`jabot.sqlite`, WAL); secret bytes stay in the **OS keychain** (#9). The host spawns **one ACP adapter subprocess per live thread** (stdio JSON-RPC, process-group kill, stderr logs) (#10).
 
 ## Working on it
 
@@ -76,8 +76,11 @@ updater-archive checks are [docs/macos-acceptance.md](docs/macos-acceptance.md)
 (#235) — Playwright WebKit is not that gate. macOS-only Rust (`notify/mac.rs`,
 Keychain, the updater / hide-to-Dock branches) is linted on the PR by scoped
 jobs, not by `verify.sh` and not by a per-PR bundle — see
-[`docs/macos-lint.md`](docs/macos-lint.md). Windows host compile is a
-path-filtered `windows-latest` job so `#[cfg(windows)]` cannot rot
+[`docs/macos-lint.md`](docs/macos-lint.md). Windows toasts (`notify/win.rs`,
+#284) are `cfg(windows)` and are not that Linux scratch crate; smoke steps
+live in [native-notifications.md](docs/requirements/native-notifications.md).
+Windows host compile is a path-filtered `windows-latest` job so
+`#[cfg(windows)]` cannot rot
 ([`docs/windows-ci.md`](docs/windows-ci.md), #286); it is not a copy of
 this gate and not a substitute for a human smoke on a real PC.
 

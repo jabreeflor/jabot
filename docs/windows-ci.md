@@ -3,9 +3,11 @@
 How the Windows desktop port (#280) is kept from rotting in CI, what a green
 job actually proves, and what still needs a human on a real PC.
 
-This is [#286](https://github.com/jabreeflor/jabot/issues/286). Packaging
-targets, Credential Manager, toasts, job-object kill, and install docs are
-sibling issues (#281–#285, #287).
+This is [#286](https://github.com/jabreeflor/jabot/issues/286). Decorated
+window chrome (#282 / #294) and Action Center toasts (#284 / #288) are on
+`main`; this job compiles those `#[cfg(windows)]` paths but does not launch
+them. Packaging, Credential Manager, job-object kill, and install docs are
+still sibling issues (#281, #283, #285, #287).
 
 ## Why a second gate exists
 
@@ -56,9 +58,9 @@ still need a person at a real Windows PC — tracked on #280 / #287:
 | Still human | Why CI cannot claim it |
 | --- | --- |
 | Installer UX, Start Menu, SmartScreen | Unsigned NSIS; no Authenticode cert in this cut (#281) |
-| Window chrome / close / tray | Headless runner; overlay title bar is macOS config (#282) |
+| Window chrome / close / tray | Headless runner. Decorated opaque chrome + close-exits is on `main` (#282 / #294); CI cannot launch a window. |
 | Secrets in Credential Manager | Host still reports `Unavailable` off macOS (#283) |
-| Toast notifications | `notify/` is a no-op off macOS (#284) |
+| Toast notifications | `notify/win.rs` is compiled (#284 / #288); Action Center delivery is a desktop smoke, not this job. |
 | ACP adapter kill tree | `CREATE_NEW_PROCESS_GROUP` is compiled; Job Objects are #285 |
 | Playwright visual / axe / WebKit | Out of scope for the first cut; Ubuntu `browser` stays the suite |
 

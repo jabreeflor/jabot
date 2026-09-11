@@ -30,6 +30,11 @@ dev-bins = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# tauri-build's allowlist is bidirectional and reads this list from the
+# TOML: macOSPrivateApi in tauri.conf.json and this feature must match on
+# every OS. The Windows/Linux *window* does not use the API: platform
+# configs stay decorated/opaque, and window.rs returns before touching
+# the webview fill (#282). Off Apple the feature is a compile flag.
 tauri = { version = "2", features = ["macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -55,6 +60,17 @@ objc2 = "0.6"
 objc2-foundation = "0.3"
 objc2-user-notifications = "0.3"
 block2 = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# WinRT toasts for Inbox cards (#284). Windows-only so Linux verify never
+# downloads the windows crate graph. `src/notify/win.rs` is the only file
+# that names this crate. We post and retain `ToastNotification` ourselves
+# because a wrapper that drops the object after `Show` loses `Activated`.
+windows = { version = "0.62", features = [
+    "Data_Xml_Dom",
+    "Foundation",
+    "UI_Notifications",
+] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

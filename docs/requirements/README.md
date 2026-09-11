@@ -14,7 +14,7 @@ the issue number is noted so it can be cross-referenced against
 
 | File | Feature | Issue(s) |
 |---|---|---|
-| [desktop-host-lifecycle.md](desktop-host-lifecycle.md) | Desktop host process, window/Dock/Quit lifecycle | #4, #7, #21 |
+| [desktop-host-lifecycle.md](desktop-host-lifecycle.md) | Desktop host process, window/Dock/Quit lifecycle | #4, #7, #21, #282 |
 | [host-api-protocol.md](host-api-protocol.md) | Typed JSON-RPC host API | #8 |
 | [data-layer-persistence.md](data-layer-persistence.md) | SQLite data layer + OS keychain secrets | #9 |
 | [harness-adapter-layer.md](harness-adapter-layer.md) | ACP harness adapters + catalog/Doctor | #10, #13 |
@@ -34,7 +34,7 @@ the issue number is noted so it can be cross-referenced against
 | [chief-of-staff-bot.md](chief-of-staff-bot.md) | Chief of Staff bot + handoff/spawn/status tools | #24 |
 | [schedules.md](schedules.md) | In-process cron schedules delivered to Inbox | #25 |
 | [fold-and-wait.md](fold-and-wait.md) | Fold & "Wait for Inbox" wired to real sessions | #26 |
-| [native-notifications.md](native-notifications.md) | macOS native notifications | #27 |
+| [native-notifications.md](native-notifications.md) | Native notifications (macOS + Windows toasts) | #27, #284 |
 | [pull-requests.md](pull-requests.md) | Pull Requests view + thread↔PR linkage | #28 |
 | [mobile-inbox.md](mobile-inbox.md) | Mobile Inbox client (MVP2) | #29 |
 

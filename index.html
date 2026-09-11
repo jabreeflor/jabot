@@ -40,6 +40,24 @@
             document.documentElement.dataset.translucency = "on";
           }
         } catch (e) {}
+        // Overlay is the CSS default (macOS / live.sh / Playwright). A
+        // Windows *Tauri* webview and ?chrome=decorated drop the inset
+        // before first paint. Must stay in lockstep with
+        // inferredWindowChrome / previewWindowChrome in
+        // src/windowChrome.ts. Do not key off UA alone: Playwright's
+        // Desktop Chrome device is a Windows UA on Linux (#282).
+        try {
+          var inTauri = "__TAURI_INTERNALS__" in window;
+          var chrome =
+            inTauri && /Windows/i.test(navigator.userAgent)
+              ? "decorated"
+              : "overlay";
+          var chromeMatch = /(?:^|[?&])chrome=(overlay|decorated)(?:&|$)/.exec(
+            location.search,
+          );
+          if (chromeMatch) chrome = chromeMatch[1];
+          document.documentElement.dataset.windowChrome = chrome;
+        } catch (e) {}
       })();
     </script>
   </head>
