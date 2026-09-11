@@ -78,11 +78,13 @@ struct Client {
 /// that stream and no other client should wait for it.
 #[derive(Default)]
 struct Clients {
+    #[cfg(unix)]
     next_id: u64,
     sinks: HashMap<u64, Client>,
 }
 
 impl Clients {
+    #[cfg(unix)]
     fn add(&mut self, connection: &str, sink: ClientSink) -> u64 {
         self.next_id += 1;
         let id = self.next_id;
@@ -96,6 +98,7 @@ impl Clients {
         id
     }
 
+    #[cfg(unix)]
     fn remove(&mut self, id: u64) {
         self.sinks.remove(&id);
     }
@@ -454,6 +457,7 @@ fn lock_clients(clients: &Arc<Mutex<Clients>>) -> std::sync::MutexGuard<'_, Clie
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+#[cfg(unix)]
 fn write_to<W: Write>(writer: &mut W, message: &JsonRpcMessage) {
     match encode_frame(message) {
         Ok(frame) => {

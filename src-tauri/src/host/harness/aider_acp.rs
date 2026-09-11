@@ -808,6 +808,7 @@ mod tests {
         out
     }
 
+    #[cfg(unix)]
     fn handshake() -> Vec<Value> {
         vec![
             json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}),
@@ -815,6 +816,7 @@ mod tests {
         ]
     }
 
+    #[cfg(unix)]
     fn prompt(text: &str) -> Value {
         json!({
             "jsonrpc": "2.0",
