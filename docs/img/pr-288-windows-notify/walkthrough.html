@@ -170,14 +170,14 @@
           </span>
         </div>
         <div class="step">
-          <strong>3. AUMID, then a documented fallback</strong>
+          <strong>3. AUMID is a registration check</strong>
           <span>
-            Try <code>com.jabot.app</code> (the Tauri identifier). If WinRT
-            refuses — typical for unpackaged <code>tauri dev</code> until
-            #281 registers the id — retry once as PowerShell's well-known
-            id and say so in the log. A PowerShell success does not skip
-            the real id next time. Any remaining error is
-            <code>eprintln</code> and return.
+            A Start Menu <code>JaBot.lnk</code> means toast as
+            <code>com.jabot.app</code>. Without one, WinRT can return Ok
+            for that id and still show nothing, so unpackaged
+            <code>tauri dev</code> uses PowerShell's well-known id and
+            says so in the log. Policy lives in <code>aumid.rs</code> so
+            Linux tests it.
           </span>
         </div>
         <div class="step">
@@ -201,7 +201,11 @@
         </tr>
         <tr>
           <td><code>src-tauri/src/notify/win.rs</code></td>
-          <td>New Windows backend. Soft-fail, AUMID fallback, click hook.</td>
+          <td>Posts and retains the WinRT toast so click-while-running works.</td>
+        </tr>
+        <tr>
+          <td><code>src-tauri/src/notify/aumid.rs</code></td>
+          <td>Which AppUserModelID to use. Tested on Linux. No WinRT.</td>
         </tr>
         <tr>
           <td><code>src-tauri/src/notify/mod.rs</code></td>

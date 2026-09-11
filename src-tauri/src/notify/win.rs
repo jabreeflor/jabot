@@ -5,17 +5,17 @@
 //! AppUserModelID. Every entry point here logs and returns. The Inbox card
 //! was written before this module was called.
 //!
-//! **AUMID, then a documented fallback.** Packaged JaBot should toast as
-//! [`APP_USER_MODEL_ID`] (`com.jabot.app`, the Tauri identifier). Until the
-//! installer registers that id (#281), WinRT often rejects it; we then retry
-//! once with PowerShell's well-known id so a toast still appears. That retry
-//! *looks* like PowerShell. The log says so. Do not treat the fallback as
-//! the shipping identity. Always try the real id first — a PowerShell
-//! success does not sticky-lock the rest of the process.
+//! **AUMID is a registration check.** Packaged JaBot toasts as
+//! [`APP_USER_MODEL_ID`] (`com.jabot.app`) when a Start Menu shortcut
+//! exists. `CreateToastNotifierWithId` can return Ok for an unregistered
+//! id and still show nothing, so unpackaged `tauri dev` uses PowerShell's
+//! well-known id instead of "succeeding" silently. The log says so. Each
+//! toast re-checks the shortcut — a mid-session #281 install is picked up.
 //!
 //! **Clicks, while this process is alive.** Each toast's `ToastNotification`
-//! and `Activated` handler are retained for the life of the banner (a
-//! process-global list). A click then calls
+//! and `Activated` handler are leaked for the life of the process (those
+//! WinRT types are not `Send`, so a static mutex list will not compile).
+//! A click then calls
 //! [`dispatch_click`](super::dispatch_click), which is the same sink macOS
 //! uses: focus the window, tell the renderer which thread to open. Dropping
 //! those objects after `Show` — what `tauri-winrt-notification` 0.8.1
@@ -33,12 +33,11 @@
 //! after a `Show` that Action Center then hid. InboxView's "notifications
 //! are turned off" line is therefore macOS-only in practice.
 //!
-//! **Replace-not-stack is macOS-only for now.** We do not set Tag/Group on
-//! this path, so two cards on one thread may sit together in Action Center.
-//! Same noise budget as macOS; louder shelf.
+//! **Replace-not-stack.** Tag/Group are set on the notification we retain
+//! (16-character tag from the thread id). Action Center can still stack.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Mutex;
 
 use windows::core::{h, IInspectable, HSTRING};
 use windows::Data::Xml::Dom::XmlDocument;
@@ -46,30 +45,27 @@ use windows::Foundation::TypedEventHandler;
 use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
 
 use super::{
-    app_id_candidates, Authorization, NativeNotification, APP_USER_MODEL_ID, POWERSHELL_APP_ID,
+    app_id_candidates, toast_tag, Authorization, NativeNotification, APP_USER_MODEL_ID,
+    POWERSHELL_APP_ID,
 };
 
 const UNSUPPORTED: u8 = 0;
 const NOT_DETERMINED: u8 = 1;
 const GRANTED: u8 = 2;
 
-/// How many live banners we keep handlers for. Action Center can still show
-/// an older toast; past this cap its in-process click is the one we drop.
-const LIVE_CAP: usize = 64;
-
 /// The last delivery outcome we learned. Starts `NOT_DETERMINED` after
 /// [`install`]: Windows can toast, we just have not proved it yet.
 static AUTHORIZATION: AtomicU8 = AtomicU8::new(UNSUPPORTED);
 
-/// WinRT drops `Activated` when the `ToastNotification` (and its handler) are
-/// released. Keep both for the banner's life so a click after `post` returns
-/// still reaches [`dispatch_click`](super::dispatch_click).
+/// WinRT drops `Activated` when the `ToastNotification` (and its handler)
+/// are released. Those types are not `Send`, so a process-global
+/// `Mutex<Vec<_>>` will not compile. Forgetting the pair keeps the click
+/// alive for the process — the allowed alternative to a static list.
+/// Inbox toasts are rare (`needs_you` / `done` / `failed`).
 struct LiveToast {
     _notification: ToastNotification,
     _activated: TypedEventHandler<ToastNotification, IInspectable>,
 }
-
-static LIVE_TOASTS: Mutex<Vec<LiveToast>> = Mutex::new(Vec::new());
 
 pub fn supported() -> bool {
     true
@@ -113,7 +109,7 @@ pub fn deliver(note: &NativeNotification) {
 fn show_toast(note: &NativeNotification) -> Result<String, String> {
     let mut last_err = String::from("no AppUserModelID left to try");
 
-    for app_id in app_id_candidates() {
+    for app_id in app_id_candidates(jabot_aumid_is_registered()) {
         match post(app_id, note) {
             Ok(()) => return Ok(app_id.to_string()),
             Err(err) => last_err = format!("{app_id}: {err}"),
@@ -125,6 +121,8 @@ fn show_toast(note: &NativeNotification) -> Result<String, String> {
 fn post(app_id: &str, note: &NativeNotification) -> windows::core::Result<()> {
     let xml = toast_xml(note)?;
     let notification = ToastNotification::CreateToastNotification(&xml)?;
+    let _ = notification.SetGroup(&HSTRING::from("jabot.inbox"));
+    let _ = notification.SetTag(&HSTRING::from(toast_tag(&note.thread_id)));
 
     let thread_id = note.thread_id.clone();
     let kind = note.reason.as_str().to_string();
@@ -168,12 +166,61 @@ fn toast_xml(note: &NativeNotification) -> windows::core::Result<XmlDocument> {
     Ok(xml)
 }
 
-fn retain(toast: LiveToast) {
-    let mut live = LIVE_TOASTS.lock().unwrap_or_else(|e| e.into_inner());
-    if live.len() >= LIVE_CAP {
-        live.remove(0);
+fn jabot_aumid_is_registered() -> bool {
+    start_menu_roots()
+        .into_iter()
+        .any(|root| shortcut_named_jabot(&root))
+}
+
+fn start_menu_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Ok(app_data) = std::env::var("APPDATA") {
+        roots.push(PathBuf::from(app_data).join("Microsoft/Windows/Start Menu/Programs"));
     }
-    live.push(toast);
+    if let Ok(program_data) = std::env::var("PROGRAMDATA") {
+        roots.push(PathBuf::from(program_data).join("Microsoft/Windows/Start Menu/Programs"));
+    }
+    roots
+}
+
+fn shortcut_named_jabot(root: &std::path::Path) -> bool {
+    if !root.is_dir() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if is_jabot_shortcut(&path) {
+            return true;
+        }
+        if path.is_dir()
+            && (is_jabot_shortcut(&path.join("JaBot.lnk"))
+                || is_jabot_shortcut(&path.join("jabot.lnk")))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_jabot_shortcut(path: &std::path::Path) -> bool {
+    if path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_none_or(|e| !e.eq_ignore_ascii_case("lnk"))
+    {
+        return false;
+    }
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("jabot"))
+        && path.is_file()
+}
+
+fn retain(toast: LiveToast) {
+    std::mem::forget(toast);
 }
 
 #[cfg(test)]

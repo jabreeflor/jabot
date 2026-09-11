@@ -37,7 +37,7 @@ use serde_json::Value;
 use crate::host::{INBOX_EVENT, INBOX_RESURFACE};
 
 mod aumid;
-pub use aumid::{app_id_candidates, APP_USER_MODEL_ID, POWERSHELL_APP_ID};
+pub use aumid::{app_id_candidates, toast_tag, APP_USER_MODEL_ID, POWERSHELL_APP_ID};
 
 #[cfg(target_os = "macos")]
 mod mac;
@@ -503,12 +503,10 @@ mod tests {
     }
 
     /// Windows AUMID order is portable on purpose: Linux verify must see
-    /// that a PowerShell success does not sticky-lock `com.jabot.app`.
+    /// that an unregistered `com.jabot.app` is not treated as a visible toast.
     #[test]
-    fn windows_aumid_always_tries_the_real_id_first() {
-        assert_eq!(
-            app_id_candidates(),
-            vec![APP_USER_MODEL_ID, POWERSHELL_APP_ID]
-        );
+    fn windows_aumid_skips_an_unregistered_real_id() {
+        assert_eq!(app_id_candidates(true), vec![APP_USER_MODEL_ID]);
+        assert_eq!(app_id_candidates(false), vec![POWERSHELL_APP_ID]);
     }
 }

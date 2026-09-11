@@ -30,6 +30,7 @@ So cfg(macos) lint is a pair of scoped PR checks, not a new default
 | --- | --- | --- | --- |
 | `src-tauri/src/notify/mac.rs` | `UNUserNotificationCenter` delivery | **mac notify cross-check** (Linux) | Existing scratch crate from #109. `objc2*` only; no Apple `cc`. |
 | `src-tauri/src/notify/mod.rs` | Decision layer + `cfg` split onto `mac` / `win` / `unsupported` | Linux `verify` clippy (portable + unsupported) **and** the notify cross-check (mac backend) | Portable tests already run on Linux; `mod mac` is what the scratch crate compiles. `mod win` is `cfg(windows)` and is not in this check. |
+| `src-tauri/src/notify/aumid.rs` | Windows AUMID / toast-tag policy | Linux `verify` clippy + unit tests | No WinRT. Proves we do not treat an unregistered `com.jabot.app` as a visible toast. |
 | `src-tauri/src/notify/unsupported.rs` | No-op backend | Linux `verify` clippy | Compiled on every non-macOS, non-Windows target. |
 | `src-tauri/src/notify/win.rs` | WinRT toast delivery (#284) | **Not** the Linux notify scratch crate (needs the `windows` crate / WinRT) | Same honesty class as runtime Mac delivery: Linux proves the decision layer. Windows compile/verify is #286. |
 | `src-tauri/src/host/store/secrets.rs` (`os_put` / `os_get` / `os_delete`) | macOS Keychain via `keyring` | **macos clippy** (native) | `keyring` / Security.framework are not in the notify scratch crate. |

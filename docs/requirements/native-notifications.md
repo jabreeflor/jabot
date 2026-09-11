@@ -68,11 +68,15 @@ shared. `lib.rs` focuses the `main` window and emits
 | Windows | Focuses the window and opens that thread. `win.rs` keeps each `ToastNotification` and its `Activated` handler alive after `Show` so the click still reaches `dispatch_click`. | Does **not** relaunch. A Start Menu shortcut / COM activator is installer work (#281). The Inbox card is already on disk. |
 | Linux / other | No banner, so no click | — |
 
-Unpackaged `tauri dev` on Windows may toast under PowerShell's
-AppUserModelID (the log says so) until NSIS/MSI registers `com.jabot.app`.
-A PowerShell success does not skip `com.jabot.app` on later toasts.
-Same-thread replacement (one banner, not a stack) is macOS-only for now;
-Windows may show two toasts for two cards on one thread.
+Unpackaged `tauri dev` on Windows toasts under PowerShell's
+AppUserModelID (the log says so) until a Start Menu `JaBot.lnk`
+registers `com.jabot.app`. We do **not** treat
+`CreateToastNotifierWithId` returning Ok as proof the real id can show
+a banner — that API can succeed and still display nothing. Each toast
+re-checks the shortcut, so a mid-session installer is picked up.
+
+Same-thread replacement uses WinRT Tag/Group (16-character tag from the
+thread id). That is best-effort; Action Center can still stack.
 
 Windows never reports `denied`. There is no permission prompt; Settings
 can still suppress the banner. `authorization` stays `notDetermined`
@@ -89,7 +93,9 @@ this, for the same honesty reason as D-019 on macOS.
 2. **Toast appears** with that card's title and summary (or the reason
    fallback copy). Evidence: screenshot of the Action Center toast.
 3. **Click while JaBot is still running** focuses the window and opens
-   that thread. Evidence: screenshot of the opened thread.
+   that thread (the `ToastNotification` and `Activated` handler are
+   retained after `Show` returns — a click seconds later must still
+   work). Evidence: screenshot of the opened thread.
 4. **Failure is soft.** Turning notifications off in Windows Settings, or
    running an unpackaged binary whose AUMID WinRT rejects, must not crash
    the host. Inbox still lists the card. Evidence: the process is still
