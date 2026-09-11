@@ -316,11 +316,11 @@ mod tests {
         assert!(!dir.path().join("tree").join("..").join("secret2").exists());
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_symlink_is_not_followed_into_the_users_checkout() {
         let (_dir, repo, tree) = trees();
         std::fs::create_dir_all(repo.join("node_modules")).unwrap();
-        #[cfg(unix)]
         std::os::unix::fs::symlink(repo.join("node_modules"), repo.join("modules")).unwrap();
 
         let plan = Plan {
@@ -335,21 +335,31 @@ mod tests {
     #[test]
     fn the_setup_command_runs_in_the_tree_and_is_told_where_the_repo_is() {
         let (_dir, repo, tree) = trees();
+        // Write files rather than comparing `pwd` strings: Git-for-Windows
+        // prints an MSYS path, and TEMP can be an 8.3 name. The contract is
+        // that the command's cwd is the worktree and `$JABOT_REPO_ROOT` is
+        // a path that actually opens the checkout.
         let plan = Plan {
             files: Vec::new(),
-            command: Some("pwd > where.txt && echo $JABOT_REPO_ROOT >> where.txt".into()),
+            command: Some(
+                "printf 'in-tree\\n' > in-tree.txt && printf 'from-setup\\n' > \"$JABOT_REPO_ROOT/from-setup.txt\""
+                    .into(),
+            ),
         };
         let report = apply(&repo, &tree, &plan, "t-setup");
 
         assert_eq!(report.command_ok, Some(true), "{report:?}");
-        let written = std::fs::read_to_string(tree.join("where.txt")).unwrap();
-        assert!(
-            written.contains(&tree.to_string_lossy().into_owned()),
-            "{written}"
+        assert_eq!(
+            std::fs::read_to_string(tree.join("in-tree.txt"))
+                .unwrap()
+                .trim(),
+            "in-tree"
         );
-        assert!(
-            written.contains(&repo.to_string_lossy().into_owned()),
-            "{written}"
+        assert_eq!(
+            std::fs::read_to_string(repo.join("from-setup.txt"))
+                .unwrap()
+                .trim(),
+            "from-setup"
         );
     }
 

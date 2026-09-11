@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { logHasPermissionReply, permissionReplyFromLog } from "./hostd";
+import {
+  jsonRecordFromLog,
+  logHasPermissionReply,
+  permissionReplyFromLog,
+} from "./hostd";
 
 describe("adapter permission-reply log records", () => {
   const complete =
@@ -18,5 +22,24 @@ describe("adapter permission-reply log records", () => {
   it("reads the option id from a complete record", () => {
     expect(logHasPermissionReply(complete, "allow_once")).toBe(true);
     expect(logHasPermissionReply(complete, "reject_once")).toBe(false);
+  });
+});
+
+describe("adapter json log records", () => {
+  it("ignores a session_prompt prefix whose JSON has not flushed yet", () => {
+    expect(
+      jsonRecordFromLog(
+        'session_prompt={"prompt":[{"type":"text"',
+        "session_prompt=",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("parses a complete session_prompt record", () => {
+    const record = jsonRecordFromLog(
+      'session_prompt={"prompt":[{"type":"text","text":"hi"}]}\n',
+      "session_prompt=",
+    );
+    expect(record).toEqual({ prompt: [{ type: "text", text: "hi" }] });
   });
 });

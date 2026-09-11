@@ -187,7 +187,7 @@ any row. Closing a row is the linked child issue, plus the matching cell on
 | Adapter kill tree | Process-group SIGTERM then SIGKILL | `CREATE_NEW_PROCESS_GROUP` on spawn; terminate falls through to `Child::kill()` (parent only). Job objects are the planned fix | [#285](https://github.com/jabreeflor/jabot/issues/285) |
 | Installer / release | `.dmg` + `install.sh` + updater archives from `release.yml` | NSIS `*-setup.exe` from the sibling `windows` release job ([#281](https://github.com/jabreeflor/jabot/issues/281) / [PR #291](https://github.com/jabreeflor/jabot/pull/291)); published after a `v*` tag | [#281](https://github.com/jabreeflor/jabot/issues/281) |
 | Auto-update | `tauri-plugin-updater` registered on macOS only | Plugin is not registered; no `windows-*` feed entry | [#281](https://github.com/jabreeflor/jabot/issues/281) (artifacts first) |
-| CI so the port does not rot | Linux `verify` + scoped macOS lint / packaged-acceptance | No Windows compile/verify job | [#286](https://github.com/jabreeflor/jabot/issues/286) |
+| CI so the port does not rot | Linux `verify` + scoped macOS lint / packaged-acceptance | Sibling [`windows.yml`](../.github/workflows/windows.yml): Linux planner + path-filtered `windows-latest` compile ([windows-ci.md](windows-ci.md)). Not a launched app. | [#286](https://github.com/jabreeflor/jabot/issues/286) |
 
 The renderer, SQLite store, and ACP protocol are the same code. The gaps
 are the native host: window chrome, OS secret store, process tree, toasts,

@@ -29,6 +29,7 @@ import {
 import {
   fakeAcpAgentPath,
   HostdProcess,
+  jsonRecordFromLog,
   type HostdOptions,
 } from "../support/hostd";
 
@@ -90,32 +91,31 @@ async function sessionNewParams(
   host: HostdProcess,
   threadId: string,
 ): Promise<{ cwd: string; mcpServers: Array<Record<string, unknown>> }> {
-  const deadline = Date.now() + 15_000;
-  for (;;) {
-    const line = host
-      .readAdapterLog(threadId)
-      .split("\n")
-      .find((entry) => entry.startsWith("session_new="));
-    if (line) return JSON.parse(line.slice("session_new=".length));
-    if (Date.now() > deadline) {
-      throw new Error(`no session/new reached the adapter for ${threadId}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 30));
+  const log = await host.waitForAdapterLog(
+    threadId,
+    (text) => jsonRecordFromLog(text, "session_new=") !== undefined,
+    15_000,
+  );
+  const parsed = jsonRecordFromLog(log, "session_new=");
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`no session/new reached the adapter for ${threadId}`);
   }
+  return parsed as { cwd: string; mcpServers: Array<Record<string, unknown>> };
 }
 
 async function sessionPromptParams(
   host: HostdProcess,
   threadId: string,
 ): Promise<{ prompt?: unknown[] } & Record<string, unknown>> {
-  const log = await host.waitForAdapterLog(threadId, (text) =>
-    text.includes("session_prompt="),
+  const log = await host.waitForAdapterLog(
+    threadId,
+    (text) => jsonRecordFromLog(text, "session_prompt=") !== undefined,
   );
-  const line = log
-    .split("\n")
-    .find((entry) => entry.startsWith("session_prompt="));
-  if (!line) throw new Error(`no session/prompt for ${threadId}`);
-  return JSON.parse(line.slice("session_prompt=".length));
+  const parsed = jsonRecordFromLog(log, "session_prompt=");
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`no session/prompt for ${threadId}`);
+  }
+  return parsed as { prompt?: unknown[] } & Record<string, unknown>;
 }
 
 async function chiefWithBridge(dataDir: string) {

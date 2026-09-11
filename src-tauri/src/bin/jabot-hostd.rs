@@ -78,11 +78,13 @@ struct Client {
 /// that stream and no other client should wait for it.
 #[derive(Default)]
 struct Clients {
+    #[cfg(unix)]
     next_id: u64,
     sinks: HashMap<u64, Client>,
 }
 
 impl Clients {
+    #[cfg(unix)]
     fn add(&mut self, connection: &str, sink: ClientSink) -> u64 {
         self.next_id += 1;
         let id = self.next_id;
@@ -96,6 +98,7 @@ impl Clients {
         id
     }
 
+    #[cfg(unix)]
     fn remove(&mut self, id: u64) {
         self.sinks.remove(&id);
     }
@@ -150,8 +153,14 @@ fn main() {
     // Bound *before* the first byte of stdio is read, and that ordering is the
     // whole readiness protocol: a client that has had an answer on stdio knows
     // the socket is accepting, so nothing has to poll for the file or parse a
-    // banner line out of the protocol stream.
+    // banner line out of the protocol stream. Off Unix `--listen` fatals here
+    // (`bind_listener` is `-> !`); there is no accept loop to start.
+    #[cfg(unix)]
     let listener = socket_path.as_deref().map(bind_listener);
+    #[cfg(not(unix))]
+    if let Some(path) = socket_path.as_deref() {
+        bind_listener(path);
+    }
 
     let session = match &data_dir {
         Some(dir) => {
@@ -173,6 +182,7 @@ fn main() {
     let session = Arc::new(Mutex::new(session));
     let clients = Arc::new(Mutex::new(Clients::default()));
     spawn_acp_pump(Arc::clone(&session), Arc::clone(&clients), wake);
+    #[cfg(unix)]
     if let Some(listener) = listener {
         spawn_accept_loop(Arc::clone(&session), Arc::clone(&clients), listener);
     }
@@ -447,6 +457,7 @@ fn lock_clients(clients: &Arc<Mutex<Clients>>) -> std::sync::MutexGuard<'_, Clie
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+#[cfg(unix)]
 fn write_to<W: Write>(writer: &mut W, message: &JsonRpcMessage) {
     match encode_frame(message) {
         Ok(frame) => {

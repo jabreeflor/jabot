@@ -645,14 +645,18 @@ mod tests {
 
     #[test]
     fn resolve_finds_a_binary_on_the_augmented_path() {
-        assert!(resolve_command("sh").is_some());
+        // `git` is on PATH in Linux CI, Windows CI, and a normal laptop.
+        // `sh` is not a fair Windows probe.
+        assert!(resolve_command("git").is_some());
         assert!(resolve_command("jabot-definitely-not-on-path-xyz").is_none());
         assert!(resolve_command("  ").is_none());
     }
 
     #[test]
     fn an_absolute_path_is_taken_at_its_word() {
-        assert!(resolve_command("/bin/sh").is_some());
+        let existing = std::env::current_exe().expect("test executable");
+        let path = existing.to_str().expect("utf-8 path");
+        assert!(resolve_command(path).is_some());
         assert!(resolve_command("/bin/definitely-not-here").is_none());
     }
 

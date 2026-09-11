@@ -121,15 +121,14 @@ pub fn terminate_process_group(child: &mut Child) {
     procgroup::terminate(child);
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::host::acp::runtime::HarnessRuntime;
+    use crate::host::procgroup::process_alive;
     use std::collections::BTreeMap;
     use std::thread;
     use std::time::{Duration, Instant};
-
-    use crate::host::procgroup::process_alive;
 
     #[cfg(unix)]
     #[test]

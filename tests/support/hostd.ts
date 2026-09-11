@@ -433,19 +433,34 @@ export class HostdProcess implements HostTransport {
 }
 
 /**
- * A complete `permission_reply=` line from the fake agent's stderr, or
+ * A complete `prefix{json}` line from the fake agent's stderr, or
  * `undefined` if the prefix has landed but the JSON has not flushed yet.
+ *
+ * The host tees stderr as the agent writes, so a prefix can appear a flush
+ * before the rest of the line. Callers must wait on a successful parse, not
+ * on `includes(prefix)`.
  */
-export function permissionReplyFromLog(log: string): unknown | undefined {
+export function jsonRecordFromLog(
+  log: string,
+  prefix: string,
+): unknown | undefined {
   for (const line of log.split(/\r?\n/)) {
-    if (!line.startsWith("permission_reply=")) continue;
+    if (!line.startsWith(prefix)) continue;
     try {
-      return JSON.parse(line.slice("permission_reply=".length));
+      return JSON.parse(line.slice(prefix.length));
     } catch {
       // Partial write — the next read will have the rest of the line.
     }
   }
   return undefined;
+}
+
+/**
+ * A complete `permission_reply=` line from the fake agent's stderr, or
+ * `undefined` if the prefix has landed but the JSON has not flushed yet.
+ */
+export function permissionReplyFromLog(log: string): unknown | undefined {
+  return jsonRecordFromLog(log, "permission_reply=");
 }
 
 /** True once a complete permission-reply record carries this option id. */

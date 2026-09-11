@@ -170,7 +170,13 @@ mod tests {
         };
         match runtime.probe() {
             ProbeResult::Installed(path) => {
-                assert!(path.ends_with("sh"), "{path:?}");
+                // Windows resolves `sh` to `sh.exe` (Git for Windows). The
+                // stem is the portable name; `Path::ends_with("sh")` is not.
+                assert_eq!(
+                    path.file_stem().and_then(|name| name.to_str()),
+                    Some("sh"),
+                    "{path:?}"
+                );
             }
             other => panic!("expected installed, got {other:?}"),
         }

@@ -60,6 +60,12 @@ Other pre-existing labels: `decision` (a decision record, D-001…), `tracking`
   pass; nothing in that list has work attached.
 - **Planning:** `is:open label:disposition:follow-up` shows which decision
   records still owe work and how much (`size:*`).
+- **Windows NSIS (unsigned):** label a PR `windows-package` to opt into the
+  installer job. Docs-only PRs can still do this — the planner always
+  runs, and `labeled` does not re-run `windows verify`. The label is
+  **not pre-created** on the repo (same as `macos-acceptance`): the first
+  apply auto-creates it, which needs write access. After that, anyone who
+  can label the PR can opt in. See [docs/windows-ci.md](windows-ci.md).
 
 ## How the labels were assigned
 

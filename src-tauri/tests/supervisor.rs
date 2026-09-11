@@ -1195,9 +1195,16 @@ fn a_dead_shared_process_takes_every_chat_on_it() {
 }
 
 fn kill_process(pid: i32) {
-    // SIGKILL, because the point is a process that goes without saying
+    // Hard-kill, because the point is a process that goes without saying
     // anything on stdout — the case `reap_dead_adapters` exists for.
+    #[cfg(unix)]
     unsafe {
         libc::kill(pid, libc::SIGKILL);
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .status();
     }
 }

@@ -48,6 +48,7 @@
     "test:windows-packaging": "./scripts/tests/windows-packaging.test.sh",
     "windows-packaging": "./scripts/windows-packaging.sh",
     "test:macos-lint": "./scripts/tests/macos-lint.test.sh",
+    "test:windows-ci": "./scripts/tests/windows-ci.test.sh",
     "test:coverage:policy": "./scripts/tests/coverage.test.sh",
     "hooks:install": "./scripts/install-hooks.sh",
     "hooks:check": "./scripts/install-hooks.sh --check",

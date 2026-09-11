@@ -255,24 +255,25 @@ mod tests {
     #[test]
     fn a_child_runs_where_it_is_told_and_sees_what_it_is_given() {
         let dir = tempfile::tempdir().unwrap();
+        // A file in cwd, not `pwd`: Git-for-Windows prints `/tmp/...` for a
+        // Windows TEMP directory, which is not the PathBuf we canonicalize.
+        std::fs::write(dir.path().join("here"), "ok").unwrap();
         let env = [("JABOT_PROBE_ECHO".to_string(), "worktree".to_string())];
         let env: Vec<(&str, String)> = env.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
         let out = spawn(
-            Spawn::new("sh", &["-c", "pwd; echo $JABOT_PROBE_ECHO"], PROBE_TIMEOUT)
-                .in_dir(dir.path())
-                .with_env(&env),
+            Spawn::new(
+                "sh",
+                &["-c", "test -f here && echo $JABOT_PROBE_ECHO"],
+                PROBE_TIMEOUT,
+            )
+            .in_dir(dir.path())
+            .with_env(&env),
         )
         .expect("sh is required to build");
         assert!(out.ok(), "{out:?}");
-        let canonical = std::fs::canonicalize(dir.path()).unwrap();
         // Both halves matter: a setup command that runs in the wrong directory
         // installs the wrong project's dependencies, and one that cannot see
         // where the worktree is cannot copy anything into it.
-        assert!(
-            out.stdout
-                .contains(&canonical.to_string_lossy().into_owned()),
-            "{out:?}"
-        );
         assert!(out.stdout.contains("worktree"), "{out:?}");
     }
 

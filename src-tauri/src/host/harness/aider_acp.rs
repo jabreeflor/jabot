@@ -666,10 +666,14 @@ fn write_line(stdout: &Mutex<impl Write>, value: Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::io::Cursor;
+    #[cfg(unix)]
     use std::sync::mpsc;
+    #[cfg(unix)]
     use std::time::Instant;
 
+    #[cfg(unix)]
     #[derive(Clone, Copy)]
     enum Mode {
         Success,
@@ -679,18 +683,21 @@ mod tests {
         CliFail,
     }
 
+    #[cfg(unix)]
     #[derive(Clone)]
     struct FakeExec {
         mode: Mode,
         started: Arc<Mutex<Vec<AiderInvocation>>>,
     }
 
+    #[cfg(unix)]
     struct FakeChild {
         mode: Mode,
         stdout: Option<Cursor<Vec<u8>>>,
         killed: Arc<AtomicBool>,
     }
 
+    #[cfg(unix)]
     impl AiderChild for FakeChild {
         fn take_stdout(&mut self) -> Option<Box<dyn Read + Send>> {
             self.stdout
@@ -717,6 +724,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     impl AiderExec for FakeExec {
         fn start(&self, spec: AiderInvocation) -> Result<Box<dyn AiderChild>, String> {
             self.started.lock().unwrap().push(AiderInvocation {
@@ -800,6 +808,7 @@ mod tests {
         out
     }
 
+    #[cfg(unix)]
     fn handshake() -> Vec<Value> {
         vec![
             json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}),
@@ -807,6 +816,7 @@ mod tests {
         ]
     }
 
+    #[cfg(unix)]
     fn prompt(text: &str) -> Value {
         json!({
             "jsonrpc": "2.0",
