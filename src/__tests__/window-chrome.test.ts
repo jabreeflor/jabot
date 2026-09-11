@@ -208,3 +208,22 @@ describe("shared window config stays portable", () => {
     }
   });
 });
+
+describe("index.html first-paint chrome matches windowChrome.ts", () => {
+  const html = readFileSync("index.html", "utf8");
+  const source = readFileSync("src/windowChrome.ts", "utf8");
+
+  it("requires Tauri AND Windows, not UA alone", () => {
+    expect(html).toContain('__TAURI_INTERNALS__" in window');
+    expect(html).toMatch(
+      /inTauri && \/Windows\/i\.test\(navigator\.userAgent\)/,
+    );
+    expect(source).toMatch(/inTauri && \/Windows\/i\.test\(userAgent\)/);
+  });
+
+  it("lets ?chrome=overlay|decorated override the guess", () => {
+    expect(html).toMatch(/chrome=\(overlay\|decorated\)/);
+    expect(source).toContain('WINDOW_CHROME_PARAM = "chrome"');
+    expect(source).toMatch(/isWindowChrome\(raw\)/);
+  });
+});

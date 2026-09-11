@@ -42,7 +42,9 @@
         } catch (e) {}
         // Overlay is the CSS default (macOS / live.sh / Playwright). A
         // Windows *Tauri* webview and ?chrome=decorated drop the inset
-        // before first paint. Do not key off UA alone: Playwright's
+        // before first paint. Must stay in lockstep with
+        // inferredWindowChrome / previewWindowChrome in
+        // src/windowChrome.ts. Do not key off UA alone: Playwright's
         // Desktop Chrome device is a Windows UA on Linux (#282).
         try {
           var inTauri = "__TAURI_INTERNALS__" in window;
