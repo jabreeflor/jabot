@@ -59,6 +59,7 @@ check() {
   need_text src-tauri/src/host/acp/spawn.rs 'kill_group_reaps_grandchild'
   need_text src-tauri/src/host/acp/spawn.rs 'kill_job_reaps_grandchild'
   need_text src-tauri/src/host/acp/spawn.rs 'job_assigned'
+  need_text src-tauri/src/host/acp/spawn.rs 'job_contains'
   need_text src-tauri/src/host/acp/spawn.rs 'taskkill_fallback_reaps_grandchild'
   # `cargo test --features dev-bins` builds jabot-hostd. The accept loop is
   # unix-only; the call site must stay behind the same cfg so Windows compiles.
@@ -135,10 +136,12 @@ run_tests() {
   local unix_only=(
     kill_group_reaps_grandchild
     snapshotted_env
+    a_probe_that_times_out_takes_its_grandchildren
   )
   local windows_only=(
     kill_job_reaps_grandchild
     taskkill_fallback_reaps_grandchild
+    a_probe_that_times_out_takes_its_grandchildren
   )
 
   if on_windows; then

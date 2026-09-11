@@ -7,8 +7,10 @@
 //! ever reap it (`docs/research/app-shell/process-architecture.md`).
 //!
 //! **Unix:** `process_group(0)` so the child's pid becomes its pgid, then
-//! `SIGTERM` / `SIGKILL` the negative pgid. Unchanged from the original
-//! adapter layer (#10).
+//! `SIGTERM` the negative pgid. If the direct child exits, return — the rest
+//! of the group already got SIGTERM and may finish. `SIGKILL` only if the
+//! parent is still alive after grace. Same as the original adapter layer
+//! (#10); #285 must not harden this into an immediate group SIGKILL.
 //!
 //! **Windows (#285):** a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`,
 //! plus `CREATE_NEW_PROCESS_GROUP` so a `CTRL_BREAK` can be the grace signal.
@@ -70,6 +72,12 @@ impl GroupedChild {
         self.job.assign_error()
     }
 
+    /// True when `pid` is listed on our Job Object right now.
+    #[cfg(all(test, windows))]
+    pub(crate) fn job_contains(&self, pid: u32) -> bool {
+        self.job.contains_pid(pid)
+    }
+
     /// Consume the child after it has exited, keeping the Windows job
     /// handle alive until `wait` returns so `KILL_ON_JOB_CLOSE` cannot
     /// race the reaper.
@@ -109,7 +117,10 @@ fn own_group(cmd: &mut Command) {
         // node grandchild can be born outside the job. `Command` does not
         // expose the primary thread or `PROC_THREAD_ATTRIBUTE_JOB_LIST`.
         const CREATE_SUSPENDED: u32 = 0x00000004;
-        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED);
+        // Leave a parent job (GHA "orphan cleanup") when that job allows
+        // breakaway, so ours is not a nested assign that CI forbids.
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x01000000;
+        cmd.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED | CREATE_BREAKAWAY_FROM_JOB);
     }
 
     #[cfg(not(any(unix, windows)))]
@@ -270,8 +281,9 @@ mod windows_job {
         PROCESSENTRY32W, TH32CS_SNAPPROCESS, TH32CS_SNAPTHREAD, THREADENTRY32,
     };
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicProcessIdList,
+        JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+        TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Threading::{
@@ -372,6 +384,41 @@ mod windows_job {
             }
             self.assigned = true;
             Ok(())
+        }
+
+        #[cfg(test)]
+        pub(super) fn contains_pid(&self, pid: u32) -> bool {
+            if !self.assigned || self.is_empty() {
+                return false;
+            }
+            #[repr(C)]
+            struct PidList {
+                assigned: u32,
+                in_list: u32,
+                pids: [usize; 64],
+            }
+            // SAFETY: query-only; buffer is ours and sized for a typical
+            // adapter tree (shim + node + a few helpers).
+            unsafe {
+                let mut list = PidList {
+                    assigned: 0,
+                    in_list: 0,
+                    pids: [0; 64],
+                };
+                let mut needed = 0u32;
+                let ok = QueryInformationJobObject(
+                    self.handle,
+                    JobObjectBasicProcessIdList,
+                    (&mut list as *mut PidList).cast(),
+                    std::mem::size_of::<PidList>() as u32,
+                    &mut needed,
+                );
+                if ok == FALSE {
+                    return false;
+                }
+                let n = list.in_list.min(64) as usize;
+                list.pids[..n].iter().any(|p| *p as u32 == pid)
+            }
         }
 
         /// CTRL_BREAK (grace), then `TerminateJobObject` or `taskkill /T /F`.

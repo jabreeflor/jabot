@@ -292,6 +292,11 @@ mod tests {
                 .job_assign_error()
                 .unwrap_or("no error recorded")
         );
+        assert!(
+            spawned.child.job_contains(grandchild),
+            "grandchild {grandchild} was not in the Job Object — \
+             spawn-then-assign lost it, or it broke away"
+        );
 
         terminate_process_group(&mut spawned.child);
         thread::sleep(Duration::from_millis(200));

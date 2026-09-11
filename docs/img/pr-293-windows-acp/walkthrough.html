@@ -92,8 +92,9 @@
       <div class="box">
         <span class="tag unix">Unix (unchanged)</span>
         <strong>process_group(0)</strong>
-        Child pid becomes the pgid. Teardown is <code>SIGTERM</code> then
-        <code>SIGKILL</code> on the negative pgid.
+        Child pid becomes the pgid. <code>SIGTERM</code> the group; if the
+        direct child exits, return. <code>SIGKILL</code> only if it is still
+        alive after grace.
       </div>
       <div class="arrow">→</div>
       <div class="box">

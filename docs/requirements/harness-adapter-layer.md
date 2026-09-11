@@ -29,10 +29,12 @@ host-owned "thin LLM + MCP" runtime. This module is that one runtime.
 2. The host owns the subprocess tree so Quit / Kill can terminate the
    harness and any children it spawned in one shot
    (`src-tauri/src/host/procgroup.rs`). Unix: `process_group(0)` and
-   `SIGTERM` / `SIGKILL` the negative pgid. Windows (#285): a Job Object
-   with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, `CREATE_NEW_PROCESS_GROUP`
-   for a `CTRL_BREAK` grace, and `taskkill /T /F` if the process cannot
-   be assigned to a job. Command lookup walks `PATHEXT` so `.cmd` npm
+   `SIGTERM` the negative pgid; `SIGKILL` only if the direct child is
+   still alive after grace. Windows (#285): create `CREATE_SUSPENDED`,
+   assign to a Job Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, then
+   resume. `CREATE_NEW_PROCESS_GROUP` is the `CTRL_BREAK` grace only.
+   `taskkill /T /F` runs whenever assign failed, even if the wrapper pid
+   already exited. Command lookup walks `PATHEXT` so `.cmd` npm
    shims resolve the same way `CreateProcess` would.
 3. Subprocess stderr is captured to host logs (`src-tauri/src/host/log.rs`)
    for diagnosability, not silently dropped or mixed into stdout.
