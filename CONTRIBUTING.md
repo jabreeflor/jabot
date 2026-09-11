@@ -137,6 +137,7 @@ one run tells you everything that is wrong.
 | `toolchain` | your rustc/clippy/node match what CI would use, and clear the declared MSRV floor | `rustup update stable` for drift; if it says clippy and rustc disagree, that is a half-finished update and clippy is lying to you (D-014). A *warning* here about local stable being old is worth acting on before you trust a green clippy. |
 | `lockfiles` | `package-lock.json` satisfies `package.json`, `Cargo.lock` satisfies `src-tauri/Cargo.toml`, and `src-tauri/vendor/adapters`' lock satisfies its own manifest | `npm install` or `cargo update -p <crate>` and commit the lock. CI runs `npm ci`, which refuses to install through this. For the vendored adapters, `npm install --prefix src-tauri/vendor/adapters` and commit both files. |
 | `bundle-config` | the packaging config the macOS job reads is still sane without macOS: `bundle.targets` still has `app`, `createUpdaterArtifacts` is still false, every icon exists, every `bundle.resources` path exists, `entitlements.plist` parses, every `src/bin/*.rs` is still gated behind `dev-bins` | read the message — each case names the release that would have shipped broken. D-005 is the cautionary one: a build that succeeds and ships an unupdatable app. |
+| `windows packaging` | NSIS is still the Windows installer, `tauri.windows.conf.json` does not list `msi`/`app`/`dmg`, publisher + `icon.ico` are present, `bundle:adapters` still goes through bash, npm's `script-shell` is pointed at Git Bash, and `release.yml`'s windows job still cannot write `latest.json` (`uploadUpdaterJson: false`, no `createUpdaterArtifacts`, no Apple / updater-signing secrets) and still carries `releaseBody` (`scripts/windows-packaging.sh`) | you changed Windows packaging; run `./scripts/windows-packaging.sh check` and `npm run test:windows-packaging` |
 | `commit guards` | `checkpoint.sh`, `pre-push` and `install-hooks.sh` still refuse what they claim to refuse (`scripts/tests/guards.test.sh`, ~7s, throwaway repos) | you changed the guards; run `npm run test:guards` directly, the failing case names the refusal that stopped working |
 | `macos lint tests` | the path planner that turns CI's macOS jobs on still matches what `docs/macos-lint.md` claims (`scripts/tests/macos-lint.test.sh`) | you changed the planner or the notify/native check scripts; run `./scripts/tests/macos-lint.test.sh` |
 | `windows ci` | the path planner that turns CI's Windows verify job on still matches what `docs/windows-ci.md` claims, and the workflow still treats failures as real (`scripts/tests/windows-ci.test.sh`) | you changed the planner, `windows-verify.sh`, or `.github/workflows/windows.yml`; run `./scripts/tests/windows-ci.test.sh` |
@@ -155,7 +156,7 @@ one run tells you everything that is wrong.
 | `browser visual + a11y + smoke` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd` (smoke journey, axe with contrast, keyboard, visual baselines). CI's `browser` job is the required PR check | `npx playwright install chromium webkit`, then `npm run test:browser`. Needs the host binaries (`npm run host:build`). |
 | `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 | `macos acceptance` | #235: the packaged-app matrix still names Tauri IPC, Dock, Keychain, adapters, and updater archives; isolation still refuses production app data; Playwright WebKit is not this gate | you changed the script, the docs, or the workflows; `./scripts/macos-acceptance.sh check` and `./scripts/tests/macos-acceptance.test.sh` name the cell that moved. Launching `JaBot.app` is `run` on a Mac — D-019 is why that is not this stage |
-| `windows acceptance` | #287: Windows install docs + five-cell smoke checklist still name launch, bot chat, secret round-trip, adapter spawn, quit-no-orphans, and the glass / Dock / SmartScreen / notify gaps; no macOS-parity claim | you changed `docs/windows.md`, the checklist, or the script; `./scripts/windows-acceptance.sh check` and `./scripts/tests/windows-acceptance.test.sh`. Launching `JaBot.exe` is not this stage — there is no packaged installer yet (#281) |
+| `windows acceptance` | #287: Windows install docs + five-cell smoke checklist still name launch, bot chat, secret round-trip, adapter spawn, quit-no-orphans, and the glass / Dock / SmartScreen / notify gaps; no macOS-parity claim | you changed `docs/windows.md`, the checklist, or the script; `./scripts/windows-acceptance.sh check` and `./scripts/tests/windows-acceptance.test.sh`. Launching `JaBot.exe` is not this Linux stage (#281 ships the installer; `run` still refuses here) |
 
 A **warning** (`!!`) does not fail the run. It is something the script cannot
 prove offline — toolchain drift, an unhooked clone — and every one of them has
@@ -410,21 +411,25 @@ filing or "fixing" a gap.
   label a PR `macos-acceptance` to opt into the expensive Mac job. Do not call
   Playwright WebKit a Tauri acceptance run. Windows install + the five-cell
   smoke list is `#287` / [docs/windows.md](docs/windows.md); it does not claim
-  macOS parity and `windows-acceptance.sh run` is not wired until #281 ships
-  an installer.
+  macOS parity and `windows-acceptance.sh run` is still not wired on Linux
+  (no WebView2 / `JaBot.exe` here; #281 is the installer). Windows
+  Credential Manager uses the same `Secrets` put/get/delete APIs as
+  macOS Keychain (#283);
+  `scripts/windows-secrets-check.sh` is the named host-level check
+  (portable tests on Linux; live round-trip on a Windows runner — #286).
 - Windows host compile is a sibling workflow
   ([`.github/workflows/windows.yml`](.github/workflows/windows.yml), #286):
   a cheap Linux planner on every PR, and `windows-latest` only when
   `src-tauri/`, the toolchain, or the Windows scripts change. It runs
   `scripts/windows-verify.sh` (check + clippy `-D warnings` + portable
-  `cargo test`). Failures are real — no `continue-on-error`. An unsigned
-  NSIS build is opt-in (`windows-package` label or
-  `workflow_dispatch` with `package=true`), not every PR. Tag NSIS is
-  `release.yml` (#281). Linux/macOS jobs
-  stay the sources of truth they are today. What that job proves, and what
+  `cargo test`, including the Credential Manager check). Failures are
+  real — no `continue-on-error`. An unsigned NSIS build is opt-in
+  (`windows-package` label or `workflow_dispatch` with `package=true`),
+  not every PR. Tag NSIS is `release.yml` (#281). Linux/macOS jobs stay
+  the sources of truth they are today. What that job proves, and what
   still needs a human smoke on a real PC:
-  [docs/windows-ci.md](docs/windows-ci.md). Playwright on Windows is out of
-  scope for the first cut.
+  [docs/windows-ci.md](docs/windows-ci.md). Playwright on Windows is out
+  of scope for the first cut.
 - A test that cannot fail when the thing it covers breaks is worse than no
   test, because it reads as coverage. Break it once and watch it fail before
   you trust it.

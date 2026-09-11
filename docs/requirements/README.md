@@ -16,10 +16,10 @@ the issue number is noted so it can be cross-referenced against
 |---|---|---|
 | [desktop-host-lifecycle.md](desktop-host-lifecycle.md) | Desktop host process, window/Dock/Quit lifecycle | #4, #7, #21, #282 |
 | [host-api-protocol.md](host-api-protocol.md) | Typed JSON-RPC host API | #8 |
-| [data-layer-persistence.md](data-layer-persistence.md) | SQLite data layer + OS keychain secrets | #9 |
+| [data-layer-persistence.md](data-layer-persistence.md) | SQLite data layer + OS credential-store secrets | #9, #283 |
 | [harness-adapter-layer.md](harness-adapter-layer.md) | ACP harness adapters + catalog/Doctor | #10, #13 |
 | [ui-shell.md](ui-shell.md) | React/TS UI shell ported from the HTML prototype | #11 |
-| [packaging-distribution.md](packaging-distribution.md) | macOS signing, notarization, updater | #12 |
+| [packaging-distribution.md](packaging-distribution.md) | macOS signing, notarization, updater; Windows NSIS | #12, #281 |
 | [chat-transcript.md](chat-transcript.md) | Chat transcript renderer + persisted overlay | #14 |
 | [message-reactions.md](message-reactions.md) | Emoji reactions on agent replies | #265 |
 | [thread-state-and-runs.md](thread-state-and-runs.md) | Thread overlay states + run ledger | #5, #15 |

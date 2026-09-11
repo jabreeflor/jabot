@@ -126,11 +126,15 @@ release-manual.
 
 ### Release
 
-[`.github/workflows/release.yml`](../.github/workflows/release.yml) runs
-`updater-artifacts` against the universal bundle output after
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) `macos`
+job runs `updater-artifacts` against the universal bundle output after
 `createUpdaterArtifacts` is merged in. That is archive + signature presence.
 Installing a signed update into a real `JaBot.app` is the checklist item, on
 a controlled fixture, never against a contributor's production install.
+
+The sibling `windows` job uploads an unsigned NSIS `*-setup.exe` and runs
+`scripts/windows-packaging.sh artifacts`. It does not write `latest.json`.
+See [docs/packaging.md](packaging.md#windows-nsis-installer) (#281).
 
 ---
 
@@ -156,7 +160,7 @@ a controlled fixture, never against a contributor's production install.
 | Variable | Production | Acceptance |
 |---|---|---|
 | App data | `~/Library/Application Support/com.jabot.app` | `JABOT_APP_DATA_DIR` under `/tmp/jabot-acceptance-*` |
-| Keychain service | `com.jabot.app` | `JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.<id>` plus a throwaway keychain |
+| Credential-store service | `com.jabot.app` | `JABOT_KEYCHAIN_SERVICE=com.jabot.app.acceptance.<id>` plus a throwaway keychain (macOS) or isolated Credential Manager target (Windows, #283) |
 | Agent | user's Claude / Codex / … | `fake-acp-agent` (`dev-bins`) |
 | Credentials | never | never |
 

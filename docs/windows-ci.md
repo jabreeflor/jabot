@@ -4,10 +4,12 @@ How the Windows desktop port (#280) is kept from rotting in CI, what a green
 job actually proves, and what still needs a human on a real PC.
 
 This is [#286](https://github.com/jabreeflor/jabot/issues/286). Decorated
-window chrome (#282 / #294) and Action Center toasts (#284 / #288) are on
-`main`; this job compiles those `#[cfg(windows)]` paths but does not launch
-them. Packaging, Credential Manager, job-object kill, and install docs are
-still sibling issues (#281, #283, #285, #287).
+window chrome (#282 / #294), Action Center toasts (#284 / #288), NSIS
+packaging (#281 / #291), Credential Manager (#283 / #292), and install
+docs (#287 / #289) are on `main`; this job compiles those
+`#[cfg(windows)]` paths and runs the portable host tests, including the
+named secrets check. It does not launch the app. Job-object kill is
+still a sibling (#285).
 
 ## Why a second gate exists
 
@@ -40,6 +42,7 @@ Ubuntu `verify` does not mean the Windows crate compiled.
 2. `cargo check --locked` without `dev-bins` — the configuration `tauri build` compiles.
 3. `cargo clippy --locked --features dev-bins --all-targets -- -D warnings`.
 4. `cargo test --locked --features dev-bins` — host unit tests plus the crate integration suites. Unix-only cases (`cfg(unix)` process-group, Unix sockets) stay skipped, which is honest.
+5. `scripts/windows-secrets-check.sh` — named #283 check. Portable `secrets::` tests on every host; live Credential Manager round-trip on this runner.
 
 A warning is a red check. There is no `continue-on-error`. If the job is red,
 the Windows port is broken; do not relabel that as "Windows is flaky."
@@ -59,7 +62,7 @@ still need a person at a real Windows PC — tracked on #280 / #287:
 | --- | --- |
 | Installer UX, Start Menu, SmartScreen | Unsigned NSIS; no Authenticode cert in this cut (#281) |
 | Window chrome / close / tray | Headless runner. Decorated opaque chrome + close-exits is on `main` (#282 / #294); CI cannot launch a window. |
-| Secrets in Credential Manager | Host still reports `Unavailable` off macOS (#283) |
+| Secrets in Credential Manager | Compiled and unit-tested (#283 / #292). `windows-secrets-check.sh` runs the live `os_secret_round_trip` on this runner; Control Panel visibility is still a desktop smoke. |
 | Toast notifications | `notify/win.rs` is compiled (#284 / #288); Action Center delivery is a desktop smoke, not this job. |
 | ACP adapter kill tree | `CREATE_NEW_PROCESS_GROUP` is compiled; Job Objects are #285 |
 | Playwright visual / axe / WebKit | Out of scope for the first cut; Ubuntu `browser` stays the suite |
@@ -79,7 +82,7 @@ Turns **verify** on:
 
 - `src-tauri/` (host crate, Tauri config, lock, icons, adapters manifest)
 - `rust-toolchain.toml`
-- `scripts/windows-verify.sh`, `scripts/windows-needed.sh`, `scripts/tests/windows-ci.test.sh`
+- `scripts/windows-verify.sh`, `scripts/windows-needed.sh`, `scripts/windows-secrets-check.sh`, `scripts/tests/windows-ci.test.sh`
 - `.github/workflows/windows.yml`
 
 Does **not** turn verify on (Linux `verify` / `browser` already cover them):
@@ -146,4 +149,4 @@ These are not missing coverage; they are the cost and honesty limits from
   This workflow passes `--bundles nsis` so the macOS `app`/`dmg` list stays
   the release default.
 - **Code signing / SmartScreen / a published Windows release asset.** #281.
-- **Runtime QA of chrome, secrets, toasts, and kill trees.** #282–#285, #287.
+- **Runtime QA of chrome, toasts, and kill trees.** Chrome and toasts are compiled (#294 / #288); Job Objects are #285. Credential Manager is compiled and unit-tested here (#292); Control Panel / a launched app is still a human smoke.

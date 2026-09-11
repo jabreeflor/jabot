@@ -1,12 +1,23 @@
 name: Release
 
-# Tag -> build -> sign -> notarize -> publish, in one job on one runner.
+# Tag -> build -> sign (macOS) -> publish, as two sibling jobs.
 #
-# It is one job and not a matrix because the artifact is a universal binary:
-# tauri-action expands a single universal `.app.tar.gz` into both the
-# `darwin-aarch64` and `darwin-x86_64` entries of `latest.json`, which is what
-# the updater plugin actually looks up (it has no `darwin-universal` fallback).
-# Two per-arch jobs racing to merge the same `latest.json` asset buys nothing.
+# macos is one job and not a matrix because the artifact is a universal
+# binary: tauri-action expands a single universal `.app.tar.gz` into both
+# the `darwin-aarch64` and `darwin-x86_64` entries of `latest.json`, which
+# is what the updater plugin actually looks up (it has no `darwin-universal`
+# fallback). Two per-arch jobs racing to merge the same `latest.json` asset
+# buys nothing.
+#
+# windows is a sibling on windows-latest, not a matrix cell of macos.
+# It must not write `latest.json`: uploadUpdaterJson is false, the Windows
+# host does not register the updater plugin (src-tauri/Cargo.toml / lib.rs),
+# createUpdaterArtifacts stays off, and TAURI_SIGNING_* / APPLE_* stay off
+# this runner. Both jobs carry the same releaseBody because pinned
+# tauri-action will not update name/body on an existing draft — if windows
+# creates the draft first, empty notes would ship. NSIS is the one primary
+# Windows installer (#281); Authenticode / SmartScreen are a documented
+# follow-up until a cert exists. Authenticode is not TAURI_SIGNING_*.
 #
 # Everything secret comes from repository secrets. The runbook for creating
 # them, cutting a release, and verifying notarization is docs/packaging.md.
@@ -22,7 +33,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  macos:
     runs-on: macos-latest
     permissions:
       # tauri-action creates the release and uploads the bundles.
@@ -104,7 +115,9 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: JaBot ${{ github.ref_name }}
           releaseBody: |
-            macOS 13+, Apple Silicon and Intel.
+            macOS 13+, Apple Silicon and Intel. Windows 10/11 x64 (NSIS).
+
+            **macOS**
 
             ```sh
             curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash
@@ -114,8 +127,19 @@ jobs:
             does the same thing, and refuses to install a build that is not
             signed by us and notarized by Apple.
 
-            Installed copies update themselves from `latest.json` in this
+            Installed macOS copies update themselves from `latest.json` in this
             release once it is published.
+
+            **Windows**
+
+            Download `JaBot_*_x64-setup.exe` from this release and run it.
+            WebView2 is required (Windows 11 has it; the installer downloads
+            it on Windows 10 if needed).
+
+            The Windows installer is **not Authenticode-signed**. SmartScreen
+            will show "Windows protected your PC" — More info → Run anyway.
+            That is expected until a code-signing certificate exists; see
+            docs/packaging.md. Windows auto-update is not shipped yet.
           # Draft, because publishing is what points
           # `releases/latest/download/latest.json` at this build — every
           # existing install starts updating the moment a human hits Publish.
@@ -177,3 +201,107 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" scripts/install.sh --clobber
+
+  # NSIS setup.exe for Windows 10/11 x64. Parallel with macos: tauri-action
+  # creates or attaches to the same draft by tag. This job holds only
+  # GITHUB_TOKEN — no Apple secrets, no updater signing key, no
+  # createUpdaterArtifacts, and uploadUpdaterJson is false — so a
+  # compromise here cannot steal the feed key or rewrite latest.json.
+  # releaseBody is the same as macos: pinned tauri-action does not update
+  # name/body on an existing draft, so whoever creates it must write the
+  # full notes (macOS curl|bash + unsigned / SmartScreen).
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        # GitHub-hosted Windows images have Git Bash. The adapter staging
+        # script and this file's checks are bash; npm run bundle:adapters
+        # invokes it through bash so beforeBuildCommand works here.
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          conf_version="$(node -p 'require("./src-tauri/tauri.conf.json").version')"
+          if [[ "$tag_version" != "$conf_version" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match tauri.conf.json version $conf_version"
+            exit 1
+          fi
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable branch, 2026-08-20
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 26
+          cache: npm
+
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2 tag, 2026-08-20
+        with:
+          workspaces: src-tauri
+          prefix-key: release-windows
+
+      # npm's default script-shell on windows-latest is cmd.exe; several
+      # package.json scripts are bash (`prepare`, `bundle:adapters`,
+      # `build:app`). beforeBuildCommand is spawned by the Tauri CLI, not
+      # this job's defaults.run.shell, so point npm at Git Bash *before*
+      # npm ci and tauri-action (same recipe as #290).
+      - name: Point npm scripts at Git Bash
+        run: npm config set script-shell "$(command -v bash)"
+
+      - run: npm ci
+
+      # Unsigned NSIS. tauri.windows.conf.json already sets targets to
+      # ["nsis"]; --bundles nsis makes that explicit if the platform file
+      # is ignored. Do not pass --config createUpdaterArtifacts, do not
+      # export TAURI_SIGNING_* or APPLE_*, and keep uploadUpdaterJson
+      # false — the action default is true and would rewrite latest.json
+      # if a .sig ever lands on this draft.
+      - uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa # v1 tag, 2026-08-20
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: JaBot ${{ github.ref_name }}
+          releaseBody: |
+            macOS 13+, Apple Silicon and Intel. Windows 10/11 x64 (NSIS).
+
+            **macOS**
+
+            ```sh
+            curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash
+            ```
+
+            Or download the `.dmg` and drag JaBot to Applications. The script
+            does the same thing, and refuses to install a build that is not
+            signed by us and notarized by Apple.
+
+            Installed macOS copies update themselves from `latest.json` in this
+            release once it is published.
+
+            **Windows**
+
+            Download `JaBot_*_x64-setup.exe` from this release and run it.
+            WebView2 is required (Windows 11 has it; the installer downloads
+            it on Windows 10 if needed).
+
+            The Windows installer is **not Authenticode-signed**. SmartScreen
+            will show "Windows protected your PC" — More info → Run anyway.
+            That is expected until a code-signing certificate exists; see
+            docs/packaging.md. Windows auto-update is not shipped yet.
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: false
+          args: >-
+            --target x86_64-pc-windows-msvc
+            --bundles nsis
+
+      - name: NSIS installer present (not Authenticode)
+        run: ./scripts/windows-packaging.sh artifacts

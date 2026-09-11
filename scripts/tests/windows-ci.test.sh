@@ -120,6 +120,12 @@ planner_ci_test_runs() {
   assert_eq 'verify=1' "$out" "windows-ci.test.sh" && pass
 }
 
+planner_secrets_check_runs() {
+  local out
+  out=$(plan scripts/windows-secrets-check.sh) || { fail "planner exited $?"; return; }
+  assert_eq 'verify=1' "$out" "windows-secrets-check.sh" && pass
+}
+
 planner_linux_ci_does_not_start_windows() {
   local out
   out=$(plan .github/workflows/ci.yml .github/workflows/macos-native.yml) || {
@@ -158,6 +164,7 @@ verify_script_is_the_windows_gate() {
   assert_contains "$body" '-D warnings' "warnings are errors" || return
   assert_contains "$body" 'dev-bins' "tests need the gated bins" || return
   assert_contains "$body" 'cargo test' "portable rust tests" || return
+  assert_contains "$body" 'windows-secrets-check.sh' "named Credential Manager check" || return
   assert_contains "$body" 'windows-verify-stub' "adapter stub without npm" || return
   assert_not_contains "$body" 'playwright' "Playwright is out of scope" || return
   assert_not_contains "$body" 'continue-on-error' "script must not swallow failures" || return
@@ -250,6 +257,7 @@ run_case planner_workflow_runs planner_workflow_runs
 run_case planner_verify_script_runs planner_verify_script_runs
 run_case planner_needed_script_runs planner_needed_script_runs
 run_case planner_ci_test_runs planner_ci_test_runs
+run_case planner_secrets_check_runs planner_secrets_check_runs
 run_case planner_linux_ci_does_not_start_windows planner_linux_ci_does_not_start_windows
 run_case planner_force_verify planner_force_verify
 run_case planner_unknown_flag_fails planner_unknown_flag_fails

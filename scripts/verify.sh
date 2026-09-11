@@ -29,6 +29,7 @@
 #   2c. install script — the release installer's pins, delivery, and refusals
 #   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
 #   2d2. windows-acceptance — install docs + smoke checklist, no Windows (#287)
+#   2g. windows packaging — NSIS config + release sibling job, no Windows (#281)
 #   2e. macos lint    — planner/path tests for the before-merge macOS jobs
 #   2f. windows ci    — planner/workflow contract for the Windows verify job (#286)
 #   2g. coverage policy — include/exclude/thresholds still fail when they should
@@ -771,11 +772,11 @@ macos_acceptance() {
 #
 # Smaller than macos-acceptance: five cells (launch, bot chat, secret
 # round-trip, adapter spawn, quit with no orphans) plus the gap list vs
-# macOS. The default path cannot launch JaBot.exe (no Windows, no
-# installer yet — #281), so what runs here is the part that can rot on
-# Linux: the docs still name every cell and every gap, README / packaging
-# still point at them, isolation still refuses production AppData, and
-# `run` still refuses rather than pretending. scripts/tests/windows-acceptance.test.sh
+# macOS. The default path cannot launch JaBot.exe (no Windows on this
+# gate), so what runs here is the part that can rot on Linux: the docs
+# still name every cell and every gap, README / packaging still point at
+# them, isolation still refuses production AppData, and `run` still
+# refuses rather than pretending. scripts/tests/windows-acceptance.test.sh
 # is the behaviour.
 # ---------------------------------------------------------------------------
 windows_acceptance() {
@@ -787,6 +788,30 @@ windows_acceptance() {
   fi
   "$sh" check || ok=1
   ./scripts/tests/windows-acceptance.test.sh || ok=1
+  return $ok
+}
+
+# ---------------------------------------------------------------------------
+# 2g. windows NSIS packaging (#281)
+#
+# The Windows installer is produced on windows-latest at tag time, which this
+# Linux gate cannot run. What can rot silently is the config that job reads
+# and the sibling-job rules that keep it from writing latest.json: platform
+# targets still NSIS-only, publisher still set, icon.ico still present,
+# bundle:adapters still goes through bash, npm script-shell is still Git
+# Bash, and release.yml still has a windows job with uploadUpdaterJson:
+# false, a releaseBody, and no APPLE_* / TAURI_SIGNING_*.
+# scripts/tests/windows-packaging.test.sh is the behaviour (~1s).
+# ---------------------------------------------------------------------------
+windows_packaging() {
+  local ok=0
+  local sh='scripts/windows-packaging.sh'
+  if [[ ! -x "$sh" ]]; then
+    printf '  %s is missing or not executable\n' "$sh"
+    return 1
+  fi
+  "$sh" check || ok=1
+  ./scripts/tests/windows-packaging.test.sh || ok=1
   return $ok
 }
 
@@ -885,6 +910,7 @@ run "commit guards"  guards
 run "install script" install_script
 run "macos acceptance" macos_acceptance
 run "windows acceptance" windows_acceptance
+run "windows packaging" windows_packaging
 run "macos lint tests" macos_lint_tests
 run "windows ci"       windows_ci_tests
 run "coverage policy" coverage_policy

@@ -5,6 +5,15 @@ Locked: **secrets never plaintext in the store.** SQLite holds
 credential store. Adapter `runtime_json.env` and MCP `env` snapshots must
 be redacted before INSERT.
 
+**Implemented backends** (`src-tauri/src/host/store/secrets.rs`, #9 / #283):
+macOS Keychain (`keyring` `apple-native`, service `com.jabot.app`) and
+Windows Credential Manager (`keyring` `windows-native`, generic credential
+target `{account}.{service}`). Linux still fails closed. Same host
+`put` / `get` / `delete` APIs on every target; a denied store is
+`StoreError::SecretsDenied`. Wincred's 2560-byte UTF-16 blob cap
+(~1280 ASCII chars) is `StoreError::SecretsTooLong`. See
+[data-layer-persistence.md](../../requirements/data-layer-persistence.md#where-secret-bytes-live).
+
 ## Decision
 
 ```

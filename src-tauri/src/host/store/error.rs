@@ -18,6 +18,10 @@ pub enum StoreError {
     SqliteTooOld { found: String },
     #[error("secrets backend unavailable")]
     SecretsUnavailable,
+    #[error("credential store denied access: {0}")]
+    SecretsDenied(String),
+    #[error("credential store rejected the secret as too long: {0}")]
+    SecretsTooLong(String),
     #[error("secret not found: {0}")]
     SecretNotFound(String),
     #[error("{0}")]

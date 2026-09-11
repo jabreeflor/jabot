@@ -32,7 +32,8 @@ protected.
    obtained tokens are stored via the secrets vault
    (`src-tauri/src/host/store/secrets.rs`), never in plain SQLite rows —
    `crypto.rs` provides the encryption used before anything touches
-   disk outside the keychain.
+   disk outside the OS credential store (macOS Keychain or Windows
+   Credential Manager).
 4. `http.rs` centralizes outbound HTTP for tool/OAuth calls so timeouts,
    retries, and error mapping are consistent across tools instead of
    reimplemented per integration.
@@ -46,6 +47,7 @@ protected.
 7. `testing.rs` provides fakes/test doubles for tool servers so tool
    flow (grant → allowlist → session receives it) is verifiable without
    live third-party accounts.
-8. Revoking a tool's authorization removes its token from the keychain
-   and removes it from any bot's allowlist that referenced it, rather
-   than leaving a dangling grant a bot could still silently use.
+8. Revoking a tool's authorization removes its token from the OS
+   credential store and removes it from any bot's allowlist that
+   referenced it, rather than leaving a dangling grant a bot could still
+   silently use.

@@ -57,6 +57,7 @@ VERIFY_PATHS=(
   rust-toolchain.toml
   scripts/windows-verify.sh
   scripts/windows-needed.sh
+  scripts/windows-secrets-check.sh
   scripts/tests/windows-ci.test.sh
   .github/workflows/windows.yml
 )

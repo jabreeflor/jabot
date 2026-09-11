@@ -72,4 +72,13 @@ cargo test "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" ||
   fail "portable rust tests failed on this target"
 printf '\033[32mPASS rust tests\033[0m\n'
 
+# Named #283 check: portable secrets:: tests everywhere; live Credential
+# Manager / Keychain round-trip on Windows and macOS. cargo test above
+# already includes the same filter; this is the entry #292 documented so
+# the backend cannot rot without a named red.
+printf '\n\033[1m> windows secrets check\033[0m\n'
+./scripts/windows-secrets-check.sh ||
+  fail "windows-secrets-check.sh failed"
+printf '\033[32mPASS windows secrets check\033[0m\n'
+
 printf '\n\033[32m=== windows verify passed ===\033[0m\n'
