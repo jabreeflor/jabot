@@ -40,6 +40,19 @@
             document.documentElement.dataset.translucency = "on";
           }
         } catch (e) {}
+        // Overlay is the CSS default (macOS / live.sh). Windows UA and
+        // ?chrome=decorated drop the traffic-light inset before first paint
+        // so a decorated title bar does not flash 28px of empty chrome (#282).
+        try {
+          var chrome = /Windows/i.test(navigator.userAgent)
+            ? "decorated"
+            : "overlay";
+          var chromeMatch = /(?:^|[?&])chrome=(overlay|decorated)(?:&|$)/.exec(
+            location.search,
+          );
+          if (chromeMatch) chrome = chromeMatch[1];
+          document.documentElement.dataset.windowChrome = chrome;
+        } catch (e) {}
       })();
     </script>
   </head>

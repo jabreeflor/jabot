@@ -206,12 +206,14 @@ pub fn run() {
             notify::install();
             // Under-window vibrancy (#250). False off macOS and when the
             // material cannot be applied; the renderer stays opaque then.
+            // Windows never clears the webview fill (#282).
             window::apply(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             host_rpc,
             window::window_translucency_applied,
+            window::window_chrome,
             host::repo::workspace::pick_workspace,
             host::repo::workspace::pick_sources,
             host::repo::workspace::github_repositories,
@@ -220,8 +222,10 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Hide-to-Dock (macOS only, MVP per #4): closing the last window hides
-                // instead of quitting. On other platforms, close quits the app.
+                // macOS (#4): the red traffic light hides to Dock; Cmd-Q /
+                // Dock Quit is the real exit. Windows / Linux (#282): the
+                // title-bar close button exits. There is no system tray and
+                // no hide-to-tray; minimize keeps the process, X does not.
                 #[cfg(target_os = "macos")]
                 {
                     api.prevent_close();
@@ -231,7 +235,6 @@ pub fn run() {
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
-                    // Non-macOS closes for real; nothing to intercept.
                     let _ = (window, api);
                 }
             }
