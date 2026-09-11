@@ -199,9 +199,10 @@ pub fn run() {
             app.manage(HostState(Arc::clone(&state)));
             spawn_acp_pump(app.handle().clone(), wake);
             // Ask for notification permission and start listening for clicks
-            // (#27). A refusal is not an error: the Inbox is the record and
-            // this is only the tap on the shoulder. Off macOS `install` is a
-            // genuine no-op, and no click can ever arrive to reach the sink.
+            // (#27, #284). A refusal is not an error: the Inbox is the record
+            // and this is only the tap on the shoulder. Off macOS and Windows
+            // `install` is a genuine no-op, and no click can ever arrive to
+            // reach the sink. On Windows a toast click uses the same sink.
             route_notification_clicks(app.handle().clone());
             notify::install();
             // Under-window vibrancy (#250). False off macOS and when the

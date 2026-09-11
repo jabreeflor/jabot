@@ -29,8 +29,9 @@ So cfg(macos) lint is a pair of scoped PR checks, not a new default
 | Module | What the macOS-only code does | Before-merge lint | Why that check |
 | --- | --- | --- | --- |
 | `src-tauri/src/notify/mac.rs` | `UNUserNotificationCenter` delivery | **mac notify cross-check** (Linux) | Existing scratch crate from #109. `objc2*` only; no Apple `cc`. |
-| `src-tauri/src/notify/mod.rs` | Decision layer + `cfg` split onto `mac` / `unsupported` | Linux `verify` clippy (portable + unsupported) **and** the notify cross-check (mac backend) | Portable tests already run on Linux; `mod mac` is what the scratch crate compiles. |
-| `src-tauri/src/notify/unsupported.rs` | No-op backend | Linux `verify` clippy | Compiled on every non-macOS target. |
+| `src-tauri/src/notify/mod.rs` | Decision layer + `cfg` split onto `mac` / `win` / `unsupported` | Linux `verify` clippy (portable + unsupported) **and** the notify cross-check (mac backend) | Portable tests already run on Linux; `mod mac` is what the scratch crate compiles. `mod win` is `cfg(windows)` and is not in this check. |
+| `src-tauri/src/notify/unsupported.rs` | No-op backend | Linux `verify` clippy | Compiled on every non-macOS, non-Windows target. |
+| `src-tauri/src/notify/win.rs` | WinRT toast delivery (#284) | **Not** the Linux notify scratch crate (needs the `windows` crate / WinRT) | Same honesty class as runtime Mac delivery: Linux proves the decision layer. Windows compile/verify is #286. |
 | `src-tauri/src/host/store/secrets.rs` (`os_put` / `os_get` / `os_delete`) | macOS Keychain via `keyring` | **macos clippy** (native) | `keyring` / Security.framework are not in the notify scratch crate. |
 | `src-tauri/src/lib.rs` (updater `.plugin()`, hide-to-Dock, Dock Reopen) | Tauri + `tauri-plugin-updater` | **macos clippy** (native) | Pulls `tauri`, which pulls `objc2-exception-helper`'s Apple `cc` build script. Linux cross-check of the whole crate fails; that is D-019, not a gap to close. |
 | `src-tauri/src/host/harness/path.rs` (`login_shell_path`) | Login-shell `PATH` probe | Linux `verify` clippy | Uses `cfg!(target_os = "macos")` (a boolean), not `#[cfg]`. Both branches type-check on Linux. **Not** a native-job trigger. |

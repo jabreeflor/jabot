@@ -380,8 +380,12 @@ filing or "fixing" a gap.
   default unit stage. `npm test` is still the fast no-coverage slice. Do not
   add snapshot or implementation-mirroring tests just to lift a number — see
   [docs/coverage.md](docs/coverage.md).
-- `src-tauri/src/notify/mac.rs` is `cfg(target_os = "macos")`, so the default
-  gate compiles straight past it and CI's macOS `bundle` job does not run on
+- `src-tauri/src/notify/mac.rs` is `cfg(target_os = "macos")` and
+  `src-tauri/src/notify/win.rs` is `cfg(target_os = "windows")`, so the
+  default gate compiles straight past both. The Linux scratch crate lints
+  the macOS backend only (`docs/macos-lint.md`); Windows toast delivery is
+  a desktop smoke step in `docs/requirements/native-notifications.md`. CI's
+  macOS `bundle` job does not run on
   pull requests. PRs that touch `notify/`, its check, or a shared Cargo /
   toolchain file get the existing `scripts/check-mac-notify.sh` automatically
   (`mac notify cross-check`). PRs that touch `lib.rs`, `secrets.rs`, or those

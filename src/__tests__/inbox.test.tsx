@@ -196,9 +196,9 @@ describe("InboxView, notification permission", () => {
     expect(note).toHaveTextContent(/complete either way/);
   });
 
-  /** Not a refusal. A Linux build or a dev build outside JaBot.app has no
-      Notification Center to permit, so pointing at System Settings would send
-      the user somewhere that cannot help them. */
+  /** Not a refusal. A Linux build (or any host that is neither macOS nor
+      Windows) has no banner API to permit, so pointing at System Settings
+      would send the user somewhere that cannot help them. */
   it("stays quiet where there is nothing to permit", () => {
     renderInbox({
       notify: status({ supported: false, authorization: "unsupported" }),

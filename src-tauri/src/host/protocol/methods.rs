@@ -1280,7 +1280,8 @@ pub struct InboxEventParams {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct NotifyStatusResult {
-    /// Whether this build can deliver at all: macOS, inside an app bundle.
+    /// Whether this build can deliver at all: macOS inside an app bundle,
+    /// or Windows Action Center toasts (#284).
     pub supported: bool,
     /// `granted`, `denied`, `notDetermined`, or `unsupported`. Asynchronous on
     /// macOS, so this is the last answer the OS gave rather than a fresh query.

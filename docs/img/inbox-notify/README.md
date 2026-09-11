@@ -17,9 +17,10 @@ whose macOS permission was refused could not tell "notifications are off" from
 Only `denied` earns a line, and only where there is a Notification Center to
 refuse:
 
-- `unsupported` is a Linux build or a dev build outside `JaBot.app`. There was
-  never anything to permit, so pointing at System Settings would send the user
-  somewhere that cannot help.
+- `unsupported` is a Linux build or any host that is neither macOS nor
+  Windows. There was never anything to permit, so pointing at System Settings
+  would send the user somewhere that cannot help. Windows toasts (#284) are
+  a real backend.
 - `notDetermined` means nobody has been asked yet — the first banner asks.
   Saying "notifications are off" now would be wrong the moment it is read.
 - `granted` has nothing to report.

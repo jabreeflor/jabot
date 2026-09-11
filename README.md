@@ -63,7 +63,9 @@ updater-archive checks are [docs/macos-acceptance.md](docs/macos-acceptance.md)
 (#235) — Playwright WebKit is not that gate. macOS-only Rust (`notify/mac.rs`,
 Keychain, the updater / hide-to-Dock branches) is linted on the PR by scoped
 jobs, not by `verify.sh` and not by a per-PR bundle — see
-[`docs/macos-lint.md`](docs/macos-lint.md).
+[`docs/macos-lint.md`](docs/macos-lint.md). Windows toasts (`notify/win.rs`,
+#284) are `cfg(windows)` and are not that Linux scratch crate; smoke steps
+live in [native-notifications.md](docs/requirements/native-notifications.md).
 
 The renderer-against-real-host suite is Playwright, not the default gate:
 
