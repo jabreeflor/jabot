@@ -76,15 +76,16 @@ pub fn window_chrome() -> &'static str {
 /// transparent clear on a decorated window is how you get holes (#282).
 /// A missing window is also false: the renderer then keeps the opaque tokens.
 pub fn apply<R: Runtime>(app: &AppHandle<R>) -> bool {
+    if !cfg!(target_os = "macos") {
+        let _ = app;
+        APPLIED.store(false, Ordering::Relaxed);
+        return false;
+    }
+
     let Some(window) = app.get_webview_window("main") else {
         APPLIED.store(false, Ordering::Relaxed);
         return false;
     };
-
-    if !cfg!(target_os = "macos") {
-        APPLIED.store(false, Ordering::Relaxed);
-        return false;
-    }
 
     // So the nearly-opaque CSS can show the material (or the desktop)
     // rather than WKWebView's default solid fill. macOS-only: clearing
