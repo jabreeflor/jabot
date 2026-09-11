@@ -24,6 +24,16 @@ Prefer doing it by hand? Download the `.dmg` from
 to Applications. Either way, installed copies update themselves after that —
 the script is a one-time thing.
 
+### Windows (in progress)
+
+Windows 10/11 **x64** is the proposed second desktop target
+([#280](https://github.com/jabreeflor/jabot/issues/280)). There is **no**
+shipped Windows installer yet ([#281](https://github.com/jabreeflor/jabot/issues/281)),
+and this is **not** macOS parity — glass/vibrancy, Dock hide,
+signing/SmartScreen, and notifications are documented gaps. Install, `tauri
+dev` prerequisites, and the smoke checklist:
+[docs/windows.md](docs/windows.md) (#287).
+
 ## Desktop app (Tauri 2)
 
 The scaffold (#7) lives at the repo root:

@@ -18,6 +18,7 @@ reasoning is in
 | Update feed | `https://github.com/jabreeflor/jabot/releases/latest/download/latest.json` |
 | Installer (`curl \| bash`) | [`scripts/install.sh`](../scripts/install.sh), uploaded as a release asset |
 | Packaged-app acceptance (#235) | [`docs/macos-acceptance.md`](macos-acceptance.md), [`scripts/macos-acceptance.sh`](../scripts/macos-acceptance.sh) |
+| Windows install + gaps (#287) | [`docs/windows.md`](windows.md), smoke checklist [`windows-acceptance.md`](windows-acceptance.md). Tracking epic [#280](https://github.com/jabreeflor/jabot/issues/280). |
 
 ---
 
@@ -401,6 +402,23 @@ want it, the honest fix is to build and upload in two steps rather than to
 bolt a post-upload staple onto a file that is already published.
 
 ---
+
+## Windows
+
+The `.dmg` / `install.sh` path above is unchanged and remains the only
+published install. Windows packaging (NSIS/MSI targets, a Windows release
+job, Authenticode if a cert exists) is
+[#281](https://github.com/jabreeflor/jabot/issues/281) under tracking epic
+[#280](https://github.com/jabreeflor/jabot/issues/280).
+
+User-facing Windows install, the gap list vs macOS (glass, Dock hide,
+signing/SmartScreen, notify), and the five-cell smoke checklist live in
+[`docs/windows.md`](windows.md) so this runbook does not grow a second
+incomplete installer story. Sibling Windows PRs should update that page
+(and the pointer in this table) rather than contradict it.
+
+A green macOS release is not a Windows ship. `bundle.targets` is still
+`["app", "dmg"]` until #281 says otherwise.
 
 ## Entitlements
 
