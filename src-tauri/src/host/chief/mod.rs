@@ -804,7 +804,30 @@ mod tests {
     /// thread has to be able to say where the work came from.
     #[test]
     fn a_handoff_lands_on_the_receiving_bot_and_the_thread_records_who_sent_it() {
-        let (mut session, _dir) = host();
+        let (mut session, dir) = host();
+        let custom = dir.path().join("data/custom_harnesses");
+        std::fs::create_dir_all(&custom).unwrap();
+        std::fs::write(
+            custom.join("unavailable-test.json"),
+            json!({
+                "id": "unavailable-test",
+                "label": "Unavailable test harness",
+                "command": dir.path().join("missing-adapter"),
+                "args": [],
+            })
+            .to_string(),
+        )
+        .unwrap();
+        session.sync_harness_catalog();
+        // Seeded crew is Chief + Bot Recruiter (#200); pin the receiving bot
+        // to the explicit missing adapter so dispatch cannot pick up a real
+        // catalog agent. `host()` already pins everyone to ABSENT_HARNESS;
+        // this second fixture is the PR's machine-independent path.
+        ok(
+            &mut session,
+            CREW_UPDATE,
+            json!({ "botId": "bot-recruiter", "harnessId": "unavailable-test" }),
+        );
         chief_at_work(&mut session);
 
         let result = call(
@@ -835,15 +858,18 @@ mod tests {
         assert_eq!(handoff["fromBotName"], "Chief");
         assert_eq!(handoff["fromThreadId"], standing::thread_id_for("chief"));
 
-        // Runtime is the pinned missing command, not "whatever Claude the
-        // catalog finds on this machine". The handoff happened; `dispatched`
-        // says nobody heard it, and `detail` names that fixture.
+        // The explicit missing adapter pins the runtime so this is not
+        // "whatever Claude the catalog finds on this machine". The handoff
+        // happened; `dispatched` says nobody heard it, and `detail` names
+        // that fixture.
         assert_eq!(handoff["dispatched"], false);
         let detail = handoff["detail"]
             .as_str()
             .expect("a failed dispatch has to say why");
         assert!(
-            detail.contains(ABSENT_AGENT) || detail.contains("Harness unavailable"),
+            detail.contains(ABSENT_AGENT)
+                || detail.contains("Harness unavailable")
+                || detail.contains("missing-adapter"),
             "dispatch must fail on the pinned missing runtime, not a surprise: {handoff}"
         );
     }
