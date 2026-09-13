@@ -21,7 +21,10 @@ export function initialModel(harness: HarnessCard): string {
   return "";
 }
 
-export function modelOptions(harness: HarnessCard): SelectOption[] {
+export function modelOptions(
+  harness: HarnessCard,
+  current?: string,
+): SelectOption[] {
   const advertised = harness.models ?? [];
   const last = harness.lastModel ?? "";
   const seen = new Set<string>();
@@ -38,6 +41,11 @@ export function modelOptions(harness: HarnessCard): SelectOption[] {
   // that does not include it.
   if (last && !seen.has(last) && advertised.length === 0) {
     options.push({ value: last, label: last });
+  }
+  // A live thread's stored pin must stay visible even before Doctor fills
+  // the listing, and even if the listing has not caught up yet.
+  if (current && !seen.has(current)) {
+    options.push({ value: current, label: current });
   }
   return options;
 }
@@ -60,7 +68,7 @@ export function ModelChip({
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
-  const options = modelOptions(harness);
+  const options = modelOptions(harness, value);
   const selected = options.find((option) => option.value === value);
   const label = selected?.label ?? defaultModelLabel(harness.id);
   const reason = modelDisabledReason(harness);

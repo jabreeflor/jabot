@@ -896,6 +896,24 @@ function stubHost(
 }
 
 describe("LiveThreadView", () => {
+  it("shows a stored model before Doctor fills the listing", async () => {
+    const host = stubHost({}, [], undefined, undefined, { model: "sonnet" });
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES.map((harness) => ({
+          ...harness,
+          models: [],
+        }))}
+        host={HOST}
+      />,
+    );
+    expect(
+      await screen.findByRole("button", { name: "Model: sonnet" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows the stored model and persists a change", async () => {
     const host = stubHost({}, [], undefined, undefined, { model: "sonnet" });
     render(

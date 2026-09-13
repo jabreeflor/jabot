@@ -20,7 +20,7 @@ import { Conversation } from "../components/Conversation";
 import { ConversationSummary } from "../components/ConversationSummary";
 import { canFold, FoldButton } from "../components/FoldButton";
 import { HarnessChip } from "../components/HarnessChip";
-import { ModelChip } from "../components/ModelChip";
+import { ModelChip, initialModel } from "../components/ModelChip";
 import { HostPicker } from "../components/HostPicker";
 import { BranchIcon, CodeSessionIcon } from "../components/Icon";
 import { threadStatus, type ThreadStatus } from "../components/status";
@@ -437,8 +437,11 @@ export function LiveThreadView({
   useEffect(() => {
     if (facts?.model !== undefined) {
       setModel(facts.model ?? "");
+      return;
     }
-  }, [facts?.model]);
+    const harness = harnesses.find((card) => card.id === thread.harnessId);
+    if (harness) setModel(initialModel(harness));
+  }, [facts?.model, harnesses, thread.harnessId]);
 
   const onModelChange = useCallback(
     (next: string) => {

@@ -115,6 +115,7 @@ export function jabotHost(options: JabotHostOptions = {}): Plugin {
           label: "Fake ACP",
           command: fakeAgent,
           args: [],
+          supportsModels: true,
         });
       }
 
