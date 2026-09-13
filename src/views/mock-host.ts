@@ -79,6 +79,8 @@ export const HARNESSES: readonly HarnessCard[] = [
     label: "Claude Code",
     blurb: "Anthropic's coding agent, wrapped in JaBot's UI",
     accent: "var(--h-claude)",
+    supportsModels: true,
+    models: ["sonnet", "opus", "haiku"],
   },
   {
     id: "codex",

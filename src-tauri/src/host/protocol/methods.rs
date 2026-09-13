@@ -25,6 +25,8 @@ pub const THREAD_REOPEN: &str = "thread/reopen";
 pub const THREAD_ARCHIVE: &str = "thread/archive";
 pub const THREAD_DELETE: &str = "thread/delete";
 pub const THREAD_STATE: &str = "thread/state";
+/// Persist a thread's model and, when the live session can take it, apply it.
+pub const THREAD_SET_MODEL: &str = "thread/set_model";
 pub const THREAD_TRANSCRIPT: &str = "thread/transcript";
 /// Toggle an emoji reaction on a rendered transcript item (#265).
 pub const THREAD_REACT: &str = "thread/react";
@@ -107,6 +109,7 @@ pub const CLIENT_METHODS: &[&str] = &[
     THREAD_ARCHIVE,
     THREAD_DELETE,
     THREAD_STATE,
+    THREAD_SET_MODEL,
     INBOX_LIST,
     SYNC_RESUME_FROM,
     HARNESS_LIST,
@@ -633,6 +636,31 @@ pub struct ThreadOpenParams {
     pub model: Option<String>,
 }
 
+/// Pick the model for an existing thread (#296). Empty / omitted means the
+/// harness default, applied on the next spawn when the live session cannot
+/// unset it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSetModelParams {
+    pub thread_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadSetModelResult {
+    pub thread_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// `live` when the adapter took the change; `next_spawn` when it is
+    /// stored and will apply when the session is created again. Never a
+    /// silent no-op.
+    pub applied: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RunView {
@@ -872,6 +900,9 @@ pub struct ThreadStateResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host_id: Option<String>,
     pub harness_id: String,
+    /// Host-selected model from `runtime_json`, when one is pinned.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub folder_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1590,6 +1621,9 @@ pub struct HarnessReport {
     /// `provider/model` lines the Doctor's models probe printed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<String>,
+    /// Last model this machine picked for this harness, when one was stored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2331,6 +2365,12 @@ impl ThreadFoldParams {
 }
 
 impl ThreadRefParams {
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        require_non_empty(&self.thread_id, "threadId")
+    }
+}
+
+impl ThreadSetModelParams {
     pub fn validate(&self) -> Result<(), super::error::RpcError> {
         require_non_empty(&self.thread_id, "threadId")
     }

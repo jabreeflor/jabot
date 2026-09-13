@@ -150,6 +150,7 @@ export function withReadiness(
       available: report.ready,
       installHint: report.remedy ?? report.installHint ?? card.installHint,
       models: report.models ?? card.models,
+      lastModel: report.lastModel ?? card.lastModel,
     };
   });
 }

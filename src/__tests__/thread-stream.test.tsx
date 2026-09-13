@@ -703,7 +703,14 @@ const THREAD: ThreadSummary = {
 };
 
 const HARNESSES: HarnessCard[] = [
-  { id: "claude", label: "Claude Code", blurb: "", accent: "var(--h-claude)" },
+  {
+    id: "claude",
+    label: "Claude Code",
+    blurb: "",
+    accent: "var(--h-claude)",
+    supportsModels: true,
+    models: ["sonnet", "opus"],
+  },
 ];
 
 const HOST: HostTarget = { hostId: "h1", name: "This Mac", reachable: true };
@@ -820,6 +827,11 @@ function stubHost(
       };
     }),
     cancel,
+    setThreadModel: vi.fn(async ({ model }: { model?: string | null }) => ({
+      threadId: THREAD.id,
+      model: model || undefined,
+      applied: "live" as const,
+    })),
     react: vi.fn(
       async ({ itemId, emoji }: { itemId: string; emoji: string }) => {
         const current = marks.get(itemId) ?? [];
@@ -884,6 +896,55 @@ function stubHost(
 }
 
 describe("LiveThreadView", () => {
+  it("shows the stored model and persists a change", async () => {
+    const host = stubHost({}, [], undefined, undefined, { model: "sonnet" });
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    expect(
+      await screen.findByRole("button", { name: "Model: sonnet" }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Model:/ }));
+    await userEvent.click(screen.getByRole("option", { name: "opus" }));
+    await waitFor(() => {
+      expect(host.client.setThreadModel).toHaveBeenCalledWith({
+        threadId: THREAD.id,
+        model: "opus",
+      });
+    });
+  });
+
+  it("names a next-spawn apply instead of staying silent", async () => {
+    const host = stubHost();
+    host.client.setThreadModel = vi.fn(async () => ({
+      threadId: THREAD.id,
+      model: "opus",
+      applied: "next_spawn",
+      detail: "No live session — applies on next spawn.",
+    }));
+    render(
+      <LiveThreadView
+        client={host.client}
+        thread={THREAD}
+        harnesses={HARNESSES}
+        host={HOST}
+      />,
+    );
+    expect(
+      await screen.findByRole("button", { name: /Model:/ }),
+    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Model:/ }));
+    await userEvent.click(screen.getByRole("option", { name: "opus" }));
+    expect(
+      await screen.findByText("No live session — applies on next spawn."),
+    ).toBeInTheDocument();
+  });
+
   it("hydrates from the store and then follows the live stream", async () => {
     const host = stubHost();
     render(

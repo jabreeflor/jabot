@@ -324,6 +324,19 @@ describe("withReadiness", () => {
   it("is a no-op when the Doctor reported nothing", () => {
     expect(withReadiness(cards, [])).toEqual(cards);
   });
+
+  it("copies advertised models and the last-used pick", () => {
+    const reports = [
+      {
+        ...DOCTOR.reports[0],
+        models: ["sonnet", "opus"],
+        lastModel: "sonnet",
+      },
+    ];
+    const [claude] = withReadiness(cards, reports);
+    expect(claude.models).toEqual(["sonnet", "opus"]);
+    expect(claude.lastModel).toBe("sonnet");
+  });
 });
 
 describe("App, once the host has answered with a crew", () => {

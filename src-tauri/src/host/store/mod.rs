@@ -51,7 +51,8 @@ pub use schedule::{
 };
 pub use secrets::{keychain_service, Secrets, SecretsBackend, KEYCHAIN_SERVICE};
 pub use settings::{
-    is_fold_policy, DEFAULT_FOLD_POLICY, KEY_DEFAULT_FOLD_POLICY, KEY_IDLE_TIMEOUT_MS,
+    advertised_models_key, is_fold_policy, last_model_key, DEFAULT_FOLD_POLICY,
+    KEY_DEFAULT_FOLD_POLICY, KEY_IDLE_TIMEOUT_MS,
 };
 
 const MIN_SQLITE: (u32, u32, u32) = (3, 51, 3);

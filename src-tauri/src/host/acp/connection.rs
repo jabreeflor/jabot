@@ -31,6 +31,7 @@ use super::super::protocol::frame::encode_frame;
 use super::super::protocol::jsonrpc::{
     JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId,
 };
+use super::super::harness::doctor::advertised_models;
 use super::runtime::HarnessRuntime;
 use super::spawn::{spawn_adapter, terminate_process_group};
 use super::wake::AdapterWake;
@@ -100,6 +101,8 @@ pub(crate) struct AcpConnection {
     initialized: bool,
     killed: bool,
     capabilities: AgentCapabilities,
+    /// Model ids the last `session/new` advertised, when it did.
+    advertised_models: Vec<String>,
 }
 
 impl std::fmt::Debug for AcpConnection {
@@ -165,6 +168,7 @@ impl AcpConnection {
             initialized: false,
             killed: false,
             capabilities: AgentCapabilities::default(),
+            advertised_models: Vec::new(),
         })
     }
 
@@ -259,6 +263,9 @@ impl AcpConnection {
         });
         if let Some(model) = model {
             params["model"] = json!(model);
+            // Some Claude adapter builds read the pin from `_meta` rather than
+            // the ACP `model` field. Both go out; neither invents an id.
+            params["_meta"] = json!({ "claudeCode": { "options": { "model": model } } });
         }
         let result = self.request("session/new", params, SESSION_NEW_TIMEOUT)?;
         let session_id = result
@@ -267,20 +274,55 @@ impl AcpConnection {
             .ok_or_else(|| RpcError::Internal("session/new did not return sessionId".into()))?
             .to_string();
         self.adopt(thread_id, &session_id);
+        if let Some(models) = advertised_models(&result) {
+            self.advertised_models = models;
+        }
         if let Some(model) = model {
-            // OpenCode versions that expose `session/set_config` take this;
-            // older builds answer method-not-found and keep the config model.
-            let _ = self.request(
+            // Claude: `session/set_model`. OpenCode: `session/set_config`.
+            // Older builds answer method-not-found and keep the spawn pin.
+            let _ = self.apply_model(&session_id, model);
+        }
+        Ok(session_id)
+    }
+
+    /// Best-effort live model switch. Tries the documented ACP verbs in order.
+    pub fn apply_model(&mut self, session_id: &str, model_id: &str) -> Result<(), RpcError> {
+        let attempts = [
+            (
+                "session/set_model",
+                json!({ "sessionId": session_id, "modelId": model_id }),
+            ),
+            (
                 "session/set_config",
                 json!({
                     "sessionId": session_id,
                     "configId": "model",
-                    "value": model
+                    "value": model_id
                 }),
-                Duration::from_secs(2),
-            );
+            ),
+            (
+                "session/set_config_option",
+                json!({
+                    "sessionId": session_id,
+                    "configId": "model",
+                    "value": model_id
+                }),
+            ),
+        ];
+        let mut last_err = None;
+        for (method, params) in attempts {
+            match self.request(method, params, Duration::from_secs(2)) {
+                Ok(_) => return Ok(()),
+                Err(err) => last_err = Some(err),
+            }
         }
-        Ok(session_id)
+        Err(last_err.unwrap_or_else(|| {
+            RpcError::Internal("no model apply method succeeded".into())
+        }))
+    }
+
+    pub fn take_advertised_models(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.advertised_models)
     }
 
     /// ACP `session/resume`: hand the agent back a session it already has.

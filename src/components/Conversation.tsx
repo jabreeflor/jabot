@@ -40,6 +40,8 @@ export function Conversation({
   error,
   notice,
   disabled = false,
+  modelChip,
+  modelStatus,
 }: {
   header: ReactNode;
   items: readonly TranscriptItem[];
@@ -68,6 +70,8 @@ export function Conversation({
       thing you do. Drawn above the composer because that is where the action
       it is about is taken. */
   notice?: ReactNode;
+  modelChip?: ReactNode;
+  modelStatus?: ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // True while the reader is parked at the end. Default true, because a
@@ -192,6 +196,8 @@ export function Conversation({
         onCancel={onCancel}
         disabled={disabled}
         mentionBots={bots}
+        modelChip={modelChip}
+        modelStatus={modelStatus}
       />
     </div>
   );

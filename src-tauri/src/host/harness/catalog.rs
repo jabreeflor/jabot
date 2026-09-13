@@ -311,7 +311,10 @@ const SHIPPED: &[Compiled] = &[
             "Run `claude` once and sign in, or export ANTHROPIC_API_KEY.",
         ),
         session_scope: SessionScope::Thread,
-        supports_models: false,
+        // Models come from the adapter (ACP `availableModels` / a CLI listing),
+        // never a hardcoded vendor menu. The chip is the New Chat / composer
+        // control; an empty list still offers Harness default.
+        supports_models: true,
         declared_capabilities: &[],
         account_isolation: None,
     },
@@ -553,7 +556,9 @@ const PRESETS: &[Compiled] = &[
         ),
         readiness: CompiledReadiness::Inspect(InspectKind::Cursor),
         session_scope: SessionScope::Thread,
-        supports_models: false,
+        // `agent models` is the vendor listing; we parse what it printed and
+        // never invent ids. Empty stdout still leaves the default option.
+        supports_models: true,
         declared_capabilities: &[],
         account_isolation: None,
     },
@@ -698,6 +703,26 @@ mod tests {
         assert!(is_reserved("aider"), "presets are reserved too");
         assert!(is_reserved("cursor"), "Cursor is a reserved preset");
         assert!(!is_reserved("my-agent"));
+    }
+
+    #[test]
+    fn claude_offers_a_model_chip_without_inventing_ids() {
+        let claude = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "claude")
+            .unwrap();
+        assert!(claude.supports_models);
+        let card = claude.card();
+        assert!(card.supports_models);
+    }
+
+    #[test]
+    fn cursor_offers_a_model_chip_from_the_vendor_listing() {
+        let cursor = compiled_in()
+            .into_iter()
+            .find(|d| d.id == "cursor")
+            .unwrap();
+        assert!(cursor.supports_models);
     }
 
     #[test]

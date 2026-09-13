@@ -226,10 +226,22 @@ impl HostSession {
         // sees a schema for.
         let mcp_servers = self.mcp_servers_for_thread(thread_id);
         let model = self.thread_model(thread_id);
+        let harness_id = self
+            .store
+            .as_ref()
+            .and_then(|store| store.get_thread(thread_id).ok().flatten())
+            .map(|thread| thread.harness_id);
         let conn = self
             .conn_mut(thread_id)
             .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-        conn.new_session(thread_id, cwd, mcp_servers, model.as_deref())
+        let session_id = conn.new_session(thread_id, cwd, mcp_servers, model.as_deref())?;
+        let advertised = conn.take_advertised_models();
+        if let Some(harness_id) = harness_id {
+            if !advertised.is_empty() {
+                self.persist_advertised_models(&harness_id, &advertised);
+            }
+        }
+        Ok(session_id)
     }
 
     fn thread_model(&self, thread_id: &str) -> Option<String> {

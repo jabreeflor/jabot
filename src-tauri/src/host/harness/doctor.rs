@@ -406,13 +406,18 @@ fn diagnose_with(
     } else {
         format!("Ready — {}", path.display())
     };
+    let models = if descriptor.supports_models {
+        list_models_best_effort(probe, descriptor)
+    } else {
+        Vec::new()
+    };
     finish(
         HarnessStatus::Ready,
         detail,
         None,
         Some(launch.clone()),
         Some(path),
-        Vec::new(),
+        models,
     )
 }
 
@@ -580,18 +585,143 @@ fn looks_like_provider_row(line: &str) -> bool {
         .is_some_and(|word| word.chars().any(|c| c.is_ascii_alphabetic()))
 }
 
-fn parse_models(stdout: &str) -> Vec<String> {
-    stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| {
-            !line.is_empty()
-                && !line.starts_with('#')
-                && line.contains('/')
-                && !line.to_ascii_lowercase().starts_with("provider")
-        })
-        .map(str::to_string)
-        .collect()
+/// What a models probe actually printed — never a vendor menu we invented.
+///
+/// OpenCode prints `provider/model`. Claude / Cursor / ACP listings often
+/// print a bare id (`sonnet`, `claude-sonnet-4-5`). JSON is accepted when the
+/// CLI or an ACP `session/new` result uses that shape.
+pub fn parse_models(stdout: &str) -> Vec<String> {
+    let trimmed = stdout.trim();
+    if trimmed.starts_with('[') || trimmed.starts_with('{') {
+        if let Some(from_json) = advertised_models(&serde_json::from_str(trimmed).unwrap_or(serde_json::Value::Null))
+        {
+            if !from_json.is_empty() {
+                return from_json;
+            }
+        }
+    }
+    let mut models = Vec::new();
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || looks_like_listing_noise(line) {
+            continue;
+        }
+        if let Some(id) = extract_model_id(line) {
+            if !models.iter().any(|existing| existing == &id) {
+                models.push(id);
+            }
+        }
+    }
+    models
+}
+
+/// Models an ACP `session/new` (or similar) result advertised.
+pub fn advertised_models(value: &serde_json::Value) -> Option<Vec<String>> {
+    let mut out = Vec::new();
+    if let Some(arr) = value
+        .get("models")
+        .and_then(|models| models.get("availableModels"))
+        .and_then(|available| available.as_array())
+    {
+        for item in arr {
+            if let Some(id) = item.get("modelId").and_then(|v| v.as_str()) {
+                push_unique(&mut out, id);
+            }
+        }
+    }
+    if let Some(arr) = value.get("configOptions").and_then(|opts| opts.as_array()) {
+        for opt in arr {
+            let category = opt.get("category").and_then(|c| c.as_str()).unwrap_or("");
+            if category != "model" {
+                continue;
+            }
+            if let Some(options) = opt.get("options").and_then(|o| o.as_array()) {
+                for option in options {
+                    if let Some(id) = option.get("value").and_then(|v| v.as_str()) {
+                        push_unique(&mut out, id);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(arr) = value.as_array() {
+        for item in arr {
+            match item {
+                serde_json::Value::String(id) => push_unique(&mut out, id),
+                serde_json::Value::Object(obj) => {
+                    if let Some(id) = obj
+                        .get("modelId")
+                        .or_else(|| obj.get("id"))
+                        .and_then(|v| v.as_str())
+                    {
+                        push_unique(&mut out, id);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if out.is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn list_models_best_effort(probe: &dyn ProbeHost, descriptor: &HarnessDescriptor) -> Vec<String> {
+    for cli in &descriptor.cli {
+        if probe.resolve(cli).is_none() {
+            continue;
+        }
+        let captured = probe.run_capture(cli, &["models".into()]);
+        if !matches!(captured.run, ProbeRun::Exit(0)) {
+            continue;
+        }
+        let listed = parse_models(&captured.stdout);
+        if !listed.is_empty() {
+            return listed;
+        }
+    }
+    Vec::new()
+}
+
+fn extract_model_id(line: &str) -> Option<String> {
+    let token = line.split_whitespace().next()?;
+    let token = token.trim_matches(|c| c == '`' || c == '"' || c == '\'' || c == ',');
+    if token.contains('/') {
+        return Some(token.to_string());
+    }
+    if looks_like_model_id(token) {
+        return Some(token.to_string());
+    }
+    None
+}
+
+fn looks_like_model_id(token: &str) -> bool {
+    if token.len() < 2 || token.len() > 80 || token.starts_with('-') {
+        return false;
+    }
+    token
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/'))
+        && token.chars().any(|c| c.is_ascii_alphanumeric())
+}
+
+fn looks_like_listing_noise(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("usage:")
+        || lower.starts_with("error")
+        || lower.contains("unknown command")
+        || lower.contains("available commands")
+        || lower.starts_with("provider")
+}
+
+fn push_unique(out: &mut Vec<String>, id: &str) {
+    let id = id.trim();
+    if id.is_empty() || out.iter().any(|existing| existing == id) {
+        return;
+    }
+    out.push(id.to_string());
 }
 
 fn diagnose_cursor(
@@ -602,7 +732,10 @@ fn diagnose_cursor(
     path: PathBuf,
     started: Instant,
 ) -> Diagnosis {
-    let finish = |status: HarnessStatus, detail: String, remedy: Option<String>| Diagnosis {
+    let finish = |status: HarnessStatus,
+                  detail: String,
+                  remedy: Option<String>,
+                  models: Vec<String>| Diagnosis {
         id: descriptor.id.clone(),
         status,
         detail,
@@ -610,7 +743,7 @@ fn diagnose_cursor(
         launch: Some(launch.clone()),
         resolved_path: Some(path.clone()),
         elapsed_ms: started.elapsed().as_millis() as u64,
-        models: Vec::new(),
+        models,
     };
 
     let captured = probe.run_text(cli, &["--version".into()]);
@@ -632,6 +765,7 @@ fn diagnose_cursor(
                     "`{cli}` reports {printed} (parsed {parsed}), which is older than JaBot's Cursor Agent floor."
                 ),
                 Some("Update the Cursor Agent CLI (`agent update`) and try again.".into()),
+                Vec::new(),
             );
         }
         super::cursor::VersionCheck::Unknown(detail) => {
@@ -639,6 +773,7 @@ fn diagnose_cursor(
                 HarnessStatus::Unknown,
                 detail,
                 Some("Update the Cursor Agent CLI (`agent update`) so `agent --version` and `agent acp` both work.".into()),
+                Vec::new(),
             );
         }
         super::cursor::VersionCheck::Ok(version) => Some(version.to_string()),
@@ -655,6 +790,7 @@ fn diagnose_cursor(
                     Some(
                         "Run `agent login`, or export CURSOR_API_KEY (or CURSOR_AUTH_TOKEN) for this process.".into(),
                     ),
+                    Vec::new(),
                 );
             }
             ProbeRun::TimedOut => {
@@ -662,6 +798,7 @@ fn diagnose_cursor(
                     HarnessStatus::Unknown,
                     format!("`{cli} status` did not answer in time."),
                     Some("Run `agent login`, or export CURSOR_API_KEY.".into()),
+                    Vec::new(),
                 );
             }
             ProbeRun::Failed(err) => {
@@ -669,12 +806,14 @@ fn diagnose_cursor(
                     HarnessStatus::Unknown,
                     format!("could not run `{cli} status`: {err}"),
                     Some("Run `agent login`, or export CURSOR_API_KEY.".into()),
+                    Vec::new(),
                 );
             }
         }
     }
 
-    match probe.run(cli, &["models".into()]) {
+    let models_out = probe.run_capture(cli, &["models".into()]);
+    match models_out.run {
         ProbeRun::Exit(0) => {}
         ProbeRun::Exit(code) => {
             return finish(
@@ -683,6 +822,7 @@ fn diagnose_cursor(
                 Some(
                     "Pick a model in Cursor (`agent models`) or confirm this account has one available.".into(),
                 ),
+                Vec::new(),
             );
         }
         ProbeRun::TimedOut => {
@@ -690,6 +830,7 @@ fn diagnose_cursor(
                 HarnessStatus::Unknown,
                 format!("`{cli} models` did not answer in time."),
                 Some("Confirm `agent models` lists a model, then retry.".into()),
+                Vec::new(),
             );
         }
         ProbeRun::Failed(err) => {
@@ -697,10 +838,12 @@ fn diagnose_cursor(
                 HarnessStatus::Unknown,
                 format!("could not run `{cli} models`: {err}"),
                 Some("Confirm `agent models` lists a model, then retry.".into()),
+                Vec::new(),
             );
         }
     }
 
+    let listed = parse_models(&models_out.stdout);
     let version_bit = printed_version.map(|v| format!(" {v}")).unwrap_or_default();
     finish(
         HarnessStatus::Ready,
@@ -709,6 +852,7 @@ fn diagnose_cursor(
             path.display()
         ),
         None,
+        listed,
     )
 }
 
@@ -1569,6 +1713,52 @@ mod tests {
         let report = diagnose(&descriptor("cursor"), &machine);
         assert_eq!(report.status, HarnessStatus::InvalidConfig);
         assert!(report.remedy.unwrap().contains("agent models"));
+    }
+
+    #[test]
+    fn parse_models_keeps_slash_ids_and_accepts_bare_acp_ids() {
+        assert_eq!(
+            parse_models("anthropic/claude-sonnet-4-5\n"),
+            ["anthropic/claude-sonnet-4-5"]
+        );
+        assert_eq!(
+            parse_models("sonnet\nopus\nhaiku\n"),
+            ["sonnet", "opus", "haiku"]
+        );
+        assert_eq!(
+            parse_models("error: unknown command `models`\nUsage: claude [options]\n"),
+            [] as [&str; 0]
+        );
+        let acp = serde_json::json!({
+            "models": {
+                "availableModels": [
+                    { "modelId": "sonnet", "name": "Sonnet" },
+                    { "modelId": "opus", "name": "Opus" }
+                ]
+            }
+        });
+        assert_eq!(
+            advertised_models(&acp).unwrap(),
+            ["sonnet", "opus"]
+        );
+    }
+
+    #[test]
+    fn claude_ready_lists_models_when_the_cli_prints_them() {
+        let machine = FakeMachine::with(&["claude", "claude-agent-acp"])
+            .printing("claude models", "sonnet\nopus\n");
+        let report = diagnose(&descriptor("claude"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert_eq!(report.models, ["sonnet", "opus"]);
+    }
+
+    #[test]
+    fn claude_ready_survives_a_missing_models_command() {
+        let machine = FakeMachine::with(&["claude", "claude-agent-acp"])
+            .answering("claude models", ProbeRun::Exit(1));
+        let report = diagnose(&descriptor("claude"), &machine);
+        assert_eq!(report.status, HarnessStatus::Ready);
+        assert!(report.models.is_empty());
     }
 
     #[test]

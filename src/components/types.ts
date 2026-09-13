@@ -199,6 +199,8 @@ export interface HarnessCard {
   installHint?: string;
   supportsModels?: boolean;
   models?: string[];
+  /** Last model this machine picked for this harness. */
+  lastModel?: string;
   declaredCapabilities?: string[];
   accountIsolation?: string;
   /** Catalog-declared capabilities. Absent means unverified. */

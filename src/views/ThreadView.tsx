@@ -20,6 +20,7 @@ import { Conversation } from "../components/Conversation";
 import { ConversationSummary } from "../components/ConversationSummary";
 import { canFold, FoldButton } from "../components/FoldButton";
 import { HarnessChip } from "../components/HarnessChip";
+import { ModelChip } from "../components/ModelChip";
 import { HostPicker } from "../components/HostPicker";
 import { BranchIcon, CodeSessionIcon } from "../components/Icon";
 import { threadStatus, type ThreadStatus } from "../components/status";
@@ -36,6 +37,7 @@ import type {
   HostClient,
   ProcessView,
   ThreadResumeResult,
+  ThreadSetModelResult,
   ThreadStateResult,
 } from "../host";
 import { hostErrorText } from "./errors";
@@ -70,6 +72,9 @@ export function ThreadView({
   branchingSeq,
   branchedFrom,
   onOpenSource,
+  model,
+  onModelChange,
+  modelApplyStatus,
 }: {
   thread: ThreadSummary;
   harnesses: readonly HarnessCard[];
@@ -118,8 +123,14 @@ export function ThreadView({
   branchingSeq?: number | null;
   branchedFrom?: BranchedFromView;
   onOpenSource?: (threadId: string) => void;
+  model?: string;
+  onModelChange?: (model: string) => void;
+  modelApplyStatus?: string | null;
 }) {
   const line = status ?? threadStatus(thread);
+  const threadHarness = harnesses.find(
+    (harness) => harness.id === thread.harnessId,
+  );
 
   return (
     <Conversation
@@ -179,6 +190,22 @@ export function ThreadView({
           <ResumeNotice notice={resumeNotice} />
         ) : drift && drift.length > 0 ? (
           <DriftNotice drift={drift} />
+        ) : null
+      }
+      modelChip={
+        threadHarness?.supportsModels && onModelChange ? (
+          <ModelChip
+            harness={threadHarness}
+            value={model ?? ""}
+            onChange={onModelChange}
+          />
+        ) : null
+      }
+      modelStatus={
+        modelApplyStatus ? (
+          <span className="composer-model-status" role="status">
+            {modelApplyStatus}
+          </span>
         ) : null
       }
     />
@@ -404,6 +431,38 @@ export function LiveThreadView({
   const [resuming, setResuming] = useState(false);
   const [branchingSeq, setBranchingSeq] = useState<number | null>(null);
   const [branchError, setBranchError] = useState<string | null>(null);
+  const [model, setModel] = useState("");
+  const [modelApplyStatus, setModelApplyStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (facts?.model !== undefined) {
+      setModel(facts.model ?? "");
+    }
+  }, [facts?.model]);
+
+  const onModelChange = useCallback(
+    (next: string) => {
+      setModel(next);
+      if (typeof client.setThreadModel !== "function") return;
+      client
+        .setThreadModel({ threadId: thread.id, model: next || null })
+        .then((result: ThreadSetModelResult) => {
+          if (result.applied === "next_spawn") {
+            setModelApplyStatus(
+              result.detail ?? "Applies on next spawn.",
+            );
+          } else {
+            setModelApplyStatus(null);
+          }
+        })
+        .catch((err: unknown) => {
+          setModelApplyStatus(
+            err instanceof Error ? err.message : String(err),
+          );
+        });
+    },
+    [client, thread.id],
+  );
 
   // `thread/reopen` — what the Inbox's Open thread runs — is a store write. It
   // puts the row back and spawns nothing, so after a quit or an idle evict the
@@ -489,6 +548,9 @@ export function LiveThreadView({
       branchingSeq={branchingSeq}
       branchedFrom={facts?.branchedFrom}
       onOpenSource={onOpenThread}
+      model={model}
+      onModelChange={onModelChange}
+      modelApplyStatus={modelApplyStatus}
     />
   );
 }
@@ -507,6 +569,7 @@ interface ThreadFacts {
   worktreePath?: string;
   branch?: string;
   branchedFrom?: BranchedFromView;
+  model?: string | null;
 }
 
 function factsOf(state: ThreadStateResult): ThreadFacts {
@@ -516,6 +579,7 @@ function factsOf(state: ThreadStateResult): ThreadFacts {
     worktreePath: state.worktreePath,
     branch: state.branch,
     branchedFrom: state.branchedFrom,
+    model: state.model ?? "",
   };
 }
 
