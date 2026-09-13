@@ -35,8 +35,9 @@ switching its data source to the real host API
    `ThreadContextMenu.tsx`); folded threads leave the Sidebar and any
    Inbox-worthy events resurface them (see
    [fold-and-wait.md](fold-and-wait.md)).
-5. Crew is editable in-app via `BotEditorModal.tsx` and rendered as a
-   `BotStrip.tsx`; crew CRUD talks to the crew store
+5. Crew is a chat list (`BotStrip.tsx`) plus advanced edit
+   (`BotEditorModal.tsx`). New bots start as a shaping chat; agent
+   presence in a thread is an `AgentPill`. CRUD talks to the crew store
    (see [crew-management.md](crew-management.md)).
 6. Folder/repo registration is available via `AddFolderModal.tsx` and
    listed in `FolderList.tsx`

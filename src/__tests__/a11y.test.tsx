@@ -25,6 +25,7 @@ import type {
 } from "../components/types";
 import { expectNoSeriousA11yViolations } from "../../tests/support/a11y";
 import { SettingsView } from "../views/SettingsView";
+import { ChatView } from "../views/ChatView";
 import { ThreadView } from "../views/ThreadView";
 import { PullRequestsView } from "../views/PullRequestsView";
 import { HARNESSES } from "../views/mock-host";
@@ -230,6 +231,29 @@ describe("primary views", () => {
         onNewChat={vi.fn()}
         onThreadMenu={vi.fn()}
         onToggle={vi.fn()}
+      />,
+    );
+
+    await expectNoSeriousA11yViolations(container);
+  });
+
+  it("bot chat with agent pills has no critical or serious violations", async () => {
+    const { container } = render(
+      <ChatView
+        bot={BOTS[0]}
+        bots={BOTS}
+        host={HOST}
+        items={[
+          { kind: "user", id: "u1", text: "Ask @Code to open the PR." },
+          {
+            kind: "agent",
+            id: "a1",
+            text: "I'll hand that to @Code.",
+          },
+        ]}
+        onSend={vi.fn()}
+        onSelectBot={vi.fn()}
+        onOpenSettings={vi.fn()}
       />,
     );
 

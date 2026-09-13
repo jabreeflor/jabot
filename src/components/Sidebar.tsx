@@ -72,6 +72,7 @@ export function Sidebar({
   onSelectBot,
   onSelectThread,
   onOpenCrew,
+  onAddBot,
   onOpenInbox,
   onOpenPullRequests,
   onOpenSchedules,
@@ -101,6 +102,8 @@ export function Sidebar({
   onSelectBot: (botId: string) => void;
   onSelectThread: (threadId: string) => void;
   onOpenCrew: () => void;
+  /** Chat-first create from the bot list. */
+  onAddBot?: () => void;
   onOpenInbox: () => void;
   onOpenPullRequests: () => void;
   onOpenSchedules: () => void;
@@ -245,6 +248,7 @@ export function Sidebar({
               selection={selection}
               onSelectBot={onSelectBot}
               onOpenCrew={onOpenCrew}
+              onAddBot={onAddBot}
             />
 
             <div className="section-header">CODE</div>

@@ -14,6 +14,7 @@
 //! where the crew is rather than in a menu.
 
 import { Avatar, CrewAvatar } from "./avatar";
+import { PlusIcon } from "./Icon";
 import type { Bot, Selection } from "./types";
 
 export function BotStrip({
@@ -21,11 +22,14 @@ export function BotStrip({
   selection,
   onSelectBot,
   onOpenCrew,
+  onAddBot,
 }: {
   bots: readonly Bot[];
   selection: Selection;
   onSelectBot: (botId: string) => void;
   onOpenCrew: () => void;
+  /** Chat-first create: opens a shaping thread, not the editor form. */
+  onAddBot?: () => void;
 }) {
   const chief = bots.find((bot) => bot.isChief);
   const crew = bots.filter((bot) => !bot.isChief);
@@ -49,16 +53,28 @@ export function BotStrip({
           onSelect={onSelectBot}
         />
       ))}
+      {onAddBot && (
+        <button type="button" className="bot-row" onClick={onAddBot}>
+          <span className="av bot-row-add" aria-hidden="true">
+            <PlusIcon />
+          </span>
+          <span className="who">
+            <span className="nm">New bot</span>
+            <span className="say persona">Talk it into being</span>
+          </span>
+        </button>
+      )}
       <button
         type="button"
         className="bot-row"
+        aria-label="Crew"
         aria-current={selection.view === "crew"}
         onClick={onOpenCrew}
       >
         <CrewAvatar />
         <span className="who">
           <span className="nm">Crew</span>
-          <span className="say">Add, edit, or remove bots</span>
+          <span className="say">Advanced edit</span>
         </span>
       </button>
     </div>

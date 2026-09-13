@@ -1,4 +1,7 @@
-//! The bot editor: icon, name, instructions, tools — and a harness.
+//! Advanced bot settings: icon, name, instructions, tools — and a harness.
+//!
+//! The happy path for a new bot is a shaping chat, not this form. This modal
+//! stays for Edit / draft review. Create no longer opens it first.
 //!
 //! The harness picker is the one thing the prototype's editor did not have.
 //! Decision #6 made every bot an ACP harness session, so "which engine runs

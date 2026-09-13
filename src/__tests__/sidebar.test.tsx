@@ -106,6 +106,18 @@ describe("Sidebar", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps Crew and Settings as distinct controls", () => {
+    renderSidebar({ onOpenSettings: vi.fn() });
+
+    expect(screen.getByRole("button", { name: "Crew" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Settings" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Settings and advanced/ }),
+    ).toBeNull();
+  });
+
   it("marks the Settings gear as current when the pane is open", () => {
     renderSidebar({
       onOpenSettings: vi.fn(),
@@ -160,6 +172,15 @@ describe("Sidebar", () => {
     expect(screen.getByRole("button", { name: /^Chief/ })).toBeInTheDocument();
     const code = screen.getByRole("button", { name: /^Code/ });
     expect(within(code).getByTestId("unread-dot")).toBeInTheDocument();
+  });
+
+  it("starts a bot from the list without opening the editor", async () => {
+    const onAddBot = vi.fn();
+    renderSidebar({ onAddBot });
+
+    await userEvent.click(screen.getByRole("button", { name: /^New bot/ }));
+    expect(onAddBot).toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   /** #207: the vertical list kept the row layout and lost the drawings.

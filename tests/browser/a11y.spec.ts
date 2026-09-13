@@ -10,6 +10,7 @@ import { expect } from "@playwright/test";
 import { test } from "./fixtures";
 import { expectNoSeriousBrowserA11yViolations, scanA11y } from "./support/a11y";
 import { openApp } from "./support/page";
+import { settingsButton } from "./ui";
 import {
   putChiefOnFakeAcp,
   seedPermissionAsk,
@@ -110,7 +111,7 @@ test.describe("browser axe @a11y @smoke", () => {
   test("settings", async ({ app, browser }) => {
     const opened = await openApp(browser, app);
     try {
-      await opened.page.getByRole("button", { name: "Settings" }).click();
+      await settingsButton(opened.page).click();
       await expect(
         opened.page.getByRole("heading", { name: "Settings" }),
       ).toBeVisible();

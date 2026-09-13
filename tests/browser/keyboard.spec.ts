@@ -7,6 +7,7 @@ import { expect } from "@playwright/test";
 
 import { test } from "./fixtures";
 import { openApp } from "./support/page";
+import { settingsButton } from "./ui";
 
 test.describe("keyboard and focus @keyboard @smoke", () => {
   test("onboarding focuses the name field and Escape skips", async ({
@@ -19,9 +20,7 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
       await expect(name).toBeFocused();
       await expect(name).toHaveAccessibleName(/YOUR NAME/i);
       await opened.page.keyboard.press("Escape");
-      await expect(
-        opened.page.getByRole("button", { name: "Settings" }),
-      ).toBeVisible();
+      await expect(settingsButton(opened.page)).toBeVisible();
     } finally {
       await opened.close();
     }
@@ -52,7 +51,7 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
       expect([...seen].some((name) => /Inbox/.test(name))).toBeTruthy();
       expect([...seen].some((name) => /Settings/.test(name))).toBeTruthy();
 
-      const settings = opened.page.getByRole("button", { name: "Settings" });
+      const settings = settingsButton(opened.page);
       await settings.focus();
       await opened.page.keyboard.press("Shift+Tab");
       await opened.page.keyboard.press("Tab");
@@ -81,15 +80,23 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
   }) => {
     const opened = await openApp(browser, app);
     try {
-      await opened.page.getByRole("button", { name: /^Crew/ }).click();
-      const opener = opened.page.getByRole("button", { name: "Add a bot" });
+      await opened.page
+        .getByRole("button", { name: "Crew", exact: true })
+        .click();
+      await expect(
+        opened.page.getByRole("heading", { name: "Your Crew" }),
+      ).toBeVisible();
+      const opener = opened.page
+        .locator(".crew-card")
+        .first()
+        .getByRole("button", { name: "Edit" });
       await expect(opener).toBeVisible();
       await opener.focus();
       await opener.click();
 
       const dialog = opened.page.getByRole("dialog");
       await expect(dialog).toBeVisible();
-      await expect(dialog).toHaveAccessibleName("Add a bot");
+      await expect(dialog).toHaveAccessibleName(/Customize /);
 
       await expect
         .poll(async () =>

@@ -256,22 +256,26 @@ describe("App", () => {
     expect(screen.getByLabelText("Message Chief")).toHaveValue("");
   });
 
-  it("adds a bot from a template and shows it in the crew", async () => {
+  it("adds a bot by talking, not by filling the editor first", async () => {
     await renderApp();
 
     await userEvent.click(screen.getByRole("button", { name: /Crew/ }));
     await userEvent.click(screen.getByRole("button", { name: /Add a bot/ }));
-    await userEvent.selectOptions(
-      screen.getByLabelText("START FROM A TEMPLATE"),
-      "expense",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    // Once as a crew card, once as a chat row in the sidebar.
-    expect(screen.getAllByText("Expense Manager")).toHaveLength(2);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /^Expense Manager/ }),
+      screen.getByRole("heading", { name: "New bot" }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/Tell me who I should be/i)).toBeInTheDocument();
+
+    await userEvent.type(
+      screen.getByLabelText("Name them, and say what they do"),
+      "You're Scout, a research assistant who checks sources.{Enter}",
+    );
+
+    expect(screen.getByRole("heading", { name: "Scout" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Scout/ })).toBeInTheDocument();
+    expect(screen.queryByLabelText("WHAT IT DOES")).not.toBeInTheDocument();
   });
 
   /**
@@ -414,7 +418,16 @@ describe("App", () => {
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /Crew/ }));
-    await userEvent.click(screen.getByRole("button", { name: /Add a bot/ }));
+    const recruiterCard = screen
+      .getAllByText("Bot Recruiter")
+      .find((node) => node.closest(".crew-card"))
+      ?.closest(".crew-card");
+    if (!(recruiterCard instanceof HTMLElement)) {
+      throw new Error("no Recruiter crew card");
+    }
+    await userEvent.click(
+      within(recruiterCard).getByRole("button", { name: "Edit" }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await userEvent.keyboard("{Control>}b{/Control}");
     expect(

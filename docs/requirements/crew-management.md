@@ -29,13 +29,16 @@ makes bots user-editable without shipping code changes.
    roles ship as **templates** (`src-tauri/src/host/crew/templates.rs`,
    `templates/`) so a user can add and customize more bots without code
    changes.
-3. Users can create, edit, and delete crew members via
-   `BotEditorModal.tsx`; changes persist immediately through the crew
-   store and are reflected in `BotStrip.tsx` and the New Chat harness
-   picker without requiring a restart. Chief and Bot Recruiter can also
-   propose a crew member with `draft_bot` (#237). That is a reviewable
-   draft, not a created bot — see [bot-awareness.md](../bot-awareness.md).
-   When the tool is unavailable, Crew remains the fallback.
+3. Users create a crew member by starting a chat (`New bot` in the
+   sidebar or **Add a bot** on Crew). Name and instructions emerge from
+   the first message; colour/icon IDs are unchanged. `BotEditorModal.tsx`
+   is advanced settings (Edit / draft review), not the primary create
+   path. Agent presence in a standing chat is an `AgentPill` (BotMark +
+   name). Changes persist through the crew store and show in
+   `BotStrip.tsx`. Chief and Bot Recruiter can also propose a crew
+   member with `draft_bot` (#237) — Start chatting on the in-thread card
+   saves the draft; Settings still opens the editor. See
+   [bot-awareness.md](../bot-awareness.md).
 4. `standing.rs` distinguishes "standing" crew (always available, e.g.
    Chief) from ad hoc/one-off bot configurations if the UI creates
    throwaway ones (e.g. for a single custom-harness experiment).
