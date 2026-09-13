@@ -678,6 +678,24 @@ fn reply_error(stdout: &mut io::Stdout, id: Option<serde_json::Value>, code: i64
 }
 
 fn notify(stdout: &mut io::Stdout, method: &str, params: serde_json::Value) {
+    // Speak the wire shape a real adapter does. ACP puts everything but the
+    // routing key under `update`; the flat form the scripts above are written
+    // in is what the host reads *after* it hoists that envelope. Sending the
+    // envelope here means every host test drives the same path as
+    // claude-agent-acp, which is how a reply that only ever arrived nested
+    // went unseen until a real turn ended as `empty_response`.
+    let params = match (method, params) {
+        ("session/update", serde_json::Value::Object(mut flat)) => {
+            let session_id = flat.remove("sessionId");
+            let mut envelope = serde_json::Map::new();
+            if let Some(session_id) = session_id {
+                envelope.insert("sessionId".to_string(), session_id);
+            }
+            envelope.insert("update".to_string(), serde_json::Value::Object(flat));
+            serde_json::Value::Object(envelope)
+        }
+        (_, params) => params,
+    };
     let msg = serde_json::json!({
         "jsonrpc": "2.0",
         "method": method,

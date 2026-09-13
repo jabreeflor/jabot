@@ -67,6 +67,35 @@ const text = (value: string) => ({
 });
 
 describe("ACP → transcript", () => {
+  it("renders a reply that a pre-hoist row still carries in the spec envelope", () => {
+    // The shape claude-agent-acp writes on the wire, and the shape every
+    // transcript row persisted before the host learned to hoist it has.
+    // These rows are replayed when a thread is reopened; a reducer that only
+    // read the flat form showed such a chat as empty.
+    const stream = feed([
+      {
+        sessionId: "s1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Hi!" },
+          messageId: "m1",
+        },
+      },
+      {
+        sessionId: "s1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: " What do you want to work on?" },
+          messageId: "m1",
+        },
+      },
+    ]);
+    expect(last(stream.items)).toMatchObject({
+      kind: "agent",
+      text: "Hi! What do you want to work on?",
+    });
+  });
+
   it("shows an actionable diagnostic and failure status for an empty reply", () => {
     const stream = feed([
       {
