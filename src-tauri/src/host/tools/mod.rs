@@ -1100,11 +1100,12 @@ mod tests {
 
     /// A process that holds stdin open and answers nothing: enough to stand
     /// for a live adapter without pretending to speak ACP.
-    fn idle_adapter(session: &HostSession) -> crate::host::acp::AcpConnection {
+    fn idle_adapter(session: &HostSession) -> Box<dyn crate::host::backend::SessionBackend> {
         let runtime =
             crate::host::acp::HarnessRuntime::from_runtime_json("idle", r#"{"command":"cat"}"#)
                 .expect("runtime");
-        crate::host::acp::AcpConnection::spawn(
+        crate::host::backend::spawn(
+            crate::host::backend::select(&runtime),
             &runtime,
             None,
             &session.log_dir.join("idle.log"),
