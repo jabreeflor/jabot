@@ -725,6 +725,147 @@ button.react-badge:focus-visible {
   margin-top: var(--sp-4);
 }
 
+/* Question and plan-review cards (#298). A notice that stays once settled,
+   with native form controls inside it. */
+.icard .acts {
+  flex-wrap: wrap;
+}
+
+.icard fieldset {
+  border: 0;
+  padding: 0;
+  margin: var(--sp-3) 0 0;
+  min-width: 0;
+}
+
+.icard legend {
+  padding: 0;
+  margin-bottom: var(--sp-2);
+  color: var(--ink);
+  font-size: var(--fs-ui);
+  font-weight: 600;
+}
+
+.icard .ichoice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  color: var(--ink);
+  font-size: var(--fs-ui);
+  cursor: pointer;
+}
+
+.icard .ichoice input {
+  margin: 0;
+  accent-color: var(--cream);
+}
+
+.icard fieldset:disabled .ichoice {
+  cursor: default;
+  color: var(--dim);
+}
+
+.icard .istatus {
+  color: var(--dim);
+  font-size: 12px;
+  margin-top: var(--sp-3);
+  border-radius: 4px;
+}
+
+.icard .istatus:focus-visible {
+  outline: 2px solid var(--cream);
+  outline-offset: 2px;
+}
+
+.icard.settled .r1 b {
+  color: var(--dim);
+}
+
+.icard .ioverview {
+  color: var(--ink);
+}
+
+.icard .iplan {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  max-height: 320px;
+  overflow: auto;
+  border-radius: var(--r-lg, 10px);
+  background: var(--raise);
+  color: var(--ink);
+  font-size: var(--fs-ui);
+}
+
+.icard .iphase h4 {
+  margin: var(--sp-3) 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.icard .itodos {
+  list-style: none;
+  padding: 0;
+  margin: var(--sp-2) 0 0;
+  display: grid;
+  gap: 4px;
+}
+
+.icard .itodos li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  color: var(--ink);
+  font-size: var(--fs-ui);
+}
+
+.icard .itodos li[data-status="completed"] > span:nth-child(2) {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+
+.icard .itodo-mark svg {
+  width: 11px;
+  height: 11px;
+}
+
+.icard .itodo-status {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.icard .ireason {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  color: var(--dim);
+  font-size: var(--fs-ui);
+}
+
+.icard .ireason input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--raise);
+  border: 1px solid var(--raise-hover);
+  border-radius: var(--r-pill);
+  padding: 6px 12px;
+}
+
+/* Narrow panes: the card takes the width, and buttons wrap. */
+@media (max-width: 720px) {
+  .icard {
+    max-width: 100%;
+  }
+}
+
 .composer {
   padding: 14px var(--sp-6) 20px;
 }

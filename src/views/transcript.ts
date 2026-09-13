@@ -23,23 +23,40 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  AskKind,
   HostClient,
+  InteractionAskParams,
+  InteractionOutcome,
+  InteractionResolvedParams,
+  InteractionView,
   JsonRpcNotification,
   PendingPermissionView,
   PermissionAskParams,
   PermissionResolvedParams,
   PromptMode,
+  QuestionAnswer,
   QueuedPromptView,
   MessageReactionView,
   SessionUpdateParams,
   ThreadTranscriptResult,
   TranscriptEventView,
 } from "../host";
-import { PERMISSION_ASK, PERMISSION_RESOLVED, SESSION_UPDATE } from "../host";
+import {
+  INTERACTION_ASK,
+  INTERACTION_RESOLVED,
+  PERMISSION_ASK,
+  PERMISSION_RESOLVED,
+  SESSION_UPDATE,
+} from "../host";
 import { hostErrorText } from "./errors";
 import type { StatusTone, ThreadStatus } from "../components/status";
 import type {
+  InteractionDecision,
+  InteractionReply,
   NoticeAction,
+  PlanPhase,
+  PlanTodo,
+  QuestionPrompt,
   ToolCall,
   ToolKind,
   ToolStatus,
@@ -88,7 +105,10 @@ export interface ThreadStream {
   /** Index of each permission card by `requestId` (#20). Keyed on the request
       rather than on position because the same ask reaches this reducer twice —
       once from `permission/pending` on hydrate, once from the live
-      `permission/ask` — and two cards for one question is two questions. */
+      `permission/ask` — and two cards for one question is two questions.
+      Question and plan cards (#298) share the index: their request ids come
+      from the same broker and can reach here three ways (the transcript
+      row, `interaction/pending`, the live `interaction/ask`). */
   permissions: Readonly<Record<string, number>>;
   /** The bubble a chunk is currently being appended to. */
   open: { kind: "user" | "agent"; index: number } | null;
@@ -138,7 +158,7 @@ export function hydrate(
 ): ThreadStream {
   let stream = result.events.reduce(
     (acc: ThreadStream, event: TranscriptEventView) =>
-      applyAcpEvent(acc, event.payload, event.seq),
+      applyTranscriptEvent(acc, event),
     from,
   );
   // The head is the log's, not the last row we happened to be given: a window
@@ -698,6 +718,319 @@ export function noteUndelivered(stream: ThreadStream): ThreadStream {
   };
 }
 
+// ---- question and plan cards (#298) ---------------------------------------
+
+const QUESTION_ITEM = "question-";
+const PLAN_ITEM = "plan-";
+
+export function interactionItemId(
+  ask: "question" | "plan",
+  requestId: string,
+): string {
+  return `${ask === "plan" ? PLAN_ITEM : QUESTION_ITEM}${requestId}`;
+}
+
+/** An ask as the pending list, a notification, or a transcript row says it. */
+export interface InteractionAsk {
+  requestId: string;
+  threadId?: string;
+  ask: AskKind;
+  title: string;
+  request: unknown;
+  stale?: boolean;
+}
+
+/**
+ * An agent asked a question, or wants a plan reviewed. Draw the card once,
+ * however many ways the ask reaches this reducer — the transcript row, the
+ * pending list on hydrate, the live notification. A card already drawn is
+ * left exactly as it is, except that a pending list saying it is stale is
+ * believed: that is the one fact a transcript row cannot know.
+ */
+export function applyInteractionAsk(
+  stream: ThreadStream,
+  ask: InteractionAsk,
+): ThreadStream {
+  if (!ask.requestId) return stream;
+  const at = stream.permissions[ask.requestId];
+  if (at !== undefined) {
+    const existing = stream.items[at];
+    if (
+      ask.stale === true &&
+      existing &&
+      (existing.kind === "question" || existing.kind === "plan") &&
+      !existing.stale &&
+      existing.decision === undefined
+    ) {
+      return {
+        ...stream,
+        items: replaceAt(stream.items, at, { ...existing, stale: true }),
+      };
+    }
+    return stream;
+  }
+  const item = interactionItem(ask);
+  // A shape this renderer cannot draw is not drawn — and not a crash. The
+  // host already refused anything malformed at the wire; this is belt and
+  // braces for a host newer than this client.
+  if (!item) return stream;
+  const closed = closeBubble(stream);
+  return {
+    ...closed,
+    items: [...closed.items, item],
+    permissions: {
+      ...closed.permissions,
+      [ask.requestId]: closed.items.length,
+    },
+  };
+}
+
+/**
+ * Somebody settled it: this window, another device, or the host when nobody
+ * could. The card locks and says what was decided.
+ *
+ * A decision already drawn gives way only to one that knows at least as
+ * much: the host's word carries `delivered`, an optimistic one does not, and
+ * the host's must not be overwritten by a slower optimistic echo.
+ */
+export function applyInteractionResolved(
+  stream: ThreadStream,
+  requestId: string,
+  decision: InteractionDecision,
+): ThreadStream {
+  const at = stream.permissions[requestId];
+  if (at === undefined) return stream;
+  const item = stream.items[at];
+  if (!item || (item.kind !== "question" && item.kind !== "plan")) {
+    return stream;
+  }
+  const current = item.decision;
+  if (
+    current &&
+    current.delivered !== undefined &&
+    decision.delivered === undefined
+  ) {
+    return stream;
+  }
+  if (current && sameDecision(current, decision)) return stream;
+  return {
+    ...stream,
+    items: replaceAt(stream.items, at, { ...item, decision }),
+  };
+}
+
+/** The host refused the answer — it did not fit what was asked. The card
+    is exactly as answerable as it was. */
+export function applyInteractionUnresolved(
+  stream: ThreadStream,
+  requestId: string,
+): ThreadStream {
+  const at = stream.permissions[requestId];
+  if (at === undefined) return stream;
+  const item = stream.items[at];
+  if (!item || (item.kind !== "question" && item.kind !== "plan")) {
+    return stream;
+  }
+  if (item.decision === undefined) return stream;
+  const { decision: _dropped, ...unlocked } = item;
+  return {
+    ...stream,
+    items: replaceAt(stream.items, at, unlocked as TranscriptItem),
+  };
+}
+
+/** Every question and plan the host is still holding for this thread. */
+export function hydrateInteractions(
+  stream: ThreadStream,
+  requests: readonly InteractionView[],
+): ThreadStream {
+  return requests.reduce(
+    (acc: ThreadStream, request: InteractionView) =>
+      applyInteractionAsk(acc, request),
+    stream,
+  );
+}
+
+/**
+ * One persisted transcript row. A question or plan row, and the row that
+ * settled it, are the broker's; everything else is ACP's and goes through
+ * [`applyAcpEvent`]. Recognised by the row's own shape (`ask`, `requestId`,
+ * `request`) rather than by the agent's method name, so this reducer never
+ * has to know which extension a harness speaks.
+ */
+function applyTranscriptEvent(
+  stream: ThreadStream,
+  event: TranscriptEventView,
+): ThreadStream {
+  const payload = asRecord(event.payload);
+  const asked = payload ? interactionAskOf(payload) : undefined;
+  if (asked) {
+    if (event.seq <= stream.hydratedSeq) return stream;
+    return applyInteractionAsk(bumpHead(stream, event.seq), asked);
+  }
+  if (event.method === INTERACTION_RESOLVED && payload) {
+    if (event.seq <= stream.hydratedSeq) return stream;
+    const requestId = str(payload.requestId);
+    const outcome = outcomeOf(payload.outcome);
+    const next = bumpHead(stream, event.seq);
+    if (!requestId || !outcome) return next;
+    return applyInteractionResolved(next, requestId, {
+      outcome,
+      answers: answersOf(payload.answers),
+      reason: str(payload.reason),
+      delivered:
+        typeof payload.delivered === "boolean" ? payload.delivered : undefined,
+    });
+  }
+  return applyAcpEvent(stream, event.payload, event.seq);
+}
+
+function bumpHead(stream: ThreadStream, seq: number): ThreadStream {
+  return seq > stream.headSeq ? { ...stream, headSeq: seq } : stream;
+}
+
+function interactionAskOf(
+  payload: Record<string, unknown>,
+): InteractionAsk | undefined {
+  const requestId = str(payload.requestId);
+  const ask = str(payload.ask);
+  if (!requestId || (ask !== "question" && ask !== "plan")) return undefined;
+  if (payload.request === undefined) return undefined;
+  return {
+    requestId,
+    ask,
+    title: str(payload.title) ?? "",
+    request: payload.request,
+  };
+}
+
+function interactionItem(ask: InteractionAsk): TranscriptItem | null {
+  const request = asRecord(ask.request);
+  const stale = ask.stale === true ? true : undefined;
+  if (ask.ask === "question") {
+    const questions = questionPrompts(request?.questions);
+    if (questions.length === 0) return null;
+    return {
+      kind: "question",
+      id: interactionItemId("question", ask.requestId),
+      requestId: ask.requestId,
+      threadId: ask.threadId,
+      title: ask.title || "The agent has a question",
+      questions,
+      stale,
+    };
+  }
+  if (ask.ask === "plan") {
+    return {
+      kind: "plan",
+      id: interactionItemId("plan", ask.requestId),
+      requestId: ask.requestId,
+      threadId: ask.threadId,
+      title: ask.title || "Review the plan",
+      overview: request ? str(request.overview) : undefined,
+      plan: (request ? str(request.plan) : undefined) ?? "",
+      todos: planTodos(request?.todos),
+      phases: planPhases(request?.phases),
+      stale,
+    };
+  }
+  return null;
+}
+
+/** The agent's questions, minus any that could not be answered with. */
+function questionPrompts(raw: unknown): QuestionPrompt[] {
+  if (!Array.isArray(raw)) return [];
+  const prompts: QuestionPrompt[] = [];
+  for (const entry of raw) {
+    const question = asRecord(entry);
+    const id = question ? str(question.id) : undefined;
+    const prompt = question ? str(question.prompt) : undefined;
+    if (!question || !id || !prompt) continue;
+    const options = Array.isArray(question.options) ? question.options : [];
+    const choices = options.flatMap((candidate) => {
+      const option = asRecord(candidate);
+      const optionId = option ? str(option.id) : undefined;
+      if (!option || !optionId) return [];
+      return [{ id: optionId, label: str(option.label) ?? optionId }];
+    });
+    if (choices.length === 0) continue;
+    prompts.push({
+      id,
+      prompt,
+      options: choices,
+      allowMultiple: question.allowMultiple === true,
+    });
+  }
+  return prompts;
+}
+
+function planTodos(raw: unknown): PlanTodo[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    const todo = asRecord(entry);
+    if (!todo) return [];
+    const content = str(todo.content);
+    if (!content) return [];
+    return [
+      {
+        id: str(todo.id) ?? "",
+        content,
+        status: str(todo.status) ?? "pending",
+      },
+    ];
+  });
+}
+
+function planPhases(raw: unknown): PlanPhase[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((entry) => {
+    const phase = asRecord(entry);
+    if (!phase) return [];
+    return [{ name: str(phase.name) ?? "", todos: planTodos(phase.todos) }];
+  });
+}
+
+const OUTCOMES: readonly InteractionOutcome[] = [
+  "answered",
+  "skipped",
+  "accepted",
+  "rejected",
+  "cancelled",
+  "expired",
+  "unavailable",
+];
+
+function outcomeOf(raw: unknown): InteractionOutcome | undefined {
+  const text = str(raw);
+  return text && OUTCOMES.includes(text as InteractionOutcome)
+    ? (text as InteractionOutcome)
+    : undefined;
+}
+
+function answersOf(raw: unknown): QuestionAnswer[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.flatMap((entry) => {
+    const answer = asRecord(entry);
+    const questionId = answer ? str(answer.questionId) : undefined;
+    if (!answer || !questionId) return [];
+    const ids = Array.isArray(answer.selectedOptionIds)
+      ? answer.selectedOptionIds.filter(
+          (id): id is string => typeof id === "string",
+        )
+      : [];
+    return [{ questionId, selectedOptionIds: ids }];
+  });
+}
+
+function sameDecision(a: InteractionDecision, b: InteractionDecision): boolean {
+  return (
+    a.outcome === b.outcome &&
+    a.reason === b.reason &&
+    a.delivered === b.delivered &&
+    JSON.stringify(a.answers ?? null) === JSON.stringify(b.answers ?? null)
+  );
+}
+
 function permissionNotice(ask: {
   requestId: string;
   threadId?: string;
@@ -1053,6 +1386,11 @@ export interface LiveTranscript {
    * [`PERMISSION_CANCEL`] (#20).
    */
   answer: (itemId: string, actionId: string) => void;
+  /**
+   * Settle a question or plan card (#298): the request id, and one of the
+   * verbs the agent offers for that kind, in the agent's own ids.
+   */
+  answerInteraction: (requestId: string, reply: InteractionReply) => void;
   /** Toggle an emoji on an agent bubble (#265). */
   react: (itemId: string, emoji: string) => void;
 }
@@ -1116,12 +1454,21 @@ export function useThreadTranscript(
         pendingError = err;
         return { requests: [] as PendingPermissionView[] };
       }),
+      // Questions and plans too (#298). Guarded by method: a host or a test
+      // stub that predates them has a transcript all the same.
+      typeof client.pendingInteractions === "function"
+        ? client.pendingInteractions({ threadId }).catch((err: unknown) => {
+            pendingError = err;
+            return { requests: [] as InteractionView[] };
+          })
+        : Promise.resolve({ requests: [] as InteractionView[] }),
     ])
-      .then(([result, pending]) => {
+      .then(([result, pending, interactions]) => {
         if (cancelled) return;
         setStream((current) => {
           let next = hydrate(result, current);
           next = hydratePermissions(next, pending.requests);
+          next = hydrateInteractions(next, interactions.requests);
           for (const event of buffered) next = applyLive(next, event);
           return next;
         });
@@ -1229,6 +1576,52 @@ export function useThreadTranscript(
     [client, threadId],
   );
 
+  const answerInteraction = useCallback(
+    (requestId: string, reply: InteractionReply) => {
+      if (!client || !threadId || !requestId) return;
+      if (typeof client.replyInteraction !== "function") return;
+      const deviceId = client.deviceId;
+      if (!deviceId) {
+        setError("Not connected to the host yet.");
+        return;
+      }
+      const chosen: InteractionDecision = {
+        outcome: reply.outcome,
+        answers: "answers" in reply ? reply.answers : undefined,
+        reason: "reason" in reply ? reply.reason : undefined,
+      };
+      // Optimistic, and load-bearing, exactly as for a permission: locking
+      // the card is what stops a second click becoming a second answer. The
+      // host is idempotent underneath — and strict: an answer that does not
+      // fit what was asked is refused, and the card is unlocked again below.
+      setStream((current) =>
+        applyInteractionResolved(current, requestId, chosen),
+      );
+      client
+        .replyInteraction({ requestId, deviceId, ...reply })
+        .then((result) => {
+          setStream((current) => {
+            const settled = applyInteractionResolved(current, requestId, {
+              outcome: result.outcome,
+              // What stands is the *first* answer when this was a repeat,
+              // and we do not know its selections — only its outcome.
+              answers: result.alreadyAnswered ? undefined : chosen.answers,
+              reason: result.alreadyAnswered ? undefined : chosen.reason,
+              delivered: result.delivered,
+            });
+            return result.delivered ? settled : noteUndelivered(settled);
+          });
+        })
+        .catch((err: unknown) => {
+          setStream((current) =>
+            applyInteractionUnresolved(current, requestId),
+          );
+          setError(message(err));
+        });
+    },
+    [client, threadId],
+  );
+
   const react = useCallback(
     (itemId: string, emoji: string) => {
       if (!client || !threadId) return;
@@ -1248,8 +1641,17 @@ export function useThreadTranscript(
   );
 
   return useMemo(
-    () => ({ stream, error, loading, send, cancel, answer, react }),
-    [stream, error, loading, send, cancel, answer, react],
+    () => ({
+      stream,
+      error,
+      loading,
+      send,
+      cancel,
+      answer,
+      answerInteraction,
+      react,
+    }),
+    [stream, error, loading, send, cancel, answer, answerInteraction, react],
   );
 }
 
@@ -1257,7 +1659,9 @@ export function useThreadTranscript(
 type LiveEvent =
   | { kind: "update"; params: SessionUpdateParams }
   | { kind: "ask"; params: PermissionAskParams }
-  | { kind: "resolved"; params: PermissionResolvedParams };
+  | { kind: "resolved"; params: PermissionResolvedParams }
+  | { kind: "interaction-ask"; params: InteractionAskParams }
+  | { kind: "interaction-resolved"; params: InteractionResolvedParams };
 
 function liveEvent(
   notification: JsonRpcNotification,
@@ -1272,6 +1676,16 @@ function liveEvent(
       return { kind: "ask", params: params as PermissionAskParams };
     case PERMISSION_RESOLVED:
       return { kind: "resolved", params: params as PermissionResolvedParams };
+    case INTERACTION_ASK:
+      return {
+        kind: "interaction-ask",
+        params: params as InteractionAskParams,
+      };
+    case INTERACTION_RESOLVED:
+      return {
+        kind: "interaction-resolved",
+        params: params as InteractionResolvedParams,
+      };
     default:
       return null;
   }
@@ -1294,6 +1708,21 @@ function applyLive(stream: ThreadStream, event: LiveEvent): ThreadStream {
       });
     case "resolved":
       return applyPermissionResolved(stream, event.params.requestId);
+    case "interaction-ask":
+      return applyInteractionAsk(stream, {
+        requestId: event.params.requestId,
+        threadId: event.params.threadId,
+        ask: event.params.ask,
+        title: event.params.title,
+        request: event.params.request,
+      });
+    case "interaction-resolved":
+      return applyInteractionResolved(stream, event.params.requestId, {
+        outcome: event.params.outcome,
+        answers: event.params.answers,
+        reason: event.params.reason,
+        delivered: event.params.delivered,
+      });
   }
 }
 

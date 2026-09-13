@@ -20,6 +20,7 @@ import {
   SparkIcon,
 } from "./Icon";
 import { AgentPill } from "./AgentPill";
+import { PlanCard, QuestionCard, type OnInteract } from "./InteractionCards";
 import { renderMarkdown } from "./markdown";
 import { REACTION_CHOICES, reactionName } from "./reactions";
 import type { Bot, ToolCall, ToolKind, TranscriptItem } from "./types";
@@ -41,6 +42,7 @@ export function Transcript({
   bots,
   onSelectBot,
   onAction,
+  onInteract,
   onReact,
   onBranch,
   branchingSeq,
@@ -51,6 +53,8 @@ export function Transcript({
   onSelectBot?: (botId: string) => void;
   /** A notice card's button — a fold offer today, a permission reply in #20. */
   onAction?: (itemId: string, actionId: string) => void;
+  /** A question or plan card's answer (#298). */
+  onInteract?: OnInteract;
   /** Toggle an emoji on an agent bubble (#265). */
   onReact?: (itemId: string, emoji: string) => void;
   /** Code chats only (#266): fork the conversation through this message. */
@@ -102,6 +106,7 @@ export function Transcript({
             bots={bots}
             onSelectBot={onSelectBot}
             onAction={onAction}
+            onInteract={onInteract}
             onReact={onReact}
             onBranch={onBranch}
             branchingSeq={branchingSeq}
@@ -445,6 +450,7 @@ function TranscriptRow({
   bots,
   onSelectBot,
   onAction,
+  onInteract,
   onReact,
   onBranch,
   branchingSeq,
@@ -453,6 +459,7 @@ function TranscriptRow({
   bots?: readonly Bot[];
   onSelectBot?: (botId: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
+  onInteract?: OnInteract;
   onReact?: (itemId: string, emoji: string) => void;
   onBranch?: (itemId: string, seq: number) => void;
   branchingSeq?: number | null;
@@ -503,6 +510,10 @@ function TranscriptRow({
       );
     case "notice":
       return <Notice item={item} onAction={onAction} />;
+    case "question":
+      return <QuestionCard item={item} onReply={onInteract} />;
+    case "plan":
+      return <PlanCard item={item} onReply={onInteract} />;
     // Unreachable through the reducer, which only ever builds the kinds above.
     // Present because a component that returns `undefined` is a React error,
     // and one unmapped item must not blank the conversation.

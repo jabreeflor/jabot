@@ -24,6 +24,7 @@ import {
   type HostClient,
   type InboxListResult,
   type JsonRpcNotification,
+  type InteractionPendingResult,
   type PermissionPendingResult,
   type ThreadStateResult,
 } from "../host";
@@ -122,6 +123,8 @@ const pendingPermissions = vi.fn<() => Promise<PermissionPendingResult>>();
 const reopenThread = vi.fn<(p: unknown) => Promise<ThreadStateResult>>();
 const archiveThread = vi.fn<(p: unknown) => Promise<ThreadStateResult>>();
 const replyPermission = vi.fn<(p: unknown) => Promise<unknown>>();
+const pendingInteractions = vi.fn<() => Promise<InteractionPendingResult>>();
+const replyInteraction = vi.fn<(p: unknown) => Promise<unknown>>();
 type Notify = (notification: JsonRpcNotification) => void;
 const handlers = new Set<Notify>();
 
@@ -135,6 +138,8 @@ function client(): HostClient {
     reopenThread,
     archiveThread,
     replyPermission,
+    pendingInteractions,
+    replyInteraction,
     onNotification: (handler: Notify) => {
       handlers.add(handler);
       return () => handlers.delete(handler);
@@ -158,6 +163,13 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ ...reopened, state: "archived" });
   replyPermission.mockReset().mockResolvedValue({ delivered: true });
+  pendingInteractions.mockReset().mockResolvedValue({ requests: [] });
+  replyInteraction.mockReset().mockResolvedValue({
+    delivered: true,
+    alreadyAnswered: false,
+    outcome: "accepted",
+    state: "answered",
+  });
   vi.mocked(connectHost).mockResolvedValue({ client: client(), hello: HELLO });
 });
 
@@ -551,6 +563,138 @@ describe("a host thread that no folder lists", () => {
     await waitFor(
       () => expect(fold).toHaveBeenCalledWith({ threadId: STANDING }),
       { timeout: 3_000 },
+    );
+  });
+});
+
+/**
+ * Questions and plans (#298): their own kinds on the Inbox, never a
+ * permission, and settled through their own method.
+ */
+describe("questions and plans in the Inbox", () => {
+  const plan = {
+    requestId: "int-plan",
+    threadId: "t-auth",
+    ask: "plan" as const,
+    method: "cursor/create_plan",
+    title: "Review the auth plan",
+    request: { toolCallId: "c", overview: "Move sessions over.", plan: "" },
+    createdAt: "2026-08-20T13:59:00Z",
+    stale: false,
+  };
+  const one = {
+    requestId: "int-one",
+    threadId: "t-sidebar",
+    ask: "question" as const,
+    method: "cursor/ask_question",
+    title: "Pick a mode",
+    request: {
+      toolCallId: "c",
+      questions: [
+        {
+          id: "q1",
+          prompt: "Which mode?",
+          options: [
+            { id: "agent", label: "Agent" },
+            { id: "plan", label: "Plan" },
+          ],
+        },
+      ],
+    },
+    createdAt: "2026-08-20T13:58:00Z",
+    stale: false,
+  };
+  const many = {
+    ...one,
+    requestId: "int-many",
+    threadId: "t-many",
+    title: "Two things to settle",
+    request: {
+      toolCallId: "c",
+      questions: [
+        { id: "a", prompt: "First?", options: [{ id: "x", label: "X" }] },
+        { id: "b", prompt: "Second?", options: [{ id: "y", label: "Y" }] },
+      ],
+    },
+  };
+
+  it("draws a plan for review as its own kind and accepts it from the card", async () => {
+    pendingInteractions.mockResolvedValue({ requests: [plan] });
+    await openInbox();
+
+    const card = await expand(/^Review the auth plan/);
+    expect(within(card).getByText("PLAN REVIEW")).toBeInTheDocument();
+    expect(screen.queryByText("PERMISSION")).toBeNull();
+    // The thread's own `stuck` card gives way to the answerable one.
+    expect(screen.queryByText("Auth migration has gone quiet")).toBeNull();
+    expect(
+      screen.getByText(/does not change what the agent is allowed to do/),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Accept plan" }));
+    await waitFor(() =>
+      expect(replyInteraction).toHaveBeenCalledWith({
+        requestId: "int-plan",
+        deviceId: "dev-1",
+        outcome: "accepted",
+      }),
+    );
+    expect(replyPermission).not.toHaveBeenCalled();
+  });
+
+  it("answers a one-choice question with the agent's option, and sends a longer one to the thread", async () => {
+    pendingInteractions.mockResolvedValue({ requests: [one, many] });
+    await openInbox();
+
+    await expand(/^Pick a mode/);
+    await userEvent.click(screen.getByRole("button", { name: "Plan" }));
+    await waitFor(() =>
+      expect(replyInteraction).toHaveBeenCalledWith({
+        requestId: "int-one",
+        deviceId: "dev-1",
+        outcome: "answered",
+        answers: [{ questionId: "q1", selectedOptionIds: ["plan"] }],
+      }),
+    );
+
+    // The disclosure's bullets and buttons sit beside the summary button,
+    // in the same row.
+    const long = (await expand(/^Two things to settle/)).closest(
+      ".card-row",
+    ) as HTMLElement;
+    // The first prompt is the row's summary as well as a bullet.
+    expect(within(long).getAllByText("First?").length).toBeGreaterThan(0);
+    expect(within(long).getByText("Second?")).toBeInTheDocument();
+    expect(
+      within(long).getByText(/Answer this in the thread/),
+    ).toBeInTheDocument();
+    expect(
+      within(long).getByRole("button", { name: "Open thread" }),
+    ).toBeInTheDocument();
+    expect(within(long).queryByRole("button", { name: "X" })).toBeNull();
+  });
+
+  it("offers only Dismiss for a question whose session is gone", async () => {
+    pendingInteractions.mockResolvedValue({
+      requests: [{ ...one, stale: true }],
+    });
+    await openInbox();
+    const card = (await expand(/^Pick a mode/)).closest(
+      ".card-row",
+    ) as HTMLElement;
+    expect(
+      within(card).getByText(/can no longer be answered/),
+    ).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Plan" })).toBeNull();
+    await userEvent.click(
+      within(card).getByRole("button", { name: "Dismiss" }),
+    );
+    await waitFor(() =>
+      expect(replyInteraction).toHaveBeenCalledWith({
+        requestId: "int-one",
+        deviceId: "dev-1",
+        outcome: "cancelled",
+      }),
     );
   });
 });

@@ -18,19 +18,22 @@
 //! very next request rather than at its next reconnect.
 
 use super::super::protocol::methods::{
-    DeviceRole, HOST_HEALTH, HOST_HELLO, INBOX_LIST, PAIRING_CLAIM, PAIRING_CONFIRM,
-    PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL, SYNC_RESUME_FROM, THREAD_STATE,
-    THREAD_TRANSCRIPT,
+    DeviceRole, HOST_HEALTH, HOST_HELLO, INBOX_LIST, INTERACTION_PENDING, INTERACTION_REPLY,
+    PAIRING_CLAIM, PAIRING_CONFIRM, PERMISSION_PENDING, PERMISSION_REPLY, SESSION_CANCEL,
+    SYNC_RESUME_FROM, THREAD_STATE, THREAD_TRANSCRIPT,
 };
 
 /// Everything a phone may do: see what needs it, answer it, read enough of the
 /// thread to know what it is answering, and stop a turn it does not like.
+/// A question or plan (#298) is "what needs it" as much as a permission is.
 pub const APPROVER_METHODS: &[&str] = &[
     HOST_HELLO,
     HOST_HEALTH,
     INBOX_LIST,
     PERMISSION_PENDING,
     PERMISSION_REPLY,
+    INTERACTION_PENDING,
+    INTERACTION_REPLY,
     THREAD_STATE,
     THREAD_TRANSCRIPT,
     SESSION_CANCEL,
@@ -71,6 +74,8 @@ mod tests {
         for method in [
             PERMISSION_REPLY,
             PERMISSION_PENDING,
+            INTERACTION_REPLY,
+            INTERACTION_PENDING,
             INBOX_LIST,
             THREAD_TRANSCRIPT,
             SESSION_CANCEL,

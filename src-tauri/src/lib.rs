@@ -10,9 +10,9 @@ pub mod window;
 
 pub use host::{
     HostSession, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, NewThread, RequestId, Store,
-    StoreError, ThreadRepo, ThreadRow, HOST_HELLO, PERMISSION_ASK, PERMISSION_PENDING,
-    PERMISSION_REPLY, PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT,
-    SESSION_UPDATE,
+    StoreError, ThreadRepo, ThreadRow, HOST_HELLO, INTERACTION_ASK, INTERACTION_PENDING,
+    INTERACTION_REPLY, INTERACTION_RESOLVED, PERMISSION_ASK, PERMISSION_PENDING, PERMISSION_REPLY,
+    PERMISSION_RESOLVED, PROTOCOL_VERSION, SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE,
 };
 
 /// stdio ACP adapter that drives Aider's scripting CLI (`jabot --aider-acp`).

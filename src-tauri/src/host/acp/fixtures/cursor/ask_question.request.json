@@ -1,0 +1,24 @@
+{
+  "toolCallId": "call-ask-1",
+  "title": "Need input",
+  "questions": [
+    {
+      "id": "q-mode",
+      "prompt": "Which mode should the migration run in?",
+      "options": [
+        { "id": "agent", "label": "Agent" },
+        { "id": "plan", "label": "Plan" }
+      ]
+    },
+    {
+      "id": "q-scope",
+      "prompt": "Which packages are in scope?",
+      "allowMultiple": true,
+      "options": [
+        { "id": "api", "label": "api" },
+        { "id": "web", "label": "web" },
+        { "id": "worker", "label": "worker" }
+      ]
+    }
+  ]
+}

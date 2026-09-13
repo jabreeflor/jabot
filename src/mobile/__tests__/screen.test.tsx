@@ -9,6 +9,7 @@ import { MobileApp } from "../MobileApp";
 import { TranscriptScreen } from "../TranscriptScreen";
 import { projectInbox } from "../inbox";
 import type {
+  InteractionView,
   PendingPermissionView,
   ThreadTranscriptResult,
 } from "../../host/protocol";
@@ -394,5 +395,167 @@ describe("opening a card", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "thread is gone",
     );
+  });
+});
+
+// #298: questions and plans, in their own words, with their own buttons.
+describe("questions and plans on the approver screen", () => {
+  function view(over: Partial<InteractionView>): InteractionView {
+    return {
+      requestId: "int-1",
+      threadId: "t9",
+      ask: "question",
+      method: "cursor/ask_question",
+      title: "Need input",
+      request: {},
+      createdAt: "2026-08-20T12:00:00.000Z",
+      stale: false,
+      ...over,
+    };
+  }
+  const PLAN = view({
+    requestId: "int-plan",
+    ask: "plan",
+    method: "cursor/create_plan",
+    title: "Auth migration",
+    request: { overview: "Move sessions over.", plan: "" },
+  });
+  const ONE = view({
+    requestId: "int-one",
+    request: {
+      questions: [
+        {
+          id: "q1",
+          prompt: "Which mode?",
+          options: [
+            { id: "agent", label: "Agent" },
+            { id: "plan", label: "Plan" },
+          ],
+        },
+      ],
+    },
+  });
+  const MANY = view({
+    requestId: "int-many",
+    title: "Two things",
+    request: {
+      questions: [
+        { id: "a", prompt: "First?", options: [{ id: "x", label: "X" }] },
+        { id: "b", prompt: "Second?", options: [{ id: "y", label: "Y" }] },
+      ],
+    },
+  });
+  function withInteractions(views: InteractionView[]) {
+    return projectInbox(
+      { events: [], sleeping: [], unread: 0 },
+      { requests: [] },
+      { requests: views },
+    );
+  }
+
+  it("accepts or rejects a plan with its own verbs", async () => {
+    const onInteract = vi.fn();
+    render(
+      <InboxScreen
+        inbox={withInteractions([PLAN])}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+        onInteract={onInteract}
+      />,
+    );
+    expect(screen.getByText("PLAN REVIEW")).toBeInTheDocument();
+    expect(screen.getByText("Move sessions over.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Accept plan" }));
+    expect(onInteract).toHaveBeenLastCalledWith("int-plan", {
+      outcome: "accepted",
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Reject" }));
+    expect(onInteract).toHaveBeenLastCalledWith("int-plan", {
+      outcome: "rejected",
+    });
+  });
+
+  it("answers a one-tap question with the agent's option id, or skips it", async () => {
+    const onInteract = vi.fn();
+    render(
+      <InboxScreen
+        inbox={withInteractions([ONE])}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+        onInteract={onInteract}
+      />,
+    );
+    expect(screen.getByText("QUESTION")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(onInteract).toHaveBeenLastCalledWith("int-one", {
+      outcome: "answered",
+      answers: [{ questionId: "q1", selectedOptionIds: ["plan"] }],
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+    expect(onInteract).toHaveBeenLastCalledWith("int-one", {
+      outcome: "skipped",
+    });
+  });
+
+  it("sends a many-question ask to the thread instead of flattening it", async () => {
+    const onInteract = vi.fn();
+    render(
+      <InboxScreen
+        inbox={withInteractions([MANY])}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+        onInteract={onInteract}
+      />,
+    );
+    expect(screen.getByText("Answer this in the thread.")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Questions" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "X" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+    expect(onInteract).toHaveBeenCalledWith("int-many", { outcome: "skipped" });
+  });
+
+  it("offers only Dismiss for an ask whose session is gone", async () => {
+    const onInteract = vi.fn();
+    render(
+      <InboxScreen
+        inbox={withInteractions([view({ ...ONE, stale: true })])}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+        onInteract={onInteract}
+      />,
+    );
+    expect(screen.getByText(/can no longer be answered/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Plan" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onInteract).toHaveBeenCalledWith("int-one", {
+      outcome: "cancelled",
+    });
+  });
+
+  it("draws no answer controls without a handler, and passes one through the app", async () => {
+    const { unmount } = render(
+      <InboxScreen
+        inbox={withInteractions([PLAN])}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Accept plan" })).toBeNull();
+    unmount();
+
+    const onInteract = vi.fn();
+    render(
+      <MobileApp
+        inbox={withInteractions([PLAN])}
+        session={null}
+        onAnswer={vi.fn()}
+        onDecline={vi.fn()}
+        onInteract={onInteract}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Accept plan" }));
+    expect(onInteract).toHaveBeenCalledWith("int-plan", {
+      outcome: "accepted",
+    });
   });
 });

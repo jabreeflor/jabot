@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { ArrowUpIcon } from "./Icon";
 import { Composer } from "./Composer";
+import type { OnInteract } from "./InteractionCards";
 import { Transcript } from "./Transcript";
 import type { Bot, TranscriptItem } from "./types";
 
@@ -31,6 +32,7 @@ export function Conversation({
   composerPlaceholder,
   onSend,
   onAction,
+  onInteract,
   onReact,
   onBranch,
   branchingSeq,
@@ -49,6 +51,8 @@ export function Conversation({
   composerPlaceholder: string;
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
+  /** A question or plan card's answer (#298). */
+  onInteract?: OnInteract;
   /** Toggle an emoji on an agent bubble (#265). */
   onReact?: (itemId: string, emoji: string) => void;
   /** Code chats only (#266): fork the conversation through this message. */
@@ -140,6 +144,7 @@ export function Conversation({
           bots={bots}
           onSelectBot={onSelectBot}
           onAction={onAction}
+          onInteract={onInteract}
           onReact={onReact}
           onBranch={onBranch}
           branchingSeq={branchingSeq}

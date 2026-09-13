@@ -5,6 +5,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createHotTransport, type HotChannel } from "./devTransport";
 import {
+  INTERACTION_PENDING,
+  INTERACTION_REPLY,
+  type InteractionPendingParams,
+  type InteractionPendingResult,
+  type InteractionReplyParams,
+  type InteractionReplyResult,
+} from "./protocol";
+import {
   CREW_CREATE,
   CREW_DRAFTS,
   CREW_DRAFT_DISMISS,
@@ -642,6 +650,24 @@ export class HostClient {
     params: PermissionPendingParams = {},
   ): Promise<PermissionPendingResult> {
     return this.request<PermissionPendingResult>(PERMISSION_PENDING, params);
+  }
+
+  /**
+   * Settle a question or plan (#298). Idempotent like `replyPermission`; an
+   * answer that does not fit what was asked is refused with `INVALID_PARAMS`
+   * and the card stays answerable.
+   */
+  async replyInteraction(
+    params: InteractionReplyParams,
+  ): Promise<InteractionReplyResult> {
+    return this.request<InteractionReplyResult>(INTERACTION_REPLY, params);
+  }
+
+  /** Questions and plans still waiting on a human. Never a permission. */
+  async pendingInteractions(
+    params: InteractionPendingParams = {},
+  ): Promise<InteractionPendingResult> {
+    return this.request<InteractionPendingResult>(INTERACTION_PENDING, params);
   }
 
   async resumeFrom(params: ResumeFromParams): Promise<ResumeFromResult> {

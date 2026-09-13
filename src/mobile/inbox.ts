@@ -21,6 +21,8 @@ import type { InboxKind } from "../components/types";
 import type {
   InboxEventView,
   InboxListResult,
+  InteractionPendingResult,
+  InteractionView,
   PendingPermissionView,
   PermissionPendingResult,
   SleepingThreadView,
@@ -37,6 +39,10 @@ const KNOWN_KINDS: readonly InboxKind[] = [
   "needs_you",
   "judgment_call",
   "permission",
+  // #298. Their own kinds, so a plan waiting for review is never drawn as a
+  // permission to grant.
+  "question",
+  "plan",
   "lost",
   "folded",
   // #28. Without it a PR card degrades to `needs_you` and the phone draws
@@ -61,6 +67,8 @@ export interface MobileCard {
   botId?: string;
   /** Present exactly when this card can be answered from here. */
   ask?: MobileAsk;
+  /** A question or plan (#298), when the card is one. Never both. */
+  interaction?: MobileInteraction;
 }
 
 export interface MobileAsk {
@@ -69,6 +77,26 @@ export interface MobileAsk {
   options: AskOption[];
   detail?: string;
   /** No adapter is waiting any more: answering records the decision only. */
+  stale: boolean;
+}
+
+/**
+ * A question or plan as a small screen can act on it (#298).
+ *
+ * A plan is two buttons. A single-choice question with one question is its
+ * options as buttons, in the agent's order and words. Anything richer — several
+ * questions, or a multiple choice — is answered in the thread, and the card
+ * says so rather than flattening it into buttons that lose information.
+ */
+export interface MobileInteraction {
+  requestId: string;
+  ask: "question" | "plan";
+  /** The prompts, for the card body. Empty for a plan. */
+  prompts: string[];
+  /** Set exactly when the question can be answered with one tap. */
+  questionId?: string;
+  options?: AskOption[];
+  /** No adapter is waiting any more; the host closes it as `unavailable`. */
   stale: boolean;
 }
 
@@ -121,6 +149,60 @@ export function askCard(
   };
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function text(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+/** A question or plan, as the card a phone can act on (#298). */
+export function interactionCard(
+  view: InteractionView,
+  threadTitle?: string,
+): MobileCard {
+  const request = record(view.request);
+  const questions = Array.isArray(request?.questions)
+    ? request.questions.map(record)
+    : [];
+  const prompts = questions
+    .map((question) => text(question?.prompt))
+    .filter((prompt): prompt is string => Boolean(prompt));
+  // One tap answers exactly one single-choice question, and nothing else.
+  const only = questions.length === 1 ? questions[0] : null;
+  const tappable =
+    view.ask === "question" && only && only.allowMultiple !== true;
+  const options = tappable
+    ? parseAskOptions(only.options).filter((option) => option.optionId)
+    : [];
+  const kind: InboxKind = view.ask === "plan" ? "plan" : "question";
+  const overview = request ? text(request.overview) : undefined;
+  return {
+    id: view.requestId,
+    threadId: view.threadId,
+    title: view.title || threadTitle || view.threadId,
+    summary:
+      view.ask === "plan"
+        ? (overview ?? "A plan is ready for review")
+        : (prompts[0] ?? "The agent has a question"),
+    kind,
+    tag: inboxTag(kind),
+    section: "needs",
+    at: view.createdAt,
+    interaction: {
+      requestId: view.requestId,
+      ask: view.ask === "plan" ? "plan" : "question",
+      prompts,
+      questionId: tappable && options.length > 0 ? text(only.id) : undefined,
+      options: tappable && options.length > 0 ? options : undefined,
+      stale: view.stale,
+    },
+  };
+}
+
 function eventCard(event: InboxEventView): MobileCard {
   const kind = kindOf(event.kind);
   return {
@@ -164,6 +246,7 @@ function sleepingCard(thread: SleepingThreadView): MobileCard {
 export function projectInbox(
   inbox: InboxListResult,
   pending: PermissionPendingResult = { requests: [] },
+  interactions: InteractionPendingResult = { requests: [] },
 ): MobileInbox {
   const titles = new Map<string, string>();
   for (const event of inbox.events)
@@ -171,9 +254,14 @@ export function projectInbox(
   for (const thread of inbox.sleeping)
     titles.set(thread.threadId, thread.title);
 
-  const asks = pending.requests.map((ask) =>
-    askCard(ask, titles.get(ask.threadId)),
-  );
+  const asks = [
+    ...pending.requests.map((ask) => askCard(ask, titles.get(ask.threadId))),
+    // Questions and plans are "what needs you" as much as a permission is,
+    // and they collapse the same `needs_you` row the same way (#298).
+    ...interactions.requests
+      .filter((view) => view.ask === "question" || view.ask === "plan")
+      .map((view) => interactionCard(view, titles.get(view.threadId))),
+  ];
   const askedThreads = new Set(asks.map((card) => card.threadId));
 
   const needs = [...asks];
@@ -200,7 +288,11 @@ export function projectInbox(
 
 /** Drop the card for an ask somebody answered — here, or on another device. */
 export function withoutAsk(inbox: MobileInbox, requestId: string): MobileInbox {
-  const needs = inbox.needs.filter((card) => card.ask?.requestId !== requestId);
+  const needs = inbox.needs.filter(
+    (card) =>
+      card.ask?.requestId !== requestId &&
+      card.interaction?.requestId !== requestId,
+  );
   return needs.length === inbox.needs.length ? inbox : { ...inbox, needs };
 }
 

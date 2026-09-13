@@ -362,6 +362,14 @@ pub struct PermissionRequestRow {
     pub delivered: bool,
     pub created_at: String,
     pub resolved_at: Option<String>,
+    /// `permission`, `question` or `plan` (#298) — `AskKind` on the wire.
+    pub ask: String,
+    /// The ACP method the ask arrived on. Diagnostics only.
+    pub method: Option<String>,
+    /// What was sent back for a question or plan, in the host's own shape:
+    /// `{ outcome, answers?, reason? }`. `option_id` is the permission
+    /// equivalent and stays where it was.
+    pub answer_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -374,6 +382,8 @@ pub struct NewPermissionRequest {
     pub title: String,
     pub subject_json: String,
     pub options_json: String,
+    pub ask: String,
+    pub method: Option<String>,
 }
 
 /// What a session was spawned with, so a later resume can tell whether the

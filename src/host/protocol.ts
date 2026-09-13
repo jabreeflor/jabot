@@ -25,6 +25,13 @@ export const PERMISSION_ASK = "permission/ask";
 export const PERMISSION_REPLY = "permission/reply";
 export const PERMISSION_PENDING = "permission/pending";
 export const PERMISSION_RESOLVED = "permission/resolved";
+/** Structured questions and plan decisions from an agent's ACP extensions
+    (#298). Same broker as permissions, deliberately not the same methods: a
+    plan decision must never be drawable, or answerable, as a permission. */
+export const INTERACTION_ASK = "interaction/ask";
+export const INTERACTION_REPLY = "interaction/reply";
+export const INTERACTION_PENDING = "interaction/pending";
+export const INTERACTION_RESOLVED = "interaction/resolved";
 export const THREAD_FOLD = "thread/fold";
 export const THREAD_OPEN = "thread/open";
 export const THREAD_REOPEN = "thread/reopen";
@@ -1304,6 +1311,97 @@ export interface PermissionResolvedParams extends Envelope {
   deviceId: string;
   optionId?: string;
   cancelled?: boolean;
+}
+
+/**
+ * What sort of ask a pending record is (#298). `permission` is the only kind
+ * `permission/pending` lists and the fold policy may answer; the other two
+ * are Cursor's blocking extensions, listed by `interaction/pending`.
+ */
+export type AskKind = "permission" | "question" | "plan";
+
+/**
+ * How a question or plan was settled. The first five are a human's (or the
+ * turn's, for `cancelled`); `expired` and `unavailable` are the host's, written
+ * when nobody could answer — the turn ended, or the process that asked is gone.
+ */
+export type InteractionOutcome =
+  | "answered"
+  | "skipped"
+  | "accepted"
+  | "rejected"
+  | "cancelled"
+  | "expired"
+  | "unavailable";
+
+/** One question's answer, in the shape the agent reads back. */
+export interface QuestionAnswer {
+  questionId: string;
+  selectedOptionIds: string[];
+}
+
+export interface InteractionReplyParams {
+  requestId: string;
+  deviceId: string;
+  /** `answered` (with `answers`) or `skipped` for a question; `accepted` or
+      `rejected` for a plan; `cancelled` for either. */
+  outcome: InteractionOutcome;
+  answers?: QuestionAnswer[];
+  reason?: string;
+}
+
+/** Same contract as `PermissionReplyResult`: `delivered` says whether an
+    agent heard it, `alreadyAnswered` that an earlier resolution stands. */
+export interface InteractionReplyResult {
+  requestId: string;
+  delivered: boolean;
+  alreadyAnswered: boolean;
+  outcome: InteractionOutcome;
+  state: string;
+}
+
+/** A question or plan nobody has settled, as a client draws it (#298). */
+export interface InteractionView {
+  requestId: string;
+  threadId: string;
+  ask: AskKind;
+  /** The ACP method it arrived on. Diagnostics; never dispatched on. */
+  method: string;
+  title: string;
+  /** The typed request — questions and options, or the plan and its todos —
+      as the host read it. Only what the schema names. */
+  request: unknown;
+  createdAt: string;
+  /** No live adapter call is waiting on this one. Unlike a permission, a
+      stale question is not answerable — the host closes it as `unavailable`
+      as soon as it knows. */
+  stale: boolean;
+}
+
+export interface InteractionPendingParams {
+  threadId?: string;
+}
+
+export interface InteractionPendingResult {
+  requests: InteractionView[];
+}
+
+export interface InteractionAskParams extends Envelope {
+  requestId: string;
+  ask: AskKind;
+  method: string;
+  title: string;
+  request: unknown;
+}
+
+export interface InteractionResolvedParams extends Envelope {
+  requestId: string;
+  /** The device that settled it, or `host` when nobody could. */
+  deviceId: string;
+  outcome: InteractionOutcome;
+  answers?: QuestionAnswer[];
+  reason?: string;
+  delivered: boolean;
 }
 
 export interface InboxResurfaceParams extends Envelope {

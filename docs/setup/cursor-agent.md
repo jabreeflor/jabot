@@ -64,9 +64,42 @@ Every Cursor thread on this Mac shares the same `agent login` (or the same
 tools, transcripts), not as separate Cursor accounts. Team-level MCP from
 the Cursor dashboard is not available in ACP mode.
 
-## Unsupported Cursor extensions
+## Questions and plan reviews (Cursor extensions)
 
-`cursor/ask_question` and `cursor/create_plan` block the CLI until a client
-answers. JaBot declines them (`cancelled`) so a turn cannot hang waiting for
-UI JaBot does not have. Resume uses ACP `session/load` / `session/resume`
-only when the adapter advertises them.
+Cursor's ACP bridge sends two requests that block the CLI until a client
+answers, and neither is a permission:
+
+- `cursor/ask_question` — one or more questions, each with the agent's own
+  options. JaBot draws a **question card** in the thread: radios for a single
+  choice, checkboxes where the agent allows several, then **Send answer**,
+  **Skip** or **Cancel**. The answer goes back with the agent's own question
+  and option ids. Free text is not offered: Cursor's bridge only reads
+  selected option ids, so a typed answer would never reach the model.
+- `cursor/create_plan` — a plan to review before the agent carries it out.
+  JaBot draws a **plan review card** with the plan body, its steps and
+  phases, and **Accept plan**, **Reject…** (with an optional reason) or
+  **Not now**. JaBot sends no `planUri`; Cursor writes its own plan file and
+  says where it put it.
+
+Both appear in the Inbox as **QUESTION** and **PLAN REVIEW** cards (never as
+permissions), can be answered from a paired phone, and are settled exactly
+once: a second click reports what stands. Accepting a plan is a decision
+about what the agent will do, not a grant of tool permission — nothing in
+the permission broker reads it.
+
+A card that can no longer be answered says why instead of offering buttons:
+**expired** when the turn ended while it was open, **unavailable** when the
+Cursor process (or JaBot) went away. Neither is replayed on restart; a
+question the agent stopped waiting on is closed, not resurfaced.
+
+Cursor does not advertise these extensions in `initialize` and does not check
+the client before sending them, so there is nothing to negotiate. Any other
+`cursor/*` request (for example `cursor/update_todos`), and a question whose
+payload JaBot cannot read, is refused with JSON-RPC `-32601` — the signal
+Cursor treats as "the client cannot do this", after which it falls back to
+plain permission prompts or writes the plan itself. A turn never hangs on an
+extension nobody rendered, and no support is claimed for one nobody
+implemented.
+
+Verified against `cursor-agent 2026.08.04` (bundled ACP bridge). Resume uses
+ACP `session/load` / `session/resume` only when the adapter advertises them.

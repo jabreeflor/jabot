@@ -22,13 +22,22 @@ pub const PENDING: &str = "pending";
 pub const ANSWERED: &str = "answered";
 /// Nobody chose: the turn was cancelled, or the adapter died holding the ask.
 pub const CANCELLED: &str = "cancelled";
+/// The turn ended with the ask still open, so the agent stopped waiting. A
+/// question or plan only (#298); a permission never enters this state.
+pub const EXPIRED: &str = "expired";
+/// The process that asked is gone — adapter died, host quit — and no answer
+/// can be delivered. A question or plan only (#298): a permission stays
+/// `pending` across a quit, because its decision is still worth recording.
+pub const UNAVAILABLE: &str = "unavailable";
 
 const COLUMNS: &str = "id, thread_id, run_id, kind, title, subject_json, options_json, \
-     state, decided_by, option_id, delivered, created_at, resolved_at";
+     state, decided_by, option_id, delivered, created_at, resolved_at, ask, method, \
+     answer_json";
 
 /// The same list, qualified: the join below shares column names with `threads`.
 const JOINED_COLUMNS: &str = "p.id, p.thread_id, p.run_id, p.kind, p.title, p.subject_json, \
-     p.options_json, p.state, p.decided_by, p.option_id, p.delivered, p.created_at, p.resolved_at";
+     p.options_json, p.state, p.decided_by, p.option_id, p.delivered, p.created_at, \
+     p.resolved_at, p.ask, p.method, p.answer_json";
 
 pub fn insert_permission_request(
     conn: &Connection,
@@ -37,8 +46,8 @@ pub fn insert_permission_request(
     conn.execute(
         "INSERT INTO permission_requests (
             id, thread_id, run_id, kind, title, subject_json, options_json,
-            state, created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8)",
+            state, created_at, ask, method
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, ?9, ?10)",
         params![
             new.id,
             new.thread_id,
@@ -48,6 +57,8 @@ pub fn insert_permission_request(
             new.subject_json,
             new.options_json,
             now_utc(),
+            new.ask,
+            new.method,
         ],
     )?;
     get_permission_request(conn, &new.id)?.ok_or_else(|| StoreError::NotFound(new.id.clone()))
@@ -122,9 +133,10 @@ pub fn resolve_permission_request(
     decided_by: &str,
     option_id: Option<&str>,
     delivered: bool,
+    answer_json: Option<&str>,
 ) -> Result<bool, StoreError> {
     match state {
-        ANSWERED | CANCELLED => {}
+        ANSWERED | CANCELLED | EXPIRED | UNAVAILABLE => {}
         other => {
             return Err(StoreError::invalid(format!(
                 "invalid permission resolution {other}"
@@ -134,9 +146,17 @@ pub fn resolve_permission_request(
     let changed = conn.execute(
         "UPDATE permission_requests
             SET state = ?2, decided_by = ?3, option_id = ?4, delivered = ?5,
-                resolved_at = ?6
+                resolved_at = ?6, answer_json = ?7
           WHERE id = ?1 AND state = 'pending'",
-        params![id, state, decided_by, option_id, delivered, now_utc()],
+        params![
+            id,
+            state,
+            decided_by,
+            option_id,
+            delivered,
+            now_utc(),
+            answer_json
+        ],
     )?;
     Ok(changed > 0)
 }
@@ -176,6 +196,24 @@ mod tests {
                 title: "Run ls".into(),
                 subject_json: "{}".into(),
                 options_json: "[]".into(),
+                ask: "permission".into(),
+                method: Some("session/request_permission".into()),
+            })
+            .expect("insert")
+    }
+
+    fn question(store: &Store, id: &str) -> PermissionRequestRow {
+        store
+            .insert_permission_request(&NewPermissionRequest {
+                id: id.into(),
+                thread_id: "t-1".into(),
+                run_id: None,
+                kind: None,
+                title: "Which mode?".into(),
+                subject_json: "{\"toolCallId\":\"c\",\"questions\":[]}".into(),
+                options_json: "[]".into(),
+                ask: "question".into(),
+                method: Some("cursor/ask_question".into()),
             })
             .expect("insert")
     }
@@ -191,6 +229,11 @@ mod tests {
         assert_eq!(open.len(), 1);
         assert_eq!(open[0].title, "Run ls");
         assert_eq!(open[0].kind.as_deref(), Some("execute"));
+        assert_eq!(open[0].ask, "permission");
+        assert_eq!(
+            open[0].method.as_deref(),
+            Some("session/request_permission")
+        );
     }
 
     #[test]
@@ -199,11 +242,11 @@ mod tests {
         ask(&store, "req-1");
 
         assert!(store
-            .resolve_permission_request("req-1", ANSWERED, "dev-1", Some("allow_once"), true)
+            .resolve_permission_request("req-1", ANSWERED, "dev-1", Some("allow_once"), true, None)
             .expect("first"));
         // The second click, or the click that raced the adapter dying.
         assert!(!store
-            .resolve_permission_request("req-1", CANCELLED, "dev-1", None, false)
+            .resolve_permission_request("req-1", CANCELLED, "dev-1", None, false, None)
             .expect("second"));
 
         let row = store
@@ -217,6 +260,44 @@ mod tests {
             .list_open_permission_requests(None)
             .expect("list")
             .is_empty());
+    }
+
+    /// A question the host could not deliver an answer to is closed as such,
+    /// with what was (not) decided on the row — and it stops being open, so
+    /// the next launch does not offer buttons that reach nobody (#298).
+    #[test]
+    fn a_question_can_expire_or_become_unavailable_and_keeps_its_answer() {
+        let (_dir, store) = store();
+        question(&store, "q-1");
+        question(&store, "q-2");
+        question(&store, "q-3");
+
+        assert!(store
+            .resolve_permission_request("q-1", UNAVAILABLE, "host", None, false, None)
+            .expect("unavailable"));
+        assert!(store
+            .resolve_permission_request("q-2", EXPIRED, "host", None, false, None)
+            .expect("expired"));
+        let answer = "{\"outcome\":\"answered\",\"answers\":[{\"questionId\":\"q\",\"selectedOptionIds\":[\"a\"]}]}";
+        assert!(store
+            .resolve_permission_request("q-3", ANSWERED, "dev-1", None, true, Some(answer))
+            .expect("answered"));
+
+        let rows = store.list_permission_requests("t-1").expect("list");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].state, UNAVAILABLE);
+        assert_eq!(rows[1].state, EXPIRED);
+        assert_eq!(rows[2].state, ANSWERED);
+        assert_eq!(rows[2].answer_json.as_deref(), Some(answer));
+        assert_eq!(rows[2].ask, "question");
+        assert!(store
+            .list_open_permission_requests(None)
+            .expect("open")
+            .is_empty());
+        // The ledger refuses a word it does not know, for any kind.
+        assert!(store
+            .resolve_permission_request("q-3", "maybe", "dev-1", None, true, None)
+            .is_err());
     }
 
     #[test]

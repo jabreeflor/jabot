@@ -70,6 +70,8 @@ export const NEEDS_YOU_KINDS: readonly InboxKind[] = [
   "needs_you",
   "judgment_call",
   "permission",
+  "question",
+  "plan",
   "stuck",
   "failed",
   "lost",
@@ -93,6 +95,12 @@ export function inboxTag(kind: InboxKind): Tag {
       return { label: "JUDGMENT CALL", tone: "needs" };
     case "permission":
       return { label: "PERMISSION", tone: "needs" };
+    // Their own words, so a plan waiting for review never reads as a grant
+    // of tool permission (#298).
+    case "question":
+      return { label: "QUESTION", tone: "needs" };
+    case "plan":
+      return { label: "PLAN REVIEW", tone: "needs" };
     case "stuck":
       return { label: "STUCK", tone: "needs" };
     case "failed":

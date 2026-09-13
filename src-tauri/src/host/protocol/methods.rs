@@ -19,6 +19,13 @@ pub const PERMISSION_ASK: &str = "permission/ask";
 pub const PERMISSION_REPLY: &str = "permission/reply";
 pub const PERMISSION_PENDING: &str = "permission/pending";
 pub const PERMISSION_RESOLVED: &str = "permission/resolved";
+/// Structured questions and plan decisions from an agent's ACP extensions
+/// (#298). Same broker as permissions, deliberately not the same methods: a
+/// plan decision must never be drawable, or answerable, as a permission grant.
+pub const INTERACTION_ASK: &str = "interaction/ask";
+pub const INTERACTION_REPLY: &str = "interaction/reply";
+pub const INTERACTION_PENDING: &str = "interaction/pending";
+pub const INTERACTION_RESOLVED: &str = "interaction/resolved";
 pub const THREAD_FOLD: &str = "thread/fold";
 pub const THREAD_OPEN: &str = "thread/open";
 pub const THREAD_REOPEN: &str = "thread/reopen";
@@ -101,6 +108,8 @@ pub const CLIENT_METHODS: &[&str] = &[
     SESSION_CANCEL,
     PERMISSION_REPLY,
     PERMISSION_PENDING,
+    INTERACTION_REPLY,
+    INTERACTION_PENDING,
     THREAD_FOLD,
     THREAD_OPEN,
     THREAD_REOPEN,
@@ -1205,6 +1214,192 @@ pub struct PermissionResolvedParams {
     pub option_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cancelled: Option<bool>,
+}
+
+/// What sort of ask a pending record is (#298).
+///
+/// `Permission` is `session/request_permission` — the only kind the fold
+/// policy may answer and the only kind `permission/pending` lists. The other
+/// two are Cursor's blocking extensions, listed by `interaction/pending` and
+/// settled through `interaction/reply`, so that a plan decision can never be
+/// drawn as, or mistaken for, a grant of tool permission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AskKind {
+    Permission,
+    Question,
+    Plan,
+}
+
+impl AskKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Permission => "permission",
+            Self::Question => "question",
+            Self::Plan => "plan",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "permission" => Some(Self::Permission),
+            "question" => Some(Self::Question),
+            "plan" => Some(Self::Plan),
+            _ => None,
+        }
+    }
+}
+
+/// How a question or plan was settled (#298).
+///
+/// The first five are a human's, or the turn's for `cancelled`. The last two
+/// are the host's, written when nobody could answer: the turn ended with the
+/// ask still open, or the process that asked is gone. A client may send only
+/// the first five.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InteractionOutcome {
+    Answered,
+    Skipped,
+    Accepted,
+    Rejected,
+    Cancelled,
+    Expired,
+    Unavailable,
+}
+
+impl InteractionOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Answered => "answered",
+            Self::Skipped => "skipped",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::Cancelled => "cancelled",
+            Self::Expired => "expired",
+            Self::Unavailable => "unavailable",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "answered" => Some(Self::Answered),
+            "skipped" => Some(Self::Skipped),
+            "accepted" => Some(Self::Accepted),
+            "rejected" => Some(Self::Rejected),
+            "cancelled" => Some(Self::Cancelled),
+            "expired" => Some(Self::Expired),
+            "unavailable" => Some(Self::Unavailable),
+            _ => None,
+        }
+    }
+}
+
+/// One question's answer: the agent's own question id, and the ids of the
+/// options chosen — one, or several where the question allowed it. The same
+/// shape Cursor reads back, so nothing is translated on the way out.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionAnswer {
+    pub question_id: String,
+    #[serde(default)]
+    pub selected_option_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionReplyParams {
+    pub request_id: String,
+    pub device_id: String,
+    /// `answered` (with `answers`) or `skipped` for a question; `accepted` or
+    /// `rejected` for a plan; `cancelled` for either.
+    pub outcome: InteractionOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<Vec<QuestionAnswer>>,
+    /// Why, for `skipped` and `rejected`. Passed to the agent verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// What became of one answer — the same contract as `PermissionReplyResult`:
+/// `delivered` says whether an agent heard it, `alreadyAnswered` that an
+/// earlier resolution stands and the fields describe *that* one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionReplyResult {
+    pub request_id: String,
+    pub delivered: bool,
+    pub already_answered: bool,
+    pub outcome: InteractionOutcome,
+    /// The ledger state that stands: `answered`, `cancelled`, `expired` or
+    /// `unavailable`.
+    pub state: String,
+}
+
+/// A question or plan nobody has settled, as a client draws it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionView {
+    pub request_id: String,
+    pub thread_id: String,
+    pub ask: AskKind,
+    /// The ACP method it arrived on. Diagnostics — a client never dispatches
+    /// on it, and never builds UI from anything but `request`.
+    pub method: String,
+    pub title: String,
+    /// The typed request as `host/acp/extensions.rs` read it: the questions
+    /// and their options, or the plan and its todos. Only what the schema
+    /// names; nothing an agent added is passed through to be drawn.
+    pub request: Value,
+    pub created_at: String,
+    /// No live adapter call is waiting on this one — the host that took it is
+    /// gone. Unlike a permission, a stale question is not answerable: the
+    /// record is `unavailable` the moment that is known, and this flag only
+    /// covers the window before the host has said so.
+    pub stale: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionPendingParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionPendingResult {
+    pub requests: Vec<InteractionView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionAskParams {
+    pub host_id: String,
+    pub thread_id: String,
+    pub seq: u64,
+    pub request_id: String,
+    pub ask: AskKind,
+    pub method: String,
+    pub title: String,
+    pub request: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct InteractionResolvedParams {
+    pub host_id: String,
+    pub thread_id: String,
+    pub seq: u64,
+    pub request_id: String,
+    /// The device that settled it, or `host` when nobody could.
+    pub device_id: String,
+    pub outcome: InteractionOutcome,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answers: Option<Vec<QuestionAnswer>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub delivered: bool,
 }
 
 /// Why a folded thread came back. `failed` and `stuck` are distinct on purpose:
@@ -2408,6 +2603,59 @@ impl PermissionReplyParams {
             _ => Err(super::error::RpcError::InvalidParams(
                 "permission/reply requires optionId or cancelled: true".into(),
             )),
+        }
+    }
+}
+
+impl InteractionReplyParams {
+    /// Shape only. Whether the answers fit the question that was asked is the
+    /// broker's check, against the record — this is what any reply has to
+    /// look like before that record is even read.
+    pub fn validate(&self) -> Result<(), super::error::RpcError> {
+        use super::error::RpcError;
+        require_non_empty(&self.request_id, "requestId")?;
+        require_non_empty(&self.device_id, "deviceId")?;
+        let answers = self.answers.as_deref().unwrap_or(&[]);
+        match self.outcome {
+            InteractionOutcome::Answered => {
+                if answers.is_empty() {
+                    return Err(RpcError::InvalidParams(
+                        "outcome answered requires answers".into(),
+                    ));
+                }
+                for answer in answers {
+                    require_non_empty(&answer.question_id, "answers[].questionId")?;
+                    if answer
+                        .selected_option_ids
+                        .iter()
+                        .any(|id| id.trim().is_empty())
+                    {
+                        return Err(RpcError::InvalidParams(
+                            "answers[].selectedOptionIds must name options".into(),
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            InteractionOutcome::Skipped
+            | InteractionOutcome::Accepted
+            | InteractionOutcome::Rejected
+            | InteractionOutcome::Cancelled => {
+                if answers.is_empty() {
+                    Ok(())
+                } else {
+                    Err(RpcError::InvalidParams(format!(
+                        "outcome {} takes no answers",
+                        self.outcome.as_str()
+                    )))
+                }
+            }
+            InteractionOutcome::Expired | InteractionOutcome::Unavailable => {
+                Err(RpcError::InvalidParams(format!(
+                    "outcome {} is the host's to record, not a client's to send",
+                    self.outcome.as_str()
+                )))
+            }
         }
     }
 }

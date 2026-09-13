@@ -19,6 +19,7 @@
 
 import type { ReactNode } from "react";
 
+import type { InteractionReply } from "../components/types";
 import type { MobileCard, MobileInbox } from "./inbox";
 import "./mobile.css";
 
@@ -30,6 +31,8 @@ export interface InboxScreenProps {
   busyId?: string | null;
   onAnswer(requestId: string, optionId: string): void;
   onDecline(requestId: string): void;
+  /** Settle a question or plan card (#298). Absent: the card is read-only. */
+  onInteract?(requestId: string, reply: InteractionReply): void;
   onOpen?(threadId: string): void;
 }
 
@@ -39,6 +42,7 @@ export function InboxScreen({
   busyId,
   onAnswer,
   onDecline,
+  onInteract,
   onOpen,
 }: InboxScreenProps) {
   const empty =
@@ -63,6 +67,7 @@ export function InboxScreen({
             busy={busyId === card.id}
             onAnswer={onAnswer}
             onDecline={onDecline}
+            onInteract={onInteract}
             onOpen={onOpen}
           />
         )}
@@ -103,6 +108,7 @@ function Card({
   dim,
   onAnswer,
   onDecline,
+  onInteract,
   onOpen,
 }: {
   card: MobileCard;
@@ -110,9 +116,11 @@ function Card({
   dim?: boolean;
   onAnswer?: (requestId: string, optionId: string) => void;
   onDecline?: (requestId: string) => void;
+  onInteract?: (requestId: string, reply: InteractionReply) => void;
   onOpen?: (threadId: string) => void;
 }) {
   const ask = card.ask;
+  const interaction = card.interaction;
   return (
     <article className={dim ? "jm-card dim" : "jm-card"}>
       <span className={`jm-pill ${card.tag.tone}`}>{card.tag.label}</span>
@@ -159,6 +167,105 @@ function Card({
           >
             {ask.options.length === 0 ? "Dismiss" : "Not now"}
           </button>
+        </div>
+      )}
+
+      {interaction && interaction.prompts.length > 1 && (
+        <ul className="jm-prompts" aria-label="Questions">
+          {interaction.prompts.map((prompt) => (
+            <li key={prompt}>{prompt}</li>
+          ))}
+        </ul>
+      )}
+
+      {interaction?.stale && (
+        <span className="jm-stale">
+          The session that asked this is gone — it can no longer be answered.
+        </span>
+      )}
+
+      {interaction && onInteract && (
+        <div className="jm-acts">
+          {interaction.stale ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                onInteract(interaction.requestId, { outcome: "cancelled" })
+              }
+            >
+              Dismiss
+            </button>
+          ) : interaction.ask === "plan" ? (
+            <>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  onInteract(interaction.requestId, { outcome: "accepted" })
+                }
+              >
+                Accept plan
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  onInteract(interaction.requestId, { outcome: "rejected" })
+                }
+              >
+                Reject
+              </button>
+            </>
+          ) : interaction.options && interaction.questionId ? (
+            <>
+              {interaction.options.map((option) => (
+                <button
+                  key={option.optionId}
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    onInteract(interaction.requestId, {
+                      outcome: "answered",
+                      answers: [
+                        {
+                          questionId: interaction.questionId ?? "",
+                          selectedOptionIds: [option.optionId],
+                        },
+                      ],
+                    })
+                  }
+                >
+                  {option.name}
+                </button>
+              ))}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  onInteract(interaction.requestId, { outcome: "skipped" })
+                }
+              >
+                Skip
+              </button>
+            </>
+          ) : (
+            // Several questions, or a multiple choice: not something two
+            // buttons can say. The Mac has the form; this has the honest word.
+            <>
+              <span className="jm-stale">Answer this in the thread.</span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  onInteract(interaction.requestId, { outcome: "skipped" })
+                }
+              >
+                Skip
+              </button>
+            </>
+          )}
         </div>
       )}
     </article>

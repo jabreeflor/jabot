@@ -29,10 +29,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   INBOX_EVENT,
   INBOX_RESURFACE,
+  INTERACTION_ASK,
+  INTERACTION_RESOLVED,
   PERMISSION_ASK,
   PERMISSION_RESOLVED,
   type HostClient,
   type InboxEventView,
+  type InteractionPendingResult,
   type NotifyStatusResult,
   type PermissionPendingResult,
   type ThreadOverlayState,
@@ -42,6 +45,7 @@ import type {
   CardSource,
   InboxCard,
   InboxDetail,
+  InteractionReply,
   NoticeAction,
 } from "../components/types";
 // The projection lives under `src/mobile/` because #29 needed it first, and it
@@ -60,6 +64,11 @@ export const CARD_ARCHIVE = "archive";
 /** `ask:<optionId>` — answer the permission this card *is*, with the agent's
     own option id. Prefixed because a card's other buttons are ours. */
 export const ASK_PREFIX = "ask:";
+/** `decide:<verb>` — settle the question or plan this card *is* (#298):
+    `accept`, `reject`, `skip`, `cancel`, or `option:<optionId>` for a
+    single-choice question. Its own prefix, never `ask:`, so a plan's Accept
+    can never reach `permission/reply`. */
+export const DECIDE_PREFIX = "decide:";
 
 /** The states `thread/reopen` is legal from. Anything else is already open. */
 const REOPENABLE: readonly ThreadOverlayState[] = [
@@ -192,9 +201,16 @@ export function useInbox(
     async (cardId: string, actionId: string) => {
       const card = snapshot?.cards.find((row) => row.id === cardId);
       const answering = actionId.startsWith(ASK_PREFIX);
+      const deciding = actionId.startsWith(DECIDE_PREFIX);
       // Nothing to do, and nothing to re-read for: an id this hook does not
       // know is a fixture card's, or a button a later issue added.
-      if (!client || !card || (!answering && actionId !== CARD_ARCHIVE)) return;
+      if (
+        !client ||
+        !card ||
+        (!answering && !deciding && actionId !== CARD_ARCHIVE)
+      ) {
+        return;
+      }
       try {
         if (answering) {
           const deviceId = client.deviceId;
@@ -205,6 +221,16 @@ export function useInbox(
             requestId: card.id,
             deviceId,
             optionId: actionId.slice(ASK_PREFIX.length),
+          });
+        } else if (deciding) {
+          const deviceId = client.deviceId;
+          if (!deviceId) throw new Error("Not connected to the host yet.");
+          const reply = decideReply(card, actionId.slice(DECIDE_PREFIX.length));
+          if (!reply) return;
+          await client.replyInteraction({
+            requestId: card.id,
+            deviceId,
+            ...reply,
           });
         } else {
           await client.archiveThread({ threadId: card.threadId });
@@ -246,6 +272,8 @@ const LIVE: readonly string[] = [
   INBOX_EVENT,
   PERMISSION_ASK,
   PERMISSION_RESOLVED,
+  INTERACTION_ASK,
+  INTERACTION_RESOLVED,
 ];
 
 interface Snapshot {
@@ -260,7 +288,8 @@ interface Snapshot {
 async function load(client: HostClient): Promise<Snapshot> {
   const listed = await client.inbox();
   const pending = await pendingOrNone(client);
-  const projection = projectInbox(listed, pending);
+  const interactions = await interactionsOrNone(client);
+  const projection = projectInbox(listed, pending, interactions);
   const states = new Map<string, ThreadOverlayState>();
   const events = new Map<string, InboxEventView>();
   for (const event of listed.events) {
@@ -293,6 +322,52 @@ async function pendingOrNone(
   } catch {
     return { requests: [] };
   }
+}
+
+/** Questions and plans (#298), or none — same reasoning as `pendingOrNone`. */
+async function interactionsOrNone(
+  client: HostClient,
+): Promise<InteractionPendingResult> {
+  if (typeof client.pendingInteractions !== "function") {
+    return { requests: [] };
+  }
+  try {
+    return await client.pendingInteractions();
+  } catch {
+    return { requests: [] };
+  }
+}
+
+/**
+ * What a card's `decide:` button means, given what the card is. `null` for a
+ * verb that does not apply — a plan has no options, a question has no accept.
+ */
+function decideReply(
+  card: ProjectedCard,
+  verb: string,
+): InteractionReply | null {
+  const interaction = card.interaction;
+  if (!interaction) return null;
+  if (verb === "cancel") return { outcome: "cancelled" };
+  if (interaction.ask === "plan") {
+    if (verb === "accept") return { outcome: "accepted" };
+    if (verb === "reject") return { outcome: "rejected" };
+    return null;
+  }
+  if (verb === "skip") return { outcome: "skipped" };
+  if (verb.startsWith("option:") && interaction.questionId) {
+    const optionId = verb.slice("option:".length);
+    if (!interaction.options?.some((option) => option.optionId === optionId)) {
+      return null;
+    }
+    return {
+      outcome: "answered",
+      answers: [
+        { questionId: interaction.questionId, selectedOptionIds: [optionId] },
+      ],
+    };
+  }
+  return null;
 }
 
 function cardRow(
@@ -348,6 +423,58 @@ function detail(
   snapshot: Snapshot,
 ): InboxDetail | undefined {
   if (card.section === "sleeping") return undefined;
+  if (card.interaction) {
+    const interaction = card.interaction;
+    const actions: NoticeAction[] = [];
+    if (!interaction.stale) {
+      if (interaction.ask === "plan") {
+        actions.push(
+          { id: `${DECIDE_PREFIX}accept`, label: "Accept plan", primary: true },
+          { id: `${DECIDE_PREFIX}reject`, label: "Reject" },
+        );
+      } else if (interaction.options && interaction.questionId) {
+        // One single-choice question: the agent's options, in its order.
+        for (const option of interaction.options) {
+          actions.push({
+            id: `${DECIDE_PREFIX}option:${option.optionId}`,
+            label: option.name,
+            primary: actions.length === 0,
+          });
+        }
+        actions.push({ id: `${DECIDE_PREFIX}skip`, label: "Skip" });
+      }
+    }
+    actions.push({
+      id: CARD_REOPEN,
+      label: "Open thread",
+      primary: actions.length === 0,
+    });
+    if (interaction.stale) {
+      actions.push({ id: `${DECIDE_PREFIX}cancel`, label: "Dismiss" });
+    }
+    const bullets: string[] = [];
+    if (interaction.ask === "question" && interaction.prompts.length > 1) {
+      bullets.push(...interaction.prompts);
+    }
+    if (
+      !interaction.stale &&
+      interaction.ask === "question" &&
+      !interaction.options
+    ) {
+      bullets.push("Answer this in the thread — it has more than one choice.");
+    }
+    if (interaction.ask === "plan") {
+      bullets.push(
+        "Accepting a plan does not change what the agent is allowed to do.",
+      );
+    }
+    if (interaction.stale) {
+      bullets.push(
+        "The session that asked this is gone — it can no longer be answered.",
+      );
+    }
+    return { path: card.summary, bullets, actions };
+  }
   if (card.ask) {
     return {
       // The command, when the agent sent one: "Run ls" and "Run rm -rf /" are

@@ -20,6 +20,7 @@ import { avatarStateFor } from "../components/avatar";
 import { Conversation } from "../components/Conversation";
 import { GearIcon } from "../components/Icon";
 import { HostPicker } from "../components/HostPicker";
+import type { OnInteract } from "../components/InteractionCards";
 import type {
   Bot,
   BotDraft,
@@ -52,6 +53,7 @@ export function ChatView({
   onAcceptDraft,
   onReviewDraft,
   onAction,
+  onInteract,
   onReact,
   onPickHost,
   busy,
@@ -74,6 +76,8 @@ export function ChatView({
   onAcceptDraft?: (draftId: string) => void;
   onReviewDraft?: (draftId: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
+  /** A question or plan card's answer (#298). */
+  onInteract?: OnInteract;
   onReact?: (itemId: string, emoji: string) => void;
   onPickHost?: (hostId: string) => void;
   /** A turn is in flight on this bot's standing thread (#24). */
@@ -236,6 +240,7 @@ export function ChatView({
         void handleSend(text);
       }}
       onAction={onAction}
+      onInteract={onInteract}
       onReact={onReact}
       busy={busy}
       queued={queued}
@@ -316,10 +321,8 @@ export function LiveChatView({
     };
   }, [client, bot.id]);
 
-  const { stream, error, send, cancel, answer, react } = useThreadTranscript(
-    client,
-    threadId,
-  );
+  const { stream, error, send, cancel, answer, answerInteraction, react } =
+    useThreadTranscript(client, threadId);
 
   return (
     <ChatView
@@ -338,6 +341,8 @@ export function LiveChatView({
       // The buttons on a permission card are the agent's own ACP options, and
       // this is what carries the one the user pressed back to it (#20).
       onAction={answer}
+      // And a question or plan card's answer, in the agent's own ids (#298).
+      onInteract={answerInteraction}
       onReact={react}
       onPickHost={onPickHost}
       busy={stream.busy}

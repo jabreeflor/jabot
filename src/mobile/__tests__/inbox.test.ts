@@ -2,10 +2,17 @@
 
 import { describe, expect, it } from "vitest";
 
-import { projectInbox, withAsk, withoutAsk, askCard } from "../inbox";
+import {
+  projectInbox,
+  withAsk,
+  withoutAsk,
+  askCard,
+  interactionCard,
+} from "../inbox";
 import type {
   InboxEventView,
   InboxListResult,
+  InteractionView,
   PendingPermissionView,
 } from "../../host/protocol";
 
@@ -174,5 +181,113 @@ describe("the Inbox as the phone sees it", () => {
     const card = inbox.needs[0];
     expect(card.kind).toBe("pr");
     expect(card.tag.label).toBe("PULL REQUEST");
+  });
+
+  // #298: a question or plan is "what needs you" too, in its own words.
+  it("draws a plan for review and a one-tap question as their own kinds", () => {
+    const plan: InteractionView = {
+      requestId: "int-plan",
+      threadId: "t9",
+      ask: "plan",
+      method: "cursor/create_plan",
+      title: "Auth migration",
+      request: { toolCallId: "c", overview: "Move sessions over.", plan: "" },
+      createdAt: "2026-08-20T12:00:00.000Z",
+      stale: false,
+    };
+    const question: InteractionView = {
+      requestId: "int-q",
+      threadId: "t8",
+      ask: "question",
+      method: "cursor/ask_question",
+      title: "Need input",
+      request: {
+        toolCallId: "c",
+        questions: [
+          {
+            id: "q1",
+            prompt: "Which mode?",
+            options: [
+              { id: "agent", label: "Agent" },
+              { id: "plan", label: "Plan" },
+            ],
+          },
+        ],
+      },
+      createdAt: "2026-08-20T12:01:00.000Z",
+      stale: false,
+    };
+    const inbox = projectInbox(
+      list({
+        events: [event({ id: "n1", threadId: "t9", kind: "needs_you" })],
+      }),
+      { requests: [] },
+      { requests: [plan, question] },
+    );
+    // The plan's thread had a `needs_you` row too; the answerable card wins.
+    expect(inbox.needs.map((card) => card.id)).toEqual(["int-q", "int-plan"]);
+    const planCard = inbox.needs[1];
+    expect(planCard.kind).toBe("plan");
+    expect(planCard.tag.label).toBe("PLAN REVIEW");
+    expect(planCard.summary).toBe("Move sessions over.");
+    expect(planCard.ask).toBeUndefined();
+    expect(planCard.interaction).toMatchObject({ ask: "plan", stale: false });
+
+    const questionCard = inbox.needs[0];
+    expect(questionCard.kind).toBe("question");
+    expect(questionCard.tag.label).toBe("QUESTION");
+    expect(questionCard.summary).toBe("Which mode?");
+    expect(questionCard.interaction).toMatchObject({
+      questionId: "q1",
+      options: [
+        { optionId: "agent", name: "Agent" },
+        { optionId: "plan", name: "Plan" },
+      ],
+    });
+    // Answered somewhere: the card goes, whichever kind it was.
+    expect(withoutAsk(inbox, "int-plan").needs.map((c) => c.id)).toEqual([
+      "int-q",
+    ]);
+  });
+
+  it("does not flatten several questions, or a multiple choice, into buttons", () => {
+    const many = interactionCard({
+      requestId: "int-many",
+      threadId: "t8",
+      ask: "question",
+      method: "cursor/ask_question",
+      title: "Need input",
+      request: {
+        questions: [
+          { id: "a", prompt: "First?", options: [{ id: "x", label: "X" }] },
+          { id: "b", prompt: "Second?", options: [{ id: "y", label: "Y" }] },
+        ],
+      },
+      createdAt: "2026-08-20T12:02:00.000Z",
+      stale: false,
+    });
+    expect(many.interaction?.options).toBeUndefined();
+    expect(many.interaction?.prompts).toEqual(["First?", "Second?"]);
+    const multi = interactionCard({
+      requestId: "int-multi",
+      threadId: "t8",
+      ask: "question",
+      method: "cursor/ask_question",
+      title: "Need input",
+      request: {
+        questions: [
+          {
+            id: "a",
+            prompt: "Which?",
+            allowMultiple: true,
+            options: [{ id: "x", label: "X" }],
+          },
+        ],
+      },
+      createdAt: "2026-08-20T12:03:00.000Z",
+      stale: true,
+    });
+    expect(multi.interaction?.options).toBeUndefined();
+    expect(multi.interaction?.stale).toBe(true);
   });
 });

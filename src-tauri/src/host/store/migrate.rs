@@ -20,6 +20,7 @@ const MIGRATIONS: &[(i32, &str)] = &[
     (13, include_str!("migrations/0013_thread_summary.sql")),
     (14, include_str!("migrations/0014_message_reactions.sql")),
     (15, include_str!("migrations/0015_thread_branches.sql")),
+    (16, include_str!("migrations/0016_extension_requests.sql")),
 ];
 
 /// The schema version a freshly opened store lands on.

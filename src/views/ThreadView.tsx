@@ -22,6 +22,7 @@ import { canFold, FoldButton } from "../components/FoldButton";
 import { HarnessChip } from "../components/HarnessChip";
 import { HostPicker } from "../components/HostPicker";
 import { BranchIcon, CodeSessionIcon } from "../components/Icon";
+import type { OnInteract } from "../components/InteractionCards";
 import { threadStatus, type ThreadStatus } from "../components/status";
 import type {
   FoldPolicy,
@@ -48,6 +49,7 @@ export function ThreadView({
   items,
   onSend,
   onAction,
+  onInteract,
   onReact,
   onPickHost,
   onFold,
@@ -77,6 +79,8 @@ export function ThreadView({
   items: readonly TranscriptItem[];
   onSend: (text: string) => void;
   onAction?: (itemId: string, actionId: string) => void;
+  /** A question or plan card's answer (#298). */
+  onInteract?: OnInteract;
   onReact?: (itemId: string, emoji: string) => void;
   onPickHost?: (hostId: string) => void;
   /** Fold this thread from the chat itself — "Disappear until done" without
@@ -164,6 +168,7 @@ export function ThreadView({
       composerPlaceholder={`Message ${thread.title}`}
       onSend={onSend}
       onAction={onAction}
+      onInteract={onInteract}
       onReact={onReact}
       onBranch={onBranch}
       branchingSeq={branchingSeq}
@@ -388,10 +393,8 @@ export function LiveThreadView({
   /** Navigate to another Code thread — a branch, or the source it came from. */
   onOpenThread?: (threadId: string) => void;
 }) {
-  const { stream, error, send, cancel, answer, react } = useThreadTranscript(
-    client,
-    thread.id,
-  );
+  const { stream, error, send, cancel, answer, answerInteraction, react } =
+    useThreadTranscript(client, thread.id);
   // Fetched once per thread rather than folded into the transcript stream:
   // provenance is a fact about how the thread began, so it cannot change while
   // you are reading it, and re-asking on every `session/update` would be a
@@ -460,6 +463,8 @@ export function LiveThreadView({
       // The buttons on a permission card are the agent's own ACP options, and
       // this is what carries the one the user pressed back to it (#20).
       onAction={answer}
+      // And a question or plan card's answer, in the agent's own ids (#298).
+      onInteract={answerInteraction}
       onReact={react}
       onPickHost={onPickHost}
       onFold={onFold}
