@@ -34,9 +34,10 @@ pub use handoff::{KIND_CODE_SESSION as HANDOFF_CODE_SESSION, KIND_HANDOFF};
 pub use migrate::head as schema_head;
 pub use models::*;
 /// `permission_requests.state`, so the broker and the SQL cannot spell the
-/// same three words differently (#20).
+/// same words differently (#20; `expired` and `unavailable` since #298).
 pub use permission::{
-    ANSWERED as ASK_ANSWERED, CANCELLED as ASK_CANCELLED, PENDING as ASK_PENDING,
+    ANSWERED as ASK_ANSWERED, CANCELLED as ASK_CANCELLED, EXPIRED as ASK_EXPIRED,
+    PENDING as ASK_PENDING, UNAVAILABLE as ASK_UNAVAILABLE,
 };
 /// `thread_prs.status`, `.check_state` and `.detected_via` (#28), so the poll,
 /// the wire and the SQL cannot spell the same words differently.
@@ -779,9 +780,16 @@ impl Store {
         decided_by: &str,
         option_id: Option<&str>,
         delivered: bool,
+        answer_json: Option<&str>,
     ) -> Result<bool, StoreError> {
         permission::resolve_permission_request(
-            &self.conn, id, state, decided_by, option_id, delivered,
+            &self.conn,
+            id,
+            state,
+            decided_by,
+            option_id,
+            delivered,
+            answer_json,
         )
     }
 
@@ -1432,6 +1440,9 @@ pub(crate) fn map_permission_request(row: &Row<'_>) -> rusqlite::Result<Permissi
         delivered: row.get(10)?,
         created_at: row.get(11)?,
         resolved_at: row.get(12)?,
+        ask: row.get(13)?,
+        method: row.get(14)?,
+        answer_json: row.get(15)?,
     })
 }
 

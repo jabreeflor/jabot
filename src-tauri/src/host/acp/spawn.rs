@@ -162,18 +162,7 @@ mod tests {
         drop(spawned.stdin);
         drop(spawned.stdout);
 
-        let mut grandchild = None;
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline {
-            if let Ok(raw) = std::fs::read_to_string(&pidfile) {
-                if let Ok(pid) = raw.trim().parse::<u32>() {
-                    grandchild = Some(pid);
-                    break;
-                }
-            }
-            thread::sleep(Duration::from_millis(20));
-        }
-        let grandchild = grandchild.expect("grandchild pid file");
+        let grandchild = wait_for_pid_file(&pidfile, Duration::from_secs(2));
         assert!(
             process_alive(grandchild),
             "grandchild {grandchild} should be running before kill"
@@ -270,18 +259,11 @@ mod tests {
         drop(spawned.stdin);
         drop(spawned.stdout);
 
-        let mut grandchild = None;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while Instant::now() < deadline {
-            if let Ok(raw) = std::fs::read_to_string(&pidfile) {
-                if let Ok(pid) = raw.trim().parse::<u32>() {
-                    grandchild = Some(pid);
-                    break;
-                }
-            }
-            thread::sleep(Duration::from_millis(40));
-        }
-        let grandchild = grandchild.expect("grandchild pid file");
+        // 5s is enough when this test runs alone (windows-adapter-lifecycle
+        // on the same commit). `windows verify` runs the whole lib suite in
+        // parallel; PowerShell + ping can miss that window and the test
+        // panics at "grandchild pid file" before it ever asks about the job.
+        let grandchild = wait_for_pid_file(&pidfile, Duration::from_secs(30));
         assert!(
             process_alive(grandchild),
             "grandchild {grandchild} should be running before kill"
@@ -354,14 +336,12 @@ mod tests {
 
         let mut grandchild = None;
         let mut wrapper_exited = false;
-        let deadline = Instant::now() + Duration::from_secs(5);
+        // Same load window as `kill_job_reaps_grandchild`: isolated this
+        // finishes in well under 5s; the full `cargo test` suite does not.
+        let deadline = Instant::now() + Duration::from_secs(30);
         while Instant::now() < deadline {
             if grandchild.is_none() {
-                if let Ok(raw) = std::fs::read_to_string(&pidfile) {
-                    if let Ok(pid) = raw.trim().parse::<u32>() {
-                        grandchild = Some(pid);
-                    }
-                }
+                grandchild = read_pid_file(&pidfile);
             }
             if !wrapper_exited {
                 match child.try_wait() {
@@ -375,7 +355,13 @@ mod tests {
             }
             thread::sleep(Duration::from_millis(40));
         }
-        let grandchild = grandchild.expect("grandchild pid file");
+        let grandchild = grandchild.unwrap_or_else(|| {
+            panic!(
+                "grandchild pid file never appeared at {} within 30s; last: {}",
+                pidfile.display(),
+                pid_file_diag(&pidfile)
+            )
+        });
         assert!(
             wrapper_exited,
             "wrapper must have exited before terminate so this is the leak case"
@@ -410,6 +396,34 @@ mod tests {
         let lines: Vec<&str> = raw.lines().collect();
         assert_eq!(lines, ["not logged in", "please run /login"]);
         terminate_process_group(&mut spawned.child);
+    }
+
+    fn read_pid_file(path: &Path) -> Option<u32> {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|raw| raw.trim().parse().ok())
+    }
+
+    fn pid_file_diag(path: &Path) -> String {
+        match std::fs::read_to_string(path) {
+            Ok(raw) => format!("{raw:?}"),
+            Err(err) => format!("<unreadable: {err}>"),
+        }
+    }
+
+    fn wait_for_pid_file(path: &Path, timeout: Duration) -> u32 {
+        let deadline = Instant::now() + timeout;
+        while Instant::now() < deadline {
+            if let Some(pid) = read_pid_file(path) {
+                return pid;
+            }
+            thread::sleep(Duration::from_millis(40));
+        }
+        panic!(
+            "grandchild pid file never appeared at {} within {timeout:?}; last: {}",
+            path.display(),
+            pid_file_diag(path)
+        );
     }
 
     fn linger_runtime() -> HarnessRuntime {

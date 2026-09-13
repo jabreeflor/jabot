@@ -4,7 +4,19 @@
 //! - `echo` (default): initialize, session/new, stream one agent chunk, return
 //! - `cursor-login`: advertise `cursor_login` and require `authenticate`
 //! - `cursor-auth-fail`: `authenticate` fails — startup must not look like success
-//! - `cursor-ask`: send blocking `cursor/ask_question` and wait for the decline
+//! - `cursor-ask`: send a blocking `cursor/ask_question`, wait for the answer,
+//!   stream it back as `outcome=<json>` and end the turn — so a test can see
+//!   exactly what reached the agent (#298)
+//! - `cursor-plan`: the same with `cursor/create_plan`
+//! - `cursor-ask-expire`: send the question and end the turn without waiting
+//!   — an agent that stopped waiting, so the host must expire the ask
+//! - `cursor-ask-exit`: send the question and exit — an adapter that died
+//!   holding the ask, so the host must mark it unavailable
+//! - `cursor-ask-bad`: send a `cursor/ask_question` with no questions in it;
+//!   the host must refuse it (`-32601`) rather than draw it, and the agent
+//!   streams `refused=<code>` and ends the turn
+//! - `cursor-todos`: send `cursor/update_todos`, an extension the host does
+//!   not render; the agent streams `refused=<code>` and ends the turn
 //! - `permission`: request `session/request_permission` before completing
 //! - `read-permission`: same, but a `read` tool call — the one kind Wait for
 //!   Inbox is allowed to answer on the user's behalf
@@ -105,13 +117,26 @@ fn main() {
         if msg.get("method").is_none() {
             if pending_prompt_id.is_some() {
                 eprintln!("permission_reply={msg}");
+                // A Cursor-shaped mode streams what it was told, verbatim: the
+                // test on the other side is about whether the human's choice
+                // reached the agent unchanged, and "allowed" would hide a
+                // reply that was silently turned into a cancel (#298).
+                let text = if mode.starts_with("cursor-") {
+                    match (msg.get("result"), msg.get("error")) {
+                        (Some(result), _) => format!("outcome={}", result["outcome"]),
+                        (None, Some(error)) => format!("refused={}", error["code"]),
+                        (None, None) => "allowed".to_string(),
+                    }
+                } else {
+                    "allowed".to_string()
+                };
                 notify(
                     &mut stdout,
                     "session/update",
                     serde_json::json!({
                         "sessionId": session_id,
                         "sessionUpdate": "agent_message_chunk",
-                        "content": { "type": "text", "text": "allowed" }
+                        "content": { "type": "text", "text": text }
                     }),
                 );
                 // A gated script can ask for more than one thing in a turn —
@@ -453,22 +478,68 @@ fn main() {
                             serde_json::json!({ "stopReason": "end_turn" }),
                         );
                     }
-                    "cursor-ask" => {
+                    "cursor-ask" | "cursor-ask-expire" | "cursor-ask-exit" => {
                         request(
                             &mut stdout,
                             serde_json::json!(9100),
                             "cursor/ask_question",
+                            cursor_question(),
+                        );
+                        match mode.as_str() {
+                            // Stopped waiting: the turn ends with the ask open.
+                            "cursor-ask-expire" => {
+                                reply(
+                                    &mut stdout,
+                                    id,
+                                    serde_json::json!({ "stopReason": "end_turn" }),
+                                );
+                            }
+                            // Died holding it.
+                            "cursor-ask-exit" => {
+                                let _ = stdout.flush();
+                                std::process::exit(0);
+                            }
+                            _ => pending_prompt_id = id,
+                        }
+                    }
+                    "cursor-plan" => {
+                        request(
+                            &mut stdout,
+                            serde_json::json!(9101),
+                            "cursor/create_plan",
                             serde_json::json!({
-                                "toolCallId": "call-ask",
-                                "title": "Need input",
-                                "questions": [{
-                                    "id": "q1",
-                                    "prompt": "Which mode?",
-                                    "options": [
-                                        { "id": "agent", "label": "Agent" },
-                                        { "id": "plan", "label": "Plan" }
-                                    ]
-                                }]
+                                "toolCallId": "call-plan",
+                                "name": "Auth migration",
+                                "overview": "Move session handling onto the new auth service.",
+                                "plan": "## Steps\n\n1. Add the adapter.\n2. Migrate the middleware.",
+                                "todos": [
+                                    { "id": "t1", "content": "Add the adapter", "status": "completed" },
+                                    { "id": "t2", "content": "Migrate the middleware", "status": "pending" }
+                                ]
+                            }),
+                        );
+                        pending_prompt_id = id;
+                    }
+                    // A shape the host cannot draw. It must be refused, not
+                    // rendered and not silently cancelled.
+                    "cursor-ask-bad" => {
+                        request(
+                            &mut stdout,
+                            serde_json::json!(9103),
+                            "cursor/ask_question",
+                            serde_json::json!({ "toolCallId": "call-bad", "questions": [] }),
+                        );
+                        pending_prompt_id = id;
+                    }
+                    // An extension the host does not render at all.
+                    "cursor-todos" => {
+                        request(
+                            &mut stdout,
+                            serde_json::json!(9102),
+                            "cursor/update_todos",
+                            serde_json::json!({
+                                "toolCallId": "call-todos",
+                                "todos": [{ "id": "t1", "content": "x", "status": "pending" }]
                             }),
                         );
                         pending_prompt_id = id;
@@ -817,6 +888,23 @@ fn next_step(steps: &mut Vec<String>) -> Option<String> {
     } else {
         Some(steps.remove(0))
     }
+}
+
+/// The question every `cursor-ask*` mode sends: the shape Cursor's ACP bridge
+/// sends, with one single-choice question (#298).
+fn cursor_question() -> serde_json::Value {
+    serde_json::json!({
+        "toolCallId": "call-ask",
+        "title": "Need input",
+        "questions": [{
+            "id": "q1",
+            "prompt": "Which mode?",
+            "options": [
+                { "id": "agent", "label": "Agent" },
+                { "id": "plan", "label": "Plan" }
+            ]
+        }]
+    })
 }
 
 /// The three ACP tool kinds a gated script can ask permission for. Everything

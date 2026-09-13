@@ -1,0 +1,35 @@
+{
+  "toolCallId": "call-plan-1",
+  "name": "Auth migration",
+  "overview": "Move session handling onto the new auth service.",
+  "plan": "## Steps\n\n1. Add the adapter.\n2. Migrate the middleware.\n3. Delete the legacy path.",
+  "isProject": false,
+  "todos": [
+    { "id": "t1", "content": "Add the adapter", "status": "completed" },
+    {
+      "id": "t2",
+      "content": "Migrate the middleware",
+      "status": "in_progress"
+    },
+    { "id": "t3", "content": "Delete the legacy path", "status": "pending" }
+  ],
+  "phases": [
+    {
+      "name": "Wire it up",
+      "todos": [
+        { "id": "t1", "content": "Add the adapter", "status": "completed" }
+      ]
+    },
+    {
+      "name": "Cut over",
+      "todos": [
+        {
+          "id": "t2",
+          "content": "Migrate the middleware",
+          "status": "in_progress"
+        },
+        { "id": "t3", "content": "Delete the legacy path", "status": "pending" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "outcome": {
+    "outcome": "answered",
+    "answers": [
+      { "questionId": "q-mode", "selectedOptionIds": ["plan"] },
+      { "questionId": "q-scope", "selectedOptionIds": ["api", "web"] }
+    ]
+  }
+}

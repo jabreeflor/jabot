@@ -33,8 +33,8 @@ use super::lifecycle::{self, PermissionDisposition};
 use super::protocol::error::RpcError;
 use super::protocol::jsonrpc::RequestId;
 use super::protocol::methods::{
-    PendingPermissionView, PermissionPendingParams, PermissionPendingResult, PermissionReplyParams,
-    PermissionReplyResult,
+    AskKind, InteractionOutcome, PendingPermissionView, PermissionPendingParams,
+    PermissionPendingResult, PermissionReplyParams, PermissionReplyResult,
 };
 use super::store::{
     NewPermissionRequest, PermissionRequestRow, ASK_ANSWERED, ASK_CANCELLED, ASK_PENDING,
@@ -43,13 +43,20 @@ use super::HostSession;
 
 /// `decided_by` for a request the host answered itself under Wait for Inbox,
 /// or withdrew because the turn ended. Never a device id: no human chose it.
-const HOST_DECIDED: &str = "host";
+pub(crate) const HOST_DECIDED: &str = "host";
+
+/// The ACP method a permission arrives on; the `method` a permission row keeps.
+pub(crate) const REQUEST_PERMISSION: &str = "session/request_permission";
 
 /// The live half of an outstanding ask: the adapter call blocked on it, plus
 /// what the agent said, so a host with no store can still draw the card.
 ///
 /// RAM only, and deliberately so — `acp_id` is meaningless to the next process
 /// and everything durable about the ask is a row in `permission_requests`.
+///
+/// Since #298 this is also the live half of a question or plan: same map, same
+/// row, tagged by `ask`. For those, `subject` is the typed request and
+/// `options` is empty — what they offer is inside the request, not beside it.
 #[derive(Debug)]
 pub(crate) struct PendingPermission {
     pub(crate) thread_id: String,
@@ -59,18 +66,38 @@ pub(crate) struct PendingPermission {
     pub(crate) subject: Value,
     pub(crate) options: Value,
     pub(crate) created_at: String,
+    /// Which sort of ask: decides which pending list it appears in and which
+    /// reply method may settle it.
+    pub(crate) ask: AskKind,
+    /// The ACP method it arrived on. Kept for the record; nothing dispatches
+    /// on it.
+    pub(crate) method: String,
 }
 
 /// Why a live ask is being taken off the wire without a human answering it.
+///
+/// The agent is answered `cancelled` in every case. What differs is the
+/// *record*, and since #298 it differs by kind: a permission decision is worth
+/// recording after the fact, so #20's rules for it are untouched; a question
+/// or plan whose asker is gone is closed as such, because Cursor will not ask
+/// again and an answer recorded later could never be delivered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Withdrawal {
-    /// The turn ended: the user cancelled, or the adapter died holding the
-    /// ask. Nobody will ever answer it, so the record resolves `cancelled`.
+    /// The turn ended on purpose: the user cancelled, or the lifecycle closed
+    /// the thread out. Nobody will ever answer, so the record resolves
+    /// `cancelled` — every kind.
     Cancelled,
-    /// The *host* is going away. The question outlives us and the record stays
-    /// `pending`, because `state-machine.md` promises the next launch
-    /// resurfaces this thread as `needs_you` with the ask still on it.
+    /// The *host* is going away. A permission stays `pending`, because
+    /// `state-machine.md` promises the next launch resurfaces this thread as
+    /// `needs_you` with the ask still on it. A question or plan becomes
+    /// `unavailable`.
     Abandoned,
+    /// The adapter died holding the ask. A permission resolves `cancelled`,
+    /// as it always has; a question or plan is `unavailable`.
+    Lost,
+    /// The turn ended with the ask still open: the agent stopped waiting. A
+    /// permission resolves `cancelled`; a question or plan is `expired`.
+    Expired,
 }
 
 impl HostSession {
@@ -101,6 +128,8 @@ impl HostSession {
             subject,
             options,
             created_at: super::store::now_utc(),
+            ask: AskKind::Permission,
+            method: REQUEST_PERMISSION.to_string(),
         };
         // Written before either branch acts, so the ledger holds every ask the
         // host ever took — including the ones it answered itself. What the
@@ -110,6 +139,8 @@ impl HostSession {
 
         // Wait for Inbox is a host-side permission policy on a folded thread
         // (#5, #15): reads are answered here, everything else reaches a human.
+        // Permissions only — a question or plan never comes through here, so
+        // nothing can auto-answer one (#298).
         match self.lifecycle_permission_policy(thread_id, &pending.subject, &pending.options) {
             PermissionDisposition::AutoAllow { option_id } => {
                 let delivered = self.answer_agent(thread_id, pending.acp_id, selected(&option_id));
@@ -119,6 +150,7 @@ impl HostSession {
                     HOST_DECIDED,
                     Some(&option_id),
                     delivered,
+                    None,
                 );
                 self.lifecycle_record_auto_allow(thread_id, &pending.subject, &option_id);
             }
@@ -154,11 +186,30 @@ impl HostSession {
             let Some(pending) = self.pending_permissions.remove(&request_id) else {
                 continue;
             };
+            let ask = pending.ask;
             let delivered = self.answer_agent(thread_id, pending.acp_id, cancelled_outcome());
             if !delivered {
                 eprintln!(
                     "could not tell {thread_id}'s agent that {request_id} was withdrawn ({reason})"
                 );
+            }
+            if ask != AskKind::Permission {
+                let outcome = match how {
+                    Withdrawal::Cancelled => InteractionOutcome::Cancelled,
+                    Withdrawal::Abandoned | Withdrawal::Lost => InteractionOutcome::Unavailable,
+                    Withdrawal::Expired => InteractionOutcome::Expired,
+                };
+                self.settle_interaction(
+                    thread_id,
+                    &request_id,
+                    ask,
+                    outcome,
+                    None,
+                    Some(reason.to_string()),
+                    HOST_DECIDED,
+                    delivered,
+                );
+                continue;
             }
             if how == Withdrawal::Abandoned {
                 continue;
@@ -169,6 +220,7 @@ impl HostSession {
                 HOST_DECIDED,
                 None,
                 delivered,
+                None,
             );
             let device = self
                 .connected_device_id
@@ -202,6 +254,20 @@ impl HostSession {
         // deliberately not.
         let device_id = self.answering_device(&params.device_id)?;
         let record = self.permission_record(&request_id);
+        // A question or plan has its own reply method, and this one must not
+        // be able to reach it: `permission/reply` carries an option id, and
+        // there is no option on a plan that means "accepted" (#298).
+        let is_permission = |ask: AskKind| ask == AskKind::Permission;
+        let named_kind = self
+            .pending_permissions
+            .get(&request_id)
+            .map(|pending| pending.ask)
+            .or_else(|| record.as_ref().and_then(|row| AskKind::parse(&row.ask)));
+        if named_kind.is_some_and(|ask| !is_permission(ask)) {
+            return Err(RpcError::InvalidParams(format!(
+                "{request_id} is not a permission request; answer it with interaction/reply"
+            )));
+        }
         // Already decided: the second click, or one that raced the turn being
         // cancelled. Answered before anything is removed or sent, so a repeat
         // is a read — it cannot take a live ask off the wire without
@@ -249,6 +315,7 @@ impl HostSession {
             &device_id,
             params.option_id.as_deref(),
             delivered,
+            None,
         );
         // Lost the claim to a resolution that landed between the read above
         // and this write. Report what actually stands rather than what this
@@ -314,7 +381,7 @@ impl HostSession {
     /// somebody else is refused rather than quietly corrected, because the
     /// only reason to send a different id is to be recorded as a device you
     /// are not.
-    fn answering_device(&self, claimed: &str) -> Result<String, RpcError> {
+    pub(crate) fn answering_device(&self, claimed: &str) -> Result<String, RpcError> {
         let Some(connected) = self.connected_device_id.as_deref() else {
             // `require_hello` runs before this in the router; belt and braces
             // for anyone calling the handler directly.
@@ -339,9 +406,13 @@ impl HostSession {
         params: PermissionPendingParams,
     ) -> Result<PermissionPendingResult, RpcError> {
         let wanted = params.thread_id.as_deref();
+        // Permissions only. A question or plan is listed by
+        // `interaction/pending`, and never here — a client that draws this
+        // list as "things to allow" must not be handed a plan to allow (#298).
         let mut requests: Vec<PendingPermissionView> = self
             .pending_permissions
             .iter()
+            .filter(|(_, pending)| pending.ask == AskKind::Permission)
             .filter(|(_, pending)| wanted.is_none_or(|id| pending.thread_id == id))
             .map(|(request_id, pending)| PendingPermissionView {
                 request_id: request_id.clone(),
@@ -359,7 +430,9 @@ impl HostSession {
                 .list_open_permission_requests(wanted)
                 .map_err(|err| RpcError::Internal(err.to_string()))?;
             for row in rows {
-                if self.pending_permissions.contains_key(&row.id) {
+                if row.ask != AskKind::Permission.as_str()
+                    || self.pending_permissions.contains_key(&row.id)
+                {
                     continue;
                 }
                 requests.push(stale_view(row));
@@ -377,7 +450,7 @@ impl HostSession {
 
     // ---- the record ---------------------------------------------------
 
-    fn record_permission_request(&self, request_id: &str, pending: &PendingPermission) {
+    pub(crate) fn record_permission_request(&self, request_id: &str, pending: &PendingPermission) {
         let Some(store) = self.store.as_ref() else {
             return;
         };
@@ -390,6 +463,8 @@ impl HostSession {
             title: pending.title.clone(),
             subject_json: pending.subject.to_string(),
             options_json: pending.options.to_string(),
+            ask: pending.ask.as_str().to_string(),
+            method: Some(pending.method.clone()),
         };
         // A thread with no row — an ephemeral prompt, or a test driving the
         // adapter directly — cannot have a request row either (the foreign key
@@ -401,7 +476,7 @@ impl HostSession {
         }
     }
 
-    fn permission_record(&self, request_id: &str) -> Option<PermissionRequestRow> {
+    pub(crate) fn permission_record(&self, request_id: &str) -> Option<PermissionRequestRow> {
         self.store
             .as_ref()?
             .get_permission_request(request_id)
@@ -412,20 +487,27 @@ impl HostSession {
     }
 
     /// `true` when this call is the one that resolved the row.
-    fn resolve_permission_record(
+    pub(crate) fn resolve_permission_record(
         &self,
         request_id: &str,
         state: &str,
         decided_by: &str,
         option_id: Option<&str>,
         delivered: bool,
+        answer_json: Option<&str>,
     ) -> bool {
         let Some(store) = self.store.as_ref() else {
             // Nothing durable to claim; the live entry was the claim.
             return true;
         };
-        match store.resolve_permission_request(request_id, state, decided_by, option_id, delivered)
-        {
+        match store.resolve_permission_request(
+            request_id,
+            state,
+            decided_by,
+            option_id,
+            delivered,
+            answer_json,
+        ) {
             Ok(claimed) => claimed,
             Err(err) => {
                 eprintln!("could not resolve permission request {request_id}: {err}");
@@ -436,7 +518,7 @@ impl HostSession {
 
     /// Hand an outcome to the adapter. `false` when there is no adapter left —
     /// which is a fact about the world, not a failure of the call.
-    fn answer_agent(&self, thread_id: &str, acp_id: RequestId, outcome: Value) -> bool {
+    pub(crate) fn answer_agent(&self, thread_id: &str, acp_id: RequestId, outcome: Value) -> bool {
         let Some(conn) = self.conn(thread_id) else {
             return false;
         };
@@ -489,7 +571,9 @@ fn selected(option_id: &str) -> Value {
     json!({ "outcome": { "outcome": "selected", "optionId": option_id } })
 }
 
-fn cancelled_outcome() -> Value {
+/// The one answer every blocking request accepts as "nobody chose": ACP's
+/// permission outcome and Cursor's extension outcomes spell it the same way.
+pub(crate) fn cancelled_outcome() -> Value {
     json!({ "outcome": { "outcome": "cancelled" } })
 }
 

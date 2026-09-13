@@ -70,6 +70,15 @@ pub enum Inbound {
         acp_id: RequestId,
         params: Value,
     },
+    /// A blocking request from the agent that is not a permission: one of
+    /// the extension methods `extensions::SUPPORTED` names (#298). Carried
+    /// raw, so the host — not the reader thread — decides whether it can be
+    /// drawn, and still holds the request id to refuse it if not.
+    Extension {
+        acp_id: RequestId,
+        method: String,
+        params: Value,
+    },
     /// The response to a `session/prompt`. `request_id` is carried because it
     /// is the *only* thing on the wire that identifies the turn: ACP v1 puts
     /// no `sessionId` on this message, so a shared process cannot tell whose
@@ -408,6 +417,11 @@ impl AcpConnection {
             }
             Inbound::Update(params) => self.owner_of_session(params),
             Inbound::Permission { params, .. } => self.owner_of_session(params),
+            // Cursor's extensions carry no `sessionId`, which is fine on the
+            // one-session-per-process it is catalogued as; on a shared process
+            // this is unroutable, and the pump answers it rather than hanging
+            // the turn.
+            Inbound::Extension { params, .. } => self.owner_of_session(params),
         }
     }
 
@@ -481,6 +495,19 @@ impl AcpConnection {
 
     pub fn respond(&self, id: RequestId, result: Value) -> Result<(), RpcError> {
         let response = JsonRpcResponse::success(id, result);
+        self.write_message(&JsonRpcMessage::Response(response))
+    }
+
+    /// Refuse a request the agent made. `-32601` is what a request nobody
+    /// implements gets, and the one answer that lets Cursor fall back to
+    /// what it can do without us (#298).
+    pub fn respond_error(&self, id: RequestId, code: i64, message: &str) -> Result<(), RpcError> {
+        let error = JsonRpcError {
+            code,
+            message: message.to_string(),
+            data: None,
+        };
+        let response = JsonRpcResponse::failure(id, error);
         self.write_message(&JsonRpcMessage::Response(response))
     }
 
@@ -664,17 +691,6 @@ fn read_loop(
     }
 }
 
-/// Cursor ACP extension methods that block the turn. JaBot does not implement
-/// the UX; answering `cancelled` is what lets the session continue.
-fn decline_cursor_extension(method: &str) -> Option<Value> {
-    match method {
-        "cursor/ask_question" | "cursor/create_plan" => {
-            Some(json!({ "outcome": { "outcome": "cancelled" } }))
-        }
-        _ => None,
-    }
-}
-
 /// Hoist the spec's `session/update` shape onto the one the host reads.
 ///
 /// ACP sends `{ sessionId, update: { sessionUpdate, ... } }`. Everything
@@ -704,16 +720,6 @@ fn flatten_session_update(params: Value) -> Value {
         outer.entry(key).or_insert(value);
     }
     Value::Object(outer)
-}
-
-fn write_result(stdin: &Arc<Mutex<std::process::ChildStdin>>, id: RequestId, result: Value) {
-    let response = JsonRpcResponse::success(id, result);
-    if let Ok(frame) = encode_frame(&JsonRpcMessage::Response(response)) {
-        if let Ok(mut out) = stdin.lock() {
-            let _ = out.write_all(frame.as_bytes());
-            let _ = out.flush();
-        }
-    }
 }
 
 fn dispatch_message(
@@ -763,12 +769,22 @@ fn dispatch_message(
                     params: request.params.unwrap_or(Value::Null),
                 });
                 wake.ping();
-            } else if let Some(result) = decline_cursor_extension(&request.method) {
-                // Cursor's blocking extensions wait for a JSON-RPC result.
-                // Declining is the honest answer: JaBot does not implement
-                // them, and method-not-found would leave the turn hung.
-                write_result(stdin, request.id, result);
+            } else if super::extensions::is_supported(&request.method) {
+                // A blocking extension the host renders (#298). Raw here: the
+                // host reads it, and refuses it with `-32601` if it cannot.
+                let _ = inbound.send(Inbound::Extension {
+                    acp_id: request.id,
+                    method: request.method,
+                    params: request.params.unwrap_or(Value::Null),
+                });
+                wake.ping();
             } else {
+                // Everything else an agent asks of us — `cursor/update_todos`,
+                // whatever the next extension is — is refused at the wire.
+                // Method-not-found is the JSON-RPC answer for exactly this,
+                // and the one a well-behaved agent treats as "the client
+                // cannot", so a turn never hangs on a request nobody rendered
+                // and no support is claimed for one nobody implemented.
                 let error = JsonRpcError {
                     code: -32601,
                     message: format!("Method not found: {}", request.method),
@@ -867,17 +883,20 @@ mod tests {
         assert!(!lying.load_session);
     }
 
+    /// The reader thread's split of an agent's requests (#298): permissions
+    /// and the rendered extensions reach the host; everything else is refused
+    /// at the wire, so no support is ever claimed for a method nobody drew.
     #[test]
-    fn cursor_blocking_extensions_are_declined_not_method_not_found() {
-        assert_eq!(
-            decline_cursor_extension("cursor/ask_question"),
-            Some(json!({ "outcome": { "outcome": "cancelled" } }))
-        );
-        assert_eq!(
-            decline_cursor_extension("cursor/create_plan"),
-            Some(json!({ "outcome": { "outcome": "cancelled" } }))
-        );
-        assert!(decline_cursor_extension("cursor/update_todos").is_none());
-        assert!(decline_cursor_extension("session/request_permission").is_none());
+    fn only_rendered_extensions_are_carried_to_the_host() {
+        assert!(super::super::extensions::is_supported(
+            "cursor/ask_question"
+        ));
+        assert!(super::super::extensions::is_supported("cursor/create_plan"));
+        assert!(!super::super::extensions::is_supported(
+            "cursor/update_todos"
+        ));
+        assert!(!super::super::extensions::is_supported(
+            "session/request_permission"
+        ));
     }
 }

@@ -11,8 +11,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use jabot_lib::host::{
-    HostSession, JsonRpcRequest, JsonRpcResponse, RequestId, HOST_HELLO, SESSION_CANCEL,
-    SESSION_PROMPT, THREAD_OPEN, THREAD_STATE, THREAD_TRANSCRIPT,
+    HostSession, JsonRpcRequest, JsonRpcResponse, RequestId, HOST_HELLO, INTERACTION_PENDING,
+    INTERACTION_REPLY, PERMISSION_PENDING, SESSION_CANCEL, SESSION_PROMPT, THREAD_OPEN,
+    THREAD_STATE, THREAD_TRANSCRIPT,
 };
 use serde_json::{json, Value};
 
@@ -164,20 +165,66 @@ fn an_empty_response_fails_instead_of_reporting_success() {
     );
 }
 
+/// A blocking Cursor question is not declined behind the user's back any
+/// more (#298): it waits on them, in its own pending list and never in the
+/// permission one, and the turn finishes once they answer it.
 #[test]
-fn a_blocking_cursor_question_is_declined_and_the_turn_finishes() {
+fn a_blocking_cursor_question_waits_for_the_human_and_then_finishes() {
     let mut host = Host::start();
     host.open_on("t-cursor-ask", "cursor-ask");
     let accepted = host.prompt("t-cursor-ask");
     assert!(accepted.error.is_none(), "{:?}", accepted.error);
-    let state = host.settle("t-cursor-ask", |s| {
-        matches!(
-            s["latestRun"]["state"].as_str(),
-            Some("succeeded") | Some("failed")
-        )
-    });
+
+    let deadline = Instant::now() + Duration::from_secs(8);
+    let request_id = loop {
+        host.session.pump_acp();
+        let pending = host.ok(INTERACTION_PENDING, json!({ "threadId": "t-cursor-ask" }));
+        if let Some(first) = pending["requests"].as_array().and_then(|r| r.first()) {
+            assert_eq!(first["ask"], "question");
+            assert_eq!(first["method"], "cursor/ask_question");
+            assert_eq!(first["title"], "Need input");
+            assert_eq!(first["stale"], false);
+            break first["requestId"].as_str().expect("requestId").to_string();
+        }
+        assert!(Instant::now() < deadline, "the question never surfaced");
+        thread::sleep(Duration::from_millis(15));
+    };
+    // Waiting on a human is Needs you, and a question is not a permission.
+    let state = host.state("t-cursor-ask");
+    assert_eq!(state["latestRun"]["state"], "needs_you", "{state}");
+    let permissions = host.ok(PERMISSION_PENDING, json!({ "threadId": "t-cursor-ask" }));
     assert!(
-        state["latestRun"]["state"] != "running",
-        "cursor/ask_question left the turn hung: {state}"
+        permissions["requests"]
+            .as_array()
+            .is_some_and(Vec::is_empty),
+        "a question must not be listed as a permission: {permissions}"
+    );
+
+    // `host/hello` is idempotent for the console: the same device comes back.
+    let hello = host.session.handle_request(req(1, HOST_HELLO, None));
+    let device_id = hello.result.expect("hello")["device"]["deviceId"]
+        .as_str()
+        .expect("deviceId")
+        .to_string();
+    let answered = host.ok(
+        INTERACTION_REPLY,
+        json!({
+            "requestId": request_id,
+            "deviceId": device_id,
+            "outcome": "answered",
+            "answers": [{ "questionId": "q1", "selectedOptionIds": ["plan"] }]
+        }),
+    );
+    assert_eq!(answered["delivered"], true);
+    assert_eq!(answered["outcome"], "answered");
+
+    let state = host.settle("t-cursor-ask", |s| s["latestRun"]["state"] == "succeeded");
+    assert_eq!(state["latestRun"]["state"], "succeeded");
+    let transcript = host.ok(THREAD_TRANSCRIPT, json!({ "threadId": "t-cursor-ask" }));
+    let text = transcript.to_string();
+    assert!(
+        text.contains("\\\"selectedOptionIds\\\":[\\\"plan\\\"]")
+            || text.contains("selectedOptionIds\":[\"plan\"]"),
+        "the agent never heard the chosen option: {transcript}"
     );
 }

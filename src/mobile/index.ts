@@ -23,6 +23,7 @@ export type { AskOption } from "./ask";
 export {
   askCard,
   EMPTY_INBOX,
+  interactionCard,
   projectInbox,
   withAsk,
   withoutAsk,
@@ -31,6 +32,7 @@ export type {
   MobileAsk,
   MobileCard,
   MobileInbox,
+  MobileInteraction,
   MobileSection,
 } from "./inbox";
 export { InboxScreen } from "./InboxScreen";

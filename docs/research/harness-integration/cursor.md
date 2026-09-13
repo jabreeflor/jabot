@@ -33,7 +33,8 @@ Approvals stay in the existing permission broker.
 | Permission requests | Supported — surfaced in JaBot, not auto-allowed |
 | Cancellation (`session/cancel`) | Supported |
 | Resume / continuation | **If advertised.** Cursor documents `session/load`. JaBot only resumes when `initialize` says `loadSession` or `sessionCapabilities.resume`. Otherwise a new ACP session is opened and that is declared, not faked. |
-| `cursor/ask_question`, `cursor/create_plan` | **Unsupported.** Blocking extensions. JaBot replies `cancelled` so the turn does not hang. |
+| `cursor/ask_question`, `cursor/create_plan` | **Supported (#298).** Blocking extensions, drawn as question and plan-review cards in the thread and the Inbox, answered through `interaction/reply` with the agent's own ids. Not advertised by Cursor; verified against `cursor-agent 2026.08.04`. Free text is not carried (the bridge reads option ids only). |
+| Other `cursor/*` requests (`cursor/update_todos`, …) | **Refused** with JSON-RPC `-32601`, which Cursor reads as "client cannot" and falls back from. Never a synthetic `cancelled`. |
 | Team-level MCP from the Cursor dashboard | **Unsupported** (upstream ACP limitation) |
 | Per-bot Cursor account isolation | **Unsupported** (see below) |
 

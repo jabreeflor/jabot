@@ -20,6 +20,8 @@ import {
   HOST_HEALTH,
   HOST_HELLO,
   INBOX_LIST,
+  INTERACTION_PENDING,
+  INTERACTION_REPLY,
   PERMISSION_PENDING,
   PERMISSION_REPLY,
   SESSION_CANCEL,
@@ -31,6 +33,7 @@ import {
 /**
  * Everything a phone is for: see what needs you, read enough of the thread to
  * know what you are answering, answer it, and stop a turn you do not like.
+ * A question or plan (#298) is "what needs you" as much as a permission is.
  *
  * Mirrors `APPROVER_METHODS` in `host/pairing/scope.rs`, in the same order.
  */
@@ -40,6 +43,8 @@ export const APPROVER_METHODS: readonly string[] = [
   INBOX_LIST,
   PERMISSION_PENDING,
   PERMISSION_REPLY,
+  INTERACTION_PENDING,
+  INTERACTION_REPLY,
   THREAD_STATE,
   THREAD_TRANSCRIPT,
   SESSION_CANCEL,

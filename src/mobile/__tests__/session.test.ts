@@ -37,6 +37,8 @@ class FakeHost implements HostTransport {
   readonly sent: JsonRpcRequest[] = [];
   private handlers = new Set<NotificationHandler>();
   asks: unknown[] = [];
+  /** Questions and plans (#298), answered by `interaction/pending`. */
+  interactions: unknown[] = [];
   scoped: readonly string[] = APPROVER_METHODS;
   /** What `sync/resumeFrom` answers. Set per-test: the whole point of the
       call is a host that has something this device missed. */
@@ -81,6 +83,18 @@ class FakeHost implements HostTransport {
           alreadyAnswered: false,
           cancelled: false,
         });
+      case protocol.INTERACTION_PENDING:
+        return ok({ requests: this.interactions });
+      case protocol.INTERACTION_REPLY: {
+        const params = request.params as { requestId: string; outcome: string };
+        return ok({
+          requestId: params.requestId,
+          delivered: true,
+          alreadyAnswered: false,
+          outcome: params.outcome,
+          state: "answered",
+        });
+      }
       case SYNC_RESUME_FROM:
         return ok(
           this.resume ?? {
@@ -257,6 +271,8 @@ describe("the phone client", () => {
         HOST_HELLO,
         INBOX_LIST,
         PERMISSION_PENDING,
+        // A refresh also reads the questions and plans waiting (#298).
+        protocol.INTERACTION_PENDING,
         PERMISSION_REPLY,
         SESSION_CANCEL,
         THREAD_TRANSCRIPT,
@@ -551,5 +567,113 @@ describe("reconnecting after the phone was offline", () => {
 
     const asked = host.sent.filter((r) => r.method === SYNC_RESUME_FROM);
     expect(asked[0].params).toEqual({ threadId: "t9", seq: 7 });
+  });
+});
+
+// #298: a question or plan is "what needs you" as much as a permission is.
+describe("questions and plans on the phone", () => {
+  const PLAN = {
+    requestId: "int-plan",
+    threadId: "t9",
+    ask: "plan",
+    method: "cursor/create_plan",
+    title: "Auth migration",
+    request: { toolCallId: "c", overview: "Move sessions.", plan: "" },
+    createdAt: "2026-08-20T12:00:00.000Z",
+    stale: false,
+  };
+
+  it("reads them in the same refresh, and settles one naming this device", async () => {
+    const host = new FakeHost();
+    host.interactions = [PLAN];
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
+    await session.connect();
+    const inbox = await session.refresh();
+    expect(inbox.needs.map((card) => card.id)).toEqual(["int-plan"]);
+    expect(inbox.needs[0].kind).toBe("plan");
+
+    const result = await session.answerInteraction("int-plan", {
+      outcome: "accepted",
+    });
+    expect(result.outcome).toBe("accepted");
+    const sent = host.sent.find((r) => r.method === protocol.INTERACTION_REPLY);
+    expect(sent?.params).toEqual({
+      requestId: "int-plan",
+      deviceId: "phone-1",
+      outcome: "accepted",
+    });
+    // Optimistic, like a permission: the card is gone before any resolve.
+    expect(session.inbox.needs).toEqual([]);
+  });
+
+  it("draws a question from the notification alone, and drops it when settled elsewhere", async () => {
+    const host = new FakeHost();
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
+    await session.connect();
+    host.push({
+      jsonrpc: "2.0",
+      method: protocol.INTERACTION_ASK,
+      params: {
+        hostId: "host-1",
+        threadId: "t8",
+        seq: 3,
+        requestId: "int-q",
+        ask: "question",
+        method: "cursor/ask_question",
+        title: "Need input",
+        request: {
+          questions: [
+            { id: "q1", prompt: "Which?", options: [{ id: "a", label: "A" }] },
+          ],
+        },
+      },
+    });
+    expect(session.inbox.needs[0]).toMatchObject({
+      id: "int-q",
+      kind: "question",
+      interaction: { questionId: "q1" },
+    });
+    host.push({
+      jsonrpc: "2.0",
+      method: protocol.INTERACTION_RESOLVED,
+      params: {
+        hostId: "host-1",
+        threadId: "t8",
+        seq: 4,
+        requestId: "int-q",
+        deviceId: "dev-mac",
+        outcome: "answered",
+        delivered: true,
+      },
+    });
+    expect(session.inbox.needs).toEqual([]);
+  });
+
+  it("leaves them out when the host has not opened them to this device", async () => {
+    const host = new FakeHost();
+    host.scoped = APPROVER_METHODS.filter(
+      (m) =>
+        m !== protocol.INTERACTION_PENDING && m !== protocol.INTERACTION_REPLY,
+    );
+    host.interactions = [PLAN];
+    const session = new MobileSession({
+      transport: host,
+      credentials: CREDENTIALS,
+    });
+    await session.connect();
+    await session.refresh();
+    expect(
+      host.sent.some((r) => r.method === protocol.INTERACTION_PENDING),
+    ).toBe(false);
+    expect(session.inbox.needs).toEqual([]);
+    await expect(
+      session.answerInteraction("int-plan", { outcome: "accepted" }),
+    ).rejects.toBeInstanceOf(OutOfScopeError);
   });
 });

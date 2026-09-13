@@ -8,7 +8,12 @@
 //! (a folder and its threads, a thread and its latest run), that join is named
 //! here so there is one answer to what the host has to return.
 
-import type { ResurfaceReason, ToolConnectionStatus } from "../host";
+import type {
+  InteractionOutcome,
+  QuestionAnswer,
+  ResurfaceReason,
+  ToolConnectionStatus,
+} from "../host";
 
 /** Legacy `bots.color` appearance IDs; mapped to monochrome icons by avatar/bots.ts. */
 export type BotColor =
@@ -56,6 +61,11 @@ export type InboxKind =
   | "folded"
   | "judgment_call"
   | "permission"
+  /** A structured question, or a plan to review, from an agent's ACP
+      extension (#298). Their own kinds, never `permission`: answering one is
+      a decision about what the agent will do, not a grant of what it may. */
+  | "question"
+  | "plan"
   | "lost"
   | "stuck"
   /** A pull request one of the sessions opened changed in a way worth saying
@@ -225,12 +235,61 @@ export interface ToolCall {
   note?: string;
 }
 
+/** One choice the agent offered on a question card (#298). */
+export interface QuestionChoice {
+  id: string;
+  label: string;
+}
+
+export interface QuestionPrompt {
+  id: string;
+  prompt: string;
+  options: QuestionChoice[];
+  /** Several options may be chosen. */
+  allowMultiple: boolean;
+}
+
+export interface PlanTodo {
+  id: string;
+  content: string;
+  /** `pending`, `in_progress`, `completed` or `cancelled` from the agent. */
+  status: string;
+}
+
+export interface PlanPhase {
+  name: string;
+  todos: PlanTodo[];
+}
+
+/** How a question or plan card was settled, by whoever settled it (#298). */
+export interface InteractionDecision {
+  outcome: InteractionOutcome;
+  answers?: readonly QuestionAnswer[];
+  reason?: string;
+  /** Whether the agent heard it. Unknown while the reply is in flight. */
+  delivered?: boolean;
+}
+
+/**
+ * What a question or plan card sends back (#298). Exactly the verbs the
+ * agent offers for that kind — a card cannot compose one it does not have.
+ */
+export type InteractionReply =
+  | { outcome: "answered"; answers: QuestionAnswer[] }
+  | { outcome: "skipped"; reason?: string }
+  | { outcome: "accepted" }
+  | { outcome: "rejected"; reason?: string }
+  | { outcome: "cancelled" };
+
 /**
  * One rendered transcript entry, in ACP terms rather than the prototype's
  * `[kind, html]` tuples. `tool` is per-call — `Transcript` groups a consecutive
  * run into one block, which is a render decision, not a data one.
  *
  * #20's permission prompt is a `notice` with its ACP options as actions.
+ * #298's question and plan cards are their own kinds: they carry structure a
+ * notice's flat option list cannot, and they stay in the transcript once
+ * settled, showing what was decided.
  */
 export type TranscriptItem =
   | { kind: "stamp"; id: string; text: string }
@@ -259,6 +318,32 @@ export type TranscriptItem =
       threadId?: string;
       /** Set once answered: the card animates out instead of vanishing. */
       resolved?: boolean;
+    }
+  | {
+      kind: "question";
+      id: string;
+      requestId: string;
+      threadId?: string;
+      title: string;
+      questions: QuestionPrompt[];
+      /** No live adapter call is waiting: the card cannot be answered. */
+      stale?: boolean;
+      /** Set once settled. The card stays, showing what was decided. */
+      decision?: InteractionDecision;
+    }
+  | {
+      kind: "plan";
+      id: string;
+      requestId: string;
+      threadId?: string;
+      title: string;
+      overview?: string;
+      /** The plan body, markdown. */
+      plan: string;
+      todos: PlanTodo[];
+      phases: PlanPhase[];
+      stale?: boolean;
+      decision?: InteractionDecision;
     };
 
 export interface NoticeAction {

@@ -11,6 +11,7 @@
 
 import { useState } from "react";
 
+import type { InteractionReply } from "../components/types";
 import { InboxScreen } from "./InboxScreen";
 import { TranscriptScreen, useThreadTranscript } from "./TranscriptScreen";
 import type { MobileInbox } from "./inbox";
@@ -25,6 +26,8 @@ export interface MobileAppProps {
   busyId?: string | null;
   onAnswer(requestId: string, optionId: string): void;
   onDecline(requestId: string): void;
+  /** Settle a question or plan card (#298). */
+  onInteract?(requestId: string, reply: InteractionReply): void;
 }
 
 export function MobileApp({
@@ -34,6 +37,7 @@ export function MobileApp({
   busyId,
   onAnswer,
   onDecline,
+  onInteract,
 }: MobileAppProps) {
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   // Mounted unconditionally, and inert while nothing is open: a hook behind a
@@ -61,6 +65,7 @@ export function MobileApp({
       busyId={busyId}
       onAnswer={onAnswer}
       onDecline={onDecline}
+      onInteract={onInteract}
       onOpen={setOpenThreadId}
     />
   );

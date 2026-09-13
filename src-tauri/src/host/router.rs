@@ -29,6 +29,9 @@ use super::protocol::methods::{
     PAIRING_START, PAIRING_STATUS,
 };
 use super::protocol::methods::{
+    InteractionPendingParams, InteractionReplyParams, INTERACTION_PENDING, INTERACTION_REPLY,
+};
+use super::protocol::methods::{
     PrListParams, PrMineParams, PrRefreshParams, PR_LIST, PR_MINE, PR_REFRESH,
 };
 use super::protocol::methods::{
@@ -85,6 +88,18 @@ fn handle(session: &mut HostSession, request: &JsonRpcRequest) -> Result<Value, 
             session.require_hello()?;
             let params: PermissionPendingParams = parse_params_or_default(request.params.as_ref())?;
             to_value(session.permission_pending(params)?)
+        }
+        INTERACTION_REPLY => {
+            session.require_hello()?;
+            let params: InteractionReplyParams = parse_params(request.params.as_ref())?;
+            params.validate()?;
+            to_value(session.interaction_reply(params)?)
+        }
+        INTERACTION_PENDING => {
+            session.require_hello()?;
+            let params: InteractionPendingParams =
+                parse_params_or_default(request.params.as_ref())?;
+            to_value(session.interaction_pending(params)?)
         }
         THREAD_FOLD => {
             session.require_hello()?;

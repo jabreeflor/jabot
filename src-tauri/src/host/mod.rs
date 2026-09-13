@@ -9,6 +9,8 @@ mod crew;
 mod git;
 pub(crate) mod harness;
 mod identity;
+/// Structured questions and plan decisions from ACP extensions (#298).
+mod interaction;
 mod lifecycle;
 mod log;
 mod pairing;
@@ -86,6 +88,14 @@ pub use protocol::{
     SESSION_CANCEL, SESSION_PROMPT, SESSION_UPDATE, SUPERVISOR_STATUS, THREAD_ARCHIVE,
     THREAD_BRANCH, THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_RESUME,
     THREAD_STATE, THREAD_TRANSCRIPT, TOOLS_CONNECT, TOOLS_DISCONNECT, TOOLS_LIST,
+};
+/// Structured questions and plan decisions (#298).
+#[allow(unused_imports)]
+pub use protocol::{
+    AskKind, InteractionAskParams, InteractionOutcome, InteractionPendingParams,
+    InteractionPendingResult, InteractionReplyParams, InteractionReplyResult,
+    InteractionResolvedParams, InteractionView, QuestionAnswer, INTERACTION_ASK,
+    INTERACTION_PENDING, INTERACTION_REPLY, INTERACTION_RESOLVED,
 };
 #[allow(unused_imports)]
 pub use protocol::{
@@ -286,6 +296,10 @@ impl HostSession {
         // hour later — and until this runs, the ledger still claims runs are
         // in flight for a process that no longer exists (#21).
         session.reconcile_boot();
+        // And the questions and plans the last process was holding: the ACP
+        // calls behind them died with it, so their rows close as
+        // `unavailable` before any client can be shown a card for one (#298).
+        session.reconcile_dead_interactions();
         // After the ledger, because the sweep asks the store which threads
         // still claim a tree — and before anything can open a new one, so a
         // directory left by the last launch is collected rather than colliding
@@ -567,6 +581,60 @@ impl HostSession {
             cancelled,
         };
         self.push_logged(thread_id, protocol::PERMISSION_RESOLVED, params);
+        seq
+    }
+
+    /// A question or plan is waiting on the human (#298).
+    pub fn notify_interaction_ask(
+        &mut self,
+        thread_id: &str,
+        request_id: &str,
+        ask: protocol::methods::AskKind,
+        method: &str,
+        title: &str,
+        request: Value,
+    ) -> u64 {
+        let seq = self.seq.next(thread_id);
+        let params = protocol::methods::InteractionAskParams {
+            host_id: self.identity.host_id.clone(),
+            thread_id: thread_id.to_string(),
+            seq,
+            request_id: request_id.to_string(),
+            ask,
+            method: method.to_string(),
+            title: title.to_string(),
+            request,
+        };
+        self.push_logged(thread_id, protocol::INTERACTION_ASK, params);
+        seq
+    }
+
+    /// A question or plan was settled — by a device, or by the host when
+    /// nobody could answer (#298).
+    #[allow(clippy::too_many_arguments)]
+    pub fn notify_interaction_resolved(
+        &mut self,
+        thread_id: &str,
+        request_id: &str,
+        device_id: &str,
+        outcome: protocol::methods::InteractionOutcome,
+        answers: Option<Vec<protocol::methods::QuestionAnswer>>,
+        reason: Option<String>,
+        delivered: bool,
+    ) -> u64 {
+        let seq = self.seq.next(thread_id);
+        let params = protocol::methods::InteractionResolvedParams {
+            host_id: self.identity.host_id.clone(),
+            thread_id: thread_id.to_string(),
+            seq,
+            request_id: request_id.to_string(),
+            device_id: device_id.to_string(),
+            outcome,
+            answers,
+            reason,
+            delivered,
+        };
+        self.push_logged(thread_id, protocol::INTERACTION_RESOLVED, params);
         seq
     }
 

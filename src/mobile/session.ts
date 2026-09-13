@@ -31,6 +31,10 @@
 import { HostClient, type HostTransport } from "../host/client";
 import {
   INBOX_LIST,
+  INTERACTION_ASK,
+  INTERACTION_PENDING,
+  INTERACTION_REPLY,
+  INTERACTION_RESOLVED,
   PERMISSION_ASK,
   PERMISSION_PENDING,
   PERMISSION_REPLY,
@@ -42,6 +46,10 @@ import {
   type DeviceAuth,
   type Envelope,
   type HelloResult,
+  type InteractionAskParams,
+  type InteractionPendingResult,
+  type InteractionReplyResult,
+  type InteractionResolvedParams,
   type JsonRpcNotification,
   type PermissionAskParams,
   type PermissionReplyResult,
@@ -49,10 +57,12 @@ import {
   type SessionUpdateParams,
   type ThreadTranscriptResult,
 } from "../host/protocol";
+import type { InteractionReply } from "../components/types";
 import { askTitle } from "./ask";
 import {
   askCard,
   EMPTY_INBOX,
+  interactionCard,
   projectInbox,
   withAsk,
   withoutAsk,
@@ -256,11 +266,19 @@ export class MobileSession {
   async refresh(): Promise<MobileInbox> {
     this.assertAllowed(INBOX_LIST);
     this.assertAllowed(PERMISSION_PENDING);
-    const [inbox, pending] = await Promise.all([
+    const [inbox, pending, interactions] = await Promise.all([
       this.client.inbox(),
       this.client.pendingPermissions(),
+      // Questions and plans (#298), from a host that lists them. One that
+      // does not — older, or a role that was not opened to them — still has
+      // the rest of the screen.
+      this.allows(INTERACTION_PENDING)
+        ? this.client
+            .pendingInteractions()
+            .catch((): InteractionPendingResult => ({ requests: [] }))
+        : Promise.resolve<InteractionPendingResult>({ requests: [] }),
     ]);
-    return this.publish(projectInbox(inbox, pending));
+    return this.publish(projectInbox(inbox, pending, interactions));
   }
 
   /**
@@ -281,6 +299,28 @@ export class MobileSession {
   /** Decline without choosing one of the agent's options (#20's `cancelled`). */
   async decline(requestId: string): Promise<PermissionReplyResult> {
     return this.reply({ requestId, cancelled: true });
+  }
+
+  /**
+   * Settle a question or plan from this device (#298), with one of the verbs
+   * the agent offers for it. Attributed to this connection's device exactly
+   * as a permission answer is.
+   */
+  async answerInteraction(
+    requestId: string,
+    reply: InteractionReply,
+  ): Promise<InteractionReplyResult> {
+    this.assertAllowed(INTERACTION_REPLY);
+    const deviceId = this.device?.deviceId;
+    if (!deviceId) throw new Error("answer before the host has said hello");
+    const result = await this.client.replyInteraction({
+      requestId,
+      deviceId,
+      ...reply,
+    });
+    // Optimistic for the same reason `reply` is: the host is idempotent.
+    this.publish(withoutAsk(this.snapshot, requestId));
+    return result;
   }
 
   /** Stop the turn. The narrowest destructive thing an approver may do. */
@@ -364,6 +404,31 @@ export class MobileSession {
     }
     if (notification.method === PERMISSION_RESOLVED) {
       const resolved = notification.params as PermissionResolvedParams;
+      this.publish(withoutAsk(this.snapshot, resolved.requestId));
+      return;
+    }
+    if (notification.method === INTERACTION_ASK) {
+      const ask = notification.params as InteractionAskParams;
+      if (ask.ask !== "question" && ask.ask !== "plan") return;
+      this.publish(
+        withAsk(
+          this.snapshot,
+          interactionCard({
+            requestId: ask.requestId,
+            threadId: ask.threadId,
+            ask: ask.ask,
+            method: ask.method,
+            title: ask.title,
+            request: ask.request,
+            createdAt: this.now().toISOString(),
+            stale: false,
+          }),
+        ),
+      );
+      return;
+    }
+    if (notification.method === INTERACTION_RESOLVED) {
+      const resolved = notification.params as InteractionResolvedParams;
       this.publish(withoutAsk(this.snapshot, resolved.requestId));
     }
   }

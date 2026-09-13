@@ -133,6 +133,39 @@ const THREAD_ITEMS: TranscriptItem[] = [
       { id: "reject_once", label: "Deny" },
     ],
   },
+  // #298: a question and a plan under review, in the same thread.
+  {
+    kind: "question",
+    id: "question-req-1",
+    requestId: "req-1",
+    threadId: "auth",
+    title: "Need input",
+    questions: [
+      {
+        id: "q-mode",
+        prompt: "Which mode should the migration run in?",
+        allowMultiple: false,
+        options: [
+          { id: "agent", label: "Agent" },
+          { id: "plan", label: "Plan" },
+        ],
+      },
+    ],
+  },
+  {
+    kind: "plan",
+    id: "plan-req-2",
+    requestId: "req-2",
+    threadId: "auth",
+    title: "Auth migration",
+    overview: "Move session handling onto the new auth service.",
+    plan: "1. Add the adapter.\n2. Migrate the middleware.",
+    todos: [
+      { id: "t1", content: "Add the adapter", status: "completed" },
+      { id: "t2", content: "Migrate the middleware", status: "pending" },
+    ],
+    phases: [],
+  },
 ];
 
 const SETTINGS: HostSettings = {

@@ -13,6 +13,8 @@
 //! routed back to a thread by [`AcpConnection::route`].
 
 mod connection;
+/// Cursor's blocking extension requests, typed at the wire (#298).
+pub(crate) mod extensions;
 mod no_reply;
 mod prompt;
 mod runtime;
@@ -272,7 +274,19 @@ impl HostSession {
                 while let Ok(event) = conn.try_recv() {
                     let owners = conn.route(&event);
                     match owners.len() {
-                        0 => eprintln!("adapter {key}: unroutable event dropped: {event:?}"),
+                        0 => {
+                            // A blocking request nobody owns still has to be
+                            // answered, or the agent's turn hangs on it. Not
+                            // `cancelled`: no human declined anything (#298).
+                            if let Inbound::Extension { acp_id, method, .. } = &event {
+                                let _ = conn.respond_error(
+                                    acp_id.clone(),
+                                    -32601,
+                                    &format!("Method not found: {method}"),
+                                );
+                            }
+                            eprintln!("adapter {key}: unroutable event dropped: {event:?}")
+                        }
                         1 => routed.push((owners.into_iter().next().expect("one"), event)),
                         // Only `Closed` fans out, and it carries nothing but an
                         // error string, so cloning it per tenant is honest.
@@ -374,7 +388,7 @@ impl HostSession {
         let has_reply = self.lifecycle.entry(thread_id).has_reply;
         let run_open = self.open_run(thread_id).is_some();
         let diagnosis = (run_open && !has_reply).then(|| self.diagnose_no_reply(thread_id, true));
-        self.withdraw_pending_permissions(thread_id, "adapter closed", Withdrawal::Cancelled);
+        self.withdraw_pending_permissions(thread_id, "adapter closed", Withdrawal::Lost);
         if let Some(vacated) = self.release_thread(thread_id) {
             self.connections.remove(&vacated);
         }
@@ -651,9 +665,18 @@ impl HostSession {
             Inbound::Permission { acp_id, params } => {
                 self.open_permission_request(thread_id, acp_id, &params)
             }
+            Inbound::Extension {
+                acp_id,
+                method,
+                params,
+            } => self.open_extension_request(thread_id, acp_id, &method, &params),
             Inbound::PromptResult {
                 payload: result, ..
             } => {
+                // A question or plan still open when the turn ends is one the
+                // agent stopped waiting on. Nothing can be delivered any more,
+                // so the card has to say so instead of offering buttons (#298).
+                self.withdraw_pending_permissions(thread_id, "the turn ended", Withdrawal::Expired);
                 let (stop_reason, error) = self.classify_reply_end(
                     thread_id,
                     result.get("stopReason").and_then(Value::as_str),

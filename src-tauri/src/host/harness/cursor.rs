@@ -28,6 +28,12 @@ const MIN_SEMVER: (u16, u16) = (0, 50);
 /// What the card and the Doctor declare. Supported verbs go through ACP;
 /// everything else is named so a missing Cursor extension cannot be mistaken
 /// for a silent allow.
+///
+/// `cursor/ask_question` and `cursor/create_plan` are rendered as question
+/// and plan-review cards (#298; `host/acp/extensions.rs`). Cursor does not
+/// advertise them and does not check the client before sending them, so
+/// there is nothing to negotiate: any CLI new enough to speak ACP sends
+/// them, and every other `cursor/*` request is refused method-not-found.
 pub fn capabilities() -> HarnessCapabilities {
     HarnessCapabilities {
         streaming: true,
@@ -38,7 +44,7 @@ pub fn capabilities() -> HarnessCapabilities {
         // Claiming it on the card would lie when the running CLI does not.
         resume: false,
         notes: Some(
-            "Permissions stay in JaBot (no --force). Auth uses this machine's Cursor account or CURSOR_API_KEY — not isolated per bot. Resume only if the CLI advertises loadSession. cursor/ask_question and cursor/create_plan are declined so a turn cannot hang.".into(),
+            "Permissions stay in JaBot (no --force). Auth uses this machine's Cursor account or CURSOR_API_KEY — not isolated per bot. Resume only if the CLI advertises loadSession. cursor/ask_question and cursor/create_plan are answered from question and plan cards in the thread; other Cursor extensions are refused (method not found) so a turn cannot hang.".into(),
         ),
     }
 }
