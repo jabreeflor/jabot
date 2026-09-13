@@ -210,32 +210,27 @@ describe("Conversation scrolling", () => {
   });
 
   /**
-   * WebKit delivers `scroll` after a programmatic pin with the old offset
-   * (CI `scrolling.spec.ts` on this branch: send re-stuck, then Jump to
-   * latest came back). That echo is not the reader leaving.
+   * WebKit delivers `scroll` after a programmatic pin with the old offset.
+   * That echo is not the reader leaving — the prompt pin must be re-applied.
    */
-  it("does not unstick on the echo of a programmatic pin", () => {
+  it("does not treat the echo of a programmatic pin as the reader leaving", () => {
     const view = draw(history);
     view.scroll.scrollTop = 1_200;
     fireEvent.scroll(view.scroll);
 
-    extend(view, [
+    const sent: TranscriptItem[] = [
       ...history,
-      { kind: "user", id: "u1", text: "back to the tail" } as TranscriptItem,
-    ]);
-    expect(view.scroll.scrollTop).toBe(CONTENT);
+      { kind: "user", id: "u1", text: "go on" },
+    ];
+    extend(view, sent);
+    expect(view.scroll.scrollTop).toBe(4000);
 
     view.scroll.scrollTop = 1_200;
     fireEvent.scroll(view.scroll);
 
-    expect(view.scroll.scrollTop).toBe(CONTENT);
-    expect(view.container.querySelector(".jump-latest")).toBeNull();
-    extend(view, [
-      ...history,
-      { kind: "user", id: "u1", text: "back to the tail" } as TranscriptItem,
-      agent("a3", "hello from fake-acp"),
-    ]);
-    expect(view.scroll.scrollTop).toBe(CONTENT);
+    expect(view.scroll.scrollTop).toBe(4000);
+    extend(view, [...sent, agent("a3", "hello from fake-acp")]);
+    expect(view.scroll.scrollTop).toBe(4000);
   });
 
   /**

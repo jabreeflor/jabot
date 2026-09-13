@@ -10,7 +10,13 @@
 //! until the turn ends — and a UI that took the text and then said nothing
 //! would be indistinguishable from one that dropped it.
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { ArrowUpIcon } from "./Icon";
 import { Composer } from "./Composer";
@@ -92,20 +98,20 @@ export function Conversation({
     .reverse()
     .find((item) => item.kind === "user")?.id;
 
-  function pinTo(top: number) {
+  const pinTo = useCallback((top: number) => {
     const scroll = scrollRef.current;
     if (!scroll) return;
     pinEchoTopRef.current = scroll.scrollTop;
     pinTargetRef.current = top;
     lastClientHeightRef.current = scroll.clientHeight;
     scroll.scrollTop = top;
-  }
+  }, []);
 
-  function pinToEnd() {
+  const pinToEnd = useCallback(() => {
     const scroll = scrollRef.current;
     if (!scroll || !stuckRef.current) return;
     pinTo(scroll.scrollHeight);
-  }
+  }, [pinTo]);
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
@@ -164,7 +170,7 @@ export function Conversation({
     observer.observe(scroll);
     observer.observe(transcript);
     return () => observer.disconnect();
-  }, [items, latestUserId]);
+  }, [items, latestUserId, pinTo, pinToEnd]);
 
   // Composer chrome (the model chip, a status line) lives *outside*
   // `.chat-scroll`. When it mounts, flex shrinks the scroller past
@@ -176,7 +182,7 @@ export function Conversation({
     const ro = new ResizeObserver(() => pinToEnd());
     ro.observe(scroll);
     return () => ro.disconnect();
-  }, []);
+  }, [pinToEnd]);
 
   function onScroll() {
     const scroll = scrollRef.current;
@@ -191,7 +197,8 @@ export function Conversation({
       Math.abs(scroll.scrollTop - pinEchoTopRef.current) <= 1
     ) {
       pinEchoTopRef.current = null;
-      if (pinTargetRef.current !== null) scroll.scrollTop = pinTargetRef.current;
+      if (pinTargetRef.current !== null)
+        scroll.scrollTop = pinTargetRef.current;
       return;
     }
     pinEchoTopRef.current = null;
