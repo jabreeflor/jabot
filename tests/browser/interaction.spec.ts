@@ -191,10 +191,17 @@ test.describe("questions and plans from an agent's extensions", () => {
     await expect(page.getByText("PERMISSION", { exact: true })).toHaveCount(0);
     await captureEvidence(page, "interaction-inbox");
 
-    // The card is titled by the plan's own name, not the thread's.
-    await page
-      .getByRole("button", { name: /Auth migration.*PLAN REVIEW/ })
-      .click();
+    // InboxView auto-expands the first card that has detail. Plans sort
+    // newest-first, so this row is often already open when the pane mounts
+    // with data (WebKit on CI). A second click toggles it closed and
+    // Accept plan disappears — same race the unit helper `expand` guards.
+    const planCard = page.getByRole("button", {
+      name: /Auth migration.*PLAN REVIEW/,
+    });
+    if ((await planCard.getAttribute("aria-expanded")) !== "true") {
+      await planCard.click();
+    }
+    await expect(planCard).toHaveAttribute("aria-expanded", "true");
     await page.getByRole("button", { name: "Accept plan" }).click();
     await expect(page.getByText("PLAN REVIEW", { exact: true })).toHaveCount(0);
     const log = await waitForAdapterLog(
