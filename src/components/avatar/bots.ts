@@ -1,5 +1,6 @@
 /** Stable appearance IDs retain the host's existing `color` wire/storage slot.
  * Do not reorder the mapping: saved bots and older clients must round-trip it.
+ * This catalog is vendored into the web companion by `sync:ui`.
  */
 export const BOT_ICONS = [
   {
@@ -88,4 +89,10 @@ export type BotIcon = (typeof BOT_ICONS)[number];
 
 export function botIcon(value: string): BotIcon {
   return BOT_ICONS.find((entry) => entry.value === value) ?? BOT_ICONS[0];
+}
+
+/** All interpolated values come from the closed catalog above, never user input. */
+export function botIconSvg(value: string): string {
+  const b = botIcon(value);
+  return `<svg class="bot-mark" data-character="${b.id}" viewBox="4 3 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="bot-pose"><g class="bot-antenna"><path d="${b.antenna}"/><circle cx="24" cy="${b.tipY}" r="2"/></g><path class="bot-head" d="${b.body}"/><g class="bot-face"><path class="bot-eyes" d="${b.eyes}"/><path class="bot-happy" d="M18.5 26Q20 23.5 21.5 26M26.5 26Q28 23.5 29.5 26"/><path class="bot-error" d="M18 24L22 28M22 24L18 28M26 24L30 28M30 24L26 28"/></g></g></svg>`;
 }

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { BOT_COLORS, type BotColor } from "../../types";
 import { Avatar, CrewAvatar } from "../Avatar";
-import { BOT_ICONS } from "../bots";
+import { BOT_ICONS, botIconSvg } from "../bots";
 import type { AvatarState } from "../state";
 
 const STATES: readonly AvatarState[] = ["idle", "running", "waiting", "failed"];
@@ -211,5 +211,14 @@ describe("the crew's own avatar", () => {
       el.getAttribute("data-character"),
     );
     expect(characters).toEqual(["classic", "buddy", "pixel"]);
+  });
+});
+
+describe("botIconSvg", () => {
+  it("renders the closed catalog as markup for the web companion", () => {
+    const svg = botIconSvg("b-yellow");
+    expect(svg).toContain('data-character="scout"');
+    expect(svg).toContain('class="bot-mark"');
+    expect(svg).toContain(BOT_ICONS.find((bot) => bot.id === "scout")!.body);
   });
 });
