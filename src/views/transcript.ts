@@ -1006,12 +1006,16 @@ function sameStrings(a: readonly string[], b: readonly string[]): boolean {
  * chat the user sees when they reopen the thread. Reading through `update`
  * here means those rows render instead of vanishing.
  */
-function sessionUpdateOf(payload: unknown): Record<string, unknown> | undefined {
+function sessionUpdateOf(
+  payload: unknown,
+): Record<string, unknown> | undefined {
   const outer = asRecord(payload);
   if (!outer) return undefined;
   if (outer.sessionUpdate !== undefined) return outer;
   const inner = asRecord(outer.update);
-  return inner && inner.sessionUpdate !== undefined ? { ...inner, ...outer } : outer;
+  return inner && inner.sessionUpdate !== undefined
+    ? { ...inner, ...outer }
+    : outer;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
