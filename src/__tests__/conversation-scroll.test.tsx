@@ -185,4 +185,54 @@ describe("Conversation scrolling", () => {
       expect(view.scroll.scrollTop).toBe(CONTENT);
     });
   });
+
+  /**
+   * WebKit delivers `scroll` after a programmatic pin with the old offset
+   * (CI `scrolling.spec.ts` on this branch: send re-stuck, then Jump to
+   * latest came back). That echo is not the reader leaving.
+   */
+  it("does not unstick on the echo of a programmatic pin", () => {
+    const view = draw(history);
+    view.scroll.scrollTop = 1_200;
+    fireEvent.scroll(view.scroll);
+
+    extend(view, [
+      ...history,
+      { kind: "user", id: "u1", text: "back to the tail" } as TranscriptItem,
+    ]);
+    expect(view.scroll.scrollTop).toBe(CONTENT);
+
+    view.scroll.scrollTop = 1_200;
+    fireEvent.scroll(view.scroll);
+
+    expect(view.scroll.scrollTop).toBe(CONTENT);
+    expect(view.container.querySelector(".jump-latest")).toBeNull();
+    extend(view, [
+      ...history,
+      { kind: "user", id: "u1", text: "back to the tail" } as TranscriptItem,
+      agent("a3", "hello from fake-acp"),
+    ]);
+    expect(view.scroll.scrollTop).toBe(CONTENT);
+  });
+
+  /**
+   * The model chip lives outside `.chat-scroll`. When it mounts, flex
+   * shrinks the scroller by more than STICK_THRESHOLD (32). WebKit fires
+   * `scroll`; the reader did not move.
+   */
+  it("re-pins when the scroller shrinks while stuck", () => {
+    const view = draw(history);
+    view.scroll.scrollTop = CONTENT - HEIGHT;
+    fireEvent.scroll(view.scroll);
+
+    const shrunk = HEIGHT - 40;
+    Object.defineProperty(view.scroll, "clientHeight", {
+      configurable: true,
+      get: () => shrunk,
+    });
+    fireEvent.scroll(view.scroll);
+
+    expect(view.scroll.scrollTop).toBe(CONTENT);
+    expect(view.container.querySelector(".jump-latest")).toBeNull();
+  });
 });
