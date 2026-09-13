@@ -976,7 +976,9 @@ fn a_live_session_takes_set_model() {
     let mut host = Host::start();
     host.open_thread("t-live-model", None);
     host.prompt("t-live-model");
-    host.settle("t-live-model", |s| s["latestRun"]["state"] == "running" || s["latestRun"]["state"] == "succeeded");
+    host.settle("t-live-model", |s| {
+        s["latestRun"]["state"] == "running" || s["latestRun"]["state"] == "succeeded"
+    });
     let set = host.ok(
         THREAD_SET_MODEL,
         json!({ "threadId": "t-live-model", "model": "opus" }),

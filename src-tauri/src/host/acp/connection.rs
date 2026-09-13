@@ -25,13 +25,13 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
+use super::super::harness::doctor::advertised_models;
 use super::super::procgroup::GroupedChild;
 use super::super::protocol::error::RpcError;
 use super::super::protocol::frame::encode_frame;
 use super::super::protocol::jsonrpc::{
     JsonRpcError, JsonRpcMessage, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId,
 };
-use super::super::harness::doctor::advertised_models;
 use super::runtime::HarnessRuntime;
 use super::spawn::{spawn_adapter, terminate_process_group};
 use super::wake::AdapterWake;
@@ -316,9 +316,8 @@ impl AcpConnection {
                 Err(err) => last_err = Some(err),
             }
         }
-        Err(last_err.unwrap_or_else(|| {
-            RpcError::Internal("no model apply method succeeded".into())
-        }))
+        Err(last_err
+            .unwrap_or_else(|| RpcError::Internal("no model apply method succeeded".into())))
     }
 
     pub fn take_advertised_models(&mut self) -> Vec<String> {

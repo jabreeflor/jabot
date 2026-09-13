@@ -593,7 +593,8 @@ fn looks_like_provider_row(line: &str) -> bool {
 pub fn parse_models(stdout: &str) -> Vec<String> {
     let trimmed = stdout.trim();
     if trimmed.starts_with('[') || trimmed.starts_with('{') {
-        if let Some(from_json) = advertised_models(&serde_json::from_str(trimmed).unwrap_or(serde_json::Value::Null))
+        if let Some(from_json) =
+            advertised_models(&serde_json::from_str(trimmed).unwrap_or(serde_json::Value::Null))
         {
             if !from_json.is_empty() {
                 return from_json;
@@ -1737,10 +1738,7 @@ mod tests {
                 ]
             }
         });
-        assert_eq!(
-            advertised_models(&acp).unwrap(),
-            ["sonnet", "opus"]
-        );
+        assert_eq!(advertised_models(&acp).unwrap(), ["sonnet", "opus"]);
     }
 
     #[test]

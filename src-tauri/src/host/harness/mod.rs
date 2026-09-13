@@ -384,7 +384,10 @@ impl HostSession {
         let Some(store) = self.store.as_ref() else {
             return;
         };
-        let _ = store.set_setting(&super::store::last_model_key(harness_id), model.unwrap_or(""));
+        let _ = store.set_setting(
+            &super::store::last_model_key(harness_id),
+            model.unwrap_or(""),
+        );
     }
 
     pub(crate) fn last_model_for(&self, harness_id: &str) -> Option<String> {
@@ -432,7 +435,10 @@ impl HostSession {
         let cwd = self
             .data_dir
             .as_ref()
-            .map(|dir| dir.join("tmp").join(format!("model-probe-{}", descriptor.id)))
+            .map(|dir| {
+                dir.join("tmp")
+                    .join(format!("model-probe-{}", descriptor.id))
+            })
             .unwrap_or_else(|| {
                 std::env::temp_dir().join(format!("jabot-model-probe-{}", descriptor.id))
             });
