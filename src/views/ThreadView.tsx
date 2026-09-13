@@ -448,17 +448,13 @@ export function LiveThreadView({
         .setThreadModel({ threadId: thread.id, model: next || null })
         .then((result: ThreadSetModelResult) => {
           if (result.applied === "next_spawn") {
-            setModelApplyStatus(
-              result.detail ?? "Applies on next spawn.",
-            );
+            setModelApplyStatus(result.detail ?? "Applies on next spawn.");
           } else {
             setModelApplyStatus(null);
           }
         })
         .catch((err: unknown) => {
-          setModelApplyStatus(
-            err instanceof Error ? err.message : String(err),
-          );
+          setModelApplyStatus(err instanceof Error ? err.message : String(err));
         });
     },
     [client, thread.id],

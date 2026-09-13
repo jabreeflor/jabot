@@ -66,9 +66,9 @@ export function NewChatView({
   const [chosenHarnessId, setHarnessId] = useState(
     defaultHarnessId ?? harnesses[0]?.id ?? "",
   );
-  const [pickedByHarness, setPickedByHarness] = useState<Record<string, string>>(
-    {},
-  );
+  const [pickedByHarness, setPickedByHarness] = useState<
+    Record<string, string>
+  >({});
   const [folder, setFolder] = useState(defaultFolderId ?? "");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);

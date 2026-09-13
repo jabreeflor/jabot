@@ -182,9 +182,7 @@ describe("NewChatView", () => {
   it("seeds the chip from last-used when that id is still advertised", () => {
     renderView({
       harnesses: HARNESSES.map((harness) =>
-        harness.id === "claude"
-          ? { ...harness, lastModel: "opus" }
-          : harness,
+        harness.id === "claude" ? { ...harness, lastModel: "opus" } : harness,
       ),
     });
     expect(
