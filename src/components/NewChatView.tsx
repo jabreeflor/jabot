@@ -29,6 +29,7 @@ import {
   MonitorIcon,
   PlusIcon,
 } from "./Icon";
+import { ModelChip, initialModel } from "./ModelChip";
 import { Select, type SelectOption } from "./Select";
 import { WorkspacePicker, type WorkspaceActions } from "./WorkspacePicker";
 import type { Folder, HarnessCard, HostTarget, NewChatDraft } from "./types";
@@ -65,7 +66,9 @@ export function NewChatView({
   const [chosenHarnessId, setHarnessId] = useState(
     defaultHarnessId ?? harnesses[0]?.id ?? "",
   );
-  const [model, setModel] = useState("");
+  const [pickedByHarness, setPickedByHarness] = useState<
+    Record<string, string>
+  >({});
   const [folder, setFolder] = useState(defaultFolderId ?? "");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -76,6 +79,9 @@ export function NewChatView({
     : (harnesses[0]?.id ?? "");
   const selectedHarness = harnesses.find((harness) => harness.id === harnessId);
   const selectedFolder = folders.find((row) => row.id === folder);
+  const selectedModel = selectedHarness
+    ? (pickedByHarness[selectedHarness.id] ?? initialModel(selectedHarness))
+    : "";
 
   async function run(action: () => Promise<void>) {
     if (busy) return;
@@ -97,7 +103,9 @@ export function NewChatView({
         harnessId,
         folderId: folder || null,
         task,
-        ...(selectedHarness?.supportsModels && model ? { model } : {}),
+        ...(selectedHarness?.supportsModels && selectedModel
+          ? { model: selectedModel }
+          : {}),
       });
     });
   }
@@ -148,26 +156,20 @@ export function NewChatView({
             aria-label={`Harness: ${selectedHarness?.label ?? "Harness"}`}
             value={harnessId}
             options={harnessOptions}
-            onChange={(id) => {
-              setHarnessId(id);
-              setModel("");
-            }}
+            onChange={setHarnessId}
             disabled={busy}
           />
           {selectedHarness?.supportsModels && (
-            <Select
-              variant="chip"
-              aria-label={`Model: ${model || "Project default"}`}
-              value={model}
-              options={[
-                { value: "", label: "Project default" },
-                ...(selectedHarness.models ?? []).map((id) => ({
-                  value: id,
-                  label: id,
-                })),
-              ]}
-              onChange={setModel}
+            <ModelChip
+              harness={selectedHarness}
+              value={selectedModel}
               disabled={busy}
+              onChange={(next) => {
+                setPickedByHarness((prev) => ({
+                  ...prev,
+                  [selectedHarness.id]: next,
+                }));
+              }}
             />
           )}
           <button
@@ -235,7 +237,7 @@ export function NewChatView({
             {selectedHarness.installHint ?? "Not installed"}
           </p>
         )}
-        {selectedHarness?.supportsModels &&
+        {selectedHarness?.id === "opencode" &&
           selectedHarness.available !== false && (
             <p className="workspace-hint" role="status">
               Model follows the project `opencode.json` unless you pick one

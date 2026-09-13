@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Add a composer model picker</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --text:#e6edf3; --muted:#8b949e; --accent:#7c6af7; --ok:#3fb950; --bad:#f85149; --warn:#d29922; }
+    * { box-sizing:border-box; }
+    body { margin:0; padding:52px 24px 72px; background:var(--bg); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif; }
+    main { max-width:920px; margin:auto; }
+    .kicker { color:var(--accent); font-size:12px; font-weight:750; letter-spacing:.14em; text-transform:uppercase; }
+    h1 { margin:8px 0 12px; font-size:42px; line-height:1.08; letter-spacing:-.035em; }
+    h2 { margin:0 0 14px; font-size:22px; }
+    p { color:var(--muted); }
+    section { margin-top:34px; padding:24px; background:var(--panel); border:1px solid var(--line); border-radius:14px; }
+    .flow { display:grid; grid-template-columns:1fr 36px 1fr 36px 1fr; gap:10px; align-items:stretch; }
+    .state { padding:16px; background:#0f141a; border:1px solid var(--line); border-radius:11px; }
+    .state h3 { margin:0 0 10px; font-size:13px; color:var(--muted); letter-spacing:.09em; text-transform:uppercase; }
+    .state ul { margin:0; padding-left:18px; }
+    .state li { margin:6px 0; color:var(--text); }
+    .arrow { display:grid; place-items:center; color:var(--accent); font-size:26px; }
+    table { width:100%; border-collapse:collapse; }
+    th,td { padding:11px 9px; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+    th { color:var(--muted); font-size:13px; }
+    code { padding:2px 6px; border-radius:5px; background:#262c33; color:#c9e9df; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .no { color:var(--bad); font-weight:650; }
+    .yes { color:var(--ok); font-weight:650; }
+    .maybe { color:var(--warn); font-weight:650; }
+    ul { margin:10px 0 0; padding-left:21px; }
+    li { margin:8px 0; }
+    @media (max-width:800px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); height:28px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="kicker">JaBot · PR walkthrough · #301 · issue #296</div>
+    <h1>Pick the model from a compact chip. The adapter actually receives it.</h1>
+    <p>New Chat already had workspace / harness / host chips. The model <code>Select</code> existed but was gated on <code>supports_models</code>, which only OpenCode advertised. Claude Code is the default and was <code>false</code>, so the chip never showed. Conversation had no model control at all.</p>
+
+    <section id="mechanism">
+      <h2>How it works</h2>
+      <div class="flow">
+        <div class="state">
+          <h3>Catalog</h3>
+          <ul>
+            <li>Claude, Cursor, and OpenCode set <code>supports_models: true</code>.</li>
+            <li>No hardcoded vendor id lists.</li>
+            <li>Custom files may opt in; Fake ACP does, so the live loop can advertise real ids.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>Listing</h3>
+          <ul>
+            <li>Doctor parse: slash ids, bare ACP ids, JSON.</li>
+            <li>Cached <code>availableModels</code> from <code>session/new</code>.</li>
+            <li>Bounded ACP probe when the card is ready and the list is empty.</li>
+            <li>Always include Harness / Project default.</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="state">
+          <h3>Apply</h3>
+          <ul>
+            <li><code>thread/open</code> stores the pin and last-used per harness.</li>
+            <li><code>thread/set_model</code> updates <code>runtime_json</code>.</li>
+            <li>Live: <code>session/set_model</code> → <code>set_config</code> → <code>set_config_option</code>.</li>
+            <li>If it cannot switch live, the UI says so. Never a silent no-op.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section id="decisions">
+      <h2>Decisions</h2>
+      <table>
+        <tr><th>Choice</th><th>Why</th></tr>
+        <tr><td>Harness picker stays its own chip</td><td>The model menu is not a second way to pick Claude vs OpenCode.</td></tr>
+        <tr><td>Options come from the adapter</td><td>A missing CLI disables the chip with the Doctor reason. No fake Sonnet/Opus menu for Claude on a machine that cannot name those ids.</td></tr>
+        <tr><td>Harness switch resets the pin</td><td>New Chat keeps a per-harness map so switching back does not leak the previous engine's id.</td></tr>
+        <tr><td>Empty model = default</td><td>OpenCode: Project default. Everyone else: Harness default. Applied on next spawn if there is no live session.</td></tr>
+      </table>
+    </section>
+
+    <section id="look">
+      <h2>What to look at</h2>
+      <table>
+        <tr><th>File</th><th>Why it matters</th></tr>
+        <tr><td><code>src/components/ModelChip.tsx</code></td><td>Shared chip. Accessible name <code>Model: …</code>. <code>Select variant="chip"</code>.</td></tr>
+        <tr><td><code>src/components/NewChatView.tsx</code></td><td>Per-harness pick map. Claude shows the chip because the catalog now supports models.</td></tr>
+        <tr><td><code>src/views/ThreadView.tsx</code></td><td>Live thread chrome. Calls <code>thread/set_model</code> and surfaces <code>next_spawn</code>.</td></tr>
+        <tr><td><code>src-tauri/src/host/lifecycle/mod.rs</code></td><td><code>thread/set_model</code>: persist, then live apply or an explicit respawn status.</td></tr>
+        <tr><td><code>src-tauri/src/host/acp/connection.rs</code></td><td><code>session/new</code> sends <code>model</code>; then the three apply verbs.</td></tr>
+      </table>
+    </section>
+
+    <section id="verify">
+      <h2>How to verify</h2>
+      <ul>
+        <li><code>./scripts/verify.sh</code> — the land-on-main gate. Already green on this tree.</li>
+        <li>New Chat + Claude Code: a Model chip. If Claude is missing, it is disabled with the install hint.</li>
+        <li>OpenCode still lists Doctor / <code>opencode models</code> results and still passes <code>model</code> on <code>thread/open</code>.</li>
+        <li>Start a thread, then change the chip. <code>thread/state</code> shows the pin. A live adapter gets <code>session/set_model</code> (or equivalent); otherwise the status line names next spawn.</li>
+        <li>Switch harness in New Chat: the model resets. Switch back: the previous harness's id does not leak.</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

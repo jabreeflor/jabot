@@ -76,6 +76,8 @@ export interface CustomHarness {
   label: string;
   command: string;
   args?: string[];
+  /** Adapter advertises models; the chip lists those ids, never invented ones. */
+  supportsModels?: boolean;
 }
 
 export interface HostBridgeOptions {

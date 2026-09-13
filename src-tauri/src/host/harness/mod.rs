@@ -338,11 +338,12 @@ impl HostSession {
             self.deep_probe(&descriptors, &mut diagnoses);
         }
 
-        let reports = descriptors
+        let mut reports: Vec<HarnessReport> = descriptors
             .iter()
             .zip(diagnoses)
             .map(|(descriptor, diagnosis)| report(descriptor, diagnosis))
             .collect();
+        self.enrich_model_reports(&descriptors, &mut reports);
         Ok(HarnessDoctorResult {
             reports,
             issues,
@@ -354,6 +355,95 @@ impl HostSession {
                 .map(|dir| dir.display().to_string())
                 .collect(),
         })
+    }
+
+    /// Fill advertised models from cache / a bounded ACP probe, and stamp
+    /// the last model this machine picked for each harness.
+    fn enrich_model_reports(
+        &self,
+        descriptors: &[HarnessDescriptor],
+        reports: &mut [HarnessReport],
+    ) {
+        for (descriptor, report) in descriptors.iter().zip(reports.iter_mut()) {
+            if report.models.is_empty() {
+                if let Some(cached) = self.cached_advertised_models(&descriptor.id) {
+                    report.models = cached;
+                }
+            }
+            if report.models.is_empty() && report.ready && descriptor.supports_models {
+                if let Some(probed) = self.probe_advertised_models(descriptor, report) {
+                    self.persist_advertised_models(&descriptor.id, &probed);
+                    report.models = probed;
+                }
+            }
+            report.last_model = self.last_model_for(&descriptor.id);
+        }
+    }
+
+    pub(crate) fn persist_last_model(&self, harness_id: &str, model: Option<&str>) {
+        let Some(store) = self.store.as_ref() else {
+            return;
+        };
+        let _ = store.set_setting(
+            &super::store::last_model_key(harness_id),
+            model.unwrap_or(""),
+        );
+    }
+
+    pub(crate) fn last_model_for(&self, harness_id: &str) -> Option<String> {
+        let store = self.store.as_ref()?;
+        store
+            .get_setting(&super::store::last_model_key(harness_id))
+            .ok()
+            .flatten()
+            .filter(|value| !value.is_empty())
+    }
+
+    pub(crate) fn persist_advertised_models(&self, harness_id: &str, models: &[String]) {
+        if models.is_empty() {
+            return;
+        }
+        let Some(store) = self.store.as_ref() else {
+            return;
+        };
+        if let Ok(raw) = serde_json::to_string(models) {
+            let _ = store.set_setting(&super::store::advertised_models_key(harness_id), &raw);
+        }
+    }
+
+    fn cached_advertised_models(&self, harness_id: &str) -> Option<Vec<String>> {
+        let store = self.store.as_ref()?;
+        let raw = store
+            .get_setting(&super::store::advertised_models_key(harness_id))
+            .ok()
+            .flatten()?;
+        serde_json::from_str(&raw).ok()
+    }
+
+    fn probe_advertised_models(
+        &self,
+        descriptor: &HarnessDescriptor,
+        report: &HarnessReport,
+    ) -> Option<Vec<String>> {
+        let command = report.command.as_ref()?;
+        let mut spec = descriptor.runtime_spec(descriptor.primary());
+        spec.command = command.clone();
+        spec.args = Some(report.args.clone());
+        let log_path = self
+            .log_dir
+            .join(format!("doctor-models-{}.stderr.log", descriptor.id));
+        let cwd = self
+            .data_dir
+            .as_ref()
+            .map(|dir| {
+                dir.join("tmp")
+                    .join(format!("model-probe-{}", descriptor.id))
+            })
+            .unwrap_or_else(|| {
+                std::env::temp_dir().join(format!("jabot-model-probe-{}", descriptor.id))
+            });
+        let _ = std::fs::create_dir_all(&cwd);
+        probe_session_models(&spec, &cwd, &log_path, self.adapter_wake())
     }
 
     /// Spawn each ready adapter and run the ACP handshake.
@@ -458,6 +548,35 @@ fn handshake(
         .unwrap_or(0))
 }
 
+/// `initialize` + `session/new` so New Chat can list models the adapter
+/// actually advertises, without inventing ids. Bounded by the same timeouts
+/// as a real handshake; failure leaves the list empty.
+fn probe_session_models(
+    spec: &RuntimeSpec,
+    cwd: &std::path::Path,
+    log_path: &std::path::Path,
+    wake: std::sync::Arc<super::acp::AdapterWake>,
+) -> Option<Vec<String>> {
+    let runtime = super::acp::HarnessRuntime::from_spec("doctor-models", spec).ok()?;
+    let mut connection =
+        super::acp::AcpConnection::spawn(&runtime, Some(cwd), log_path, wake).ok()?;
+    if connection.initialize().is_err() {
+        connection.kill();
+        return None;
+    }
+    let models = match connection.new_session(
+        "probe",
+        &cwd.to_string_lossy(),
+        serde_json::json!([]),
+        None,
+    ) {
+        Ok(_) => connection.take_advertised_models(),
+        Err(_) => Vec::new(),
+    };
+    connection.kill();
+    (!models.is_empty()).then_some(models)
+}
+
 fn report(descriptor: &HarnessDescriptor, diagnosis: Diagnosis) -> HarnessReport {
     HarnessReport {
         id: descriptor.id.clone(),
@@ -478,6 +597,7 @@ fn report(descriptor: &HarnessDescriptor, diagnosis: Diagnosis) -> HarnessReport
         install_url: descriptor.install_url.clone(),
         elapsed_ms: diagnosis.elapsed_ms,
         models: diagnosis.models,
+        last_model: None,
     }
 }
 

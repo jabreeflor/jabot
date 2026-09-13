@@ -231,7 +231,36 @@ fn main() {
                 sessions_minted += 1;
                 let minted = format!("sess-fake-{sessions_minted}");
                 session_id = Some(minted.clone());
-                reply(&mut stdout, id, serde_json::json!({ "sessionId": minted }));
+                let current = msg["params"]
+                    .get("model")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("sonnet");
+                reply(
+                    &mut stdout,
+                    id,
+                    serde_json::json!({
+                        "sessionId": minted,
+                        "models": {
+                            "availableModels": [
+                                { "modelId": "sonnet", "name": "Sonnet" },
+                                { "modelId": "opus", "name": "Opus" }
+                            ],
+                            "currentModelId": current
+                        }
+                    }),
+                );
+            }
+            "session/set_model" => {
+                eprintln!("session_set_model={}", msg["params"]);
+                reply(&mut stdout, id, serde_json::json!({}));
+            }
+            "session/set_config" => {
+                eprintln!("session_set_config={}", msg["params"]);
+                reply(&mut stdout, id, serde_json::json!({}));
+            }
+            "session/set_config_option" => {
+                eprintln!("session_set_config_option={}", msg["params"]);
+                reply(&mut stdout, id, serde_json::json!({}));
             }
             "session/resume" => {
                 // The host must send back the session it stored, the same

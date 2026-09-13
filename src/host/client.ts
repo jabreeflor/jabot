@@ -68,6 +68,7 @@ import {
   THREAD_FOLD,
   THREAD_OPEN,
   THREAD_REOPEN,
+  THREAD_SET_MODEL,
   THREAD_GIT_COMMIT,
   THREAD_GIT_DIFF,
   THREAD_GIT_PUSH,
@@ -161,6 +162,8 @@ import {
   type ThreadFoldParams,
   type ThreadOpenParams,
   type ThreadRefParams,
+  type ThreadSetModelParams,
+  type ThreadSetModelResult,
   type ThreadGitCommitParams,
   type ThreadGitDiffResult,
   type ThreadGitParams,
@@ -349,6 +352,13 @@ export class HostClient {
 
   async threadState(params: ThreadRefParams): Promise<ThreadStateResult> {
     return this.request<ThreadStateResult>(THREAD_STATE, params);
+  }
+
+  /** Persist a thread's model and apply it live when the adapter can. */
+  async setThreadModel(
+    params: ThreadSetModelParams,
+  ): Promise<ThreadSetModelResult> {
+    return this.request<ThreadSetModelResult>(THREAD_SET_MODEL, params);
   }
 
   /** Repositories, Git state, and attached sources for a Code conversation (#269). */

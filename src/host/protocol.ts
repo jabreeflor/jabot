@@ -38,6 +38,8 @@ export const THREAD_REOPEN = "thread/reopen";
 export const THREAD_ARCHIVE = "thread/archive";
 export const THREAD_DELETE = "thread/delete";
 export const THREAD_STATE = "thread/state";
+/** Persist a thread's model and apply it to the live session when possible. */
+export const THREAD_SET_MODEL = "thread/set_model";
 export const THREAD_TRANSCRIPT = "thread/transcript";
 /** Toggle an emoji reaction on a rendered transcript item (#265). */
 export const THREAD_REACT = "thread/react";
@@ -438,6 +440,20 @@ export interface ThreadOpenParams {
   model?: string;
 }
 
+/** Pick the model for an existing thread. Empty / omitted is the harness default. */
+export interface ThreadSetModelParams {
+  threadId: string;
+  model?: string | null;
+}
+
+export interface ThreadSetModelResult {
+  threadId: string;
+  model?: string;
+  /** `live` when the adapter took it; `next_spawn` when it applies on respawn. */
+  applied: "live" | "next_spawn" | string;
+  detail?: string;
+}
+
 export interface RunView {
   id: string;
   seq: number;
@@ -581,6 +597,8 @@ export interface ThreadStateResult {
       has to guess. */
   hostId?: string;
   harnessId: string;
+  /** Host-selected model from `runtime_json`, when one is pinned. */
+  model?: string;
   folderId?: string;
   botId?: string;
   acpSessionId?: string;
@@ -863,6 +881,8 @@ export interface HarnessReport {
   elapsedMs: number;
   /** `provider/model` lines the Doctor's models probe printed. */
   models?: string[];
+  /** Last model this machine picked for this harness. */
+  lastModel?: string;
   capabilities?: HarnessCapabilitiesView;
 }
 

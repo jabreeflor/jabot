@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use jabot_lib::host::{
     HostSession, JsonRpcNotification, JsonRpcRequest, JsonRpcResponse, RequestId, HOST_HELLO,
     INBOX_LIST, INBOX_RESURFACE, PERMISSION_ASK, PERMISSION_REPLY, SESSION_PROMPT, THREAD_ARCHIVE,
-    THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_STATE,
+    THREAD_DELETE, THREAD_FOLD, THREAD_OPEN, THREAD_REOPEN, THREAD_SET_MODEL, THREAD_STATE,
 };
 use serde_json::{json, Value};
 
@@ -922,4 +922,67 @@ fn wait_for_inbox_chosen_mid_turn_answers_a_read_and_still_asks_before_a_delete(
     // A receipt, not something still owed: only the delete is unread.
     assert!(away["readAt"].is_string());
     assert_eq!(inbox["unread"], 1);
+}
+
+#[test]
+fn thread_open_stores_the_model_and_set_model_updates_it() {
+    let mut host = Host::start();
+    let opened = host.ok(
+        THREAD_OPEN,
+        json!({
+            "threadId": "t-model",
+            "title": "Model pick",
+            "cwd": host.dir.path().to_string_lossy(),
+            "harnessId": "claude",
+            "model": "sonnet",
+            "runtime": { "command": fake_agent(), "args": [] }
+        }),
+    );
+    assert_eq!(opened["model"], "sonnet");
+
+    let set = host.ok(
+        THREAD_SET_MODEL,
+        json!({ "threadId": "t-model", "model": "opus" }),
+    );
+    assert_eq!(set["model"], "opus");
+    assert_eq!(set["applied"], "next_spawn");
+    assert!(
+        set["detail"].as_str().unwrap().contains("next spawn"),
+        "{}",
+        set["detail"]
+    );
+    assert_eq!(host.state("t-model")["model"], "opus");
+    let doctor = host.ok("harness/doctor", json!({ "harnessId": "claude" }));
+    assert_eq!(doctor["reports"][0]["lastModel"], "opus");
+
+    let cleared = host.ok(
+        THREAD_SET_MODEL,
+        json!({ "threadId": "t-model", "model": "" }),
+    );
+    assert!(cleared["model"].is_null());
+    assert_eq!(cleared["applied"], "next_spawn");
+    assert!(host.state("t-model")["model"].is_null());
+
+    let cleared_doctor = host.ok("harness/doctor", json!({ "harnessId": "claude" }));
+    assert!(
+        cleared_doctor["reports"][0]["lastModel"].is_null()
+            || cleared_doctor["reports"][0]["lastModel"] == "",
+        "clearing the model must not leave the previous harness id as last-used"
+    );
+}
+
+#[test]
+fn a_live_session_takes_set_model() {
+    let mut host = Host::start();
+    host.open_thread("t-live-model", None);
+    host.prompt("t-live-model");
+    host.settle("t-live-model", |s| {
+        s["latestRun"]["state"] == "running" || s["latestRun"]["state"] == "succeeded"
+    });
+    let set = host.ok(
+        THREAD_SET_MODEL,
+        json!({ "threadId": "t-live-model", "model": "opus" }),
+    );
+    assert_eq!(set["applied"], "live", "{set}");
+    assert_eq!(host.state("t-live-model")["model"], "opus");
 }

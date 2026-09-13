@@ -870,6 +870,22 @@ button.react-badge:focus-visible {
   padding: 14px var(--sp-6) 20px;
 }
 
+.composer-chrome {
+  max-width: var(--thread-max);
+  margin: 0 auto 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  position: relative;
+  z-index: 2;
+}
+
+.composer-model-status {
+  font: var(--fs-meta) / 1.3 var(--font-ui);
+  color: var(--dim);
+}
+
 .composer form {
   max-width: var(--thread-max);
   margin: 0 auto;

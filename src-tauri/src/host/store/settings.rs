@@ -26,6 +26,16 @@ pub const KEY_IDLE_TIMEOUT_MS: &str = "idle_timeout_ms";
 /// What a thread's fold policy starts as: `default` or `wait_for_inbox`.
 pub const KEY_DEFAULT_FOLD_POLICY: &str = "default_fold_policy";
 
+/// Last model the user picked for a harness (`last_model:{harnessId}`).
+pub fn last_model_key(harness_id: &str) -> String {
+    format!("last_model:{harness_id}")
+}
+
+/// Advertised model ids cached from ACP `session/new` (`advertised_models:{harnessId}`).
+pub fn advertised_models_key(harness_id: &str) -> String {
+    format!("advertised_models:{harness_id}")
+}
+
 /// The floor, and what an empty store answers. Matches the column default in
 /// `0001_init.sql` so the two cannot disagree about a fresh install.
 pub const DEFAULT_FOLD_POLICY: &str = "default";

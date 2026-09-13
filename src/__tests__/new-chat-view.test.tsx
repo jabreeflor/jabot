@@ -110,6 +110,108 @@ describe("NewChatView", () => {
     expect(pi).not.toHaveTextContent(/Inflection/i);
   });
 
+  it("shows a model chip for Claude Code with the harness default", () => {
+    renderView();
+    expect(
+      screen.getByRole("button", { name: "Model: Harness default" }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends the Claude model the chip picked", async () => {
+    const props = renderView();
+    await userEvent.click(screen.getByRole("button", { name: /Model:/ }));
+    await userEvent.click(screen.getByRole("option", { name: "sonnet" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+    expect(props.onStart).toHaveBeenCalledWith(
+      expect.objectContaining({ harnessId: "claude", model: "sonnet" }),
+    );
+  });
+
+  it("resets the model when the harness changes and does not leak it back", async () => {
+    const props = renderView({
+      harnesses: HARNESSES.map((harness) =>
+        harness.id === "opencode"
+          ? { ...harness, models: ["anthropic/claude-sonnet-4-5"] }
+          : harness,
+      ),
+    });
+    await userEvent.click(screen.getByRole("button", { name: /Model:/ }));
+    await userEvent.click(screen.getByRole("option", { name: "sonnet" }));
+    expect(
+      screen.getByRole("button", { name: "Model: sonnet" }),
+    ).toBeInTheDocument();
+
+    await pickHarness(/OpenCode/);
+    expect(
+      screen.getByRole("button", { name: "Model: Project default" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Model: sonnet" })).toBeNull();
+
+    await pickHarness(/Claude Code/);
+    expect(
+      screen.getByRole("button", { name: "Model: sonnet" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start session" }),
+    );
+    expect(props.onStart).toHaveBeenCalledWith(
+      expect.objectContaining({ harnessId: "claude", model: "sonnet" }),
+    );
+  });
+
+  it("falls back to the default when last-used is not in the advertised list", () => {
+    renderView({
+      harnesses: HARNESSES.map((harness) =>
+        harness.id === "claude"
+          ? {
+              ...harness,
+              models: ["sonnet", "opus"],
+              lastModel: "claude-invented-id",
+            }
+          : harness,
+      ),
+    });
+    expect(
+      screen.getByRole("button", { name: "Model: Harness default" }),
+    ).toBeInTheDocument();
+  });
+
+  it("seeds the chip from last-used when that id is still advertised", () => {
+    renderView({
+      harnesses: HARNESSES.map((harness) =>
+        harness.id === "claude" ? { ...harness, lastModel: "opus" } : harness,
+      ),
+    });
+    expect(
+      screen.getByRole("button", { name: "Model: opus" }),
+    ).toBeInTheDocument();
+  });
+
+  it("disables the model chip when the harness is unavailable", () => {
+    renderView({
+      harnesses: [
+        {
+          id: "claude",
+          label: "Claude Code",
+          blurb: "Anthropic's coding agent, wrapped in JaBot's UI",
+          accent: "var(--h-claude)",
+          supportsModels: true,
+          available: false,
+          installHint: "Run `claude` once and sign in.",
+        },
+      ],
+    });
+    expect(
+      screen.getByRole("button", { name: "Model: Harness default" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText("Run `claude` once and sign in."),
+    ).toBeInTheDocument();
+  });
+
   it("offers a model picker for OpenCode and sends the chosen model", async () => {
     const props = renderView({
       harnesses: HARNESSES.map((harness) =>

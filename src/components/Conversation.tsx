@@ -10,7 +10,7 @@
 //! until the turn ends — and a UI that took the text and then said nothing
 //! would be indistinguishable from one that dropped it.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { ArrowUpIcon } from "./Icon";
 import { Composer } from "./Composer";
@@ -42,6 +42,8 @@ export function Conversation({
   error,
   notice,
   disabled = false,
+  modelChip,
+  modelStatus,
 }: {
   header: ReactNode;
   items: readonly TranscriptItem[];
@@ -72,12 +74,27 @@ export function Conversation({
       thing you do. Drawn above the composer because that is where the action
       it is about is taken. */
   notice?: ReactNode;
+  modelChip?: ReactNode;
+  modelStatus?: ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // True while the reader is parked at the end. Default true, because a
   // conversation opens at its tail.
   const stuckRef = useRef(true);
   const [stuck, setStuck] = useState(true);
+  // WebKit delivers `scroll` after a programmatic pin with the *old* offset.
+  // Remember that offset so we re-apply the pin instead of treating the echo
+  // as the reader leaving.
+  const pinEchoTopRef = useRef<number | null>(null);
+  const lastClientHeightRef = useRef(0);
+
+  function pinToEnd() {
+    const scroll = scrollRef.current;
+    if (!scroll || !stuckRef.current) return;
+    pinEchoTopRef.current = scroll.scrollTop;
+    lastClientHeightRef.current = scroll.clientHeight;
+    scroll.scrollTop = scroll.scrollHeight;
+  }
 
   // End-anchored, not tail-following.
   //
@@ -88,33 +105,65 @@ export function Conversation({
   // defect here; windowing below is the half the record deferred for
   // performance.
   //
+  // Layout, not paint: WebKit can fire `scroll` on a post-paint restick with
+  // stale metrics and treat a reader who never left as having scrolled up.
   // Stuck is measured rather than remembered, in one place, so the answer
   // cannot drift from what the element is actually doing.
-  useEffect(() => {
-    const scroll = scrollRef.current;
-    if (!scroll) return;
-    if (!stuckRef.current) return;
-    scroll.scrollTop = scroll.scrollHeight;
+  useLayoutEffect(() => {
+    pinToEnd();
   }, [items]);
 
   // Sending re-sticks. Somebody who scrolled up to check something and then
   // typed is done reading back — and a reply that arrived off-screen because
   // the view was still held at the old position would be the worse surprise.
   const lastId = items[items.length - 1]?.id;
-  useEffect(() => {
+  useLayoutEffect(() => {
     const last = items[items.length - 1];
     if (last?.kind !== "user") return;
     stuckRef.current = true;
     setStuck(true);
-    const scroll = scrollRef.current;
-    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    pinToEnd();
     // Keyed on the last item's id rather than the array: this must fire when
     // a *new* user item lands, not on every chunk of the reply to it.
   }, [lastId, items]);
 
+  // Composer chrome (the model chip, a status line) lives *outside*
+  // `.chat-scroll`. When it mounts, flex shrinks the scroller past
+  // STICK_THRESHOLD — the reader did not move. Re-pin only while stuck.
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll || typeof ResizeObserver === "undefined") return;
+    lastClientHeightRef.current = scroll.clientHeight;
+    const ro = new ResizeObserver(() => pinToEnd());
+    ro.observe(scroll);
+    return () => ro.disconnect();
+  }, []);
+
   function onScroll() {
     const scroll = scrollRef.current;
     if (!scroll) return;
+    const height = scroll.clientHeight;
+    const previousHeight = lastClientHeightRef.current;
+    lastClientHeightRef.current = height;
+
+    // Echo of our own pin: WebKit reports the pre-assignment scrollTop.
+    if (
+      pinEchoTopRef.current !== null &&
+      Math.abs(scroll.scrollTop - pinEchoTopRef.current) <= 1
+    ) {
+      pinEchoTopRef.current = null;
+      if (stuckRef.current) scroll.scrollTop = scroll.scrollHeight;
+      return;
+    }
+    pinEchoTopRef.current = null;
+
+    // Viewport shrank (composer chrome). Same rule as the observer: stay put
+    // only if we were already following.
+    if (previousHeight > 0 && height < previousHeight && stuckRef.current) {
+      scroll.scrollTop = scroll.scrollHeight;
+      return;
+    }
+
     // A threshold rather than an equality: sub-pixel rounding, and a streaming
     // bubble that grows between the scroll event and this read, both put the
     // exact bottom a few pixels out of reach.
@@ -126,11 +175,9 @@ export function Conversation({
   }
 
   function jumpToLatest() {
-    const scroll = scrollRef.current;
-    if (!scroll) return;
-    scroll.scrollTop = scroll.scrollHeight;
     stuckRef.current = true;
     setStuck(true);
+    pinToEnd();
   }
 
   const waiting = queued ?? [];
@@ -197,6 +244,8 @@ export function Conversation({
         onCancel={onCancel}
         disabled={disabled}
         mentionBots={bots}
+        modelChip={modelChip}
+        modelStatus={modelStatus}
       />
     </div>
   );

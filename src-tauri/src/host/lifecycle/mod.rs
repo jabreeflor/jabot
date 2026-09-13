@@ -38,7 +38,7 @@ use super::protocol::error::RpcError;
 use super::protocol::methods::{
     FoldPolicy, InboxEventView, InboxListParams, InboxListResult, ProcessView, ReceiptView,
     ResurfaceReason, RunView, SleepingThreadView, ThreadFoldParams, ThreadOpenParams,
-    ThreadRefParams, ThreadStateResult,
+    ThreadRefParams, ThreadSetModelParams, ThreadSetModelResult, ThreadStateResult,
 };
 use super::schedule::RUN_KIND_SCHEDULE;
 use super::store::{self, InboxEventRow, NewThread, RunRow, SessionReceiptRow, Store, ThreadRow};
@@ -211,6 +211,14 @@ impl HostSession {
                 }
                 return Err(store_error(err));
             }
+            self.persist_last_model(
+                &params.harness_id,
+                params
+                    .model
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|model| !model.is_empty()),
+            );
         }
         self.thread_state(ThreadRefParams {
             thread_id: thread_id.clone(),
@@ -338,6 +346,14 @@ impl HostSession {
             branch: row.branch.clone(),
             host_id: row.host_id.clone(),
             harness_id: row.harness_id.clone(),
+            model: serde_json::from_str::<Value>(&row.runtime_json)
+                .ok()
+                .and_then(|runtime| {
+                    runtime
+                        .get("model")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                }),
             folder_id: row.folder_id.clone(),
             bot_id: row.bot_id.clone(),
             acp_session_id: row.acp_session_id.clone(),
@@ -356,6 +372,118 @@ impl HostSession {
             pull_requests,
             unread,
         })
+    }
+
+    /// Persist a thread's model and apply it to the live session when the
+    /// adapter can take it. A failure to switch live is stored and named —
+    /// never a silent no-op (#296).
+    pub fn thread_set_model(
+        &mut self,
+        params: ThreadSetModelParams,
+    ) -> Result<ThreadSetModelResult, RpcError> {
+        params.validate()?;
+        let model = params
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        let thread = self
+            .lifecycle_thread(&params.thread_id)?
+            .ok_or_else(|| RpcError::ThreadNotFound(params.thread_id.clone()))?;
+        self.persist_last_model(&thread.harness_id, model.as_deref());
+        let mut runtime: Value = serde_json::from_str(&thread.runtime_json)
+            .map_err(|err| RpcError::Internal(format!("runtime_json: {err}")))?;
+        if let Some(obj) = runtime.as_object_mut() {
+            match &model {
+                Some(value) => {
+                    obj.insert("model".into(), json!(value));
+                }
+                None => {
+                    obj.remove("model");
+                }
+            }
+        }
+        self.store_or_err()?
+            .set_thread_runtime(&thread.id, &runtime.to_string())
+            .map_err(store_error)?;
+        let (applied, detail) = self.apply_live_model(&thread.id, model.as_deref());
+        Ok(ThreadSetModelResult {
+            thread_id: thread.id,
+            model,
+            applied,
+            detail,
+        })
+    }
+
+    fn apply_live_model(
+        &mut self,
+        thread_id: &str,
+        model: Option<&str>,
+    ) -> (String, Option<String>) {
+        let Some(model) = model else {
+            return (
+                "next_spawn".into(),
+                Some("Harness default applies when the session respawns.".into()),
+            );
+        };
+        let Some(session_id) = self
+            .conn(thread_id)
+            .and_then(|conn| conn.session_for(thread_id))
+        else {
+            return (
+                "next_spawn".into(),
+                Some("No live session — applies on next spawn.".into()),
+            );
+        };
+        let Some(conn) = self.conn_mut(thread_id) else {
+            return (
+                "next_spawn".into(),
+                Some("No live session — applies on next spawn.".into()),
+            );
+        };
+        match conn.apply_model(&session_id, model) {
+            Ok(()) => {
+                if let Err(err) = self.refresh_receipt_after_model(thread_id) {
+                    eprintln!("failed to refresh receipt model for {thread_id}: {err}");
+                }
+                ("live".into(), None)
+            }
+            Err(err) => (
+                "next_spawn".into(),
+                Some(format!(
+                    "Could not switch the live session ({err}). Applies on next spawn."
+                )),
+            ),
+        }
+    }
+
+    fn refresh_receipt_after_model(&mut self, thread_id: &str) -> Result<(), RpcError> {
+        let thread = self
+            .lifecycle_thread(thread_id)?
+            .ok_or_else(|| RpcError::ThreadNotFound(thread_id.into()))?;
+        let receipt = self
+            .store_or_err()?
+            .get_session_receipt(thread_id)
+            .map_err(store_error)?;
+        let Some(receipt) = receipt else {
+            return Ok(());
+        };
+        let fingerprint = self.fingerprint_for(&thread);
+        self.store_or_err()?
+            .upsert_session_receipt(
+                thread_id,
+                &receipt.acp_session_id,
+                thread.native_session_ref.as_deref(),
+                &fingerprint.harness_id,
+                fingerprint.model.as_deref(),
+                &fingerprint.cwd,
+                &fingerprint.tools_json(),
+                &fingerprint.permission_mode,
+                &fingerprint.digest(),
+            )
+            .map_err(store_error)?;
+        Ok(())
     }
 
     /// The Inbox: resurfaced cards from `inbox_events`, plus Still Sleeping

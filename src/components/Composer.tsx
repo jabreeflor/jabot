@@ -7,7 +7,7 @@
 //! to a busy thread is the ordinary case, and what happens to what you type is
 //! the queue's decision, not the input's.
 
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 
 import { AgentPill } from "./AgentPill";
 import { MicIcon, PlusIcon, StopIcon } from "./Icon";
@@ -25,6 +25,8 @@ export function Composer({
   busy = false,
   onCancel,
   mentionBots,
+  modelChip,
+  modelStatus,
 }: {
   placeholder: string;
   onSend: (text: string) => void;
@@ -34,6 +36,9 @@ export function Composer({
   onCancel?: () => void;
   /** Crew to offer as @mention pills while the query is open. */
   mentionBots?: readonly Bot[];
+  /** Compact model chip above the form — existing-thread chrome (#296). */
+  modelChip?: ReactNode;
+  modelStatus?: ReactNode;
 }) {
   const [text, setText] = useState("");
   const query = mentionBots ? mentionQuery(text) : null;
@@ -54,6 +59,12 @@ export function Composer({
 
   return (
     <div className="composer">
+      {(modelChip || modelStatus) && (
+        <div className="composer-chrome">
+          {modelChip}
+          {modelStatus}
+        </div>
+      )}
       {suggestions.length > 0 && (
         <div
           className="composer-mentions"

@@ -112,6 +112,7 @@ describe("harness/list", () => {
       label: "Claude Code",
       reserved: true,
       sessionScope: "thread",
+      supportsModels: true,
     });
     expect(byId.get("opencode")).toMatchObject({
       tier: "shipped",

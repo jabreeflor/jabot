@@ -48,6 +48,10 @@ struct CustomHarnessFile {
     install_hint: Option<String>,
     #[serde(default)]
     install_instructions_url: Option<String>,
+    /// The adapter names models (ACP `availableModels` / a CLI listing).
+    /// Default false so a custom file cannot invent a vendor menu.
+    #[serde(default)]
+    supports_models: bool,
 }
 
 /// What a loaded file produced: a descriptor, plus anything dropped on the way.
@@ -176,7 +180,7 @@ pub fn parse(raw: &str) -> Result<Loaded, String> {
             readiness: Readiness::Binary,
             capability_notes: None,
             session_scope: SessionScope::Thread,
-            supports_models: false,
+            supports_models: file.supports_models,
             declared_capabilities: Vec::new(),
             account_isolation: None,
             capabilities: None,
@@ -228,6 +232,19 @@ mod tests {
         assert_eq!(d.env.get("MY_AGENT_MODE").map(String::as_str), Some("acp"));
         assert_eq!(d.install_url.as_deref(), Some("https://example.com/docs"));
         assert!(loaded.warnings.is_empty());
+        assert!(!d.supports_models);
+    }
+
+    #[test]
+    fn opt_in_supports_models_without_inventing_ids() {
+        let loaded = parse(&file(json!({
+            "id": "my-agent",
+            "label": "My Agent",
+            "command": "my-agent-bin",
+            "supportsModels": true
+        })))
+        .unwrap();
+        assert!(loaded.descriptor.supports_models);
     }
 
     #[test]
