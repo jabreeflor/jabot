@@ -407,7 +407,9 @@ describe("spawn_code_session", () => {
       }),
     );
     const { client, server } = await chiefAtWork(dataDir);
-    await client.updateBot({ botId: "code", harnessId: "unavailable-test" });
+    // There is no default Code bot (#200). The missing adapter stays in the
+    // catalog so a machine with Claude installed still cannot dispatch this
+    // spawn onto a real runtime.
     const folder = await client.registerFolder({ path: repo, name: "Project" });
 
     const spawned = await callTool<SpawnResult>(server, "spawn_code_session", {

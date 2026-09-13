@@ -819,10 +819,14 @@ mod tests {
         )
         .unwrap();
         session.sync_harness_catalog();
+        // Seeded crew is Chief + Bot Recruiter (#200); pin the receiving bot
+        // to the explicit missing adapter so dispatch cannot pick up a real
+        // catalog agent. `host()` already pins everyone to ABSENT_HARNESS;
+        // this second fixture is the PR's machine-independent path.
         ok(
             &mut session,
             CREW_UPDATE,
-            json!({ "botId": "writer", "harnessId": "unavailable-test" }),
+            json!({ "botId": "bot-recruiter", "harnessId": "unavailable-test" }),
         );
         chief_at_work(&mut session);
 
@@ -863,7 +867,9 @@ mod tests {
             .as_str()
             .expect("a failed dispatch has to say why");
         assert!(
-            detail.contains(ABSENT_AGENT) || detail.contains("Harness unavailable"),
+            detail.contains(ABSENT_AGENT)
+                || detail.contains("Harness unavailable")
+                || detail.contains("missing-adapter"),
             "dispatch must fail on the pinned missing runtime, not a surprise: {handoff}"
         );
     }

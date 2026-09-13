@@ -88,7 +88,9 @@ export function Conversation({
   const pinEchoTopRef = useRef<number | null>(null);
   const pinTargetRef = useRef<number | null>(null);
   const lastClientHeightRef = useRef(0);
-  const latestUser = [...items].reverse().find((item) => item.kind === "user");
+  const latestUserId = [...items]
+    .reverse()
+    .find((item) => item.kind === "user")?.id;
 
   function pinTo(top: number) {
     const scroll = scrollRef.current;
@@ -135,11 +137,11 @@ export function Conversation({
 
     const promptTop = measure();
     if (
-      latestUser &&
-      latestUser.id !== promptRef.current &&
+      latestUserId &&
+      latestUserId !== promptRef.current &&
       promptTop !== null
     ) {
-      promptRef.current = latestUser.id;
+      promptRef.current = latestUserId;
       stuckRef.current = false;
       pinTo(promptTop);
     } else if (stuckRef.current) {
@@ -162,7 +164,7 @@ export function Conversation({
     observer.observe(scroll);
     observer.observe(transcript);
     return () => observer.disconnect();
-  }, [items, latestUser?.id]);
+  }, [items, latestUserId]);
 
   // Composer chrome (the model chip, a status line) lives *outside*
   // `.chat-scroll`. When it mounts, flex shrinks the scroller past
