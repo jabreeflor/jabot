@@ -10,7 +10,12 @@
 //! threads multiplexed onto it as ACP sessions, which is what
 //! `HarnessDescriptor::profile_key` has meant since #13. The pool is keyed by
 //! that key — see [`HostSession::connection_key`] — and inbound traffic is
-//! routed back to a thread by [`AcpConnection::route`].
+//! routed back to a thread by `SessionBackend::route`.
+//!
+//! Since #299 the pool holds `Box<dyn SessionBackend>` rather than
+//! [`AcpConnection`] directly: the `impl HostSession` block here is the
+//! host's session driver and speaks only the boundary in `host/backend/`.
+//! The ACP-specific half is `connection.rs`, reached through `backend::spawn`.
 
 mod connection;
 /// Cursor's blocking extension requests, typed at the wire (#298).
@@ -25,6 +30,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
+use super::backend::{self, BackendEvent, SessionBackend};
 use super::harness::catalog;
 use super::permission::Withdrawal;
 use super::protocol::error::RpcError;
@@ -34,7 +40,7 @@ use super::protocol::methods::{
 use super::HostSession;
 use runtime::ProbeResult;
 
-pub(crate) use connection::{AcpConnection, Inbound};
+pub(crate) use connection::AcpConnection;
 /// The Doctor's deep probe spawns an adapter the same way a session does (#13).
 pub(crate) use runtime::HarnessRuntime;
 pub use wake::AdapterWake;
@@ -94,7 +100,7 @@ impl HostSession {
     pub(crate) fn attach_adapter_for_test(
         &mut self,
         thread_id: &str,
-        mut conn: AcpConnection,
+        mut conn: Box<dyn SessionBackend>,
         session_id: &str,
     ) {
         let key = self.connection_key(thread_id);
@@ -103,13 +109,20 @@ impl HostSession {
         self.thread_keys.insert(thread_id.to_string(), key);
     }
 
-    pub(crate) fn conn(&self, thread_id: &str) -> Option<&AcpConnection> {
-        self.connections.get(&self.connection_key(thread_id))
+    pub(crate) fn conn(&self, thread_id: &str) -> Option<&dyn SessionBackend> {
+        self.connections
+            .get(&self.connection_key(thread_id))
+            .map(|conn| &**conn)
     }
 
-    pub(crate) fn conn_mut(&mut self, thread_id: &str) -> Option<&mut AcpConnection> {
+    // `+ 'static` spelled out: `&mut` is invariant, so the boxed object's own
+    // lifetime cannot be shortened to the borrow's the way `conn` above can.
+    pub(crate) fn conn_mut(
+        &mut self,
+        thread_id: &str,
+    ) -> Option<&mut (dyn SessionBackend + 'static)> {
         let key = self.connection_key(thread_id);
-        self.connections.get_mut(&key)
+        self.connections.get_mut(&key).map(|conn| &mut **conn)
     }
 
     /// Whether this thread has a live adapter — which, on a shared process,
@@ -269,7 +282,7 @@ impl HostSession {
             // session belongs to which thread, and which thread sent the
             // request the response answers. `handle_inbound` borrows all of
             // `self`, so the pairs are collected first.
-            let mut routed: Vec<(String, Inbound)> = Vec::new();
+            let mut routed: Vec<(String, BackendEvent)> = Vec::new();
             if let Some(conn) = self.connections.get_mut(&key) {
                 while let Ok(event) = conn.try_recv() {
                     let owners = conn.route(&event);
@@ -278,9 +291,9 @@ impl HostSession {
                             // A blocking request nobody owns still has to be
                             // answered, or the agent's turn hangs on it. Not
                             // `cancelled`: no human declined anything (#298).
-                            if let Inbound::Extension { acp_id, method, .. } = &event {
+                            if let BackendEvent::Extension { id, method, .. } = &event {
                                 let _ = conn.respond_error(
-                                    acp_id.clone(),
+                                    id.clone(),
                                     -32601,
                                     &format!("Method not found: {method}"),
                                 );
@@ -291,14 +304,14 @@ impl HostSession {
                         // Only `Closed` fans out, and it carries nothing but an
                         // error string, so cloning it per tenant is honest.
                         _ => {
-                            let Inbound::Closed { error } = &event else {
+                            let BackendEvent::Closed { error } = &event else {
                                 eprintln!("adapter {key}: {event:?} claimed several owners");
                                 continue;
                             };
                             for owner in owners {
                                 routed.push((
                                     owner,
-                                    Inbound::Closed {
+                                    BackendEvent::Closed {
                                         error: error.clone(),
                                     },
                                 ));
@@ -380,7 +393,13 @@ impl HostSession {
     /// so the connection is dropped only once the last tenant has been through.
     pub(crate) fn on_adapter_gone(&mut self, thread_id: &str, error: Option<&str>) {
         if let Some(err) = error {
-            eprintln!("adapter for {thread_id} closed: {err}");
+            // Named by backend so a log line from a mixed pool says which
+            // integration died, not only which thread lost it (#299).
+            let kind = self
+                .conn(thread_id)
+                .map(|conn| conn.kind().as_str())
+                .unwrap_or("unknown");
+            eprintln!("adapter for {thread_id} closed ({kind}): {err}");
         }
         // Diagnose before the connection is dropped: the log path lives on the
         // process, and a no-reply turn has to name why while the file is still
@@ -494,7 +513,12 @@ impl HostSession {
         let log_path = self.adapter_log_path(&params.thread_id);
         let cwd = self.resolve_cwd(params)?;
         let cwd_path = PathBuf::from(&cwd);
-        let conn = AcpConnection::spawn(
+        // The one place a backend is chosen for a thread (#299). Today the
+        // answer is always ACP; a thread that already has a process never
+        // comes back through here, which is what keeps it pinned.
+        let kind = backend::select(&runtime);
+        let conn = backend::spawn(
+            kind,
             &runtime,
             Some(cwd_path.as_path()),
             &log_path,
@@ -614,15 +638,15 @@ impl HostSession {
     ) -> no_reply::NoReplyDiagnosis {
         let path = self
             .conn(thread_id)
-            .map(|conn| conn.log_path.clone())
+            .map(|conn| conn.log_path().to_path_buf())
             .unwrap_or_else(|| self.adapter_log_path(thread_id));
         let stderr = no_reply::read_log_excerpt(&path).unwrap_or_default();
         no_reply::diagnose(&stderr, process_exited)
     }
 
-    pub(crate) fn handle_inbound(&mut self, thread_id: &str, event: Inbound) {
+    pub(crate) fn handle_inbound(&mut self, thread_id: &str, event: BackendEvent) {
         match event {
-            Inbound::Update(mut acp) => {
+            BackendEvent::Update(mut acp) => {
                 if acp.get("sessionUpdate").and_then(Value::as_str) == Some("agent_message_chunk") {
                     if let Some(content) = acp.get("content") {
                         let visible = match content.get("type").and_then(Value::as_str) {
@@ -662,15 +686,16 @@ impl HostSession {
                 // events go out first (#28).
                 self.pr_observe_update(thread_id, &acp);
             }
-            Inbound::Permission { acp_id, params } => {
-                self.open_permission_request(thread_id, acp_id, &params)
+            // Permissions stay on Interaction. Questions and plan decisions
+            // (#298) arrive as Extension so the host can refuse a payload it
+            // cannot draw without treating it as a permission.
+            BackendEvent::Interaction { id, params } => {
+                self.open_permission_request(thread_id, id, &params)
             }
-            Inbound::Extension {
-                acp_id,
-                method,
-                params,
-            } => self.open_extension_request(thread_id, acp_id, &method, &params),
-            Inbound::PromptResult {
+            BackendEvent::Extension { id, method, params } => {
+                self.open_extension_request(thread_id, id, &method, &params)
+            }
+            BackendEvent::TurnEnded {
                 payload: result, ..
             } => {
                 // A question or plan still open when the turn ends is one the
@@ -716,7 +741,7 @@ impl HostSession {
                 // it (#14 steer-vs-redispatch).
                 self.drain_prompt_queue(thread_id);
             }
-            Inbound::Closed { error } => self.on_adapter_gone(thread_id, error.as_deref()),
+            BackendEvent::Closed { error } => self.on_adapter_gone(thread_id, error.as_deref()),
         }
     }
 }
