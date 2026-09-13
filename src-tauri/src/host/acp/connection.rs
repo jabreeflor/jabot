@@ -675,6 +675,37 @@ fn decline_cursor_extension(method: &str) -> Option<Value> {
     }
 }
 
+/// Hoist the spec's `session/update` shape onto the one the host reads.
+///
+/// ACP sends `{ sessionId, update: { sessionUpdate, ... } }`. Everything
+/// downstream — `has_reply`, the preview, the lifecycle, the renderer's
+/// reducer — reads `sessionUpdate` and `content` off the top level, which is
+/// also what the fake agent used to send. A real Claude Code turn therefore
+/// streamed its text into a shape nobody looked at and ended as
+/// `empty_response` with the reply sitting in the transcript rows. Flattening
+/// here, at the wire, is the one place every consumer shares. An already-flat
+/// payload (no `update` object) passes through untouched; a top-level key
+/// wins over the same key inside `update`, so `sessionId` stays the routing
+/// key.
+fn flatten_session_update(params: Value) -> Value {
+    let Value::Object(mut outer) = params else {
+        return params;
+    };
+    let Some(Value::Object(inner)) = outer.remove("update") else {
+        return Value::Object(outer);
+    };
+    if !inner.contains_key("sessionUpdate") {
+        // Not the spec envelope — some other field that happens to be named
+        // `update`. Put it back and leave the payload alone.
+        outer.insert("update".to_string(), Value::Object(inner));
+        return Value::Object(outer);
+    }
+    for (key, value) in inner {
+        outer.entry(key).or_insert(value);
+    }
+    Value::Object(outer)
+}
+
 fn write_result(stdin: &Arc<Mutex<std::process::ChildStdin>>, id: RequestId, result: Value) {
     let response = JsonRpcResponse::success(id, result);
     if let Ok(frame) = encode_frame(&JsonRpcMessage::Response(response)) {
@@ -720,7 +751,7 @@ fn dispatch_message(
         }
         JsonRpcMessage::Notification(notification) => {
             if notification.method == "session/update" {
-                let params = notification.params.unwrap_or(Value::Null);
+                let params = flatten_session_update(notification.params.unwrap_or(Value::Null));
                 let _ = inbound.send(Inbound::Update(params));
                 wake.ping();
             }
@@ -758,6 +789,40 @@ fn dispatch_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spec_shaped_session_update_is_hoisted() {
+        // The shape claude-agent-acp actually sends: the discriminator and
+        // the content live under `update`. Before this hoist a real reply
+        // ended the turn as `empty_response`.
+        let flat = flatten_session_update(json!({
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": "Hi!" },
+                "messageId": "m1"
+            }
+        }));
+        assert_eq!(flat["sessionId"], "s1");
+        assert_eq!(flat["sessionUpdate"], "agent_message_chunk");
+        assert_eq!(flat["content"]["text"], "Hi!");
+        assert_eq!(flat["messageId"], "m1");
+        assert!(flat.get("update").is_none());
+    }
+
+    #[test]
+    fn flat_session_update_passes_through() {
+        let already = json!({
+            "sessionId": "s1",
+            "sessionUpdate": "agent_message_chunk",
+            "content": { "type": "text", "text": "hello from fake-acp" }
+        });
+        assert_eq!(flatten_session_update(already.clone()), already);
+        // An `update` that is not the envelope is not touched either.
+        let other = json!({ "sessionId": "s1", "sessionUpdate": "x", "update": { "n": 1 } });
+        assert_eq!(flatten_session_update(other.clone()), other);
+        assert_eq!(flatten_session_update(Value::Null), Value::Null);
+    }
 
     #[test]
     fn capabilities_are_read_from_both_shapes_agents_use() {

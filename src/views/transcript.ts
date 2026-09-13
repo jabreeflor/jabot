@@ -266,7 +266,7 @@ export function applyAcpEvent(
     typeof seq === "number"
       ? { ...stream, headSeq: Math.max(stream.headSeq, seq) }
       : stream;
-  const update = asRecord(payload);
+  const update = sessionUpdateOf(payload);
   // Not an object, or an object with no `sessionUpdate`: nothing we can map,
   // and nothing worth taking the chat down for.
   if (!update) return next;
@@ -995,6 +995,23 @@ function sameCall(a: ToolCall, b: ToolCall): boolean {
 
 function sameStrings(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((value, i) => value === b[i]);
+}
+
+/**
+ * The update itself, whichever envelope it came in.
+ *
+ * The host hoists ACP's `{ sessionId, update: { sessionUpdate, … } }` onto the
+ * flat shape before it streams or persists it, but transcript rows written
+ * before that hoist still carry the nested one — and a replay of those is the
+ * chat the user sees when they reopen the thread. Reading through `update`
+ * here means those rows render instead of vanishing.
+ */
+function sessionUpdateOf(payload: unknown): Record<string, unknown> | undefined {
+  const outer = asRecord(payload);
+  if (!outer) return undefined;
+  if (outer.sessionUpdate !== undefined) return outer;
+  const inner = asRecord(outer.update);
+  return inner && inner.sessionUpdate !== undefined ? { ...inner, ...outer } : outer;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
