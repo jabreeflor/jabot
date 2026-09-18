@@ -4,6 +4,7 @@
 //! session — Tauri IPC now, Unix socket later, same messages.
 
 mod acp;
+mod backend;
 mod chief;
 mod crew;
 mod git;
@@ -156,14 +157,17 @@ pub struct HostSession {
     store: Option<Store>,
     secrets: Secrets,
     store_error: Option<String>,
-    /// Live adapter processes, keyed by **connection key**, not by thread.
+    /// Live agent processes, keyed by **connection key**, not by thread.
     ///
     /// For every `SessionScope::Thread` harness — claude, codex, gemini,
     /// aider, cursor — the
     /// key embeds the thread id, so this stays one process per thread exactly
     /// as it always was. For a `SessionScope::Profile` harness the key is the
     /// profile, and several threads share the entry (#13, #21).
-    connections: HashMap<String, acp::AcpConnection>,
+    ///
+    /// Held behind the backend boundary (#299): nothing here names the
+    /// transport, and `backend::select` is the one place that picks it.
+    connections: HashMap<String, Box<dyn backend::SessionBackend>>,
     /// thread id → its connection key. A cache, filled when a thread attaches:
     /// resolving the key from scratch is a store read plus a catalog scan, and
     /// the lookup sits on the pump's inner loop.

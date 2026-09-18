@@ -6,7 +6,7 @@ use serde_json::Value;
 
 pub const JSONRPC_VERSION: &str = "2.0";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum RequestId {
     Number(i64),

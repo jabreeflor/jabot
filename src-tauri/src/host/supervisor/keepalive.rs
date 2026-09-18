@@ -252,7 +252,7 @@ impl HostSession {
         let restorable = self
             .conn(thread_id)
             .map(|conn| conn.capabilities())
-            .map(|caps| caps.resume || caps.load_session)
+            .map(|caps| caps.resume || caps.load)
             .unwrap_or(false);
         if !restorable {
             return false;
