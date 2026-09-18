@@ -162,10 +162,10 @@ describe("chrome mix tokens", () => {
   it("mixes raised chrome from solid swatches, not a second palette", () => {
     expect(css).toMatch(/--raise-solid:\s*#2a2a2c/);
     expect(glass).toMatch(
-      /--raise:\s*color-mix\(in srgb,\s*var\(--raise-solid\) 96%,\s*transparent\)/,
+      /--raise:\s*color-mix\(in srgb,\s*var\(--raise-solid\) 40%,\s*transparent\)/,
     );
     expect(glass).toMatch(
-      /--side:\s*color-mix\(in srgb,\s*var\(--side-solid\) 92%,\s*transparent\)/,
+      /--side:\s*color-mix\(in srgb,\s*var\(--side-solid\) 18%,\s*transparent\)/,
     );
     expect(glass).toMatch(/--chrome-frost:\s*blur\(/);
   });

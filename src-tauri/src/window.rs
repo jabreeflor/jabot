@@ -13,9 +13,10 @@
 //!
 //! Platform limits, on purpose:
 //!
-//! - **macOS 13+** (the bundle floor): overlay chrome plus
-//!   `Effect::UnderWindowBackground`, the same semantic material Electron's
-//!   `under-window` vibrancy maps to. Reduce Transparency makes the
+//! - **macOS 13+** (the bundle floor): overlay chrome plus a material that
+//!   follows the app theme — `Effect::HudWindow` for dark, `Effect::Popover`
+//!   for light — so the desktop reads through the 36–70% CSS mixes as
+//!   colour rather than a grey wash. Reduce Transparency makes the
 //!   material opaque at the OS; the CSS `prefers-reduced-transparency`
 //!   query is the matching fallback.
 //! - **Linux:** Tauri's `set_effects` is unsupported. The window stays
@@ -32,10 +33,61 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{
     window::{Color, Effect, EffectState, EffectsBuilder},
-    AppHandle, Manager, Runtime,
+    AppHandle, Manager, Runtime, Theme,
 };
 
 static APPLIED: AtomicBool = AtomicBool::new(false);
+
+/// The glass material for a palette. The app theme is renderer-local
+/// (#178) and need not match the OS, so the window appearance and the
+/// material follow `data-theme`, not `prefers-color-scheme`: a dark palette
+/// over a light-appearance material is a grey wash, not glass.
+fn material(theme: Theme) -> Effect {
+    match theme {
+        Theme::Light => Effect::Popover,
+        _ => Effect::HudWindow,
+    }
+}
+
+fn set_effects<R: Runtime>(window: &tauri::WebviewWindow<R>, theme: Theme) -> bool {
+    match window.set_effects(
+        EffectsBuilder::new()
+            .effect(material(theme))
+            .state(EffectState::Active)
+            .build(),
+    ) {
+        Ok(()) => {
+            APPLIED.store(true, Ordering::Relaxed);
+            true
+        }
+        Err(err) => {
+            eprintln!("window translucency: native effect unavailable ({err}); staying opaque");
+            APPLIED.store(false, Ordering::Relaxed);
+            false
+        }
+    }
+}
+
+/// Follow the renderer's resolved theme: NSWindow appearance plus the
+/// matching material. No-op off macOS (the decorated window has no glass).
+#[tauri::command]
+pub fn window_set_theme<R: Runtime>(app: AppHandle<R>, theme: String) -> bool {
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    let theme = if theme == "light" {
+        Theme::Light
+    } else {
+        Theme::Dark
+    };
+    let Some(window) = app.get_webview_window("main") else {
+        return false;
+    };
+    if let Err(err) = window.set_theme(Some(theme)) {
+        eprintln!("window translucency: could not set window appearance: {err}");
+    }
+    set_effects(&window, theme)
+}
 
 /// How the OS draws the frame around the webview.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,22 +146,12 @@ pub fn apply<R: Runtime>(app: &AppHandle<R>) -> bool {
         eprintln!("window translucency: could not clear the webview fill: {err}");
     }
 
-    match window.set_effects(
-        EffectsBuilder::new()
-            .effect(Effect::UnderWindowBackground)
-            .state(EffectState::FollowsWindowActiveState)
-            .build(),
-    ) {
-        Ok(()) => {
-            APPLIED.store(true, Ordering::Relaxed);
-            true
-        }
-        Err(err) => {
-            eprintln!("window translucency: native effect unavailable ({err}); staying opaque");
-            APPLIED.store(false, Ordering::Relaxed);
-            false
-        }
+    // Dark is the renderer's default palette; `window_set_theme` re-applies
+    // once the stored preference is on the document.
+    if let Err(err) = window.set_theme(Some(Theme::Dark)) {
+        eprintln!("window translucency: could not set window appearance: {err}");
     }
+    set_effects(&window, Theme::Dark)
 }
 
 #[cfg(test)]

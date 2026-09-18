@@ -225,6 +225,7 @@ pub fn run() {
             host_rpc,
             window::window_translucency_applied,
             window::window_chrome,
+            window::window_set_theme,
             host::repo::workspace::pick_workspace,
             host::repo::workspace::pick_sources,
             host::repo::workspace::github_repositories,

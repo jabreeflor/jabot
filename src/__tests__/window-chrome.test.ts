@@ -181,7 +181,7 @@ describe("shared window config stays portable", () => {
   it("keeps the macOS overlay frame in the macos merge file", () => {
     expect(macWin.titleBarStyle).toBe("Overlay");
     expect(macWin.transparent).toBe(true);
-    expect(macWin.windowEffects.effects).toContain("underWindowBackground");
+    expect(macWin.windowEffects.effects).toContain("hudWindow");
   });
 
   it("does not require a Windows chrome overlay (#291 owns that path for NSIS)", () => {

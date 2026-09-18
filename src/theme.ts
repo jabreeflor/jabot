@@ -8,6 +8,7 @@
 //! Dark is the default so an existing install does not flip on upgrade.
 //! "Match system" is the opt-in that follows `prefers-color-scheme`.
 
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 
 export const THEME_KEY = "jabot.theme";
@@ -65,7 +66,20 @@ export function applyTheme(preference: ThemePreference): ResolvedTheme {
   const root = document.documentElement;
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
+  syncWindowTheme(resolved);
   return resolved;
+}
+
+/**
+ * The native window appearance (and its glass material) follow the
+ * palette, not the OS: a dark palette over a light vibrancy is a grey
+ * wash. Fire-and-forget; outside Tauri there is no window to tell.
+ */
+export function syncWindowTheme(resolved: ResolvedTheme): void {
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+    return;
+  }
+  void invoke("window_set_theme", { theme: resolved }).catch(() => {});
 }
 
 /** Re-apply when the OS appearance changes. No-op if matchMedia is missing. */

@@ -51,11 +51,124 @@ html[data-translucency="on"] .main {
 }
 
 /*
- * Frost floating chrome and input pills. Panes mix without a filter so the
- * desktop hint stays a faint grid rather than a muddy wash; cards and
- * composer fields sit on that mix and get the glass. Overlay dims without
- * blurring so the modal's frost is the only filter on the card.
+ * Liquid glass. Two materials:
+ *
+ *   - Panes (sidebar, main) are sheets: a faint lit wash over the native
+ *     blur, a rim, a shadow beneath. The sidebar floats inset from the
+ *     window edge so the backdrop shows in the gutter around it.
+ *   - Capsules (fields, buttons, selected rows, bubbles, menus) are
+ *     lozenges: a frost, a lit fill, a rim, a specular top edge, a dark
+ *     bottom edge, and a shadow so they sit above the sheet.
+ *
+ * Overlay dims without blurring so the modal's frost is the only filter on
+ * the card.
  */
+html[data-translucency="on"] .sidebar {
+  width: auto;
+  margin: 10px 0 10px 10px;
+  border: 1px solid var(--glass-rim);
+  border-radius: 16px;
+  background-color: var(--glass-pane-fill);
+  background-image:
+    radial-gradient(
+      120% 40% at 18% 0%,
+      rgba(255, 255, 255, 0.14),
+      rgba(255, 255, 255, 0) 70%
+    ),
+    var(--glass-pane-sheen);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    var(--glass-pane-shadow);
+  -webkit-backdrop-filter: var(--chrome-frost);
+  backdrop-filter: var(--chrome-frost);
+}
+
+html[data-translucency="on"] .sidebar.is-collapsed {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-translucency="on"] .sidebar.is-collapsed.is-peeking {
+  margin: 10px 0 10px 10px;
+  border: 1px solid var(--glass-rim);
+  border-radius: 16px;
+  background-color: var(--glass-pane-fill);
+  background-image: var(--glass-pane-sheen);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    16px 0 40px color-mix(in srgb, #000 36%, transparent);
+  -webkit-backdrop-filter: var(--chrome-frost);
+  backdrop-filter: var(--chrome-frost);
+}
+
+/* The main pane is a second sheet: inset from the window edge like the
+   sidebar, rounded, rimmed, with the raw backdrop in the gutter between. */
+html[data-translucency="on"] .main {
+  margin: 10px 10px 10px 12px;
+  padding-top: calc(var(--titlebar-h) - 10px);
+  border: 1px solid var(--glass-rim);
+  border-radius: 16px;
+  background-image: var(--glass-pane-sheen);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    var(--glass-pane-shadow);
+}
+
+html[data-translucency="on"] .sidebar-slot.is-collapsed ~ .main {
+  margin-left: 10px;
+}
+
+/* The header sits on a thin frosted strip with a soft bottom edge; the
+   strip follows the pane's top corners. */
+html[data-translucency="on"] .chat-head {
+  border-radius: 15px 15px 0 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.05),
+    rgba(255, 255, 255, 0)
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* The footer's hairline is a lit rim, not the solid-theme black line, and
+   its icons sit on the brightest part of the sheet, so they take ink. */
+html[data-translucency="on"] .me-row {
+  border-top-color: var(--glass-rim);
+}
+
+html[data-translucency="on"] :is(.me-settings, .me-face) {
+  color: var(--ink);
+}
+
+html[data-translucency="on"] .me-face {
+  background-color: var(--glass-fill);
+  border: 1px solid var(--glass-rim);
+  box-shadow: inset 0 1px 0 var(--glass-hi);
+}
+
+html[data-translucency="on"] .section-header {
+  color: var(--dim);
+}
+
+/* Placeholders on a lit fill need more than --faint. */
+html[data-translucency="on"]
+  :is(.composer input::placeholder, .sidebar-search .field) {
+  color: var(--dim);
+}
+
+/* The composer floats above the transcript on a faint gradient floor. */
+html[data-translucency="on"] .composer {
+  padding-bottom: 16px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.25));
+}
+
 html[data-translucency="on"]
   :is(
     .setup-card,
@@ -68,10 +181,61 @@ html[data-translucency="on"]
     .app-error,
     .composer input,
     .sidebar-search .field,
-    .jump-latest
+    .sidebar-toggle,
+    .round-btn,
+    .jump-latest,
+    .bot-row[aria-current="true"],
+    .nav-row[aria-current="true"],
+    .thread-row[aria-current="true"],
+    .msg.me .bubble
   ) {
   -webkit-backdrop-filter: var(--chrome-frost);
   backdrop-filter: var(--chrome-frost);
+  background-color: var(--glass-fill);
+  background-image: var(--glass-sheen);
+  border: 1px solid var(--glass-rim);
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    inset 0 -1px 0 var(--glass-lo),
+    var(--glass-shadow);
+}
+
+/* Floating cards keep their deeper drop shadow under the glass edges. */
+html[data-translucency="on"]
+  :is(.setup-card, .modal, .ctx-menu, .fold-menu, .summary-popover) {
+  box-shadow:
+    inset 0 1px 0 var(--glass-hi),
+    inset 0 -1px 0 var(--glass-lo),
+    0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+/* A 1px rim on a padded control eats a pixel each side; take it back. */
+html[data-translucency="on"] .composer input {
+  padding: 10px 17px;
+}
+
+/* Composer chrome sits on the dark floor gradient: a touch more fill so it
+   reads as the same lozenge as the search field. */
+html[data-translucency="on"] :is(.composer input, .round-btn) {
+  background-color: color-mix(in srgb, var(--glass-fill), #fff 3%);
+}
+
+html[data-translucency="on"] :is(.sidebar-toggle, .round-btn) {
+  color: var(--ink);
+}
+
+html[data-translucency="on"] .sidebar-toggle {
+  border-radius: 50%;
+}
+
+html[data-translucency="on"]
+  :is(
+    .composer input,
+    .sidebar-search .field,
+    .sidebar-toggle,
+    .round-btn
+  ):hover {
+  background-color: color-mix(in srgb, var(--glass-fill), #fff 4%);
 }
 
 /* Only the selected view is mounted, so `.view` has no on/off state — the

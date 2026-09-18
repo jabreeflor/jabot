@@ -13,7 +13,7 @@
  * reassigns the surface/text/edge tokens; components should keep reading
  * the names, not the dark hexes. `--*-solid` is the opaque swatch;
  * `--win` / `--raise` / `--*-fill` alias it until `data-translucency="on"`
- * (#250), then a 90–95% mix so the whole chrome can frost over the desktop
+ * (#250), then an 18–52% mix so the whole chrome can frost over the desktop
  * without a second palette. Cream, ink, and edges stay solid.
  */
 
@@ -62,6 +62,16 @@
   --overlay: rgba(0, 0, 0, 0.55);
   /* backdrop-filter for panes and floating chrome; none until glass is on */
   --chrome-frost: none;
+  /* glass slab tokens (fill, rim, specular, shadow); inert until glass is on */
+  --glass-fill: transparent;
+  --glass-pane-fill: transparent;
+  --glass-rim: transparent;
+  --glass-hi: transparent;
+  --glass-lo: transparent;
+  --glass-shadow: none;
+  --glass-pane-shadow: none;
+  --glass-sheen: none;
+  --glass-pane-sheen: none;
 
   /* status */
   --amber: #e8a33d;
@@ -198,25 +208,56 @@
 }
 
 /*
- * Cursor-thin translucency (#250), extended across chrome. Mix percents
- * are the experiment point (still in the 90s — a hint, not wallpaper),
- * not a brand constant: tune here, not in components. Raised chips stay
- * a hair more opaque than the panes so they still sit on top. Cream, ink,
- * and edges stay solid. `prefers-reduced-transparency` and a missing
+ * Liquid-glass translucency (#250), extended across chrome. Mix percents
+ * are the experiment point — low enough that the desktop reads through
+ * the panes as colour, not just a hint — and not a brand constant: tune
+ * here, not in components. Raised chips stay more opaque than the panes
+ * so they still sit on top. Cream, ink, and edges stay solid. The sheen
+ * tokens are the specular top edge and rim a glass slab picks up from
+ * the light. `prefers-reduced-transparency` and a missing
  * `data-translucency` both restore the solid swatches, so Linux live.sh,
  * Windows, and Reduce Transparency stay readable.
  */
 html[data-translucency="on"] {
-  --win: color-mix(in srgb, var(--win-solid) 92%, transparent);
-  --side: color-mix(in srgb, var(--side-solid) 92%, transparent);
-  --chat: color-mix(in srgb, var(--chat-solid) 93%, transparent);
-  --raise: color-mix(in srgb, var(--raise-solid) 96%, transparent);
-  --raise2: color-mix(in srgb, var(--raise2-solid) 95%, transparent);
-  --raise-hover: color-mix(in srgb, var(--raise-hover-solid) 94%, transparent);
-  --sunk: color-mix(in srgb, var(--sunk-solid) 96%, transparent);
-  --bub-me: color-mix(in srgb, var(--bub-me-solid) 96%, transparent);
-  --overlay: color-mix(in srgb, #000 42%, transparent);
-  --chrome-frost: blur(16px) saturate(1.12);
+  --win: color-mix(in srgb, var(--win-solid) 30%, transparent);
+  --side: color-mix(in srgb, var(--side-solid) 18%, transparent);
+  --chat: color-mix(in srgb, var(--chat-solid) 55%, transparent);
+  --raise: color-mix(in srgb, var(--raise-solid) 40%, transparent);
+  --raise2: color-mix(in srgb, var(--raise2-solid) 40%, transparent);
+  --raise-hover: color-mix(in srgb, var(--raise-hover-solid) 52%, transparent);
+  --sunk: color-mix(in srgb, var(--sunk-solid) 50%, transparent);
+  --bub-me: color-mix(in srgb, var(--bub-me-solid) 40%, transparent);
+  --overlay: color-mix(in srgb, #000 36%, transparent);
+  --chrome-frost: blur(40px) saturate(1.8);
+  /* glass slab: a lit fill, a rim, a specular top edge, a shadow beneath */
+  --glass-fill: rgba(255, 255, 255, 0.08);
+  --glass-pane-fill: rgba(255, 255, 255, 0.11);
+  --glass-rim: rgba(255, 255, 255, 0.16);
+  --glass-hi: rgba(255, 255, 255, 0.35);
+  --glass-lo: rgba(0, 0, 0, 0.25);
+  --glass-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  --glass-pane-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --glass-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+  --glass-pane-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.05) 30%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+}
+
+html[data-translucency="on"][data-theme="light"] {
+  --glass-fill: rgba(255, 255, 255, 0.45);
+  --glass-pane-fill: rgba(255, 255, 255, 0.5);
+  --glass-rim: rgba(255, 255, 255, 0.7);
+  --glass-hi: rgba(255, 255, 255, 0.95);
+  --glass-lo: rgba(0, 0, 0, 0.08);
+  --glass-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  --glass-pane-shadow: 0 12px 40px rgba(0, 0, 0, 0.16);
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -231,6 +272,15 @@ html[data-translucency="on"] {
     --bub-me: var(--bub-me-solid);
     --overlay: rgba(0, 0, 0, 0.55);
     --chrome-frost: none;
+    --glass-fill: transparent;
+    --glass-pane-fill: transparent;
+    --glass-rim: transparent;
+    --glass-hi: transparent;
+    --glass-lo: transparent;
+    --glass-shadow: none;
+    --glass-pane-shadow: none;
+    --glass-sheen: none;
+    --glass-pane-sheen: none;
   }
 }
 

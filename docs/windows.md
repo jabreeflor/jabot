@@ -179,7 +179,7 @@ any row. Closing a row is the linked child issue, plus the matching cell on
 
 | Surface | macOS today | Windows today | Owner |
 |---|---|---|---|
-| **Glass / vibrancy** | Under-window material (`Effect::UnderWindowBackground`); renderer paints `data-translucency="on"` only when it applied | **Opaque.** `window.rs` refuses `set_effects` off macOS. Mica/Acrylic exist in Tauri and are **not** applied | [#282](https://github.com/jabreeflor/jabot/issues/282) |
+| **Glass / vibrancy** | Sidebar material (`Effect::Sidebar`); renderer paints `data-translucency="on"` only when it applied | **Opaque.** `window.rs` refuses `set_effects` off macOS. Mica/Acrylic exist in Tauri and are **not** applied | [#282](https://github.com/jabreeflor/jabot/issues/282) |
 | **Dock hide** | Close of the last window hides; Dock click / Reopen shows it again (#4) | **Close quits.** `lib.rs` only intercepts `CloseRequested` on macOS. No hide-to-tray, no Dock equivalent | [#280](https://github.com/jabreeflor/jabot/issues/280) (behavior), [#282](https://github.com/jabreeflor/jabot/issues/282) (chrome) |
 | **Signing / SmartScreen** | Developer ID + notarization + stapled ticket; `install.sh` refuses anything else | **Unsigned.** SmartScreen will warn. No Authenticode secret in this repo | [#281](https://github.com/jabreeflor/jabot/issues/281) (artifact); signing is called out there as follow-up |
 | **Notify** | `UNUserNotificationCenter` banners; click-to-thread | **Unsupported no-op** (`notify/unsupported.rs`). Inbox still records the card (persist-then-notify) | [#284](https://github.com/jabreeflor/jabot/issues/284) |
