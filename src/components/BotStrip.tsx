@@ -54,7 +54,12 @@ export function BotStrip({
         />
       ))}
       {onAddBot && (
-        <button type="button" className="bot-row" onClick={onAddBot}>
+        <button
+          type="button"
+          className="bot-row"
+          aria-label="New bot"
+          onClick={onAddBot}
+        >
           <span className="av bot-row-add" aria-hidden="true">
             <PlusIcon />
           </span>
@@ -96,6 +101,10 @@ function BotRow({
     <button
       type="button"
       className={chief ? "bot-row chief" : "bot-row"}
+      // Named for the bot, not for whatever the avatar and preview line happen
+      // to compute to — a screen reader lands on "Chief", not on a sentence
+      // from the last reply (#307).
+      aria-label={bot.name}
       aria-current={selected}
       onClick={() => onSelect(bot.id)}
     >

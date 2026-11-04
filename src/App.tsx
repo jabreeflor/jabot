@@ -334,6 +334,9 @@ function AppShell({
         return;
       }
       if (event.key !== "b" && event.key !== "B") return;
+      // A focused control that already answered the chord (a rich editor's
+      // bold) keeps it (#268).
+      if (event.defaultPrevented) return;
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       event.preventDefault();
       toggleSidebar();

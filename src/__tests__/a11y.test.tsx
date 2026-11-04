@@ -243,6 +243,49 @@ describe("a11y gate", () => {
   });
 });
 
+// #307: three controls the app review found with no usable name.
+describe("named controls", () => {
+  function renderSidebar() {
+    render(
+      <Sidebar
+        bots={BOTS}
+        folders={[{ ...FOLDERS[0], repo: "jabreeflor/jabot" }]}
+        selection={{ view: "bot", botId: "chief" } as Selection}
+        inboxCount={0}
+        openPrCount={0}
+        userName="Jabree Flor"
+        hostLine="This Mac · v0.1.0"
+        onSelectBot={vi.fn()}
+        onSelectThread={vi.fn()}
+        onOpenCrew={vi.fn()}
+        onOpenInbox={vi.fn()}
+        onOpenPullRequests={vi.fn()}
+        onOpenSchedules={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onNewChat={vi.fn()}
+        onThreadMenu={vi.fn()}
+        onToggle={vi.fn()}
+      />,
+    );
+  }
+
+  it("names each bot row for its bot", () => {
+    renderSidebar();
+    expect(screen.getByRole("button", { name: "Chief" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Code" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Crew" })).toBeInTheDocument();
+  });
+
+  it("names a folder row for the folder, keeping the path as its tooltip", () => {
+    renderSidebar();
+    const folder = screen.getByRole("button", { name: "jabot-app" });
+    expect(folder).toHaveAttribute(
+      "title",
+      "~/code/jabot-app · jabreeflor/jabot",
+    );
+  });
+});
+
 describe("primary views", () => {
   it("sidebar has no critical or serious violations", async () => {
     const { container } = render(
