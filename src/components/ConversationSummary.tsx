@@ -435,7 +435,7 @@ function RepoBody({
         <Counts repo={repo} />
       </button>
       <div className="summary-meta">
-        <span className="summary-chip">
+        <span className="summary-chip" title={`Runs on ${repo.environment}`}>
           <MonitorIcon />
           {repo.environment}
         </span>

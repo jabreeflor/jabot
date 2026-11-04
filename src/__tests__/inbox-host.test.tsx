@@ -437,7 +437,9 @@ describe("the Inbox and whose thread a card is on", () => {
 
     // The avatar is labelled with the bot's name; that label is the only thing
     // on the row that says who it is.
-    expect(await screen.findByLabelText(/Writer/)).toBeInTheDocument();
+    // Scoped to the Inbox panel: the sidebar lists Writer's own bot row too.
+    const panel = await screen.findByRole("tabpanel");
+    expect(await within(panel).findByLabelText(/Writer/)).toBeInTheDocument();
   });
 
   it("keeps the code mark for a thread with no bot", async () => {
@@ -445,7 +447,9 @@ describe("the Inbox and whose thread a card is on", () => {
     await openInbox();
     await screen.findByText(INBOX.events[0].title);
 
-    expect(screen.queryByLabelText(/Writer/)).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("tabpanel")).queryByLabelText(/Writer/),
+    ).not.toBeInTheDocument();
   });
 
   /**
@@ -458,7 +462,9 @@ describe("the Inbox and whose thread a card is on", () => {
     await openInbox();
     await screen.findByText(INBOX.events[0].title);
 
-    expect(screen.queryByLabelText(/Writer/)).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("tabpanel")).queryByLabelText(/Writer/),
+    ).not.toBeInTheDocument();
   });
 });
 

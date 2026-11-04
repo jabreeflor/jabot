@@ -114,7 +114,11 @@ export function jabotHost(options: JabotHostOptions = {}): Plugin {
           id: FAKE_HARNESS_ID,
           label: "Fake ACP",
           command: fakeAgent,
-          args: [],
+          // `JABOT_FAKE_ACP_MODE=markdown ./scripts/live.sh up` picks one of
+          // fake_acp_agent.rs's modes; unset is its default `echo`.
+          args: process.env.JABOT_FAKE_ACP_MODE
+            ? [process.env.JABOT_FAKE_ACP_MODE]
+            : [],
           supportsModels: true,
         });
       }

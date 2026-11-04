@@ -57,6 +57,9 @@ export function FolderList({
                 type="button"
                 className="folder-toggle"
                 aria-expanded={open}
+                // The tooltip carries the full path; the accessible name is the
+                // folder's own name, never a raw filesystem path (#307).
+                aria-label={folder.name}
                 // The registered directory, and the repo it turned out to be —
                 // the two things a folder row cannot show but a user picking
                 // between two checkouts of the same project needs.

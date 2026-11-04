@@ -214,7 +214,8 @@ export function Sidebar({
               className="sidebar-toggle"
               aria-expanded={open}
               aria-label={open ? "Hide sidebar" : "Show sidebar"}
-              title={open ? "Hide sidebar" : "Show sidebar"}
+              title={open ? "Hide sidebar (⌘B)" : "Show sidebar (⌘B)"}
+              aria-keyshortcuts="Meta+B"
               onClick={handleToggle}
               onFocus={armFromAffordance}
               onPointerEnter={(event) => {
