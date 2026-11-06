@@ -463,7 +463,7 @@ describe("questions and plans on the approver screen", () => {
         onInteract={onInteract}
       />,
     );
-    expect(screen.getByText("PLAN REVIEW")).toBeInTheDocument();
+    expect(screen.getByText("Plan review")).toBeInTheDocument();
     expect(screen.getByText("Move sessions over.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Accept plan" }));
     expect(onInteract).toHaveBeenLastCalledWith("int-plan", {
@@ -485,7 +485,7 @@ describe("questions and plans on the approver screen", () => {
         onInteract={onInteract}
       />,
     );
-    expect(screen.getByText("QUESTION")).toBeInTheDocument();
+    expect(screen.getByText("Question")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Plan" }));
     expect(onInteract).toHaveBeenLastCalledWith("int-one", {
       outcome: "answered",
