@@ -58,6 +58,35 @@ fn host_rpc(
     response
 }
 
+/// `host_rpc` for the methods that wait on GitHub ([`HostSession::detach_request`]).
+///
+/// `host_rpc` is a synchronous command, and Tauri runs those on the main
+/// thread: a `pr/detail` there held the window and the session lock for every
+/// second `gh` took. This one is async, holds the lock only for the checks,
+/// and waits for GitHub on a blocking worker. The renderer sends only
+/// `pr/detail` and `pr/action` here; anything else falls through to the same
+/// path `host_rpc` takes, so a wrong route is slow, never wrong.
+#[tauri::command]
+async fn host_rpc_detached(
+    app: tauri::AppHandle,
+    state: State<'_, HostState>,
+    request: JsonRpcRequest,
+) -> Result<JsonRpcResponse, String> {
+    if HostSession::is_detached(&request.method) {
+        acceptance::record_ipc(&request.method);
+    }
+    let detached = {
+        let mut session = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        session.detach_request(request)
+    };
+    match detached {
+        Ok(job) => tauri::async_runtime::spawn_blocking(job)
+            .await
+            .map_err(|e| e.to_string()),
+        Err(request) => Ok(host_rpc(app, state, request)),
+    }
+}
+
 fn emit_host_notification(app: &tauri::AppHandle, notification: &JsonRpcNotification) {
     if let Err(err) = app.emit("host-rpc", notification) {
         eprintln!("failed to emit host-rpc notification: {err}");
@@ -223,6 +252,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             host_rpc,
+            host_rpc_detached,
             window::window_translucency_applied,
             window::window_chrome,
             window::window_set_theme,

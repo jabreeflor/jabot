@@ -24,9 +24,11 @@ export function PrWorkspaceView({
 }: {
   pr: PullRequest;
   client: HostClient | null;
-  onBack: () => void;
+  /** `changed` is whether anything was posted to GitHub during this visit. */
+  onBack: (changed: boolean) => void;
   onOpenThread: (id: string) => void;
 }) {
+  const changed = useRef(false);
   const [section, setSection] = useState<Section>("conversation");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -91,6 +93,7 @@ export function PrWorkspaceView({
         method: strategy,
         ...(action === "inline" ? line : {}),
       });
+      changed.current = true;
       setNotice(
         action === "merge"
           ? "Pull request merged."
@@ -136,7 +139,11 @@ export function PrWorkspaceView({
     <div className="view">
       <div className="pr-view-chrome">
         <div className="pr-chrome-context">
-          <button className="btn" onClick={onBack} disabled={busy}>
+          <button
+            className="btn"
+            onClick={() => onBack(changed.current)}
+            disabled={busy}
+          >
             ← Pull requests
           </button>
           <span className="pr-muted">
@@ -232,9 +239,6 @@ export function PrWorkspaceView({
               {notice}
             </div>
           )}
-          {loading && !data && (
-            <p role="status">Loading conversation, files, and checks…</p>
-          )}
           <Tabs
             label="Pull request sections"
             panelId="pr-content"
@@ -263,6 +267,17 @@ export function PrWorkspaceView({
               },
             ]}
           />
+          {loading && !data && (
+            <div
+              className="pr-skeleton-block"
+              role="status"
+              aria-label="Loading conversation, files, and checks"
+            >
+              <span className="pr-skeleton-line wide" />
+              <span className="pr-skeleton-line" />
+              <span className="pr-skeleton-line wide" />
+            </div>
+          )}
           {data && (
             <div className="pr-layout">
               <main

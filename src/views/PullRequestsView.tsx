@@ -16,8 +16,9 @@
 //! what signing in would add rather than blocking the view behind a login.
 
 import { PrWorkspaceView } from "./PrWorkspaceView";
+import { prefetchPrDetail, prTarget } from "./prDetails";
 import type { HostClient } from "../host";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   CheckIcon,
@@ -34,8 +35,16 @@ import type { PullRequest } from "../components/types";
 
 type PrTab = "open" | "merged" | "drafts";
 
+/**
+ * How many rows from the top of the board to read ahead when it shows, so the
+ * one somebody is most likely to open is already on screen when they click.
+ * Small on purpose: each read is several GitHub API calls.
+ */
+export const PREFETCH_TOP_ROWS = 3;
+
 export function PullRequestsView({
   pullRequests,
+  loading = false,
   client,
   now,
   unavailable,
@@ -48,6 +57,9 @@ export function PullRequestsView({
 }: {
   client?: HostClient | null;
   pullRequests: readonly PullRequest[];
+  /** The host has not answered yet. Drawn as placeholder rows, not as
+      "No pull requests here", which would be a claim nobody has checked. */
+  loading?: boolean;
   now?: Date;
   /** Why the last poll did not reach GitHub, if it did not (#28). Drawn as a
       strip rather than as an empty board: the rows are linkage, which needs no
@@ -111,20 +123,6 @@ export function PullRequestsView({
           ]
         : [{ title: "DRAFTS", rows: drafts }];
 
-  if (selected)
-    return (
-      <PrWorkspaceView
-        key={selected.id}
-        pr={selected}
-        client={client ?? null}
-        onBack={() => {
-          setSelected(null);
-          onRefresh?.();
-        }}
-        onOpenThread={onOpenThread}
-      />
-    );
-
   const visible = sections
     .map((section) => ({
       ...section,
@@ -135,6 +133,50 @@ export function PullRequestsView({
       ),
     }))
     .filter((section) => section.rows.length > 0);
+
+  // Read ahead the top rows of the board once it is drawn and the browser is
+  // idle. Opening one of them then paints from the cache, like a github.com
+  // link the cursor has already rested on.
+  // From the unfiltered sections, so typing in the search box does not start
+  // a read per keystroke.
+  const warm = sections
+    .flatMap((section) => section.rows)
+    .slice(0, PREFETCH_TOP_ROWS)
+    .map((pr) => pr.url)
+    .join(" ");
+  useEffect(() => {
+    if (!client || selected || !warm) return;
+    const urls = new Set(warm.split(" "));
+    const rows = pullRequests.filter((pr) => urls.has(pr.url));
+    const go = () =>
+      rows.forEach((pr) => prefetchPrDetail(client, prTarget(pr)));
+    const idle = window.requestIdleCallback
+      ? window.requestIdleCallback(go, { timeout: 1500 })
+      : window.setTimeout(go, 300);
+    return () => {
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idle);
+      else window.clearTimeout(idle);
+    };
+    // `warm` is the dependency that matters: the rows, not the array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, warm, selected]);
+
+  if (selected)
+    return (
+      <PrWorkspaceView
+        key={selected.id}
+        pr={selected}
+        client={client ?? null}
+        onBack={(changed) => {
+          setSelected(null);
+          // Going back is instant: the board is already in memory. Only ask
+          // GitHub again when this visit changed the PR (merged it, closed
+          // it, reviewed it), so the row reflects it straight away.
+          if (changed) onRefresh?.();
+        }}
+        onOpenThread={onOpenThread}
+      />
+    );
 
   return (
     <div className="view">
@@ -196,8 +238,12 @@ export function PullRequestsView({
             role="tabpanel"
             aria-labelledby={tabButtonId("prs-panel", tab)}
           >
-            {visible.length === 0 && (
-              <div className="page-empty">No pull requests here.</div>
+            {loading && pullRequests.length === 0 ? (
+              <PrRowsPlaceholder />
+            ) : (
+              visible.length === 0 && (
+                <div className="page-empty">No pull requests here.</div>
+              )
             )}
             {visible.map((section) => (
               <div key={section.title}>
@@ -210,6 +256,7 @@ export function PullRequestsView({
                     open={openId === pr.id}
                     onToggle={() => setOpenId(openId === pr.id ? null : pr.id)}
                     onReview={() => setSelected(pr)}
+                    onIntent={() => prefetchPrDetail(client, prTarget(pr))}
                     onOpenThread={onOpenThread}
                     onAction={onAction}
                   />
@@ -267,6 +314,7 @@ function PrRow({
   open,
   onToggle,
   onReview,
+  onIntent,
   onOpenThread,
   onAction,
 }: {
@@ -275,6 +323,8 @@ function PrRow({
   open: boolean;
   onToggle: () => void;
   onReview: () => void;
+  /** The pointer or focus is on the row: a cue to start reading it. */
+  onIntent?: () => void;
   onOpenThread: (threadId: string) => void;
   onAction?: (prId: string, actionId: string) => void;
 }) {
@@ -286,6 +336,8 @@ function PrRow({
       className={["card-row", open ? "open" : "", quiet ? "dim" : ""]
         .filter(Boolean)
         .join(" ")}
+      onPointerEnter={onIntent}
+      onFocus={onIntent}
     >
       <div className={`prav ${pr.status}`}>
         {pr.status === "merged" ? (
@@ -316,7 +368,11 @@ function PrRow({
           <span className={`tagpill ${tag.tone}`}>{tag.label}</span>
         </button>
 
-        <button className="btn pr-open" onClick={onReview}>
+        <button
+          className="btn pr-open"
+          onPointerDown={onIntent}
+          onClick={onReview}
+        >
           Open pull request →
         </button>
         {open && pr.detail && (
@@ -374,6 +430,24 @@ function PrRow({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Grey rows in the shape of the real ones while the host is first asked. */
+function PrRowsPlaceholder() {
+  return (
+    <div role="status" aria-label="Loading pull requests">
+      <div className="page-section">NEEDS REVIEW</div>
+      {[0, 1, 2].map((i) => (
+        <div className="card-row pr-skeleton" key={i} aria-hidden="true">
+          <div className="prav" />
+          <div className="bd">
+            <span className="pr-skeleton-line wide" />
+            <span className="pr-skeleton-line" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
