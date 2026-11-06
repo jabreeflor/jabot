@@ -20,6 +20,7 @@ mod procgroup;
 mod protocol;
 pub(crate) mod repo;
 mod router;
+pub use router::Detached;
 mod schedule;
 mod seq;
 mod settings;
@@ -821,6 +822,33 @@ impl HostSession {
         let response = router::dispatch(self, request);
         self.leave_connection(connection);
         response
+    }
+
+    /// Check a GitHub request under the lock and return the slow part to run
+    /// without it ([`router::detach`]). `Err` hands an ordinary request back
+    /// for [`Self::handle_request_on`].
+    pub fn detach_request_on(
+        &mut self,
+        connection: &str,
+        request: JsonRpcRequest,
+    ) -> Result<Detached, JsonRpcRequest> {
+        if !router::is_detached(&request.method) {
+            return Err(request);
+        }
+        self.enter_connection(connection);
+        let detached = router::detach(self, request);
+        self.leave_connection(connection);
+        detached
+    }
+
+    /// Whether [`Self::detach_request_on`] takes this method off the lock.
+    pub fn is_detached(method: &str) -> bool {
+        router::is_detached(method)
+    }
+
+    /// [`Self::detach_request_on`] for the local connection.
+    pub fn detach_request(&mut self, request: JsonRpcRequest) -> Result<Detached, JsonRpcRequest> {
+        self.detach_request_on(LOCAL_CONNECTION, request)
     }
 
     /// Forget a connection that hung up.

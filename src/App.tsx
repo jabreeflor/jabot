@@ -1233,6 +1233,7 @@ function MainView({
           client={client}
           // Fixtures are only for previews without a host; a live host starts empty.
           pullRequests={pullRequests}
+          loading={!!client && pulls.pullRequests === null && !pulls.error}
           unavailable={pulls.unavailable}
           error={pulls.error}
           githubStatus={github.status}
