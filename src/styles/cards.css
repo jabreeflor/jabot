@@ -107,10 +107,9 @@
 .tagpill {
   display: inline-block;
   font-size: var(--fs-caps);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  border-radius: var(--r-pill);
-  padding: 2.5px 9px;
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 2px var(--sp-3);
   margin-top: var(--sp-3);
 }
 
@@ -150,12 +149,11 @@
 .card-detail .path {
   color: var(--faint);
   font-size: 12px;
-  letter-spacing: 0.03em;
 }
 
 .card-detail .path b {
   color: var(--dim);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .card-detail ul {

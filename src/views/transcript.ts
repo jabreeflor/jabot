@@ -572,7 +572,7 @@ function sysLine(stopReason: string, detail?: string | null): string {
   }
   switch (stopReason) {
     case "end_turn":
-      return "Session finished.";
+      return "Session finished";
     case "empty_response":
       return "The harness ended without a reply. Check the harness’s adapter, sign-in, and model configuration, then retry.";
     case "not_signed_in":

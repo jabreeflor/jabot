@@ -302,7 +302,7 @@ describe("App, once the host has answered", () => {
     host.prompt = vi.fn();
     vi.mocked(connectHost).mockResolvedValue({ client: host, hello: HELLO });
     await renderApp();
-    await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
     await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
     await userEvent.click(screen.getByRole("option", { name: /Codex/ }));
     await userEvent.click(
@@ -539,7 +539,7 @@ describe("App, once the host has answered", () => {
       "Harness unavailable: codex-acp",
     );
     expect(
-      screen.getByRole("region", { name: "New Chat" }),
+      screen.getByRole("region", { name: "New chat" }),
     ).toBeInTheDocument();
   });
 

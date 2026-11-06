@@ -96,7 +96,7 @@ describe("Onboarding", () => {
     const user = userEvent.setup();
     await renderFirstRun();
 
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada Lovelace{Enter}");
+    await user.type(screen.getByLabelText("Your name"), "Ada Lovelace{Enter}");
     await user.click(screen.getByRole("button", { name: /Codex/ }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Enter JaBot" }));
@@ -124,7 +124,7 @@ describe("Onboarding", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Enter JaBot" }));
 
-    await user.click(screen.getByRole("button", { name: /New Chat/ }));
+    await user.click(screen.getByRole("button", { name: /New chat/ }));
     expect(
       screen.getByRole("button", { name: /Harness: Codex/ }),
     ).toBeInTheDocument();
@@ -137,18 +137,18 @@ describe("Onboarding", () => {
     const user = userEvent.setup();
     await renderFirstRun();
 
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.type(screen.getByLabelText("Your name"), "Ada");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Back" }));
 
-    expect(screen.getByLabelText("YOUR NAME")).toHaveValue("Ada");
+    expect(screen.getByLabelText("Your name")).toHaveValue("Ada");
   });
 
   it("leaves setup on Escape the way Skip does, keeping what was typed", async () => {
     const user = userEvent.setup();
     await renderFirstRun();
 
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.type(screen.getByLabelText("Your name"), "Ada");
     await user.keyboard("{Escape}");
 
     expect(
@@ -226,7 +226,7 @@ describe("Onboarding", () => {
     const user = userEvent.setup();
     await renderFirstRun();
 
-    expect(screen.getByLabelText("YOUR NAME")).toHaveFocus();
+    expect(screen.getByLabelText("Your name")).toHaveFocus();
 
     await user.click(screen.getByRole("button", { name: "Continue" }));
     expect(
@@ -237,7 +237,7 @@ describe("Onboarding", () => {
   it("re-enters setup from Crew with the record intact and the draft seeded", async () => {
     const user = userEvent.setup();
     await renderFirstRun();
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.type(screen.getByLabelText("Your name"), "Ada");
     await walkToShell(user);
 
     await user.click(screen.getByRole("button", { name: /Crew/ }));
@@ -251,13 +251,13 @@ describe("Onboarding", () => {
     expect(window.localStorage.getItem(ONBOARDING_KEY)).not.toBeNull();
     // And the draft starts from the record being edited — a re-run can
     // *change* a name, not only replace it.
-    expect(screen.getByLabelText("YOUR NAME")).toHaveValue("Ada");
+    expect(screen.getByLabelText("Your name")).toHaveValue("Ada");
   });
 
   it("aborting a re-run keeps the stored name instead of resetting it", async () => {
     const user = userEvent.setup();
     await renderFirstRun();
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.type(screen.getByLabelText("Your name"), "Ada");
     await walkToShell(user);
 
     await user.click(screen.getByRole("button", { name: /Crew/ }));
@@ -295,7 +295,7 @@ describe("Onboarding", () => {
   it("re-enters setup from Settings with the record intact and the draft seeded", async () => {
     const user = userEvent.setup();
     await renderFirstRun();
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.type(screen.getByLabelText("Your name"), "Ada");
     await walkToShell(user);
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
@@ -305,13 +305,13 @@ describe("Onboarding", () => {
       screen.getByRole("heading", { name: /What should the crew call you/ }),
     ).toBeInTheDocument();
     expect(window.localStorage.getItem(ONBOARDING_KEY)).not.toBeNull();
-    expect(screen.getByLabelText("YOUR NAME")).toHaveValue("Ada");
+    expect(screen.getByLabelText("Your name")).toHaveValue("Ada");
   });
 
   it("aborting a Settings re-run keeps the stored name instead of resetting it", async () => {
     const user = userEvent.setup();
     await renderFirstRun();
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.type(screen.getByLabelText("Your name"), "Ada");
     await walkToShell(user);
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
@@ -346,7 +346,7 @@ describe("Onboarding", () => {
     });
     const user = userEvent.setup();
     await renderFirstRun();
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.type(screen.getByLabelText("Your name"), "Ada");
     await walkToShell(user);
 
     await user.click(screen.getByRole("button", { name: "Settings" }));
@@ -360,7 +360,7 @@ describe("Onboarding", () => {
   it("does not run setup twice after Skip", async () => {
     const user = userEvent.setup();
     await renderFirstRun();
-    await user.type(screen.getByLabelText("YOUR NAME"), "Ada");
+    await user.type(screen.getByLabelText("Your name"), "Ada");
     await user.click(screen.getByRole("button", { name: "Skip setup" }));
     cleanup();
 

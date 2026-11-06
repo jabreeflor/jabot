@@ -142,7 +142,7 @@ export function Onboarding({
               setStep(1);
             }}
           >
-            <div className="setup-eyebrow">STEP 1 OF 3</div>
+            <div className="setup-eyebrow">Step 1 of 3</div>
             <CrewAvatar className="setup-cluster" />
             <h1 tabIndex={-1} ref={headingRef}>
               What should the crew call you?
@@ -152,7 +152,7 @@ export function Onboarding({
               sits at the bottom of the sidebar, next to the host you are
               connected to.
             </p>
-            <FieldLabel htmlFor={nameId}>YOUR NAME</FieldLabel>
+            <FieldLabel htmlFor={nameId}>Your name</FieldLabel>
             <input
               ref={inputRef}
               id={nameId}
@@ -166,7 +166,7 @@ export function Onboarding({
               <span className="me-face" aria-hidden="true">
                 {initials(name.trim() === "" ? DEFAULT_USER_NAME : name)}
               </span>
-              <span className="cap">This is your badge in the sidebar.</span>
+              <span className="cap">Your badge in the sidebar</span>
             </div>
             <div className="setup-foot">
               <button
@@ -185,7 +185,7 @@ export function Onboarding({
 
         {step === 1 && (
           <div key="engine" className="setup-card">
-            <div className="setup-eyebrow">STEP 2 OF 3</div>
+            <div className="setup-eyebrow">Step 2 of 3</div>
             <h1 tabIndex={-1} ref={headingRef}>
               Pick your default engine
             </h1>
@@ -245,7 +245,7 @@ export function Onboarding({
 
         {step === 2 && (
           <div key="chief" className="setup-card">
-            <div className="setup-eyebrow">STEP 3 OF 3</div>
+            <div className="setup-eyebrow">Step 3 of 3</div>
             <div className="setup-meet">
               {/* Chief before there is a crew to read one from: the seeded
                   name and colour, so the icon a person meets in setup is the
@@ -257,7 +257,7 @@ export function Onboarding({
                 </h1>
                 <p className="setup-lede">Runs the crew</p>
               </div>
-              <span className="chief-badge">CHIEF</span>
+              <span className="chief-badge">Chief</span>
             </div>
             <blockquote className="setup-quote">
               Route work across the crew. Fold long tasks away, surface only

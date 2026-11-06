@@ -70,9 +70,9 @@ test.describe("PR workspace", () => {
     ).toBe(true);
 
     await openConnectedApp(page, jabot.baseURL);
-    await page.getByRole("button", { name: /^Pull Requests/ }).click();
+    await page.getByRole("button", { name: /^Pull requests/ }).click();
     await expect(
-      page.getByRole("heading", { name: "Pull Requests" }),
+      page.getByRole("heading", { name: "Pull requests" }),
     ).toBeVisible();
     await captureEvidence(page, "pr-board");
 
@@ -110,7 +110,7 @@ test.describe("PR workspace", () => {
       page.getByRole("heading", { name: "Auth migration" }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: /^Pull Requests/ }).click();
+    await page.getByRole("button", { name: /^Pull requests/ }).click();
     setGhMode(gh, "fail");
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();

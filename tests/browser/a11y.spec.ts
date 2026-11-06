@@ -73,7 +73,7 @@ test.describe("browser axe @a11y @smoke", () => {
     const opened = await openApp(browser, app);
     try {
       await opened.page.getByRole("button", { name: /^Inbox/ }).click();
-      await expect(opened.page.getByText("PERMISSION")).toBeVisible();
+      await expect(opened.page.getByText("Permission")).toBeVisible();
       await expectNoSeriousBrowserA11yViolations(
         opened.page,
         test.info(),
@@ -87,9 +87,9 @@ test.describe("browser axe @a11y @smoke", () => {
   test("new chat and open harness listbox", async ({ app, browser }) => {
     const opened = await openApp(browser, app);
     try {
-      await opened.page.getByRole("button", { name: "New Chat" }).click();
+      await opened.page.getByRole("button", { name: "New chat" }).click();
       await expect(
-        opened.page.getByRole("region", { name: "New Chat" }),
+        opened.page.getByRole("region", { name: "New chat" }),
       ).toBeVisible();
       await expectNoSeriousBrowserA11yViolations(
         opened.page,
@@ -147,9 +147,9 @@ test.describe("browser axe @a11y @smoke", () => {
   }) => {
     const opened = await openApp(browser, app);
     try {
-      await opened.page.getByRole("button", { name: /^Pull Requests/ }).click();
+      await opened.page.getByRole("button", { name: /^Pull requests/ }).click();
       await expect(
-        opened.page.getByRole("heading", { name: "Pull Requests" }),
+        opened.page.getByRole("heading", { name: "Pull requests" }),
       ).toBeVisible();
       await expectNoSeriousBrowserA11yViolations(
         opened.page,

@@ -501,9 +501,9 @@ describe("ScheduleEditorModal", () => {
       />,
     );
 
-    await userEvent.type(screen.getByLabelText("NAME"), "Morning triage");
+    await userEvent.type(screen.getByLabelText("Name"), "Morning triage");
     await userEvent.selectOptions(
-      screen.getByLabelText("RUNS AS"),
+      screen.getByLabelText("Runs as"),
       "bot-recruiter",
     );
     await userEvent.click(
@@ -515,7 +515,7 @@ describe("ScheduleEditorModal", () => {
     );
     // The question decision #4 forces: the Mac is not always on.
     await userEvent.selectOptions(
-      screen.getByLabelText("IF JABOT WAS CLOSED"),
+      screen.getByLabelText("If JaBot was closed"),
       "skip",
     );
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -549,7 +549,7 @@ describe("ScheduleEditorModal", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent("hour field");
     // The bad cron is still there to be corrected, not thrown away.
-    expect(screen.getByLabelText("WHEN")).toHaveValue("0 99 * * *");
+    expect(screen.getByLabelText("When")).toHaveValue("0 99 * * *");
   });
 
   it("removes only an existing schedule", async () => {

@@ -65,7 +65,7 @@ describe("NewChatView", () => {
     renderView();
 
     expect(
-      screen.getByRole("region", { name: "New Chat" }),
+      screen.getByRole("region", { name: "New chat" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
@@ -350,7 +350,7 @@ describe("NewChatView", () => {
 
     expect(props.onStart).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("region", { name: "New Chat" }),
+      screen.getByRole("region", { name: "New chat" }),
     ).toBeInTheDocument();
   });
 });
