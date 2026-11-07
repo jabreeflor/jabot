@@ -193,7 +193,7 @@ export function Onboarding({
               Every new code thread starts here. You can switch engines per
               thread.
             </p>
-            <FieldLabel>HARNESS — BRING YOUR OWN</FieldLabel>
+            <FieldLabel>Harness — bring your own</FieldLabel>
             <HarnessPicker
               harnesses={enabledHarnesses}
               value={harnessId ?? ""}

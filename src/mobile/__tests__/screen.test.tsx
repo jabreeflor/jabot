@@ -92,7 +92,7 @@ describe("the approver screen", () => {
         onDecline={vi.fn()}
       />,
     );
-    const sleeping = screen.getByRole("region", { name: "STILL SLEEPING" });
+    const sleeping = screen.getByRole("region", { name: "Still sleeping" });
     // Decision #5: a folded thread is not a notification. On the device most
     // likely to buzz, that has to mean nothing to press.
     expect(sleeping).toHaveTextContent("Nightly deps");

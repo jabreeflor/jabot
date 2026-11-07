@@ -319,7 +319,7 @@ describe("NewChatView", () => {
     expect(
       screen.getByRole("button", { name: /Workspace: No folder/ }),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("FOLDER")).toBeNull();
+    expect(screen.queryByLabelText("Folder")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(
       screen.queryByRole("group", { name: "Selected workspace" }),

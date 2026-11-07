@@ -170,7 +170,7 @@ test.describe("browser axe @a11y @smoke", () => {
           "pr-signin",
         );
 
-        const token = opened.page.getByLabel(/PASTE IT HERE/);
+        const token = opened.page.getByLabel(/paste it here/);
         if (await token.count()) {
           await token.fill("ghp_not-a-real-token");
           await opened.page

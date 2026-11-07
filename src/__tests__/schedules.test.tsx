@@ -324,7 +324,7 @@ describe("writing one as a prompt", () => {
     );
     // The cron is the only thing the host refuses, so it comes out from behind
     // the chip: there is nothing else in the bar to correct.
-    expect(screen.getByLabelText("CRON")).toHaveValue("0 9 * * 1-5");
+    expect(screen.getByLabelText("Cron")).toHaveValue("0 9 * * 1-5");
   });
 
   /** There is no screen to leave any more, so Escape empties the box — a draft
