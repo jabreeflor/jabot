@@ -12,20 +12,41 @@ acceptance is [#235](https://github.com/jabreeflor/jabot/issues/235).
 The default `./scripts/verify.sh` gate stays offline and display-free. This
 suite is a separate CI job and an opt-in local flag.
 
+## Where the browsers run
+
+Screenshots depend on the fonts and font-rendering libraries of the machine
+the browser runs on, and the visual tests allow zero pixels of drift. So the
+browsers run in one pinned image everywhere — a Mac, a cloud agent
+container, and CI: `mcr.microsoft.com/playwright:v<@playwright/test version>-noble`.
+
+`scripts/browser-docker.sh` starts `playwright run-server` in that image
+(serving the repo's own `node_modules/playwright-core`, read-only) and sets
+`PLAYWRIGHT_WS_ENDPOINT`. `playwright.config.ts` then connects every project
+to it with `exposeNetwork: "<loopback>"`, so the page's `localhost` traffic
+tunnels back to the Vite + `jabot-hostd` running on your machine. Only the
+browsers are in Docker; the runner, Vite, and the host are not. No host
+networking is needed, so Docker Desktop on macOS works.
+
+The host is also kept from seeing the machine it runs on
+(`tests/browser/host.ts`): `JABOT_HERMETIC_PATH=1` makes `jabot-hostd`
+search only the PATH it is given (no login shell, `~/.local/bin`, or
+Homebrew), and that PATH is fixture dirs, a dir holding only `node`, and
+`/usr/bin:/bin:/usr/sbin:/sbin`. A logged-out fixture `gh` stands in for a
+real one and `GH_TOKEN` / `GITHUB_TOKEN` are blanked. Without this, an
+installed `claude` or a signed-in `gh` changes Settings, New Chat, and the
+sidebar counts.
+
+You need Docker running (Docker Desktop; in a cloud agent container,
+`sudo dockerd &`). Bumping `@playwright/test` bumps the image with it; the
+script refuses an image whose tag does not match.
+
 ## Commands
 
-Install matching browsers once (network):
-
 ```bash
-npx playwright install chromium webkit
-```
-
-Then:
-
-```bash
-npm run test:browser                 # Chromium + WebKit, visual + axe + keyboard
-npm run test:browser:smoke           # Chromium axe + keyboard only
-npm run test:browser:visual          # Chromium screenshot project
+npm run test:browser                 # Chromium + WebKit, visual + axe + keyboard (Docker)
+npm run test:browser:native          # same, with locally installed browsers (screenshots will drift)
+npm run test:browser:smoke           # Chromium axe + keyboard only (local browsers)
+npm run test:browser:visual          # Chromium screenshot project (Docker)
 npm run test:browser:ui              # Playwright UI
 ./scripts/verify.sh --check-browser  # same as test:browser, after the usual gates
 ```
@@ -39,9 +60,9 @@ CI sets `updateSnapshots: "none"` and must never be told to approve diffs.
 A changed pixel fails the job and publishes `test-results/` (expected /
 actual / diff, plus traces and host logs).
 
-To refresh baselines, run on the **baseline environment** — Linux, Playwright
-1.63, the Chromium and WebKit builds that package installs, locale `en-US`,
-timezone `UTC`, viewports 1180×780 (desktop) and 900×600 (minimum):
+To refresh baselines, run the update script on any machine with Docker. The
+**baseline environment** is the pinned Playwright image above, locale
+`en-US`, timezone `UTC`, viewports 1180×780 (desktop) and 900×600 (minimum):
 
 ```bash
 # Review every PNG Playwright writes before you commit.

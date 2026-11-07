@@ -18,8 +18,12 @@ project (TypeScript client ↔ host protocol, no renderer) stays as it is.
 npm run host:build                 # once, or whenever the Rust bins move
 npx playwright install chromium webkit
 npm run test:browser:smoke         # Chromium @smoke (journey + axe + keyboard)
-npm run test:browser               # Chromium + WebKit, including visual
+npm run test:browser               # Chromium + WebKit, including visual (Docker)
 ```
+
+`test:browser`, `test:browser:visual`, and `test:browser:update-snapshots`
+run the browsers in the pinned Playwright Docker image so screenshots match
+on any machine; see [docs/browser-tests.md](../../docs/browser-tests.md).
 
 That starts its **own** Vite on a dedicated loopback port with a temp data
 directory. It does **not** call `live.sh smoke` or `reset` (those wipe the
@@ -30,9 +34,10 @@ shared `.jabot-dev/data` a developer may be using on port 1420).
 | `npm run test:browser:smoke` | Chromium, `@smoke` only (journey + axe + keyboard) |
 | `npm run test:browser:chromium` | all Chromium journeys — functional gate without screenshots |
 | `npm run test:browser:repeat` | `@smoke` × 20, retries 0 |
-| `npm run test:browser` | Chromium + WebKit: journeys, visual, axe, keyboard |
-| `npm run test:browser:visual` | Chromium screenshot project |
-| `npm run test:browser:update-snapshots` | refresh visual baselines (never in CI) |
+| `npm run test:browser` | Chromium + WebKit: journeys, visual, axe, keyboard (Docker) |
+| `npm run test:browser:native` | the same with local browsers (screenshots drift off Docker) |
+| `npm run test:browser:visual` | Chromium screenshot project (Docker) |
+| `npm run test:browser:update-snapshots` | refresh visual baselines in Docker, on any machine (never in CI) |
 | `npm run test:browser:ui` | Playwright UI mode |
 | `npm run test:browser:install` | download Chromium and WebKit |
 

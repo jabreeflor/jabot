@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const ci = !!process.env.CI;
+const wsEndpoint = process.env.PLAYWRIGHT_WS_ENDPOINT;
 
 /**
  * Browser tests against the real Rust host (#231 / #256), plus visual and
@@ -18,6 +19,12 @@ const ci = !!process.env.CI;
  *
  * CI never auto-approves snapshots (`updateSnapshots: "none"`). Review
  * changed PNGs by hand; see docs/browser-tests.md.
+ *
+ * Screenshots only match their baselines when the browser runs in the pinned
+ * Playwright image: `scripts/browser-docker.sh` starts it and sets
+ * PLAYWRIGHT_WS_ENDPOINT, which switches every project to `connectOptions`.
+ * A browser on the host (macOS, a cloud container, a bare CI runner) has
+ * different fonts and font hinting, and `maxDiffPixels: 0` catches that.
  *
  * `@playwright/test` and `playwright-core` stay on the same version in
  * package.json (shot.mjs uses the latter). Pinned at 1.63+ because 1.56's
@@ -68,6 +75,11 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     ignoreHTTPSErrors: true,
+    // Browsers in the pinned image (scripts/browser-docker.sh). `<loopback>`
+    // tunnels the page's localhost traffic back to this machine's Vite/host.
+    connectOptions: wsEndpoint
+      ? { wsEndpoint, exposeNetwork: "<loopback>" }
+      : undefined,
   },
   projects: [
     {

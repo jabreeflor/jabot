@@ -11,6 +11,7 @@
 # Builds jabot-hostd / fake-acp-agent when missing. Does not call live.sh.
 # Does not update snapshots unless --update-snapshots is passed — CI must
 # never pass that flag. Playwright 1.63+ (1.56 hangs on Node 26).
+# Needs Docker: the browsers run in the pinned Playwright image.
 #
 set -uo pipefail
 
@@ -52,4 +53,6 @@ if [[ "$MODE" == "ui" ]]; then
   exec npx playwright test --ui
 fi
 
-exec npx playwright test "${EXTRA[@]}"
+# Browsers run in the pinned Playwright image so screenshots match their
+# baselines on any machine (scripts/browser-docker.sh).
+exec ./scripts/browser-docker.sh npx playwright test "${EXTRA[@]}"
