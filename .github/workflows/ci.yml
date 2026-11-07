@@ -84,7 +84,8 @@ jobs:
   # and display-less (browsers are a network install). This job never passes
   # `--update-snapshots`; a pixel change fails and the expected/actual/diff
   # artifacts are uploaded for review. WebKit is renderer compatibility, not
-  # native WKWebView / Tauri.
+  # native WKWebView / Tauri. Browsers run in the pinned Playwright Docker
+  # image; the runner's own fonts never reach a screenshot.
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 40
@@ -112,8 +113,11 @@ jobs:
       - run: npm ci
       - run: npm run bundle:adapters
       - run: npm run host:build
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium webkit
+      # The browsers run in the pinned Playwright image (scripts/browser-docker.sh),
+      # the same one a Mac or a cloud agent uses, so baselines made anywhere
+      # match here. Pulled up front so the pull is not billed to the first test.
+      - name: Pull Playwright image
+        run: docker pull "mcr.microsoft.com/playwright:v$(node -p 'require("@playwright/test/package.json").version')-noble"
       - name: Browser visual, accessibility, and journeys
         run: npm run test:browser
       - name: Upload Playwright artifacts

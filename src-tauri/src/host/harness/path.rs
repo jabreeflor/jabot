@@ -41,6 +41,11 @@ const HOME_RELATIVE: &[&str] = &[".local/bin", "bin", ".cargo/bin", ".bun/bin"];
 pub fn search_path() -> &'static [PathBuf] {
     static CACHE: OnceLock<Vec<PathBuf>> = OnceLock::new();
     CACHE.get_or_init(|| {
+        if hermetic() {
+            return std::env::var_os("PATH")
+                .map(|path| std::env::split_paths(&path).collect())
+                .unwrap_or_default();
+        }
         let mut dirs = augment(
             std::env::var_os("PATH").as_deref(),
             login_shell_path().as_deref(),
@@ -53,6 +58,16 @@ pub fn search_path() -> &'static [PathBuf] {
         }
         dirs
     })
+}
+
+/// `JABOT_HERMETIC_PATH=1`: search the process PATH and nothing else.
+///
+/// For tests. Without it the login shell, `$HOME` tool dirs and Homebrew leak
+/// whatever CLIs the developer has installed into the Doctor, so the same
+/// screen renders "installed" on one machine and "not installed" on another
+/// (and a screenshot baseline can only be made on a bare CI runner).
+fn hermetic() -> bool {
+    std::env::var_os("JABOT_HERMETIC_PATH").is_some_and(|v| !v.is_empty() && v != "0")
 }
 
 /// The same list as a `PATH` value for a child process.
