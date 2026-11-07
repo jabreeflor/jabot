@@ -158,9 +158,10 @@
 .section-header {
   color: var(--faint);
   font-size: var(--fs-caps);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--track-caps);
-  padding: var(--sp-3) var(--sp-3) var(--sp-3);
+  /* Closer to its own rows than to the group above it. */
+  padding: var(--sp-5) var(--sp-3) var(--sp-1);
   display: flex;
   align-items: center;
 }
@@ -235,7 +236,7 @@ html[data-translucency="on"] .bot-row-add {
   border-radius: 50%;
   box-shadow:
     0 0 0 2px var(--side),
-    0 0 0 4px var(--ink);
+    0 0 0 3px color-mix(in srgb, var(--ink) 28%, transparent);
 }
 
 /* `min-width: 0` twice on purpose: a flex item will not shrink below its
@@ -273,10 +274,11 @@ html[data-translucency="on"] .bot-row-add {
 }
 
 /* Not a chat line: what the bot is for, standing in until it has been talked
-   to. Italic is the whole of the distinction, and it is enough — nobody needs
-   to be told in words that a conversation has not started. */
+   to. One step quieter than a real preview is the whole of the distinction,
+   and it is enough — nobody needs to be told in words that a conversation
+   has not started. */
 .bot-row .say.persona {
-  font-style: italic;
+  color: var(--faint);
 }
 
 /* ---- code rows ---- */
@@ -356,8 +358,7 @@ html[data-translucency="on"] .bot-row-add {
   padding: 7px var(--sp-3);
   color: var(--dim);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 500;
 }
 
 .folder-toggle {
@@ -371,7 +372,6 @@ html[data-translucency="on"] .bot-row-add {
   padding: 0;
   color: inherit;
   font: inherit;
-  letter-spacing: inherit;
   cursor: pointer;
   text-align: left;
 }
@@ -443,7 +443,6 @@ html[data-translucency="on"] .bot-row-add {
 }
 
 .folder-toggle .name {
-  text-transform: uppercase;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

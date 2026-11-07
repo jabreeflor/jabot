@@ -65,7 +65,7 @@ describe("NewChatView", () => {
     renderView();
 
     expect(
-      screen.getByRole("region", { name: "New Chat" }),
+      screen.getByRole("region", { name: "New chat" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(
@@ -319,7 +319,7 @@ describe("NewChatView", () => {
     expect(
       screen.getByRole("button", { name: /Workspace: No folder/ }),
     ).toBeInTheDocument();
-    expect(screen.queryByLabelText("FOLDER")).toBeNull();
+    expect(screen.queryByLabelText("Folder")).toBeNull();
     expect(screen.queryByRole("combobox")).toBeNull();
     expect(
       screen.queryByRole("group", { name: "Selected workspace" }),
@@ -350,7 +350,7 @@ describe("NewChatView", () => {
 
     expect(props.onStart).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("region", { name: "New Chat" }),
+      screen.getByRole("region", { name: "New chat" }),
     ).toBeInTheDocument();
   });
 });

@@ -116,7 +116,8 @@
     "Styrene B", "Styrene A", Figtree, -apple-system, "SF Pro Text",
     "Helvetica Neue", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --fs-caps: 11px;
+  /* Small labels: sentence case at the meta step, never tracked caps. */
+  --fs-caps: 12px;
   --fs-meta: 12.5px;
   --fs-body: 13.5px;
   --fs-ui: 14px;
@@ -126,7 +127,7 @@
   --lh-ui: 1.45;
   --lh-chat: 1.5;
   --lh-mono: 1.7;
-  --track-caps: 0.1em;
+  --track-caps: 0;
 
   /* spacing */
   --sp-1: 4px;
@@ -166,8 +167,8 @@
      motion, short enough that a hover does not feel lagged */
   --t-sidebar: 0.2s;
   --ease-sidebar: cubic-bezier(0.22, 1, 0.36, 1);
-  /* a flap settling — a little past the mark, then back */
-  --ease-flap: cubic-bezier(0.32, 1.4, 0.6, 1);
+  /* a flap settling — the one ease-out curve, no overshoot */
+  --ease-flap: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /*

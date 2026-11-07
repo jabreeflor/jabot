@@ -242,7 +242,7 @@ export function Sidebar({
 
         {shown && (
           <div className="sidebar-list">
-            <div className="section-header">BOT CHATS</div>
+            <div className="section-header">Bot chats</div>
             <BotStrip
               bots={bots}
               selection={selection}
@@ -251,7 +251,7 @@ export function Sidebar({
               onAddBot={onAddBot}
             />
 
-            <div className="section-header">CODE</div>
+            <div className="section-header">Code</div>
 
             <button
               type="button"
@@ -262,7 +262,7 @@ export function Sidebar({
               <span className="ic">
                 <NewChatIcon />
               </span>
-              New Chat
+              New chat
             </button>
 
             {/* The counts are folded into the label rather than left as loose
@@ -273,7 +273,7 @@ export function Sidebar({
               aria-current={selection.view === "prs"}
               aria-label={
                 openPrCount > 0
-                  ? `Pull Requests — ${openPrCount} open`
+                  ? `Pull requests — ${openPrCount} open`
                   : undefined
               }
               onClick={onOpenPullRequests}
@@ -281,7 +281,7 @@ export function Sidebar({
               <span className="ic">
                 <PullRequestIcon />
               </span>
-              Pull Requests
+              Pull requests
               {openPrCount > 0 && (
                 <span className="count" aria-hidden="true">
                   {openPrCount}

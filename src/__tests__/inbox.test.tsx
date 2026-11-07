@@ -70,10 +70,12 @@ describe("InboxView", () => {
   it("separates what came back from what is still asleep", () => {
     renderInbox();
 
-    expect(screen.getByText("RESURFACED")).toBeInTheDocument();
-    expect(screen.getByText("STILL SLEEPING")).toBeInTheDocument();
-    expect(screen.getByText("SLEEPING")).toBeInTheDocument();
-    expect(screen.getByText("DONE")).toBeInTheDocument();
+    expect(screen.getByText("Resurfaced")).toBeInTheDocument();
+    expect(screen.getByText("Still sleeping")).toBeInTheDocument();
+    expect(screen.getByText("Sleeping")).toBeInTheDocument();
+    expect(
+      screen.getByText("Done", { selector: ".tagpill" }),
+    ).toBeInTheDocument();
   });
 
   it("drops sleeping and finished work from Needs you", async () => {

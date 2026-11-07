@@ -277,7 +277,7 @@ export function SchedulesView({
           )}
 
           <div className="sched-suggest">
-            <div className="page-section">SUGGESTIONS</div>
+            <div className="page-section">Suggestions</div>
             <ul className="sched-suggest-list">
               {SUGGESTIONS.map((suggestion) => (
                 <li key={suggestion.title}>

@@ -458,7 +458,7 @@ describe("App, once the host has answered with a crew", () => {
     render(<App />);
     await screen.findByRole("button", { name: "Settings" });
     await userEvent.click(screen.getByRole("button", { name: /Crew/ }));
-    return screen.findByRole("heading", { level: 1, name: "Your Crew" });
+    return screen.findByRole("heading", { level: 1, name: "Your crew" });
   }
 
   /** The crew grid, not the sidebar strip: a bot's name is on screen twice,
@@ -470,7 +470,9 @@ describe("App, once the host has answered with a crew", () => {
   }
 
   function card(name: string): HTMLElement {
-    const element = within(grid()).getByText(name).closest(".crew-card");
+    const element = within(grid())
+      .getByText(name, { selector: ".nm" })
+      .closest(".crew-card");
     if (!element) throw new Error(`no crew card for ${name}`);
     return element as HTMLElement;
   }
@@ -481,7 +483,9 @@ describe("App, once the host has answered with a crew", () => {
     await waitFor(() => expect(card("Writer")).toBeInTheDocument());
     // The five fixture workers are gone the moment the host has an answer.
     expect(within(grid()).queryByText("Inbox Mgr")).not.toBeInTheDocument();
-    expect(within(card("Chief")).getByText("CHIEF")).toBeInTheDocument();
+    expect(
+      within(card("Chief")).getByText("Chief", { selector: ".chief-badge" }),
+    ).toBeInTheDocument();
     // Chief's host tools are named, not printed as ids.
     expect(within(card("Chief")).getByText("Handoff")).toBeInTheDocument();
     expect(
@@ -828,8 +832,8 @@ describe("App, once the host has answered with a crew", () => {
     await userEvent.click(
       within(card("Writer")).getByRole("button", { name: "Edit" }),
     );
-    await userEvent.clear(screen.getByLabelText("NAME"));
-    await userEvent.type(screen.getByLabelText("NAME"), "Ghostwriter");
+    await userEvent.clear(screen.getByLabelText("Name"));
+    await userEvent.type(screen.getByLabelText("Name"), "Ghostwriter");
     await userEvent.click(screen.getByRole("button", { name: "Notion" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -844,7 +848,7 @@ describe("App, once the host has answered with a crew", () => {
     // The grid is showing the row the host now holds, not the form's echo.
     await waitFor(() => expect(card("Ghostwriter")).toBeInTheDocument());
     expect(within(card("Ghostwriter")).getByText("Notion")).toBeInTheDocument();
-    expect(screen.queryByLabelText("NAME")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
   });
 
   it("adds a bot through a shaping chat, not the editor form", async () => {
@@ -859,7 +863,7 @@ describe("App, once the host has answered with a crew", () => {
         instructions: "",
       }),
     );
-    expect(screen.queryByLabelText("WHAT IT DOES")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("What it does")).not.toBeInTheDocument();
     expect(
       await screen.findByRole("heading", { name: "New bot" }),
     ).toBeInTheDocument();
@@ -929,14 +933,14 @@ describe("App, once the host has answered with a crew", () => {
     await userEvent.click(
       within(card("Writer")).getByRole("button", { name: "Edit" }),
     );
-    await userEvent.clear(screen.getByLabelText("NAME"));
-    await userEvent.type(screen.getByLabelText("NAME"), "Ghostwriter");
+    await userEvent.clear(screen.getByLabelText("Name"));
+    await userEvent.type(screen.getByLabelText("Name"), "Ghostwriter");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "unknown tool: telepathy",
     );
     // The editor is still open holding what the user typed.
-    expect(screen.getByLabelText("NAME")).toHaveValue("Ghostwriter");
+    expect(screen.getByLabelText("Name")).toHaveValue("Ghostwriter");
   });
 });

@@ -72,7 +72,7 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Crew/ }));
     expect(
-      screen.getByRole("heading", { level: 1, name: "Your Crew" }),
+      screen.getByRole("heading", { level: 1, name: "Your crew" }),
     ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /^Inbox —/ }));
@@ -81,10 +81,10 @@ describe("App", () => {
     ).toBeInTheDocument();
 
     await userEvent.click(
-      screen.getByRole("button", { name: /^Pull Requests/ }),
+      screen.getByRole("button", { name: /^Pull requests/ }),
     );
     expect(
-      screen.getByRole("heading", { level: 1, name: "Pull Requests" }),
+      screen.getByRole("heading", { level: 1, name: "Pull requests" }),
     ).toBeInTheDocument();
   });
 
@@ -169,7 +169,7 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /^Inbox —/ }));
     const sleeping = screen.getByText("Auth migration").closest("button");
-    expect(within(sleeping!).getByText("SLEEPING")).toBeInTheDocument();
+    expect(within(sleeping!).getByText("Sleeping")).toBeInTheDocument();
   });
 
   it("folds a thread from its right-click menu", async () => {
@@ -275,7 +275,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "Scout" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Scout/ })).toBeInTheDocument();
-    expect(screen.queryByLabelText("WHAT IT DOES")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("What it does")).not.toBeInTheDocument();
   });
 
   /**
@@ -338,7 +338,7 @@ describe("App", () => {
       ).toBeNull();
       expect(screen.queryByText("jabot-app")).toBeNull();
       expect(
-        screen.getByRole("button", { name: /^Pull Requests/ }),
+        screen.getByRole("button", { name: /^Pull requests/ }),
       ).not.toHaveAccessibleName(/open/);
 
       // The host's own answer fills the pane in.
@@ -405,7 +405,7 @@ describe("App", () => {
     ).toBeInTheDocument();
 
     // New Chat is a main view, not a dialog — the chord still works.
-    await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     await userEvent.keyboard("{Control>}b{/Control}");
     expect(

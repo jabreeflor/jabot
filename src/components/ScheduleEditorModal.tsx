@@ -60,7 +60,7 @@ export function ScheduleEditorModal({
       title={schedule ? "Edit schedule" : "New schedule"}
       onClose={onCancel}
     >
-      <FieldLabel htmlFor={nameId}>NAME</FieldLabel>
+      <FieldLabel htmlFor={nameId}>Name</FieldLabel>
       <input
         id={nameId}
         type="text"
@@ -69,7 +69,7 @@ export function ScheduleEditorModal({
         onChange={(event) => setName(event.target.value)}
       />
 
-      <FieldLabel htmlFor={botId}>RUNS AS</FieldLabel>
+      <FieldLabel htmlFor={botId}>Runs as</FieldLabel>
       <select
         id={botId}
         value={bot}
@@ -82,7 +82,7 @@ export function ScheduleEditorModal({
         ))}
       </select>
 
-      <FieldLabel htmlFor={cronId}>WHEN</FieldLabel>
+      <FieldLabel htmlFor={cronId}>When</FieldLabel>
       <div className="sched-presets" role="group" aria-label="Schedule presets">
         {PRESETS.map((preset) => (
           <button
@@ -123,7 +123,7 @@ export function ScheduleEditorModal({
         onChange={(event) => setPrompt(event.target.value)}
       />
 
-      <FieldLabel htmlFor={catchUpId}>IF JABOT WAS CLOSED</FieldLabel>
+      <FieldLabel htmlFor={catchUpId}>If JaBot was closed</FieldLabel>
       <select
         id={catchUpId}
         value={catchUp}

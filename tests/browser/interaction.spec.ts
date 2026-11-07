@@ -185,10 +185,10 @@ test.describe("questions and plans from an agent's extensions", () => {
     // The nav entry, not a thread whose title happens to start with "Inbox".
     await page.getByRole("button", { name: /^Inbox(\s—.*)?$/ }).click();
     await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
-    await expect(page.getByText("QUESTION", { exact: true })).toBeVisible();
-    await expect(page.getByText("PLAN REVIEW", { exact: true })).toBeVisible();
+    await expect(page.getByText("Question", { exact: true })).toBeVisible();
+    await expect(page.getByText("Plan review", { exact: true })).toBeVisible();
     // Never a permission pill.
-    await expect(page.getByText("PERMISSION", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Permission", { exact: true })).toHaveCount(0);
     await captureEvidence(page, "interaction-inbox");
 
     // InboxView auto-expands the first card that has detail. Plans sort
@@ -196,14 +196,14 @@ test.describe("questions and plans from an agent's extensions", () => {
     // with data (WebKit on CI). A second click toggles it closed and
     // Accept plan disappears — same race the unit helper `expand` guards.
     const planCard = page.getByRole("button", {
-      name: /Auth migration.*PLAN REVIEW/,
+      name: /Auth migration.*Plan review/,
     });
     if ((await planCard.getAttribute("aria-expanded")) !== "true") {
       await planCard.click();
     }
     await expect(planCard).toHaveAttribute("aria-expanded", "true");
     await page.getByRole("button", { name: "Accept plan" }).click();
-    await expect(page.getByText("PLAN REVIEW", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("Plan review", { exact: true })).toHaveCount(0);
     const log = await waitForAdapterLog(
       jabot,
       "t-inbox-p",

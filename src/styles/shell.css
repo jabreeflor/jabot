@@ -266,8 +266,7 @@ html[data-translucency="on"]
 
 .page-top h1 {
   font-size: var(--fs-h1);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 600;
 }
 
 .page-top p {
@@ -293,9 +292,9 @@ html[data-translucency="on"]
 .page-section {
   color: var(--faint);
   font-size: var(--fs-caps);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--track-caps);
-  margin: 20px var(--sp-1) var(--sp-3);
+  margin: var(--sp-6) var(--sp-1) var(--sp-3);
 }
 
 .page-empty {

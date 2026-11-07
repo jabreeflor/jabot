@@ -11,7 +11,7 @@ test.describe("host refusal", () => {
 
     await page.getByLabel("What should it do?").fill("never fire this job");
     await page.getByLabel("When").selectOption("Custom…");
-    const cron = page.getByLabel("CRON");
+    const cron = page.getByLabel("Cron");
     await expect(cron).toBeVisible();
     await cron.fill("0 99 * * *");
     await page.getByRole("button", { name: "Create schedule" }).click();
@@ -22,7 +22,7 @@ test.describe("host refusal", () => {
     await expect(page.getByLabel("What should it do?")).toHaveValue(
       "never fire this job",
     );
-    await expect(page.getByLabel("CRON")).toHaveValue("0 99 * * *");
+    await expect(page.getByLabel("Cron")).toHaveValue("0 99 * * *");
     await expect(page.getByRole("button", { name: /never fire/i })).toHaveCount(
       0,
     );

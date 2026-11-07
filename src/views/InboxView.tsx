@@ -125,7 +125,7 @@ export function InboxView({
             role="tabpanel"
             aria-labelledby={tabButtonId("inbox-panel", tab)}
           >
-            {loading && <div className="page-empty">Checking the Inbox…</div>}
+            {loading && <div className="page-empty">Checking the inbox…</div>}
 
             {!loading && resurfaced.length === 0 && sleeping.length === 0 && (
               <div className="page-empty">Nothing waiting. Enjoy it.</div>
@@ -133,7 +133,7 @@ export function InboxView({
 
             {resurfaced.length > 0 && (
               <>
-                <div className="page-section">RESURFACED</div>
+                <div className="page-section">Resurfaced</div>
                 {resurfaced.map((card) => (
                   <InboxRow
                     key={card.id}
@@ -152,7 +152,7 @@ export function InboxView({
 
             {sleeping.length > 0 && (
               <>
-                <div className="page-section">STILL SLEEPING</div>
+                <div className="page-section">Still sleeping</div>
                 {sleeping.map((card) => (
                   <InboxRow
                     key={card.id}

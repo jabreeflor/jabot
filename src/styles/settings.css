@@ -1,7 +1,7 @@
 .settings-harness {
   display: flex;
   gap: 12px;
-  align-items: center;
+  align-items: flex-start;
   padding: 12px 0;
   cursor: pointer;
 }
@@ -13,8 +13,13 @@
 .settings-harness-caps {
   max-width: 42em;
 }
+.settings-harness b {
+  font-weight: 500;
+}
 .settings-harness input {
-  width: 18px;
-  height: 18px;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
   accent-color: var(--ink);
 }
