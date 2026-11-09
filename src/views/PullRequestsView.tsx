@@ -102,26 +102,26 @@ export function PullRequestsView({
     tab === "open"
       ? [
           {
-            title: "NEEDS REVIEW",
+            title: "Needs review",
             rows: open.filter((pr) => pr.checkState !== "running"),
           },
           {
-            title: "CHECKS RUNNING",
+            title: "Checks running",
             rows: open.filter((pr) => pr.checkState === "running"),
           },
-          { title: "RECENTLY MERGED", rows: merged },
+          { title: "Recently merged", rows: merged },
           // On the Open tab as well as the Merged one, and for the same
           // reason RECENTLY MERGED is here: the question a vanished row
           // raises is asked while looking at Open. Empty sections are
           // dropped below, so this costs nothing on a board with none.
-          { title: "CLOSED WITHOUT MERGING", rows: closed },
+          { title: "Closed without merging", rows: closed },
         ]
       : tab === "merged"
         ? [
-            { title: "MERGED", rows: merged },
-            { title: "CLOSED WITHOUT MERGING", rows: closed },
+            { title: "Merged", rows: merged },
+            { title: "Closed without merging", rows: closed },
           ]
-        : [{ title: "DRAFTS", rows: drafts }];
+        : [{ title: "Drafts", rows: drafts }];
 
   const visible = sections
     .map((section) => ({
@@ -182,7 +182,7 @@ export function PullRequestsView({
     <div className="view">
       <header className="page-top pr-view-chrome">
         <div>
-          <h1>Pull Requests</h1>
+          <h1>Pull requests</h1>
           <p>
             {githubStatus?.authenticated
               ? "Everything you have open, and what your sessions opened"

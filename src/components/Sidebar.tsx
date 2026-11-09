@@ -27,6 +27,7 @@ import {
 } from "./Icon";
 import type { MenuPosition } from "./ThreadContextMenu";
 import type { Bot, FolderWithThreads, Selection, ThreadSummary } from "./types";
+import { uiScale } from "./uiScale";
 
 /** Matches `--sidebar-w`. jsdom has no stylesheet, so the peek hit-region
     falls back to this rather than treating a missing variable as zero. */
@@ -35,7 +36,8 @@ const SIDEBAR_PEEK_W = 310;
 function peekWidthPx(node: HTMLElement): number {
   const raw = getComputedStyle(node).getPropertyValue("--sidebar-w").trim();
   const px = Number.parseFloat(raw);
-  return Number.isFinite(px) && px > 0 ? px : SIDEBAR_PEEK_W;
+  // A CSS length, compared against pointer (screen) pixels below.
+  return (Number.isFinite(px) && px > 0 ? px : SIDEBAR_PEEK_W) * uiScale();
 }
 
 /** The full rail, not the collapsed strip: after the toggle is armed, a
@@ -242,7 +244,7 @@ export function Sidebar({
 
         {shown && (
           <div className="sidebar-list">
-            <div className="section-header">BOT CHATS</div>
+            <div className="section-header">Bot chats</div>
             <BotStrip
               bots={bots}
               selection={selection}
@@ -251,7 +253,7 @@ export function Sidebar({
               onAddBot={onAddBot}
             />
 
-            <div className="section-header">CODE</div>
+            <div className="section-header">Code</div>
 
             <button
               type="button"
@@ -262,7 +264,7 @@ export function Sidebar({
               <span className="ic">
                 <NewChatIcon />
               </span>
-              New Chat
+              New chat
             </button>
 
             {/* The counts are folded into the label rather than left as loose
@@ -273,7 +275,7 @@ export function Sidebar({
               aria-current={selection.view === "prs"}
               aria-label={
                 openPrCount > 0
-                  ? `Pull Requests — ${openPrCount} open`
+                  ? `Pull requests — ${openPrCount} open`
                   : undefined
               }
               onClick={onOpenPullRequests}
@@ -281,7 +283,7 @@ export function Sidebar({
               <span className="ic">
                 <PullRequestIcon />
               </span>
-              Pull Requests
+              Pull requests
               {openPrCount > 0 && (
                 <span className="count" aria-hidden="true">
                   {openPrCount}

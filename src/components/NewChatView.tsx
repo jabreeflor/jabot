@@ -140,7 +140,7 @@ export function NewChatView({
   }));
 
   return (
-    <div className="view newchat" role="region" aria-label="New Chat">
+    <div className="view newchat" role="region" aria-label="New chat">
       <div className="newchat-stage">
         <div className="newchat-meta">
           <Select

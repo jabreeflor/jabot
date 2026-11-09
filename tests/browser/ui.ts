@@ -160,7 +160,7 @@ export async function completeOnboarding(
   await expect(
     page.getByRole("heading", { name: /What should the crew call you/ }),
   ).toBeVisible();
-  await page.getByLabel("YOUR NAME").fill(name);
+  await page.getByLabel("Your name").fill(name);
   await page.getByRole("button", { name: "Continue" }).click();
 
   await expect(
@@ -229,8 +229,8 @@ export async function startFolderSession(
   folderName: string,
   task: string,
 ): Promise<void> {
-  await page.getByRole("button", { name: "New Chat" }).click();
-  await expect(page.getByRole("region", { name: "New Chat" })).toBeVisible();
+  await page.getByRole("button", { name: "New chat" }).click();
+  await expect(page.getByRole("region", { name: "New chat" })).toBeVisible();
   await chooseSelectOption(page, /Workspace:/, folderName);
   await chooseSelectOption(page, /Harness:/, /^Fake ACP Custom/);
   await page.getByLabel("Plan, build, or describe a change").fill(task);

@@ -118,7 +118,7 @@ test.describe("stable states @visual", () => {
         await expect(
           opened.page.getByRole("heading", { name: "Inbox" }),
         ).toBeVisible();
-        await expect(opened.page.getByText("PERMISSION")).toBeVisible();
+        await expect(opened.page.getByText("Permission")).toBeVisible();
         const allow = opened.page.getByRole("button", { name: "Allow" });
         if (!(await allow.isVisible())) {
           await opened.page.getByRole("button", { name: /Run ls/ }).click();
@@ -139,9 +139,9 @@ test.describe("stable states @visual", () => {
         windowSize: "desktop",
       });
       try {
-        await opened.page.getByRole("button", { name: "New Chat" }).click();
+        await opened.page.getByRole("button", { name: "New chat" }).click();
         await expect(
-          opened.page.getByRole("region", { name: "New Chat" }),
+          opened.page.getByRole("region", { name: "New chat" }),
         ).toBeVisible();
         await shot(opened.page, `new-chat-${theme}-desktop`);
       } finally {
@@ -205,10 +205,10 @@ test.describe("stable states @visual", () => {
       });
       try {
         await opened.page
-          .getByRole("button", { name: /^Pull Requests/ })
+          .getByRole("button", { name: /^Pull requests/ })
           .click();
         await expect(
-          opened.page.getByRole("heading", { name: "Pull Requests" }),
+          opened.page.getByRole("heading", { name: "Pull requests" }),
         ).toBeVisible();
         const signIn = opened.page.getByRole("button", {
           name: "Sign in with GitHub",

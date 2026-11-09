@@ -23,6 +23,7 @@ import { Composer } from "./Composer";
 import type { OnInteract } from "./InteractionCards";
 import { Transcript } from "./Transcript";
 import type { Bot, TranscriptItem } from "./types";
+import { uiScale } from "./uiScale";
 
 /** How close to the bottom still counts as being at it. Sub-pixel rounding and
     a streaming bubble growing between frames both put the exact bottom a few
@@ -128,14 +129,19 @@ export function Conversation({
       const styles = getComputedStyle(scroll);
       const top = parseFloat(styles.paddingTop) || 0;
       const bottom = parseFloat(styles.paddingBottom) || 0;
+      // Rects are screen pixels; clientHeight and scrollTop are CSS pixels
+      // under the GUI zoom, so rect deltas divide the scale back out.
+      const scale = uiScale();
       const turnHeight = prompt
-        ? transcript.getBoundingClientRect().bottom -
-          prompt.getBoundingClientRect().top
+        ? (transcript.getBoundingClientRect().bottom -
+            prompt.getBoundingClientRect().top) /
+          scale
         : scroll.clientHeight;
       spacer.style.height = `${Math.max(0, scroll.clientHeight - top - bottom - turnHeight)}px`;
       return prompt
-        ? prompt.getBoundingClientRect().top -
-            scroll.getBoundingClientRect().top +
+        ? (prompt.getBoundingClientRect().top -
+            scroll.getBoundingClientRect().top) /
+            scale +
             scroll.scrollTop -
             top
         : null;

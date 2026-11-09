@@ -33,8 +33,7 @@
 }
 
 .jm-section {
-  font-size: 11px;
-  letter-spacing: 0.08em;
+  font-size: 12px;
   opacity: 0.6;
   margin: 4px 0;
 }
@@ -88,10 +87,9 @@ button.jm-card-title:focus-visible {
 
 .jm-pill {
   align-self: flex-start;
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  font-size: 12px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: 6px;
   border: 1px solid currentColor;
 }
 

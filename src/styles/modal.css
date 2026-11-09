@@ -27,7 +27,7 @@
 
 .modal h2 {
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 600;
   margin-bottom: var(--sp-6);
 }
 
@@ -55,7 +55,7 @@
   line-height: 1.2;
   color: var(--faint);
   font-size: var(--fs-caps);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--track-caps);
   margin: 20px 0 var(--sp-2);
 }

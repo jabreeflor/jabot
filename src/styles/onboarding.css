@@ -15,7 +15,7 @@
   display: flex;
   flex-direction: column;
   background: var(--chat-fill);
-  padding-top: var(--titlebar-h);
+  padding-top: var(--titlebar-inset);
 }
 
 .setup-stage {
@@ -50,7 +50,7 @@
 .setup-eyebrow {
   color: var(--faint);
   font-size: var(--fs-caps);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--track-caps);
   margin-bottom: var(--sp-4);
 }
@@ -63,8 +63,7 @@
 
 .setup-card h1 {
   font-size: var(--fs-h1);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 600;
 }
 
 .setup-lede {
