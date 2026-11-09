@@ -52,6 +52,67 @@ function rememberDetail(
   }
 }
 
+/**
+ * Reads already on the wire, per client. A prefetch and the workspace that
+ * opens a moment later share one request instead of asking GitHub twice.
+ */
+const inFlight = new WeakMap<HostClient, Map<string, Promise<PrWorkspace>>>();
+
+/** Read a PR's detail, joining a request that is already running for it. */
+function fetchDetail(
+  client: HostClient,
+  target: PrTarget,
+): Promise<PrWorkspace> {
+  let clientFlights = inFlight.get(client);
+  if (!clientFlights) {
+    clientFlights = new Map();
+    inFlight.set(client, clientFlights);
+  }
+  const key = cacheKey(target);
+  const running = clientFlights.get(key);
+  if (running) return running;
+  const flights = clientFlights;
+  const request = Promise.resolve()
+    .then(() => client.pullRequestDetail(target))
+    .then((detail) => {
+      rememberDetail(client, target, detail);
+      return detail;
+    })
+    .finally(() => flights.delete(key));
+  flights.set(key, request);
+  return request;
+}
+
+/**
+ * Warm the cache for a PR the user is about to open, the way github.com
+ * prefetches a link on hover. Opening it then paints at once from the cache
+ * and only revalidates. Does nothing for a PR already cached or on its way,
+ * and never throws: a failed prefetch just means the open does the read.
+ */
+export function prefetchPrDetail(
+  client: HostClient | null | undefined,
+  target: PrTarget,
+): void {
+  if (!client) return;
+  if (detailCache.get(client)?.has(cacheKey(target))) return;
+  fetchDetail(client, target).catch(() => undefined);
+}
+
+/** Where a board row's PR lives, as the detail read addresses it. */
+export function prTarget(pr: {
+  repo: string;
+  number: number;
+  url: string;
+}): PrTarget {
+  let host = "github.com";
+  try {
+    host = new URL(pr.url).hostname || host;
+  } catch {
+    // A row linked from a malformed URL still opens on github.com.
+  }
+  return { repo: pr.repo, number: pr.number, host };
+}
+
 export function prWorkspaceError(error: unknown): string {
   if (error && typeof error === "object" && "data" in error) {
     const data = error.data as { detail?: string } | undefined;
@@ -111,9 +172,11 @@ export function usePrDetails(
       }
       running = (async () => {
         try {
-          const next = await Promise.resolve().then(() =>
-            client!.pullRequestDetail(target),
-          );
+          const next = background
+            ? await Promise.resolve().then(() =>
+                client!.pullRequestDetail(target),
+              )
+            : await fetchDetail(client!, target);
           if (!active || (background && writing.current)) return;
           setRefreshError(null);
           if (

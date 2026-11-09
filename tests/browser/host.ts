@@ -18,6 +18,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { createServer } from "node:net";
@@ -41,6 +42,7 @@ import {
   type ThreadTranscriptResult,
 } from "../../src/host/protocol";
 import { fakeAcpAgentPath, hostdBinaryPath } from "../support/hostd";
+import { createFakeGh } from "./helpers/gh";
 import { FAKE_ACP_ASK_ID } from "./support/constants";
 
 const repoRoot = path.resolve(
@@ -332,9 +334,7 @@ function spawnVite(args: {
     throw new Error(`${hostd} is not built — run npm run host:build`);
   }
 
-  const pathValue = [...(args.options.pathPrefix ?? []), process.env.PATH ?? ""]
-    .filter(Boolean)
-    .join(path.delimiter);
+  const pathValue = hermeticPath(args.dataDir, args.options.pathPrefix);
 
   const log = createWriteStream(args.logPath, { flags: "a" });
   const child = spawn(
@@ -353,6 +353,12 @@ function spawnVite(args: {
         ...process.env,
         ...args.options.extraEnv,
         PATH: pathValue,
+        // The host searches PATH only — no login shell, ~/.local/bin, or
+        // Homebrew — so the developer's installed CLIs (claude, codex, a
+        // signed-in gh) cannot change what a screenshot shows.
+        JABOT_HERMETIC_PATH: "1",
+        GH_TOKEN: args.options.extraEnv?.GH_TOKEN ?? "",
+        GITHUB_TOKEN: args.options.extraEnv?.GITHUB_TOKEN ?? "",
         JABOT_DEV_DATA_DIR: args.dataDir,
         JABOT_SECRETS_BACKEND: "memory",
         JABOT_HOSTD_BIN: hostd,
@@ -370,6 +376,29 @@ function spawnVite(args: {
   child.stderr?.pipe(log, { end: false });
   child.once("exit", () => log.end());
   return child;
+}
+
+/** OS directories that hold no harness CLI on macOS, CI, or a cloud agent. */
+const SYSTEM_PATH = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+
+/**
+ * The PATH the host sees: fixture dirs, then a dir holding only this `node`,
+ * then the bare OS dirs. Whatever else the machine has installed stays out,
+ * which is what CI's runner looks like. With no `pathPrefix`, a logged-out
+ * fixture `gh` stands in for any real (possibly signed-in) one.
+ */
+function hermeticPath(dataDir: string, pathPrefix?: string[]): string {
+  const bin = path.join(dataDir, ".test-bin");
+  mkdirSync(bin, { recursive: true });
+  const node = path.join(
+    bin,
+    process.platform === "win32" ? "node.exe" : "node",
+  );
+  if (!existsSync(node)) symlinkSync(process.execPath, node);
+  const prefix = pathPrefix?.length ? pathPrefix : [createFakeGh().dir];
+  const system =
+    process.platform === "win32" ? [process.env.PATH ?? ""] : SYSTEM_PATH;
+  return [...prefix, bin, ...system].filter(Boolean).join(path.delimiter);
 }
 
 async function waitForProcessAndHost(

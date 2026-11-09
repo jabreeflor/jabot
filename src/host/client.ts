@@ -204,10 +204,28 @@ export interface HostTransport {
   subscribe(handler: NotificationHandler): Promise<() => void>;
 }
 
+/**
+ * Methods the app answers off its main thread (`host_rpc_detached`).
+ *
+ * They wait on GitHub for a second or more. Sent to the synchronous
+ * `host_rpc`, they ran on the app's main thread under the session lock and
+ * froze the window and every other request until GitHub answered.
+ */
+export const DETACHED_METHODS: ReadonlySet<string> = new Set([
+  "pr/detail",
+  "pr/action",
+]);
+
+export function tauriCommandFor(method: string): string {
+  return DETACHED_METHODS.has(method) ? "host_rpc_detached" : "host_rpc";
+}
+
 export function createTauriTransport(): HostTransport {
   return {
     async request(request) {
-      return invoke<JsonRpcResponse>("host_rpc", { request });
+      return invoke<JsonRpcResponse>(tauriCommandFor(request.method), {
+        request,
+      });
     },
     async subscribe(handler) {
       const unlisten: UnlistenFn = await listen<JsonRpcNotification>(
