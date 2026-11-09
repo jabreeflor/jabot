@@ -154,7 +154,7 @@ one run tells you everything that is wrong.
 | `build jabot-hostd` | `jabot-hostd` and `fake-acp-agent` still link (e2e needs both; llvm-cov's target dir is not `target/debug`) | not run under `--fast` |
 | `e2e (ts to rust host)` | 123 cases over 17 suites: the production TypeScript client against a live `jabot-hostd` over real NDJSON | `npx vitest run --project e2e -t "<name>"`. Needs the binary, so build it first or run the full `verify.sh`. Not run under `--fast`. |
 | `renderer build` | `vite build` produces a bundle | usually an import that typechecks but does not resolve |
-| `browser visual + a11y + smoke` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd` (smoke journey, axe with contrast, keyboard, visual baselines). CI's `browser` job is the required PR check | `npx playwright install chromium webkit`, then `npm run test:browser`. Needs the host binaries (`npm run host:build`). |
+| `browser visual + a11y + smoke` | opt-in, `--check-browser` only: Playwright drives the renderer against a real `jabot-hostd` (smoke journey, axe with contrast, keyboard, visual baselines). CI's `browser` job is the required PR check | Docker running, then `npm run test:browser` (browsers run in the pinned Playwright image). Needs the host binaries (`npm run host:build`). |
 | `mac notify cross-check` | opt-in locally (`--check-mac`); CI runs `scripts/check-mac-notify.sh` on relevant PRs: `src-tauri/src/notify/` type-checks and lints clean for `x86_64-apple-darwin` | `rustup target add x86_64-apple-darwin` if it says the std is missing. Otherwise it is a real error in `mac.rs`, and the path it names is the repo's file, not a copy. |
 | `macos acceptance` | #235: the packaged-app matrix still names Tauri IPC, Dock, Keychain, adapters, and updater archives; isolation still refuses production app data; Playwright WebKit is not this gate | you changed the script, the docs, or the workflows; `./scripts/macos-acceptance.sh check` and `./scripts/tests/macos-acceptance.test.sh` name the cell that moved. Launching `JaBot.app` is `run` on a Mac — D-019 is why that is not this stage |
 | `windows acceptance` | #287: Windows install docs + five-cell smoke checklist still name launch, bot chat, secret round-trip, adapter spawn, quit-no-orphans, and the glass / Dock / SmartScreen / notify gaps; no macOS-parity claim | you changed `docs/windows.md`, the checklist, or the script; `./scripts/windows-acceptance.sh check` and `./scripts/tests/windows-acceptance.test.sh`. Launching `JaBot.exe` is not this Linux stage (#281 ships the installer; `run` still refuses here) |
@@ -245,11 +245,11 @@ baseline updates are in [docs/browser-tests.md](docs/browser-tests.md).
 
 ```bash
 npm run host:build
-npx playwright install chromium webkit
+npx playwright install chromium webkit   # local browsers for the non-visual scripts
 npm run test:browser:smoke          # Chromium @smoke (journey + axe + keyboard)
 npm run test:browser:chromium       # all Chromium journeys without screenshots
 npm run test:browser:repeat         # @smoke × 20, no retries
-npm run test:browser                # Chromium + WebKit, including visual
+npm run test:browser                # Chromium + WebKit, including visual (Docker)
 ./scripts/verify.sh --check-browser # same full suite, after the usual gates
 ```
 

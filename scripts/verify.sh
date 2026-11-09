@@ -6,7 +6,7 @@
 #   ./scripts/verify.sh --fast             # skip the e2e project (no Rust binary build)
 #   ./scripts/verify.sh --check-toolchain  # also ask rustup if stable moved (NETWORK)
 #   ./scripts/verify.sh --check-mac        # also lint notify/mac.rs for macOS (NETWORK; CI runs this itself)
-#   ./scripts/verify.sh --check-browser    # Playwright visual + axe + smoke (needs browsers)
+#   ./scripts/verify.sh --check-browser    # Playwright visual + axe + smoke (needs Docker)
 #
 # Packaged-app matrix/isolation is a default stage; see
 # docs/macos-acceptance.md (#235). Windows install docs + smoke checklist
@@ -986,8 +986,8 @@ run "renderer build" npx vite build
 
 # Playwright visual + axe + smoke. Opt-in: the default gate stays offline
 # and needs no browser download. CI's `browser` job is the required PR
-# check; this flag is the local equivalent after `npx playwright install
-# chromium webkit`.
+# check; this flag is the local equivalent. Needs Docker: the browsers run
+# in the pinned Playwright image (scripts/browser-docker.sh).
 if [[ $CHECK_BROWSER -eq 1 ]]; then
   if [[ ! -x src-tauri/target/debug/jabot-hostd || ! -x src-tauri/target/debug/fake-acp-agent ]]; then
     run "build jabot-hostd" cargo build "${MANIFEST[@]}" "${LOCKED[@]}" "${DEV_BINS[@]}" --bins
