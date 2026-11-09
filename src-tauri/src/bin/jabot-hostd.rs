@@ -237,6 +237,22 @@ fn main() {
             // exists to promise (#14 relies on it to de-duplicate a replay
             // against the live stream).
             let mut guard = lock(&session);
+            // A GitHub read or write is checked here and run on its own
+            // thread, so the next line of stdin is read while GitHub answers.
+            // The answer is written under the lock again, like every other.
+            let request = match guard.detach_request_on(LOCAL_CONNECTION, request) {
+                Ok(job) => {
+                    drop(guard);
+                    let session = Arc::clone(&session);
+                    std::thread::spawn(move || {
+                        let response = job();
+                        let _guard = lock(&session);
+                        write_message(&std::io::stdout(), &JsonRpcMessage::Response(response));
+                    });
+                    continue;
+                }
+                Err(request) => request,
+            };
             let response = guard.handle_request_on(LOCAL_CONNECTION, request);
             let outbound = guard.take_outbound();
             write_message(&stdout, &JsonRpcMessage::Response(response));
@@ -437,6 +453,23 @@ fn serve_connection(
                 continue;
             };
             let mut guard = lock(&session);
+            let request = match guard.detach_request_on(&connection, request) {
+                Ok(job) => {
+                    drop(guard);
+                    let Ok(mut answer) = writer.try_clone() else {
+                        continue;
+                    };
+                    let session = Arc::clone(&session);
+                    std::thread::spawn(move || {
+                        let response = job();
+                        // Under the lock, so it cannot land inside a broadcast.
+                        let _guard = lock(&session);
+                        write_to(&mut answer, &JsonRpcMessage::Response(response));
+                    });
+                    continue;
+                }
+                Err(request) => request,
+            };
             let response = guard.handle_request_on(&connection, request);
             let outbound = guard.take_outbound();
             write_to(&mut writer, &JsonRpcMessage::Response(response));

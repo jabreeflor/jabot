@@ -369,3 +369,47 @@
   padding-left: 0;
   list-style: none;
 }
+
+/* Large PRs: let the browser skip layout and paint for files scrolled out of
+   view, which is most of them. GitHub's own diff page does the same. */
+.pr-diff {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+
+/* Placeholders while the first answer is on its way. Same rhythm as the rows
+   they stand in for, so nothing jumps when the real ones land. */
+.pr-skeleton .prav {
+  background: var(--raise);
+}
+.pr-skeleton .bd {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 0;
+}
+.pr-skeleton-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 18px 0 24px;
+}
+.pr-skeleton-line {
+  display: block;
+  height: 12px;
+  width: 38%;
+  border-radius: 6px;
+  background: var(--raise);
+  animation: pr-skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+.pr-skeleton-line.wide {
+  width: 72%;
+}
+@keyframes pr-skeleton-pulse {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}

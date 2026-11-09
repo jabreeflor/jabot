@@ -105,65 +105,14 @@ pub fn dispatch(method: &str, p: Params) -> Result<Value, RpcError> {
 fn dispatch_with(
     method: &str,
     p: Params,
-    mut request: impl FnMut(&Params, &str, &str, Option<Value>, bool) -> Result<Value, RpcError>,
+    request: impl Fn(&Params, &str, &str, Option<Value>, bool) -> Result<Value, RpcError> + Sync,
 ) -> Result<Value, RpcError> {
     validate(&p)?;
     let root = format!("repos/{}", p.repo);
     let pull = format!("{root}/pulls/{}", p.number);
     let issue = format!("{root}/issues/{}", p.number);
     if method == "pr/detail" {
-        let pr = request(&p, &pull, "GET", None, false)?;
-        let sha = pr["head"]["sha"]
-            .as_str()
-            .ok_or_else(|| invalid("Missing head commit"))?;
-        let comments = request(
-            &p,
-            &format!("{issue}/comments?per_page=100"),
-            "GET",
-            None,
-            true,
-        )?;
-        let reviews = request(
-            &p,
-            &format!("{pull}/reviews?per_page=100"),
-            "GET",
-            None,
-            true,
-        )?;
-        let files = request(&p, &format!("{pull}/files?per_page=100"), "GET", None, true)?;
-        let inline = request(
-            &p,
-            &format!("{pull}/comments?per_page=100"),
-            "GET",
-            None,
-            true,
-        )?;
-        let commits = request(
-            &p,
-            &format!("{pull}/commits?per_page=100"),
-            "GET",
-            None,
-            true,
-        )?;
-        // Optional checks may be inaccessible to tokens that can still review code.
-        let checks = request(
-            &p,
-            &format!("{root}/commits/{sha}/check-runs?per_page=100"),
-            "GET",
-            None,
-            false,
-        );
-        let statuses = request(
-            &p,
-            &format!("{root}/commits/{sha}/status"),
-            "GET",
-            None,
-            false,
-        );
-        return Ok(
-            json!({"pr":pr,"comments":comments,"reviews":reviews,"files":files,"inline":inline,"commits":commits,
-            "checks":checks.as_ref().ok(),"statuses":statuses.as_ref().ok(),"checksError":checks.err().or_else(|| statuses.err()).map(|e|e.to_string())}),
-        );
+        return detail(&p, &root, &pull, &issue, &request);
     }
     let action = p
         .action
@@ -316,6 +265,69 @@ fn dispatch_with(
     }
 }
 
+/// Everything the PR page shows, in two network round trips instead of eight.
+///
+/// Each read is its own `gh api` process and its own HTTPS round trip, and
+/// run one after another they made opening a PR take as long as all eight
+/// added together (about six seconds against github.com). None of the lists
+/// depends on another, so they all go at once; only the checks wait, because
+/// they are addressed by the head commit the PR read returns. They start the
+/// moment that read lands, while the slower paginated lists are still running.
+fn detail(
+    p: &Params,
+    root: &str,
+    pull: &str,
+    issue: &str,
+    request: &(impl Fn(&Params, &str, &str, Option<Value>, bool) -> Result<Value, RpcError> + Sync),
+) -> Result<Value, RpcError> {
+    let list = |path: String| move || request(p, &path, "GET", None, true);
+    std::thread::scope(|scope| {
+        let comments = scope.spawn(list(format!("{issue}/comments?per_page=100")));
+        let reviews = scope.spawn(list(format!("{pull}/reviews?per_page=100")));
+        let files = scope.spawn(list(format!("{pull}/files?per_page=100")));
+        let inline = scope.spawn(list(format!("{pull}/comments?per_page=100")));
+        let commits = scope.spawn(list(format!("{pull}/commits?per_page=100")));
+        let pr = request(p, pull, "GET", None, false)?;
+        let sha = pr["head"]["sha"]
+            .as_str()
+            .ok_or_else(|| invalid("Missing head commit"))?;
+        // Optional checks may be inaccessible to tokens that can still review code.
+        let check_path = format!("{root}/commits/{sha}/check-runs?per_page=100");
+        let checks = scope.spawn(move || request(p, &check_path, "GET", None, false));
+        let statuses = request(
+            p,
+            &format!("{root}/commits/{sha}/status"),
+            "GET",
+            None,
+            false,
+        );
+        let join = |handle: std::thread::ScopedJoinHandle<'_, Result<Value, RpcError>>| {
+            handle
+                .join()
+                .unwrap_or_else(|_| Err(RpcError::Internal("GitHub request panicked".into())))
+        };
+        let checks = join(checks);
+        let (comments, reviews, files, inline, commits) = (
+            join(comments)?,
+            join(reviews)?,
+            join(files)?,
+            join(inline)?,
+            join(commits)?,
+        );
+        Ok(json!({
+            "pr": pr,
+            "comments": comments,
+            "reviews": reviews,
+            "files": files,
+            "inline": inline,
+            "commits": commits,
+            "checks": checks.as_ref().ok(),
+            "statuses": statuses.as_ref().ok(),
+            "checksError": checks.err().or_else(|| statuses.err()).map(|e| e.to_string()),
+        }))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,14 +343,14 @@ mod tests {
         let p =
             serde_json::from_value(json!({"repo":"o/r","number":1,"action":"merge","sha":"old"}))
                 .unwrap();
-        let mut calls = 0;
+        let calls = std::sync::atomic::AtomicUsize::new(0);
         let result = dispatch_with("pr/action", p, |_, _, method, _, _| {
-            calls += 1;
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             assert_eq!(method, "GET");
             Ok(json!({"head":{"sha":"new"}}))
         });
         assert!(result.is_err());
-        assert_eq!(calls, 1);
+        assert_eq!(calls.into_inner(), 1);
     }
     #[test]
     fn merge_is_pinned_and_does_not_force_protections() {
@@ -384,6 +396,53 @@ mod tests {
             "must not call GitHub"
         ))
         .is_err());
+    }
+    #[test]
+    fn detail_reads_everything_at_once_and_pins_checks_to_the_head() {
+        let p = serde_json::from_value(json!({"repo":"o/r","number":7})).unwrap();
+        let seen = std::sync::Mutex::new(Vec::new());
+        let result = dispatch_with("pr/detail", p, |_, path, method, body, pages| {
+            assert_eq!(method, "GET");
+            assert!(body.is_none());
+            seen.lock().unwrap().push(path.to_string());
+            Ok(match path {
+                "repos/o/r/pulls/7" => json!({"head":{"sha":"abc"}}),
+                "repos/o/r/commits/abc/check-runs?per_page=100" => json!({"check_runs":[]}),
+                "repos/o/r/commits/abc/status" => {
+                    return Err(RpcError::Internal("no access".into()))
+                }
+                _ => {
+                    assert!(pages, "{path} is a list and must paginate");
+                    json!([{"path": path}])
+                }
+            })
+        })
+        .unwrap();
+        let mut seen = seen.into_inner().unwrap();
+        seen.sort();
+        assert_eq!(seen.len(), 8);
+        assert_eq!(result["pr"]["head"]["sha"], "abc");
+        assert_eq!(
+            result["files"][0]["path"],
+            "repos/o/r/pulls/7/files?per_page=100"
+        );
+        assert_eq!(result["checks"], json!({"check_runs":[]}));
+        assert!(result["statuses"].is_null());
+        assert!(result["checksError"]
+            .as_str()
+            .unwrap()
+            .contains("no access"));
+    }
+    #[test]
+    fn detail_fails_when_a_list_fails() {
+        let p = serde_json::from_value(json!({"repo":"o/r","number":7})).unwrap();
+        let result = dispatch_with("pr/detail", p, |_, path, _, _, _| {
+            if path.contains("/reviews") {
+                return Err(RpcError::Internal("boom".into()));
+            }
+            Ok(json!({"head":{"sha":"abc"}}))
+        });
+        assert!(result.is_err());
     }
     #[test]
     fn accepts_repository_names() {

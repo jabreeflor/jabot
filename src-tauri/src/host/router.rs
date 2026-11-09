@@ -41,6 +41,48 @@ use super::protocol::methods::{
 use super::protocol::methods::{SettingsSetParams, SETTINGS_GET, SETTINGS_SET};
 use super::HostSession;
 
+/// A request whose slow part runs after the session lock is released.
+pub type Detached = Box<dyn FnOnce() -> JsonRpcResponse + Send>;
+
+/// Methods that talk to GitHub and touch no session state past the checks.
+///
+/// `pr/detail` is several `gh api` round trips and `pr/action` is one or two.
+/// Run under the session lock — the only way `dispatch` runs anything — they
+/// froze every other request for as long as GitHub took to answer: the board,
+/// the inbox, a chat turn's next frame. They need the lock only to check that
+/// the caller may ask, so that is all they hold it for.
+pub fn is_detached(method: &str) -> bool {
+    matches!(method, "pr/detail" | "pr/action")
+}
+
+/// Do the checks for a detached method now, and hand back the rest.
+///
+/// `Err` gives the request back untouched for an ordinary method, so a caller
+/// can try this first and fall through to [`dispatch`]. A request that fails
+/// a check still comes back as a job, one that answers with the error, so the
+/// caller has a single path to write the response down.
+pub fn detach(
+    session: &mut HostSession,
+    request: JsonRpcRequest,
+) -> Result<Detached, JsonRpcRequest> {
+    if !is_detached(&request.method) {
+        return Err(request);
+    }
+    let checked = (|| {
+        request.validate()?;
+        session.require_device_scope(&request.method)?;
+        session.require_hello()?;
+        parse_params::<super::pr::workspace::Params>(request.params.as_ref())
+    })();
+    let JsonRpcRequest { id, method, .. } = request;
+    Ok(Box::new(move || {
+        match checked.and_then(|params| super::pr::workspace::dispatch(&method, params)) {
+            Ok(result) => JsonRpcResponse::success(id, result),
+            Err(err) => JsonRpcResponse::from_rpc_error(id, err),
+        }
+    }))
+}
+
 pub fn dispatch(session: &mut HostSession, request: JsonRpcRequest) -> JsonRpcResponse {
     if let Err(err) = request.validate() {
         return JsonRpcResponse::from_rpc_error(request.id, err);
