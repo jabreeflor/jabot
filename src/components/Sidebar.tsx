@@ -27,6 +27,7 @@ import {
 } from "./Icon";
 import type { MenuPosition } from "./ThreadContextMenu";
 import type { Bot, FolderWithThreads, Selection, ThreadSummary } from "./types";
+import { uiScale } from "./uiScale";
 
 /** Matches `--sidebar-w`. jsdom has no stylesheet, so the peek hit-region
     falls back to this rather than treating a missing variable as zero. */
@@ -35,7 +36,8 @@ const SIDEBAR_PEEK_W = 310;
 function peekWidthPx(node: HTMLElement): number {
   const raw = getComputedStyle(node).getPropertyValue("--sidebar-w").trim();
   const px = Number.parseFloat(raw);
-  return Number.isFinite(px) && px > 0 ? px : SIDEBAR_PEEK_W;
+  // A CSS length, compared against pointer (screen) pixels below.
+  return (Number.isFinite(px) && px > 0 ? px : SIDEBAR_PEEK_W) * uiScale();
 }
 
 /** The full rail, not the collapsed strip: after the toggle is armed, a

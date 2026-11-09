@@ -148,6 +148,15 @@
      78px for buttons the OS already drew (#282). */
   --collapsed-rail-w: var(--traffic-lights-w);
 
+  /* GUI scale. The whole UI (type, icons, padding, hit areas) renders at
+     this fraction of its designed size; 1 is the original. `html` carries
+     the zoom, so portals and fixed layers scale with everything else. */
+  --ui-scale: 0.667;
+  /* The traffic lights are drawn by macOS at a fixed size, so the strips
+     that dodge them divide the scale back out to stay true to the OS. */
+  --titlebar-inset: calc(var(--titlebar-h) / var(--ui-scale));
+  --lights-inset: calc(var(--traffic-lights-w) / var(--ui-scale));
+
   /* radii */
   --r-sm: 8px;
   --r-md: 10px;
@@ -300,6 +309,7 @@ body,
 
 html {
   background: transparent;
+  zoom: var(--ui-scale);
 }
 
 /*

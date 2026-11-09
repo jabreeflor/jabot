@@ -153,12 +153,15 @@ describe("decorated chrome tokens", () => {
     );
   });
 
-  it("sizes the collapsed rail from --collapsed-rail-w, not the lights inset", () => {
+  // The lights inset is 0 on decorated chrome, so Windows still gets the
+  // toggle-wide rail; on overlay it keeps the native lights clear at any
+  // --ui-scale.
+  it("sizes the collapsed rail from --collapsed-rail-w, floored at the native lights", () => {
     expect(sidebar).toMatch(
-      /\.sidebar-slot\.is-collapsed\s*\{[^}]*width:\s*var\(--collapsed-rail-w\)/s,
+      /\.sidebar-slot\.is-collapsed\s*\{[^}]*width:\s*max\(var\(--lights-inset\),\s*var\(--collapsed-rail-w\)\)/s,
     );
     expect(sidebar).toMatch(
-      /\.sidebar\.is-collapsed\s*\{[^}]*width:\s*var\(--collapsed-rail-w\)/s,
+      /\.sidebar\.is-collapsed\s*\{[^}]*width:\s*max\(var\(--lights-inset\),\s*var\(--collapsed-rail-w\)\)/s,
     );
   });
 });

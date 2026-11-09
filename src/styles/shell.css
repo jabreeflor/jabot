@@ -21,9 +21,9 @@
 .titlebar-drag {
   position: fixed;
   top: 0;
-  left: var(--traffic-lights-w);
+  left: var(--lights-inset);
   right: 0;
-  height: var(--titlebar-h);
+  height: var(--titlebar-inset);
   z-index: 100;
 }
 
@@ -37,7 +37,7 @@ html[data-window-chrome="decorated"] .titlebar-drag {
   display: flex;
   flex-direction: column;
   background: var(--chat);
-  padding-top: var(--titlebar-h);
+  padding-top: var(--titlebar-inset);
 }
 
 /* One mix per pane, against the native material (or the live.sh desktop),
@@ -110,7 +110,7 @@ html[data-translucency="on"] .sidebar.is-collapsed.is-peeking {
    sidebar, rounded, rimmed, with the raw backdrop in the gutter between. */
 html[data-translucency="on"] .main {
   margin: 10px 10px 10px 12px;
-  padding-top: calc(var(--titlebar-h) - 10px);
+  padding-top: calc(var(--titlebar-inset) - 10px);
   border: 1px solid var(--glass-rim);
   border-radius: 16px;
   background-image: var(--glass-pane-sheen);

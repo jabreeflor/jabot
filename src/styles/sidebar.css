@@ -24,7 +24,7 @@
 }
 
 .sidebar-slot.is-collapsed {
-  width: var(--collapsed-rail-w);
+  width: max(var(--lights-inset), var(--collapsed-rail-w));
   z-index: 40;
 }
 
@@ -36,7 +36,7 @@
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  padding-top: var(--titlebar-h);
+  padding-top: var(--titlebar-inset);
 }
 
 .sidebar-search {
@@ -132,7 +132,7 @@
 .sidebar.is-collapsed {
   position: absolute;
   inset: 0 auto 0 0;
-  width: var(--collapsed-rail-w);
+  width: max(var(--lights-inset), var(--collapsed-rail-w));
   overflow: hidden;
   transition:
     width var(--t-sidebar) var(--ease-sidebar),
