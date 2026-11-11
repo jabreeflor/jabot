@@ -528,16 +528,20 @@ impl HostSession {
     }
 }
 
-/// One `initialize` round trip against a throwaway adapter process.
+/// One handshake round trip against a throwaway adapter process.
+///
+/// Spawned through the same `backend::spawn` a session uses (#299), so the
+/// Doctor probes exactly the process a prompt would get.
 fn handshake(
     spec: &RuntimeSpec,
     log_path: &std::path::Path,
     wake: std::sync::Arc<super::acp::AdapterWake>,
 ) -> Result<u64, String> {
     let runtime = super::acp::HarnessRuntime::from_spec("doctor", spec)?;
-    let mut connection = super::acp::AcpConnection::spawn(&runtime, None, log_path, wake)
+    let kind = super::backend::select(&runtime);
+    let mut connection = super::backend::spawn(kind, &runtime, None, log_path, wake)
         .map_err(|err| err.to_string())?;
-    let result = connection.initialize().map_err(|err| err.to_string());
+    let result = connection.handshake().map_err(|err| err.to_string());
     // Always reap: a Doctor that leaves five agents running would be worse
     // than one that reports nothing.
     connection.kill();
@@ -558,13 +562,13 @@ fn probe_session_models(
     wake: std::sync::Arc<super::acp::AdapterWake>,
 ) -> Option<Vec<String>> {
     let runtime = super::acp::HarnessRuntime::from_spec("doctor-models", spec).ok()?;
-    let mut connection =
-        super::acp::AcpConnection::spawn(&runtime, Some(cwd), log_path, wake).ok()?;
-    if connection.initialize().is_err() {
+    let kind = super::backend::select(&runtime);
+    let mut connection = super::backend::spawn(kind, &runtime, Some(cwd), log_path, wake).ok()?;
+    if connection.handshake().is_err() {
         connection.kill();
         return None;
     }
-    let models = match connection.new_session(
+    let models = match connection.create_session(
         "probe",
         &cwd.to_string_lossy(),
         serde_json::json!([]),

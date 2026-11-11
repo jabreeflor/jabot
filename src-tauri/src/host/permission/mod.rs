@@ -29,9 +29,9 @@
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+use super::backend::InteractionId;
 use super::lifecycle::{self, PermissionDisposition};
 use super::protocol::error::RpcError;
-use super::protocol::jsonrpc::RequestId;
 use super::protocol::methods::{
     AskKind, InteractionOutcome, PendingPermissionView, PermissionPendingParams,
     PermissionPendingResult, PermissionReplyParams, PermissionReplyResult,
@@ -51,8 +51,9 @@ pub(crate) const REQUEST_PERMISSION: &str = "session/request_permission";
 /// The live half of an outstanding ask: the adapter call blocked on it, plus
 /// what the agent said, so a host with no store can still draw the card.
 ///
-/// RAM only, and deliberately so — `acp_id` is meaningless to the next process
-/// and everything durable about the ask is a row in `permission_requests`.
+/// RAM only, and deliberately so — `interaction` is meaningless to the next
+/// process and everything durable about the ask is a row in
+/// `permission_requests`.
 ///
 /// Since #298 this is also the live half of a question or plan: same map, same
 /// row, tagged by `ask`. For those, `subject` is the typed request and
@@ -60,7 +61,9 @@ pub(crate) const REQUEST_PERMISSION: &str = "session/request_permission";
 #[derive(Debug)]
 pub(crate) struct PendingPermission {
     pub(crate) thread_id: String,
-    pub(crate) acp_id: RequestId,
+    /// The backend's own id for the blocked request, handed back verbatim
+    /// with the answer (#299).
+    pub(crate) interaction: InteractionId,
     pub(crate) title: String,
     pub(crate) kind: Option<String>,
     pub(crate) subject: Value,
@@ -108,7 +111,7 @@ impl HostSession {
     pub(crate) fn open_permission_request(
         &mut self,
         thread_id: &str,
-        acp_id: RequestId,
+        interaction: InteractionId,
         params: &Value,
     ) {
         let subject = params
@@ -122,7 +125,7 @@ impl HostSession {
         let request_id = Uuid::new_v4().to_string();
         let pending = PendingPermission {
             thread_id: thread_id.to_string(),
-            acp_id,
+            interaction,
             title: subject_title(&subject),
             kind: lifecycle::permission_kind(&subject),
             subject,
@@ -143,7 +146,8 @@ impl HostSession {
         // nothing can auto-answer one (#298).
         match self.lifecycle_permission_policy(thread_id, &pending.subject, &pending.options) {
             PermissionDisposition::AutoAllow { option_id } => {
-                let delivered = self.answer_agent(thread_id, pending.acp_id, selected(&option_id));
+                let delivered =
+                    self.answer_agent(thread_id, pending.interaction, selected(&option_id));
                 self.resolve_permission_record(
                     &request_id,
                     ASK_ANSWERED,
@@ -187,7 +191,7 @@ impl HostSession {
                 continue;
             };
             let ask = pending.ask;
-            let delivered = self.answer_agent(thread_id, pending.acp_id, cancelled_outcome());
+            let delivered = self.answer_agent(thread_id, pending.interaction, cancelled_outcome());
             if !delivered {
                 eprintln!(
                     "could not tell {thread_id}'s agent that {request_id} was withdrawn ({reason})"
@@ -298,7 +302,7 @@ impl HostSession {
             _ => cancelled_outcome(),
         };
         let delivered = match live {
-            Some(pending) => self.answer_agent(&thread_id, pending.acp_id, outcome),
+            Some(pending) => self.answer_agent(&thread_id, pending.interaction, outcome),
             // The ask outlived the adapter that could have been told: a quit
             // and a restart, or a crash between the card and the click. The
             // decision is still recorded — that is what makes an ask taken
@@ -518,11 +522,16 @@ impl HostSession {
 
     /// Hand an outcome to the adapter. `false` when there is no adapter left —
     /// which is a fact about the world, not a failure of the call.
-    pub(crate) fn answer_agent(&self, thread_id: &str, acp_id: RequestId, outcome: Value) -> bool {
+    pub(crate) fn answer_agent(
+        &self,
+        thread_id: &str,
+        interaction: InteractionId,
+        outcome: Value,
+    ) -> bool {
         let Some(conn) = self.conn(thread_id) else {
             return false;
         };
-        match conn.respond(acp_id, outcome) {
+        match conn.respond(interaction, outcome) {
             Ok(()) => true,
             Err(err) => {
                 eprintln!("could not answer {thread_id}'s permission request: {err}");
