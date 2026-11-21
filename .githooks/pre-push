@@ -189,6 +189,14 @@ if [ "$MODE" = fast ]; then
   bold "          JABOT_PREPUSH=fast: NOT running the e2e suite (TS client vs real Rust host)."
 fi
 
+# Git runs hooks with GIT_DIR (and friends) pointing at the repository doing
+# the push. verify.sh's own tests build throwaway repos with `git init` and
+# `git commit`; with GIT_DIR still exported those land in *this* repository —
+# fixture commits on the branch being pushed, `core.bare=true` in its config.
+# The gates find their repository from the working directory like any shell.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_PREFIX GIT_COMMON_DIR \
+  GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
 if [ ${#ARGS[@]} -eq 0 ]; then
   ./scripts/verify.sh
 else

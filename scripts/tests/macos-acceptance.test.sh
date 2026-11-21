@@ -80,9 +80,15 @@ release_checklist_distinguishes_stages() {
 }
 
 refuses_linux_run() {
-  local out rc=0
-  out=$("$SCRIPT" run --app /no/such.app 2>&1) || rc=$?
-  [[ $rc -ne 0 ]] || { fail "run succeeded on $(uname -s)"; return 1; }
+  # Pretend to be Linux whatever this machine is: on a Mac the real `uname`
+  # lets `run` past the OS gate, and the case would test the missing-app
+  # error instead of the refusal it names.
+  local out rc=0 bin="$SANDBOX/linux-uname"
+  mkdir -p "$bin"
+  printf '#!/bin/sh\necho Linux\n' > "$bin/uname"
+  chmod +x "$bin/uname"
+  out=$(PATH="$bin:$PATH" "$SCRIPT" run --app /no/such.app 2>&1) || rc=$?
+  [[ $rc -ne 0 ]] || { fail "run succeeded with uname -s = Linux"; return 1; }
   case "$out" in
     *macOS-only*|*D-019*) ;;
     *) fail "run refusal did not name macOS/D-019: $out"; return 1 ;;
