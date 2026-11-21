@@ -179,6 +179,7 @@ html[data-translucency="on"]
     .mselect-list,
     .summary-popover,
     .app-error,
+    .update-banner,
     .composer input,
     .sidebar-search .field,
     .sidebar-toggle,
@@ -376,6 +377,61 @@ html[data-translucency="on"]
 }
 
 .app-error button svg {
+  width: 13px;
+  height: 13px;
+}
+
+/*
+ * Self-update (updates.rs). Top-right, just under the chat header, and quiet:
+ * the update is already downloaded and verified, nothing is wrong, and the
+ * restart can wait for a good moment. Above the shell like .app-error, but
+ * out of its lane (that one is top-center). Not bottom-right: there it sat on
+ * the composer's send end, and the composer is the one thing that must never
+ * be covered. 56px clears the chat-head row (14px padding + 28px chips).
+ */
+.update-banner {
+  position: fixed;
+  z-index: 390;
+  right: var(--sp-4);
+  top: calc(var(--titlebar-h) + 56px);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  max-width: 420px;
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  border: 1px solid var(--edge-menu);
+  border-radius: 11px;
+  background: var(--raise2);
+  color: var(--ink);
+  font-size: var(--fs-meta);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+.update-banner.error {
+  color: var(--red);
+}
+
+.update-text {
+  display: grid;
+  gap: 2px;
+  font-weight: 600;
+}
+
+.update-sub {
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.update-dismiss {
+  background: none;
+  border: 0;
+  color: var(--dim);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.update-dismiss svg {
   width: 13px;
   height: 13px;
 }

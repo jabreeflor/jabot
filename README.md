@@ -7,22 +7,26 @@ Bot-crew messenger UI prototypes. Wraps coding TUIs (Claude Code, Codex, Pi, Git
 macOS 13+, Apple Silicon or Intel:
 
 ```sh
-curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash -s -- --allow-unnotarized
 ```
 
-That downloads the latest signed, notarized release, checks Apple's own
-verdict on it (`spctl`) plus our bundle identifier *before* anything is
-copied, and puts `JaBot.app` in `/Applications`. Options go after `bash -s --`
-— `--version v0.2.0` to pin a release, `--to ~/Applications` to install
+Every push to `main` is a release, and an installed JaBot updates itself
+from them: it checks a few seconds after launch and every four hours
+(or **JaBot → Check for Updates…**), downloads and verifies the new version,
+and shows a **Restart** banner. The script is a one-time thing.
+
+Releases are ad-hoc signed, not notarized by Apple — hence
+`--allow-unnotarized`, and hence the script rather than opening the `.dmg`
+from a browser (Gatekeeper refuses a quarantined unnotarized app). The script
+still verifies the code seal and our bundle identifier *before* anything is
+copied, then puts `JaBot.app` in `/Applications`; updates are verified against
+JaBot's own signing key. Other options go after `bash -s --` too —
+`--version v0.2.0` to pin a release, `--to ~/Applications` to install
 somewhere you own, `--force` to quit a running copy, `--dry-run` to see what
 it would do. The script is [`scripts/install.sh`](scripts/install.sh); it is
 uploaded to each release, so that URL always serves the installer that shipped
-with the latest published build.
-
-Prefer doing it by hand? Download the `.dmg` from
-[Releases](https://github.com/jabreeflor/jabot/releases/latest) and drag JaBot
-to Applications. Either way, installed copies update themselves after that —
-the script is a one-time thing.
+with the latest published build. How releases are built, and what ad-hoc
+signing costs: [docs/packaging.md](docs/packaging.md#releases-every-push-to-main).
 
 ### Windows
 
@@ -52,9 +56,17 @@ The scaffold (#7) lives at the repo root:
 ```bash
 # Node 26 (Current). `.nvmrc` / `.node-version` match CI.
 npm install
-npm run tauri dev    # native window (macOS today; Windows: docs/windows.md)
-npm run build        # frontend-only build (CI / Linux)
+npm run local          # "JaBot Local": native window from this checkout
+npm run local:install  # build JaBot Local.app into ~/Applications
+npm run build          # frontend-only build (CI / Linux)
 ```
+
+**JaBot Local** and the installed **JaBot** (the self-updating build of
+`main`) are separate apps — `com.jabot.app.local` vs `com.jabot.app` — so they
+run side by side with separate threads, bots and folders. Harness credentials
+live in the same Keychain entry, so you sign in once. Local never updates
+itself. (`npm run tauri dev` still works, but runs as `com.jabot.app` and so
+shares the installed app's data. Windows: [docs/windows.md](docs/windows.md).)
 
 macOS MVP: overlay title bar, hide-to-Dock on window close (#4). Windows: a decorated opaque title bar; close exits (no tray) (#282). The renderer talks **JSON-RPC 2.0** to the Rust host (`host_rpc` + `host-rpc` events) — same messages a Unix socket will carry later (#8). Thread overlay, crew, and Inbox live in host-owned **SQLite** (`jabot.sqlite`, WAL); secret bytes stay in the **OS credential store** — macOS Keychain or Windows Credential Manager (#9, #283). The host spawns **one ACP adapter subprocess per live thread** (stdio JSON-RPC, Unix process-group / Windows Job Object kill-tree, stderr logs) (#10, #285).
 

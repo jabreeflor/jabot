@@ -27,6 +27,7 @@
 #   2. bundle-config  — what the macOS `bundle` job reads, checked without macOS
 #   2b. commit guards — the checkpoint/pre-push guards still refuse a bad commit
 #   2c. install script — the release installer's pins, delivery, and refusals
+#   2c2. release pipeline — next-version math, feed signature check, Local/Dev pins
 #   2d. macos-acceptance — packaged-app matrix/docs/isolation, no Mac (#235)
 #   2d2. windows-acceptance — install docs + smoke checklist, no Windows (#287)
 #   2d3. windows adapter lifecycle — Job Object / PATHEXT contract, no Windows (#285)
@@ -932,6 +933,7 @@ run "bundle-config"  bundle_config
 run "binary set"     binary_set
 run "commit guards"  guards
 run "install script" install_script
+run "release pipeline" node --test scripts/tests/release.test.mjs
 run "macos acceptance" macos_acceptance
 run "windows acceptance" windows_acceptance
 run "windows adapter lifecycle" windows_adapter_lifecycle

@@ -156,7 +156,13 @@ case "$args" in
     {
       printf 'Executable=%s/Contents/MacOS/JaBot\n' "$target"
       printf 'Identifier=%s\n' "${STUB_IDENT:-com.jabot.app}"
-      printf 'TeamIdentifier=%s\n' "${STUB_TEAM:-AB12CD34EF}"
+      if [ "${STUB_ADHOC:-0}" = "1" ]; then
+        # What real codesign prints for `codesign -s -`.
+        printf 'Signature=adhoc\n'
+        printf 'TeamIdentifier=not set\n'
+      else
+        printf 'TeamIdentifier=%s\n' "${STUB_TEAM:-AB12CD34EF}"
+      fi
     } >&2
     exit 0 ;;
 esac
@@ -216,7 +222,8 @@ unset_stubs() {
         STUB_LATEST_TAG STUB_API_FAIL STUB_API_DMG_URL STUB_DOWNLOAD_FAIL \
         STUB_ATTACH_FAIL STUB_DMG_APP_NAME STUB_DMG_SIGNED STUB_DMG_VERIFY_FAIL \
         STUB_APP_VERIFY_FAIL STUB_IDENT STUB_TEAM STUB_SPCTL STUB_DITTO_FAIL \
-        STUB_WONT_QUIT JABOT_TEAM_ID JABOT_VERSION 2>/dev/null || true
+        STUB_WONT_QUIT STUB_ADHOC JABOT_TEAM_ID JABOT_VERSION \
+        JABOT_ALLOW_UNNOTARIZED 2>/dev/null || true
 }
 
 # ===========================================================================
@@ -341,6 +348,73 @@ case_refuses_an_unnotarized_app() {
   [ -e "$APPS/JaBot.app" ] && { fail "an unnotarized app was installed"; return; }
   assert_eq 0 "$(logged ditto)" "nothing may be copied once verification fails" || return
   [ -f "$STUB_STATE/mounted" ] && { fail "the disk image was left mounted after a refusal"; return; }
+  pass
+}
+
+# --- ad-hoc builds (no Apple Developer ID; docs/packaging.md) ---------------
+# What Gatekeeper says about an ad-hoc app copied off a disk image.
+adhoc_app() { export STUB_ADHOC=1 STUB_SPCTL=rejected; }
+
+case_refuses_an_adhoc_app_by_default() {
+  unset_stubs; adhoc_app
+  run_install adhocdefault
+  assert_eq 1 "$RC" "an ad-hoc app must not install without the flag" || return
+  assert_contains "$OUT" "--allow-unnotarized" "should say how to opt in" || return
+  [ -e "$APPS/JaBot.app" ] && { fail "an ad-hoc app was installed without the flag"; return; }
+  pass
+}
+
+case_installs_an_adhoc_app_with_allow_unnotarized() {
+  unset_stubs; adhoc_app
+  run_install adhocflag --allow-unnotarized
+  assert_eq 0 "$RC" "the flag should accept an ad-hoc app" || { fail "$OUT"; return; }
+  [ -d "$APPS/JaBot.app" ] || { fail "nothing was installed"; return; }
+  assert_contains "$OUT" "not notarized by Apple" "should say what was skipped" || return
+  assert_eq 0 "$(logged spctl)" "ad-hoc has no Gatekeeper verdict worth asking for" || return
+  pass
+}
+
+case_allow_unnotarized_also_reads_the_environment() {
+  unset_stubs; adhoc_app
+  export JABOT_ALLOW_UNNOTARIZED=1
+  run_install adhocenv
+  assert_eq 0 "$RC" "JABOT_ALLOW_UNNOTARIZED=1 should accept an ad-hoc app" || { fail "$OUT"; return; }
+  pass
+}
+
+case_allow_unnotarized_still_refuses_a_broken_seal() {
+  unset_stubs; adhoc_app
+  export STUB_APP_VERIFY_FAIL=1
+  run_install adhocseal --allow-unnotarized
+  assert_eq 1 "$RC" "the flag must not skip the seal check" || return
+  assert_contains "$OUT" "signature does not verify" "should say why" || return
+  [ -e "$APPS/JaBot.app" ] && { fail "a broken seal was installed"; return; }
+  pass
+}
+
+case_allow_unnotarized_still_refuses_a_foreign_bundle() {
+  unset_stubs; adhoc_app
+  export STUB_IDENT="com.attacker.app"
+  run_install adhocforeign --allow-unnotarized
+  assert_eq 1 "$RC" "the flag must not skip the identifier check" || return
+  [ -e "$APPS/JaBot.app" ] && { fail "a foreign ad-hoc bundle was installed"; return; }
+  pass
+}
+
+case_allow_unnotarized_never_accepts_adhoc_when_a_team_is_pinned() {
+  unset_stubs; adhoc_app
+  export JABOT_TEAM_ID="AB12CD34EF"
+  run_install adhocteam --allow-unnotarized
+  assert_eq 1 "$RC" "a team pin means Developer ID only" || return
+  assert_contains "$OUT" "signed by team" "should say why" || return
+  pass
+}
+
+case_allow_unnotarized_still_requires_notarization_of_a_developer_id_build() {
+  unset_stubs
+  export STUB_SPCTL=unnotarized
+  run_install adhocdevid --allow-unnotarized
+  assert_eq 1 "$RC" "a Developer ID build must still be notarized; the flag is for ad-hoc only" || return
   pass
 }
 

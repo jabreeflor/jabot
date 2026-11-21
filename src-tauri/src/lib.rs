@@ -6,6 +6,7 @@
 pub mod acceptance;
 pub mod host;
 pub mod notify;
+pub mod updates;
 pub mod window;
 
 pub use host::{
@@ -244,6 +245,10 @@ pub fn run() {
             // reach the sink. On Windows a toast click uses the same sink.
             route_notification_clicks(app.handle().clone());
             notify::install();
+            // Self-update from the release feed, in the shipped app only:
+            // JaBot Local and acceptance runs get a `disabled` status and no
+            // checks. Needs the plugin registered above.
+            updates::start(app.handle(), acceptance::requested());
             // Under-window vibrancy (#250). False off macOS and when the
             // material cannot be applied; the renderer stays opaque then.
             // Windows never clears the webview fill (#282).
@@ -261,6 +266,8 @@ pub fn run() {
             host::repo::workspace::github_repositories,
             host::repo::workspace::clone_repository,
             host::repo::workspace::scratch_workspace,
+            updates::app_update_status,
+            updates::app_update_restart,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -299,6 +306,9 @@ pub fn run() {
                         session.checkpoint_store();
                     }
                 }
+                // Quitting with an update staged installs it, so the next
+                // launch is the new version even without clicking Restart.
+                updates::install_pending(app);
             }
         });
 }

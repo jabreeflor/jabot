@@ -92,6 +92,7 @@ import { useInbox, type HostInbox } from "./views/inbox";
 import { useDevices, type Devices } from "./views/devices";
 import { useSettings, type Settings } from "./views/settings";
 import { CrossIcon } from "./components/Icon";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { ChatView, LiveChatView } from "./views/ChatView";
 import { asBotColor, blankBotDraft, isUnformedBot } from "./views/shape-bot";
 import { CrewView } from "./views/CrewView";
@@ -160,28 +161,35 @@ function App() {
   // "You".
   const [editing, setEditing] = useState<OnboardingProfile | null>(null);
 
-  return profile ? (
-    <AppShell
-      profile={profile}
-      host={host}
-      onRunSetup={() => {
-        setEditing(profile);
-        setProfile(null);
-      }}
-    />
-  ) : (
-    <Onboarding
-      client={host.client}
-      harnesses={liveHarnesses ?? HARNESSES}
-      profile={editing ?? undefined}
-      hostLine={hostLine(host.hello, host.hostError, host.connecting)}
-      hostOffline={host.hostError !== null}
-      onFinish={(next) => {
-        saveOnboarding(next);
-        setProfile(next);
-        setEditing(null);
-      }}
-    />
+  // Above the onboarding gate: an update can land while setup is open, and
+  // the banner is fixed-position chrome that belongs to neither screen.
+  return (
+    <>
+      {profile ? (
+        <AppShell
+          profile={profile}
+          host={host}
+          onRunSetup={() => {
+            setEditing(profile);
+            setProfile(null);
+          }}
+        />
+      ) : (
+        <Onboarding
+          client={host.client}
+          harnesses={liveHarnesses ?? HARNESSES}
+          profile={editing ?? undefined}
+          hostLine={hostLine(host.hello, host.hostError, host.connecting)}
+          hostOffline={host.hostError !== null}
+          onFinish={(next) => {
+            saveOnboarding(next);
+            setProfile(next);
+            setEditing(null);
+          }}
+        />
+      )}
+      <UpdateBanner />
+    </>
   );
 }
 
