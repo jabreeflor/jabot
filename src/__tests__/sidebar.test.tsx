@@ -230,7 +230,7 @@ describe("Sidebar", () => {
       screen.getByRole("button", { name: "Inbox — 2 waiting" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Pull Requests — 4 open" }),
+      screen.getByRole("button", { name: "Pull requests — 4 open" }),
     ).toHaveTextContent("4");
   });
 
@@ -273,7 +273,7 @@ describe("Sidebar", () => {
     );
     expect(props.onNewChat).toHaveBeenCalledWith("jabot-app");
 
-    await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
     expect(props.onNewChat).toHaveBeenLastCalledWith(null);
   });
 

@@ -81,22 +81,22 @@ describe("inboxTag", () => {
     expect(inboxTag("needs_you").tone).toBe("needs");
     expect(inboxTag("judgment_call").tone).toBe("needs");
     expect(inboxTag("done").tone).toBe("done");
-    expect(inboxTag("folded")).toEqual({ label: "SLEEPING", tone: "quiet" });
+    expect(inboxTag("folded")).toEqual({ label: "Sleeping", tone: "quiet" });
     expect(inboxTag("lost").tone).toBe("bad");
   });
 });
 
 describe("prTag", () => {
   it("does not ask for review while checks are still running", () => {
-    expect(prTag(pr({ checkState: "running" })).label).toBe("CHECKS RUNNING");
+    expect(prTag(pr({ checkState: "running" })).label).toBe("Checks running");
     expect(prTag(pr({ checkState: "failing" })).tone).toBe("bad");
-    expect(prTag(pr()).label).toBe("NEEDS REVIEW");
+    expect(prTag(pr()).label).toBe("Needs review");
   });
 
   it("lets status win over checks once the PR has landed or is a draft", () => {
     expect(prTag(pr({ status: "merged", checkState: "running" })).label).toBe(
-      "MERGED",
+      "Merged",
     );
-    expect(prTag(pr({ status: "draft" })).label).toBe("DRAFT");
+    expect(prTag(pr({ status: "draft" })).label).toBe("Draft");
   });
 });

@@ -500,14 +500,13 @@ if (baseWin.windowEffects) {
 if (macConf) {
   const macWin = ((macConf.app || {}).windows || [])[0] || {};
   if (macConf.app.macOSPrivateApi !== true) {
-    bad(`${macT}: macOSPrivateApi must be true — overlay + under-window glass need it`);
+    bad(`${macT}: macOSPrivateApi must be true — overlay + under-window vibrancy need it`);
   }
   if (macWin.titleBarStyle !== 'Overlay' || macWin.transparent !== true) {
     bad(`${macT}: macOS overlay chrome is missing (titleBarStyle Overlay, transparent)`);
   }
-  // hudWindow is the dark-theme glass; window.rs swaps it per theme at runtime.
-  if (!(((macWin.windowEffects || {}).effects || []).includes('hudWindow'))) {
-    bad(`${macT}: windowEffects must include hudWindow`);
+  if (!(((macWin.windowEffects || {}).effects || []).includes('underWindowBackground'))) {
+    bad(`${macT}: windowEffects must include underWindowBackground`);
   }
   for (const key of ['label', 'title', 'width', 'height', 'minWidth', 'minHeight']) {
     if (macWin[key] !== baseWin[key]) {

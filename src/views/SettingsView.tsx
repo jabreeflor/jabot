@@ -52,17 +52,17 @@ const APPEARANCES: ReadonlyArray<{
   {
     id: "dark",
     label: "Dark",
-    detail: "The shipped graphite palette.",
+    detail: "The shipped graphite palette",
   },
   {
     id: "light",
     label: "Light",
-    detail: "A cream-paper reading surface.",
+    detail: "A cream-paper reading surface",
   },
   {
     id: "system",
     label: "Match system",
-    detail: "Follows this Mac's appearance. Changes when the OS does.",
+    detail: "Follows this Mac's appearance and changes when the OS does",
   },
 ];
 
@@ -224,9 +224,9 @@ function GeneralSettings({
     <>
       <AppearanceSettings />
 
-      <section className="settings-section" aria-label="Harnesses">
+      <section className="setting settings-section" aria-label="Harnesses">
         <h2>Harnesses</h2>
-        <p>
+        <p className="setting-note">
           Choose which harnesses appear when starting a chat or choosing a bot’s
           engine.
         </p>

@@ -4,7 +4,6 @@ import {
   expect,
   type Browser,
   type BrowserContext,
-  type Locator,
   type Page,
 } from "@playwright/test";
 
@@ -120,8 +119,4 @@ export async function settle(page: Page): Promise<void> {
   await page.addStyleTag({ content: SCREENSHOT_STYLE });
   // Two frames after fonts and reduced-motion styles, so layout is stable.
   await page.waitForTimeout(50);
-}
-
-export function variableMasks(page: Page): Locator[] {
-  return [page.locator(".when"), page.locator(".sched-next")];
 }

@@ -52,7 +52,7 @@ describe("BotEditorModal", () => {
   it("opens an existing bot with its own fields, tools, and harness", () => {
     renderEditor({ bot: WRITER });
 
-    expect(screen.getByLabelText("NAME")).toHaveValue("Writer");
+    expect(screen.getByLabelText("Name")).toHaveValue("Writer");
     expect(screen.getByRole("button", { name: "Gmail" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -88,8 +88,8 @@ describe("BotEditorModal", () => {
   it("saves the edits, including a changed harness", async () => {
     const props = renderEditor({ bot: WRITER });
 
-    await userEvent.clear(screen.getByLabelText("NAME"));
-    await userEvent.type(screen.getByLabelText("NAME"), "Ghostwriter");
+    await userEvent.clear(screen.getByLabelText("Name"));
+    await userEvent.type(screen.getByLabelText("Name"), "Ghostwriter");
     await userEvent.click(screen.getByRole("button", { name: /Codex/ }));
     await userEvent.click(screen.getByRole("button", { name: "Notion" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -111,7 +111,7 @@ describe("BotEditorModal", () => {
       "ops",
     );
 
-    expect(screen.getByLabelText("NAME")).toHaveValue("Ops / On-call");
+    expect(screen.getByLabelText("Name")).toHaveValue("Ops / On-call");
     expect(screen.getByRole("button", { name: /Codex/ })).toHaveAttribute(
       "aria-pressed",
       "true",

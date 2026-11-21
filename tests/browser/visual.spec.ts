@@ -2,8 +2,8 @@
  * Visual regression for stable product states (#234).
  *
  * Baselines are environment-specific (OS + Playwright project). CI never
- * updates them — see docs/browser-tests.md. Masks cover only relative
- * clocks; content and layout stay in the picture.
+ * updates them — see docs/browser-tests.md. Relative clocks are painted
+ * over by SCREENSHOT_STYLE; content and layout stay in the picture.
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
@@ -14,7 +14,7 @@ import {
   type WindowSize,
   FAKE_ACP_REPLY,
 } from "./support/constants";
-import { openApp, settle, variableMasks } from "./support/page";
+import { openApp, settle } from "./support/page";
 import {
   putChiefOnFakeAcp,
   seedChiefConversation,
@@ -37,8 +37,10 @@ async function shot(
   extraMask: Locator[] = [],
 ): Promise<void> {
   await settle(page);
-  await expect(page).toHaveScreenshot(`${name}.png`, {
-    mask: [...variableMasks(page), ...extraMask],
+  // Soft, so a dark-theme mismatch still renders and checks the light one:
+  // one CI run then reports (and uploads actuals for) every stale baseline.
+  await expect.soft(page).toHaveScreenshot(`${name}.png`, {
+    mask: extraMask,
     maxDiffPixels: 0,
     animations: "disabled",
     caret: "hide",
@@ -118,7 +120,7 @@ test.describe("stable states @visual", () => {
         await expect(
           opened.page.getByRole("heading", { name: "Inbox" }),
         ).toBeVisible();
-        await expect(opened.page.getByText("PERMISSION")).toBeVisible();
+        await expect(opened.page.getByText("Permission")).toBeVisible();
         const allow = opened.page.getByRole("button", { name: "Allow" });
         if (!(await allow.isVisible())) {
           await opened.page.getByRole("button", { name: /Run ls/ }).click();
@@ -139,9 +141,9 @@ test.describe("stable states @visual", () => {
         windowSize: "desktop",
       });
       try {
-        await opened.page.getByRole("button", { name: "New Chat" }).click();
+        await opened.page.getByRole("button", { name: "New chat" }).click();
         await expect(
-          opened.page.getByRole("region", { name: "New Chat" }),
+          opened.page.getByRole("region", { name: "New chat" }),
         ).toBeVisible();
         await shot(opened.page, `new-chat-${theme}-desktop`);
       } finally {
@@ -205,10 +207,10 @@ test.describe("stable states @visual", () => {
       });
       try {
         await opened.page
-          .getByRole("button", { name: /^Pull Requests/ })
+          .getByRole("button", { name: /^Pull requests/ })
           .click();
         await expect(
-          opened.page.getByRole("heading", { name: "Pull Requests" }),
+          opened.page.getByRole("heading", { name: "Pull requests" }),
         ).toBeVisible();
         const signIn = opened.page.getByRole("button", {
           name: "Sign in with GitHub",

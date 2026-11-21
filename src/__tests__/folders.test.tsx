@@ -169,11 +169,11 @@ describe("AddFolderModal", () => {
     render(<AddFolderModal onRegister={onRegister} onCancel={onCancel} />);
 
     await userEvent.type(
-      screen.getByLabelText("FOLDER — ONE REPO"),
+      screen.getByLabelText("Folder — one repo"),
       "  ~/code/jabot  ",
     );
     await userEvent.type(
-      screen.getByLabelText("FILES TO COPY — OPTIONAL"),
+      screen.getByLabelText("Files to copy — optional"),
       ".env, .env.local",
     );
     await userEvent.click(screen.getByRole("button", { name: "Add folder" }));
@@ -198,7 +198,7 @@ describe("AddFolderModal", () => {
     render(<AddFolderModal onRegister={onRegister} onCancel={onCancel} />);
 
     await userEvent.type(
-      screen.getByLabelText("FOLDER — ONE REPO"),
+      screen.getByLabelText("Folder — one repo"),
       "~/code/jabot",
     );
     await userEvent.click(screen.getByRole("button", { name: "Add folder" }));
@@ -207,7 +207,7 @@ describe("AddFolderModal", () => {
       "That checkout is already a folder.",
     );
     expect(onCancel).not.toHaveBeenCalled();
-    expect(screen.getByLabelText("FOLDER — ONE REPO")).toHaveValue(
+    expect(screen.getByLabelText("Folder — one repo")).toHaveValue(
       "~/code/jabot",
     );
   });
@@ -224,7 +224,7 @@ describe("AddFolderModal", () => {
         <AddFolderModal onRegister={vi.fn()} onCancel={vi.fn()} />
       </>,
     );
-    expect(screen.getByLabelText("FOLDER — ONE REPO")).toHaveFocus();
+    expect(screen.getByLabelText("Folder — one repo")).toHaveFocus();
 
     rerender(<button type="button">Open folders</button>);
     expect(opener).toHaveFocus();
@@ -302,7 +302,7 @@ describe("App, once the host has answered", () => {
     host.prompt = vi.fn();
     vi.mocked(connectHost).mockResolvedValue({ client: host, hello: HELLO });
     await renderApp();
-    await userEvent.click(screen.getByRole("button", { name: "New Chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
     await userEvent.click(screen.getByRole("button", { name: /Harness:/ }));
     await userEvent.click(screen.getByRole("option", { name: /Codex/ }));
     await userEvent.click(
@@ -539,7 +539,7 @@ describe("App, once the host has answered", () => {
       "Harness unavailable: codex-acp",
     );
     expect(
-      screen.getByRole("region", { name: "New Chat" }),
+      screen.getByRole("region", { name: "New chat" }),
     ).toBeInTheDocument();
   });
 
@@ -616,9 +616,9 @@ describe("editing a registered folder", () => {
   it("opens pre-filled with what the host holds", async () => {
     await openSettings();
 
-    expect(screen.getByLabelText("DISPLAY NAME")).toHaveValue("jabot");
-    expect(screen.getByLabelText(/SETUP SCRIPT/)).toHaveValue("npm ci");
-    expect(screen.getByLabelText(/FILES TO COPY/)).toHaveValue(
+    expect(screen.getByLabelText("Display name")).toHaveValue("jabot");
+    expect(screen.getByLabelText(/Setup script/)).toHaveValue("npm ci");
+    expect(screen.getByLabelText(/Files to copy/)).toHaveValue(
       ".env, .env.local",
     );
     // The path is shown and not editable: the host has no move method, and a
@@ -634,8 +634,8 @@ describe("editing a registered folder", () => {
   it("sends only what actually moved", async () => {
     await openSettings();
 
-    await userEvent.clear(screen.getByLabelText(/SETUP SCRIPT/));
-    await userEvent.type(screen.getByLabelText(/SETUP SCRIPT/), "pnpm install");
+    await userEvent.clear(screen.getByLabelText(/Setup script/));
+    await userEvent.type(screen.getByLabelText(/Setup script/), "pnpm install");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -651,7 +651,7 @@ describe("editing a registered folder", () => {
   it("clears the setup command with an empty string, not by omitting it", async () => {
     await openSettings();
 
-    await userEvent.clear(screen.getByLabelText(/SETUP SCRIPT/));
+    await userEvent.clear(screen.getByLabelText(/Setup script/));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -665,9 +665,9 @@ describe("editing a registered folder", () => {
   it("sends the edited files-to-copy list, split the way it is typed", async () => {
     await openSettings();
 
-    await userEvent.clear(screen.getByLabelText(/FILES TO COPY/));
+    await userEvent.clear(screen.getByLabelText(/Files to copy/));
     await userEvent.type(
-      screen.getByLabelText(/FILES TO COPY/),
+      screen.getByLabelText(/Files to copy/),
       ".env,  config/local.json ",
     );
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -739,13 +739,13 @@ describe("editing a registered folder", () => {
     );
     await openSettings();
 
-    await userEvent.clear(screen.getByLabelText(/SETUP SCRIPT/));
-    await userEvent.type(screen.getByLabelText(/SETUP SCRIPT/), "make all");
+    await userEvent.clear(screen.getByLabelText(/Setup script/));
+    await userEvent.type(screen.getByLabelText(/Setup script/), "make all");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "setupCommand is longer than 2000 characters",
     );
-    expect(screen.getByLabelText(/SETUP SCRIPT/)).toHaveValue("make all");
+    expect(screen.getByLabelText(/Setup script/)).toHaveValue("make all");
   });
 });

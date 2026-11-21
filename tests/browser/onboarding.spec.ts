@@ -45,7 +45,7 @@ test.describe("first launch", () => {
     jabot,
   }) => {
     await openFirstRun(page, jabot.baseURL);
-    await page.getByLabel("YOUR NAME").fill("Ada");
+    await page.getByLabel("Your name").fill("Ada");
     await skipOnboarding(page);
     await waitForConnected(page);
 
@@ -82,7 +82,7 @@ test.describe("first launch", () => {
     await expect(
       page.getByRole("heading", { name: /What should the crew call you/ }),
     ).toBeVisible();
-    await expect(page.getByLabel("YOUR NAME")).toHaveValue("Ada Lovelace");
+    await expect(page.getByLabel("Your name")).toHaveValue("Ada Lovelace");
     const midRun = await page.evaluate(
       (key) => window.localStorage.getItem(key),
       ONBOARDING_KEY,

@@ -180,7 +180,7 @@ describe("the Inbox as the phone sees it", () => {
     );
     const card = inbox.needs[0];
     expect(card.kind).toBe("pr");
-    expect(card.tag.label).toBe("PULL REQUEST");
+    expect(card.tag.label).toBe("Pull request");
   });
 
   // #298: a question or plan is "what needs you" too, in its own words.
@@ -228,14 +228,14 @@ describe("the Inbox as the phone sees it", () => {
     expect(inbox.needs.map((card) => card.id)).toEqual(["int-q", "int-plan"]);
     const planCard = inbox.needs[1];
     expect(planCard.kind).toBe("plan");
-    expect(planCard.tag.label).toBe("PLAN REVIEW");
+    expect(planCard.tag.label).toBe("Plan review");
     expect(planCard.summary).toBe("Move sessions over.");
     expect(planCard.ask).toBeUndefined();
     expect(planCard.interaction).toMatchObject({ ask: "plan", stale: false });
 
     const questionCard = inbox.needs[0];
     expect(questionCard.kind).toBe("question");
-    expect(questionCard.tag.label).toBe("QUESTION");
+    expect(questionCard.tag.label).toBe("Question");
     expect(questionCard.summary).toBe("Which mode?");
     expect(questionCard.interaction).toMatchObject({
       questionId: "q1",

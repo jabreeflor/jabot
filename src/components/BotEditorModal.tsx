@@ -285,7 +285,7 @@ export function BotEditorModal({
         </>
       )}
 
-      <FieldLabel htmlFor={nameId}>NAME</FieldLabel>
+      <FieldLabel htmlFor={nameId}>Name</FieldLabel>
       <input
         id={nameId}
         type="text"
@@ -294,7 +294,7 @@ export function BotEditorModal({
         onChange={(event) => setName(event.target.value)}
       />
 
-      <FieldLabel>ICON</FieldLabel>
+      <FieldLabel>Icon</FieldLabel>
       <div className="iconpick">
         {/* The real thing at the size the sidebar draws it, so what the user
             approves here is what they get there. Untitled: the modal already
@@ -346,7 +346,7 @@ export function BotEditorModal({
             }}
           />
           <p className="iconhint">
-            Upload a picture, or choose an animated bot below.
+            Upload a picture, or choose an animated bot below
           </p>
         </div>
       </div>
@@ -358,7 +358,7 @@ export function BotEditorModal({
       )}
 
       <fieldset className="bot-icon-picker">
-        <legend>CHOOSE A BOT</legend>
+        <legend>Choose a bot</legend>
         <div className="bot-icon-grid">
           {BOT_ICONS.map((choice) => (
             <label className="bot-icon-option" key={choice.value}>
@@ -388,7 +388,7 @@ export function BotEditorModal({
         </div>
       </fieldset>
 
-      <FieldLabel htmlFor={instructionsId}>WHAT IT DOES</FieldLabel>
+      <FieldLabel htmlFor={instructionsId}>What it does</FieldLabel>
       <textarea
         id={instructionsId}
         value={instructions}
@@ -396,7 +396,7 @@ export function BotEditorModal({
         onChange={(event) => setInstructions(event.target.value)}
       />
 
-      <FieldLabel>HARNESS</FieldLabel>
+      <FieldLabel>Harness</FieldLabel>
       {!harnesses.some((harness) => harness.id === harnessId) && (
         <p role="status">
           Choose an enabled harness, or enable this bot’s harness in Settings.
@@ -409,7 +409,7 @@ export function BotEditorModal({
         label="Harness"
       />
 
-      <FieldLabel>TOOLS</FieldLabel>
+      <FieldLabel>Tools</FieldLabel>
       <div className="toolrow" role="group" aria-label="Tools">
         {tools.map((tool) => (
           <span key={tool.id} className="toolslot">

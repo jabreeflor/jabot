@@ -14,8 +14,8 @@
         "hiddenTitle": true,
         "transparent": true,
         "windowEffects": {
-          "effects": ["hudWindow"],
-          "state": "active"
+          "effects": ["underWindowBackground"],
+          "state": "followsWindowActiveState"
         }
       }
     ]

@@ -45,7 +45,7 @@ test.describe("schedules", () => {
     await toggle.click();
     await row.click();
     await page.getByRole("button", { name: "Edit", exact: true }).click();
-    const nameField = page.getByLabel("NAME");
+    const nameField = page.getByLabel("Name");
     await expect(nameField).toBeVisible();
     await nameField.fill("Morning brief");
     await page.getByRole("button", { name: "Save", exact: true }).click();

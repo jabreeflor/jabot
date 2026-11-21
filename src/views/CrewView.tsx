@@ -40,7 +40,7 @@ export function CrewView({
       <div className="page-scroll">
         <div className="page">
           <div className="page-top">
-            <h1>Your Crew</h1>
+            <h1>Your crew</h1>
             <p>
               Each bot is a chat. Add one by talking — Edit opens advanced
               settings.
@@ -104,12 +104,12 @@ export function CrewView({
                     unread={bot.unread}
                   />
                   <div className="crew-identity">
+                    <div className="nm">{bot.name}</div>
                     {bot.instructions && (
                       <div className="role">{bot.instructions}</div>
                     )}
-                    <div className="nm">{bot.name}</div>
                   </div>
-                  {bot.isChief && <span className="chief-badge">CHIEF</span>}
+                  {bot.isChief && <span className="chief-badge">Chief</span>}
                 </div>
                 <div className="tools">
                   {bot.tools.map((toolId) => (

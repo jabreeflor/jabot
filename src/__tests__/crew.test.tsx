@@ -30,7 +30,7 @@ function renderCrew(over: Partial<Parameters<typeof CrewView>[0]> = {}) {
 }
 
 function card(name: string): HTMLElement {
-  const heading = screen.getByText(name);
+  const heading = screen.getByText(name, { selector: ".nm" });
   const element = heading.closest(".crew-card");
   if (!element) throw new Error(`no crew card for ${name}`);
   return element as HTMLElement;
@@ -49,7 +49,9 @@ describe("CrewView", () => {
     renderCrew();
 
     const chief = card("Chief");
-    expect(within(chief).getByText("CHIEF")).toBeInTheDocument();
+    expect(
+      within(chief).getByText("Chief", { selector: ".chief-badge" }),
+    ).toBeInTheDocument();
     expect(
       within(chief).queryByRole("button", { name: "Remove" }),
     ).not.toBeInTheDocument();
