@@ -16,6 +16,7 @@ import { useEffect, useRef } from "react";
 import { canFold } from "./FoldButton";
 import { ArchiveIcon, InboxIcon, TrashIcon } from "./Icon";
 import type { FoldPolicy, ThreadState } from "./types";
+import { uiScale } from "./uiScale";
 
 /** Roughly the menu's own size; keeps it on screen near the window edges. */
 const MENU_W = 195;
@@ -66,6 +67,8 @@ export function ThreadContextMenu({
     };
   }, [onClose]);
 
+  // The pointer arrives in screen pixels; the menu is laid out in zoomed ones.
+  const scale = uiScale();
   return (
     <div
       className="ctx-menu"
@@ -73,8 +76,8 @@ export function ThreadContextMenu({
       aria-label={threadTitle}
       ref={menuRef}
       style={{
-        left: Math.min(position.x, window.innerWidth - MENU_W),
-        top: Math.min(position.y, window.innerHeight - MENU_H),
+        left: Math.min(position.x, window.innerWidth - MENU_W * scale) / scale,
+        top: Math.min(position.y, window.innerHeight - MENU_H * scale) / scale,
       }}
     >
       {canFold(threadState) && (

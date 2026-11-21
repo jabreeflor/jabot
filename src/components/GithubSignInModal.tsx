@@ -86,7 +86,7 @@ export function GithubSignInModal({
         keeps it in your Keychain — JaBot never stores it.
       </p>
 
-      <FieldLabel>STEP 1 — MAKE A TOKEN</FieldLabel>
+      <FieldLabel>Step 1 — make a token</FieldLabel>
       <div className="macts start">
         <button
           type="button"
@@ -101,7 +101,7 @@ export function GithubSignInModal({
         to read your pull requests, including private and SSO-protected ones.
       </p>
 
-      <FieldLabel htmlFor={tokenId}>STEP 2 — PASTE IT HERE</FieldLabel>
+      <FieldLabel htmlFor={tokenId}>Step 2 — paste it here</FieldLabel>
       <input
         id={tokenId}
         type="password"

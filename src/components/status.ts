@@ -88,32 +88,32 @@ export const NEEDS_YOU_KINDS: readonly InboxKind[] = [
 export function inboxTag(kind: InboxKind): Tag {
   switch (kind) {
     case "done":
-      return { label: "DONE", tone: "done" };
+      return { label: "Done", tone: "done" };
     case "needs_you":
-      return { label: "NEEDS YOU", tone: "needs" };
+      return { label: "Needs you", tone: "needs" };
     case "judgment_call":
-      return { label: "JUDGMENT CALL", tone: "needs" };
+      return { label: "Judgment call", tone: "needs" };
     case "permission":
-      return { label: "PERMISSION", tone: "needs" };
+      return { label: "Permission", tone: "needs" };
     // Their own words, so a plan waiting for review never reads as a grant
     // of tool permission (#298).
     case "question":
-      return { label: "QUESTION", tone: "needs" };
+      return { label: "Question", tone: "needs" };
     case "plan":
-      return { label: "PLAN REVIEW", tone: "needs" };
+      return { label: "Plan review", tone: "needs" };
     case "stuck":
-      return { label: "STUCK", tone: "needs" };
+      return { label: "Stuck", tone: "needs" };
     case "failed":
-      return { label: "FAILED", tone: "bad" };
+      return { label: "Failed", tone: "bad" };
     case "lost":
-      return { label: "LOST", tone: "bad" };
+      return { label: "Lost", tone: "bad" };
     case "folded":
-      return { label: "SLEEPING", tone: "quiet" };
+      return { label: "Sleeping", tone: "quiet" };
     case "pr":
       // Amber and not red: a PR card is always something to look at and
       // sometimes something that went wrong, and the card's own copy says
       // which. A red pill on "PR #23 opened" would read as a failure (#28).
-      return { label: "PULL REQUEST", tone: "needs" };
+      return { label: "Pull request", tone: "needs" };
   }
 }
 
@@ -124,20 +124,20 @@ export function inboxTag(kind: InboxKind): Tag {
 export function prTag(pr: PullRequest): Tag {
   switch (pr.status) {
     case "merged":
-      return { label: "MERGED", tone: "merged" };
+      return { label: "Merged", tone: "merged" };
     case "draft":
-      return { label: "DRAFT", tone: "quiet" };
+      return { label: "Draft", tone: "quiet" };
     case "closed":
-      return { label: "CLOSED", tone: "quiet" };
+      return { label: "Closed", tone: "quiet" };
     case "open":
       break;
   }
   switch (pr.checkState) {
     case "running":
-      return { label: "CHECKS RUNNING", tone: "needs" };
+      return { label: "Checks running", tone: "needs" };
     case "failing":
-      return { label: "CHECKS FAILED", tone: "bad" };
+      return { label: "Checks failed", tone: "bad" };
     default:
-      return { label: "NEEDS REVIEW", tone: "needs" };
+      return { label: "Needs review", tone: "needs" };
   }
 }

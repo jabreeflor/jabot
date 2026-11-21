@@ -208,7 +208,7 @@ describe("the Inbox on real data", () => {
     ).toBeInTheDocument();
     // Still Sleeping is `threads.state = folded`, projected — not an event.
     expect(screen.getByText("Nightly NAS backup")).toBeInTheDocument();
-    expect(screen.getByText("STILL SLEEPING")).toBeInTheDocument();
+    expect(screen.getByText("Still sleeping")).toBeInTheDocument();
 
     // The fixtures the shell used to show regardless of the host.
     expect(screen.queryByText("Inbox Manager needs a call")).toBeNull();
@@ -623,8 +623,8 @@ describe("questions and plans in the Inbox", () => {
     await openInbox();
 
     const card = await expand(/^Review the auth plan/);
-    expect(within(card).getByText("PLAN REVIEW")).toBeInTheDocument();
-    expect(screen.queryByText("PERMISSION")).toBeNull();
+    expect(within(card).getByText("Plan review")).toBeInTheDocument();
+    expect(screen.queryByText("Permission")).toBeNull();
     // The thread's own `stuck` card gives way to the answerable one.
     expect(screen.queryByText("Auth migration has gone quiet")).toBeNull();
     expect(

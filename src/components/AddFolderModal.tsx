@@ -54,7 +54,7 @@ export function AddFolderModal({
 
   return (
     <Modal title="Add folder" onClose={onCancel}>
-      <FieldLabel htmlFor={pathId}>FOLDER — ONE REPO</FieldLabel>
+      <FieldLabel htmlFor={pathId}>Folder — one repo</FieldLabel>
       <input
         id={pathId}
         type="text"
@@ -63,7 +63,7 @@ export function AddFolderModal({
         onChange={(event) => setPath(event.target.value)}
       />
 
-      <FieldLabel htmlFor={nameId}>DISPLAY NAME — OPTIONAL</FieldLabel>
+      <FieldLabel htmlFor={nameId}>Display name — optional</FieldLabel>
       <input
         id={nameId}
         type="text"
@@ -72,7 +72,7 @@ export function AddFolderModal({
         onChange={(event) => setName(event.target.value)}
       />
 
-      <FieldLabel htmlFor={setupId}>SETUP SCRIPT — OPTIONAL</FieldLabel>
+      <FieldLabel htmlFor={setupId}>Setup script — optional</FieldLabel>
       <input
         id={setupId}
         type="text"
@@ -81,7 +81,7 @@ export function AddFolderModal({
         onChange={(event) => setSetupCommand(event.target.value)}
       />
 
-      <FieldLabel htmlFor={filesId}>FILES TO COPY — OPTIONAL</FieldLabel>
+      <FieldLabel htmlFor={filesId}>Files to copy — optional</FieldLabel>
       <input
         id={filesId}
         type="text"

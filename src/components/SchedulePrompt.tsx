@@ -225,13 +225,13 @@ export function SchedulePrompt({
             pushes the send button onto a line of its own. */}
         {(showCron || error) && (
           <label className="dock-cron">
-            <span>CRON</span>
+            <span>Cron</span>
             <input
               id={cronId}
               type="text"
               value={cron}
               autoFocus={showCron}
-              aria-label="CRON"
+              aria-label="Cron"
               aria-invalid={error ? true : undefined}
               placeholder="0 9 * * 1-5"
               onChange={(event) => setCron(event.target.value)}

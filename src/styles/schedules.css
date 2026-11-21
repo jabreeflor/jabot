@@ -436,7 +436,7 @@
 
 .sched-blank h2 {
   font-size: var(--fs-title);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .sched-blank p {
@@ -645,10 +645,8 @@
 
 .read-mark {
   color: var(--violet);
-  font-weight: 700;
+  font-weight: 500;
   font-size: var(--fs-caps);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .dock-error {
@@ -748,7 +746,7 @@
   flex: none;
   color: var(--faint);
   font-size: var(--fs-caps);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--track-caps);
 }
 

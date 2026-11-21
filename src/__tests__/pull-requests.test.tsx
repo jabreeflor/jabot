@@ -138,11 +138,11 @@ describe("PullRequestsView", () => {
     renderPrs();
 
     expect(
-      screen.getByText("CHECKS RUNNING", { selector: ".page-section" }),
+      screen.getByText("Checks running", { selector: ".page-section" }),
     ).toBeInTheDocument();
     // Exactly one PR wears the review pill: the one whose checks are done.
     expect(
-      screen.getAllByText("NEEDS REVIEW", { selector: ".tagpill" }),
+      screen.getAllByText("Needs review", { selector: ".tagpill" }),
     ).toHaveLength(1);
   });
 
@@ -232,11 +232,11 @@ describe("PullRequestsView, closed pull requests", () => {
     renderPrs();
 
     expect(
-      screen.getByText("CLOSED WITHOUT MERGING", { selector: ".page-section" }),
+      screen.getByText("Closed without merging", { selector: ".page-section" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Cache the harness probe")).toBeInTheDocument();
     expect(
-      screen.getAllByText("CLOSED", { selector: ".tagpill" }),
+      screen.getAllByText("Closed", { selector: ".tagpill" }),
     ).toHaveLength(1);
   });
 
@@ -260,7 +260,7 @@ describe("PullRequestsView, closed pull requests", () => {
     renderPrs({ pullRequests: PRS.filter((pr) => pr.status !== "closed") });
 
     expect(
-      screen.queryByText("CLOSED WITHOUT MERGING", {
+      screen.queryByText("Closed without merging", {
         selector: ".page-section",
       }),
     ).not.toBeInTheDocument();

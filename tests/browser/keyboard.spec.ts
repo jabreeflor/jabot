@@ -16,9 +16,9 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
   }) => {
     const opened = await openApp(browser, app, { firstRun: true });
     try {
-      const name = opened.page.getByLabel(/YOUR NAME/i);
+      const name = opened.page.getByLabel(/Your name/i);
       await expect(name).toBeFocused();
-      await expect(name).toHaveAccessibleName(/YOUR NAME/i);
+      await expect(name).toHaveAccessibleName(/Your name/i);
       await opened.page.keyboard.press("Escape");
       await expect(settingsButton(opened.page)).toBeVisible();
     } finally {
@@ -47,7 +47,7 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
         });
         if (name) seen.add(name);
       }
-      expect([...seen].join(" | ")).toMatch(/New Chat/);
+      expect([...seen].join(" | ")).toMatch(/New chat/);
       expect([...seen].some((name) => /Inbox/.test(name))).toBeTruthy();
       expect([...seen].some((name) => /Settings/.test(name))).toBeTruthy();
 
@@ -84,7 +84,7 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
         .getByRole("button", { name: "Crew", exact: true })
         .click();
       await expect(
-        opened.page.getByRole("heading", { name: "Your Crew" }),
+        opened.page.getByRole("heading", { name: "Your crew" }),
       ).toBeVisible();
       const opener = opened.page
         .locator(".crew-card")
@@ -125,7 +125,7 @@ test.describe("keyboard and focus @keyboard @smoke", () => {
   }) => {
     const opened = await openApp(browser, app);
     try {
-      await opened.page.getByRole("button", { name: "New Chat" }).click();
+      await opened.page.getByRole("button", { name: "New chat" }).click();
       const trigger = opened.page.getByRole("button", { name: /^Harness:/ });
       await trigger.click();
       const listbox = opened.page.getByRole("listbox");

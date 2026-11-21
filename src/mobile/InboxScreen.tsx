@@ -59,7 +59,7 @@ export function InboxScreen({
 
       {empty && <div className="jm-empty">Nothing waiting. Enjoy it.</div>}
 
-      <Section title="NEEDS YOU" cards={inbox.needs}>
+      <Section title="Needs you" cards={inbox.needs}>
         {(card) => (
           <Card
             key={card.id}
@@ -77,7 +77,7 @@ export function InboxScreen({
         {(card) => <Card key={card.id} card={card} onOpen={onOpen} />}
       </Section>
 
-      <Section title="STILL SLEEPING" cards={inbox.sleeping}>
+      <Section title="Still sleeping" cards={inbox.sleeping}>
         {(card) => <Card key={card.id} card={card} dim />}
       </Section>
     </div>

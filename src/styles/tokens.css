@@ -116,7 +116,8 @@
     "Styrene B", "Styrene A", Figtree, -apple-system, "SF Pro Text",
     "Helvetica Neue", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-  --fs-caps: 11px;
+  /* Small labels: sentence case at the meta step, never tracked caps. */
+  --fs-caps: 12px;
   --fs-meta: 12.5px;
   --fs-body: 13.5px;
   --fs-ui: 14px;
@@ -126,7 +127,7 @@
   --lh-ui: 1.45;
   --lh-chat: 1.5;
   --lh-mono: 1.7;
-  --track-caps: 0.1em;
+  --track-caps: 0;
 
   /* spacing */
   --sp-1: 4px;
@@ -147,6 +148,15 @@
      78px for buttons the OS already drew (#282). */
   --collapsed-rail-w: var(--traffic-lights-w);
 
+  /* GUI scale. The whole UI (type, icons, padding, hit areas) renders at
+     this fraction of its designed size; 1 is the original. `html` carries
+     the zoom, so portals and fixed layers scale with everything else. */
+  --ui-scale: 0.667;
+  /* The traffic lights are drawn by macOS at a fixed size, so the strips
+     that dodge them divide the scale back out to stay true to the OS. */
+  --titlebar-inset: calc(var(--titlebar-h) / var(--ui-scale));
+  --lights-inset: calc(var(--traffic-lights-w) / var(--ui-scale));
+
   /* radii */
   --r-sm: 8px;
   --r-md: 10px;
@@ -166,8 +176,8 @@
      motion, short enough that a hover does not feel lagged */
   --t-sidebar: 0.2s;
   --ease-sidebar: cubic-bezier(0.22, 1, 0.36, 1);
-  /* a flap settling — a little past the mark, then back */
-  --ease-flap: cubic-bezier(0.32, 1.4, 0.6, 1);
+  /* a flap settling — the one ease-out curve, no overshoot */
+  --ease-flap: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /*
@@ -299,6 +309,7 @@ body,
 
 html {
   background: transparent;
+  zoom: var(--ui-scale);
 }
 
 /*
