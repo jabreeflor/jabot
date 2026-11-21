@@ -15,10 +15,12 @@
 #   --force             quit a running JaBot and replace it
 #   --dry-run           resolve and print what would happen, download nothing
 #   --team-id <TEAMID>  require this Apple Developer team on the signature
+#   --allow-unnotarized accept an ad-hoc signed build (what main ships today)
 #   -h, --help          this text
 #
 # Environment: JABOT_VERSION, JABOT_INSTALL_DIR, JABOT_REPO, JABOT_TEAM_ID,
-# JABOT_GITHUB_TOKEN (or GITHUB_TOKEN, only ever sent to api.github.com).
+# JABOT_ALLOW_UNNOTARIZED=1, JABOT_GITHUB_TOKEN (or GITHUB_TOKEN, only ever
+# sent to api.github.com).
 #
 # This script is a release asset, uploaded by .github/workflows/release.yml, so
 # the URL above always serves the installer that shipped with the latest
@@ -30,7 +32,11 @@
 # anything — a redirected download or a compromised release asset would look
 # identical to this script — so the signature on the .app inside is the actual
 # gate, and it is checked before a single byte is copied into /Applications.
-# There is deliberately no flag to skip that.
+# The one relaxation is --allow-unnotarized, for releases built without an
+# Apple Developer ID (every push-to-main release today — docs/packaging.md):
+# the seal must still verify and the bundle must still be ours, but an ad-hoc
+# signature stands in for Developer ID + notarization. It is opt-in per run
+# and says so loudly; there is no way to turn the seal check off.
 #
 # macOS only: the release is a universal .app in a .dmg, and every verification
 # below is codesign/spctl. Tested on Linux with a stubbed macOS toolchain by
@@ -61,6 +67,8 @@ REPO="${JABOT_REPO:-$REPO_DEFAULT}"
 INSTALL_DIR="${JABOT_INSTALL_DIR:-/Applications}"
 VERSION="${JABOT_VERSION:-}"
 TEAM_ID="${JABOT_TEAM_ID:-$TEAM_ID_PIN}"
+ALLOW_UNNOTARIZED=0
+[ "${JABOT_ALLOW_UNNOTARIZED:-}" = "1" ] && ALLOW_UNNOTARIZED=1
 FORCE=0
 DRY_RUN=0
 
@@ -97,6 +105,7 @@ while [ $# -gt 0 ]; do
     --to=*)    INSTALL_DIR="${1#*=}"; shift ;;
     --team-id) [ $# -ge 2 ] || { printf 'error: --team-id needs a value\n' >&2; exit 2; }; TEAM_ID="$2"; shift 2 ;;
     --team-id=*) TEAM_ID="${1#*=}"; shift ;;
+    --allow-unnotarized) ALLOW_UNNOTARIZED=1; shift ;;
     --force)   FORCE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -232,6 +241,14 @@ verify_app() { # path
     [ "$team" = "$TEAM_ID" ] || die "the downloaded app is signed by team '${team:-<none>}', not $TEAM_ID. Refusing to install it."
   fi
 
+  # Ad-hoc: intact seals and our identifier are everything this build can
+  # prove. A Developer ID build passes here too — the flag only relaxes.
+  if [ "$ALLOW_UNNOTARIZED" -eq 1 ]; then
+    case "$out" in
+      *"Signature=adhoc"*) printf '%s' "adhoc"; return 0 ;;
+    esac
+  fi
+
   # `-t install` is the assessment Gatekeeper runs for a downloaded app.
   # "accepted" alone is not enough: an ad-hoc or unnotarized Developer ID build
   # can be accepted on the machine that built it, and says so in `source=`.
@@ -239,7 +256,7 @@ verify_app() { # path
   case "$out" in
     *"source=Notarized Developer ID"*) ;;
     *) say "$out" >&2
-       die "the downloaded app is not notarized by Apple. Refusing to install it." ;;
+       die "the downloaded app is not notarized by Apple. Refusing to install it."$'\n'"       Releases built without an Apple Developer ID are ad-hoc signed; re-run with --allow-unnotarized to install one." ;;
   esac
 
   printf '%s' "$team"
@@ -332,7 +349,11 @@ main() {
 
   step "Verifying signature and notarization"
   local team; team="$(verify_app "$src")" || exit 1
-  say "    Developer ID, notarized by Apple${team:+, team $team}"
+  if [ "$team" = "adhoc" ]; then
+    warn "ad-hoc signed, not notarized by Apple (--allow-unnotarized): the seal is intact and the bundle is $BUNDLE_ID, and that is all this build can prove."
+  else
+    say "    Developer ID, notarized by Apple${team:+, team $team}"
+  fi
 
   # Copy out of the read-only image first, then swap: `ditto` preserves the
   # extended attributes and symlinks a plain `cp -R` drops, and staging inside
