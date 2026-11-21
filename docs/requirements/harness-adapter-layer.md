@@ -1,7 +1,7 @@
 # Harness adapter layer: ACP client + catalog + Doctor
 
 **Issues:** #10 (adapter layer), #13 (catalog + Doctor)
-**Status:** Implemented — `src-tauri/src/host/acp/`, `src-tauri/src/host/harness/`, `src-tauri/src/bin/fake_acp_agent.rs`
+**Status:** Implemented — `src-tauri/src/host/acp/`, `src-tauri/src/host/harness/`, `src-tauri/src/bin/fake_acp_agent.rs`; the host reaches it through the backend boundary in `src-tauri/src/host/backend/` (#299)
 
 ## What it is
 
@@ -80,6 +80,25 @@ host-owned "thin LLM + MCP" runtime. This module is that one runtime.
     come only from the JaBot tool catalog
     (see [tools-mcp-framework.md](tools-mcp-framework.md)), not whatever
     the harness ships configured with.
+
+### Backend boundary (#299)
+
+11. The host drives every session through `SessionBackend`
+    (`src-tauri/src/host/backend/mod.rs`): create / restore / close,
+    prompt / cancel / respond, tenancy, liveness. `HostSession` holds
+    `Box<dyn SessionBackend>` and never names a transport;
+    `backend::select` is the one place a transport is chosen, once per
+    thread at first spawn. The ACP adapter above is the only
+    implementation. See
+    [`docs/decisions/issue-299.md`](../decisions/issue-299.md).
+12. A backend's optional operations are explicit flags on
+    `BackendCapabilities`, learned from its handshake; absent means no. An
+    operation the backend did not advertise is refused, never faked.
+13. Every backend passes the shared contract in
+    `src-tauri/src/host/backend/contract.rs` against a fresh instance of
+    itself. The ACP connection passes it driving a shell-script agent; an
+    in-process fake with no subprocess passes it too, which is what keeps
+    the trait a boundary rather than a description of stdio.
 
 ## Out of scope
 

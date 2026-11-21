@@ -23,7 +23,7 @@
 
 use std::path::Path;
 
-use super::super::acp::Inbound;
+use super::super::backend::{BackendEvent, Restored};
 use super::super::lifecycle::receipt::drift;
 use super::super::protocol::error::RpcError;
 use super::super::protocol::methods::{
@@ -37,15 +37,6 @@ use super::super::HostSession;
 pub struct ResumeReadiness {
     pub resumable: bool,
     pub drift: Vec<String>,
-}
-
-/// How a restore attempt ended, before it is dressed up as a wire result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Restored {
-    Resumed,
-    Loaded,
-    /// The adapter speaks neither verb, or the one it speaks refused.
-    Unsupported(Option<String>),
 }
 
 impl HostSession {
@@ -234,7 +225,7 @@ impl HostSession {
         let conn = self
             .conn_mut(thread_id)
             .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-        let session_id = conn.new_session(thread_id, cwd, mcp_servers, model.as_deref())?;
+        let session_id = conn.create_session(thread_id, cwd, mcp_servers, model.as_deref())?;
         let advertised = conn.take_advertised_models();
         if let Some(harness_id) = harness_id {
             if !advertised.is_empty() {
@@ -257,7 +248,12 @@ impl HostSession {
             })
     }
 
-    /// Spawn (if needed), `initialize`, and hand the session back.
+    /// Spawn (if needed), and ask the backend for the session back.
+    ///
+    /// Which verb restores it — resume, load, or neither — is the backend's
+    /// own knowledge and lives behind `SessionBackend::restore_session`
+    /// (#299). What stays here is what the *host* owes the outcome: a replay
+    /// to settle, and the lifecycle to tell.
     fn restore_session(
         &mut self,
         thread_id: &str,
@@ -273,57 +269,33 @@ impl HostSession {
             runtime: None,
         })?;
         let mcp_servers = self.mcp_servers_for_thread(thread_id);
-        let capabilities = {
+        // A load replays the whole conversation as `session/update`
+        // notifications. We keep our own transcript (#14), so replaying into
+        // a thread that already has one would draw every message twice —
+        // `keep-alive.md` step 4: "replay into renderer **only** if our
+        // overlay transcript is empty". Asked before the restore because the
+        // replay is already in the backend's queue by the time it answers.
+        let replay_wanted = self
+            .store
+            .as_ref()
+            .and_then(|store| store.transcript_head(thread_id).ok())
+            .unwrap_or(0)
+            == 0;
+        let restored = {
             let conn = self
                 .conn_mut(thread_id)
                 .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-            // Capabilities are only knowable after the handshake, and the
-            // handshake failing is the "install hint" case, not a resume case.
-            conn.initialize()?;
-            conn.capabilities()
+            conn.restore_session(thread_id, session_id, cwd, mcp_servers)?
         };
-
-        if capabilities.resume {
-            let conn = self
-                .conn_mut(thread_id)
-                .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-            match conn.resume_session(thread_id, session_id, cwd, mcp_servers.clone()) {
-                Ok(()) => {
-                    self.lifecycle_on_attached(thread_id);
-                    return Ok(Restored::Resumed);
-                }
-                // Advertised and then refused. Fall through to load rather
-                // than give up: the adapter still has the conversation.
-                Err(err) => eprintln!("session/resume for {thread_id} failed: {err}"),
+        match restored {
+            Restored::Resumed => self.lifecycle_on_attached(thread_id),
+            Restored::Loaded => {
+                self.settle_replay(thread_id, replay_wanted);
+                self.lifecycle_on_attached(thread_id);
             }
+            Restored::Unsupported(_) => {}
         }
-
-        if capabilities.load_session {
-            // A load replays the whole conversation as `session/update`
-            // notifications. We keep our own transcript (#14), so replaying
-            // into a thread that already has one would draw every message
-            // twice — `keep-alive.md` step 4: "replay into renderer **only**
-            // if our overlay transcript is empty".
-            let replay_wanted = self
-                .store
-                .as_ref()
-                .and_then(|store| store.transcript_head(thread_id).ok())
-                .unwrap_or(0)
-                == 0;
-            let conn = self
-                .conn_mut(thread_id)
-                .ok_or_else(|| RpcError::Internal(format!("no adapter for thread {thread_id}")))?;
-            match conn.load_session(thread_id, session_id, cwd, mcp_servers) {
-                Ok(()) => {
-                    self.settle_replay(thread_id, replay_wanted);
-                    self.lifecycle_on_attached(thread_id);
-                    return Ok(Restored::Loaded);
-                }
-                Err(err) => return Ok(Restored::Unsupported(Some(err.to_string()))),
-            }
-        }
-
-        Ok(Restored::Unsupported(None))
+        Ok(restored)
     }
 
     /// Deal with what `session/load` pushed at us while it was running.
@@ -343,7 +315,7 @@ impl HostSession {
             while let Ok(event) = conn.try_recv() {
                 let owners = conn.route(&event);
                 let is_my_replay = mine.is_some()
-                    && matches!(event, Inbound::Update(_))
+                    && matches!(event, BackendEvent::Update(_))
                     && owners.iter().any(|owner| owner == thread_id);
                 if is_my_replay && !replay_wanted {
                     continue;

@@ -25,9 +25,9 @@ use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use super::acp::extensions::{self, ExtensionRequest};
+use super::backend::InteractionId;
 use super::permission::{PendingPermission, HOST_DECIDED};
 use super::protocol::error::RpcError;
-use super::protocol::jsonrpc::RequestId;
 use super::protocol::methods::{
     AskKind, InteractionOutcome, InteractionPendingParams, InteractionPendingResult,
     InteractionReplyParams, InteractionReplyResult, InteractionView, QuestionAnswer,
@@ -50,7 +50,7 @@ impl HostSession {
     pub(crate) fn open_extension_request(
         &mut self,
         thread_id: &str,
-        acp_id: RequestId,
+        interaction: InteractionId,
         method: &str,
         params: &Value,
     ) {
@@ -61,7 +61,7 @@ impl HostSession {
                 // error is the same one an unknown method gets, and it is
                 // what lets Cursor fall back to its own permission prompts.
                 eprintln!("{thread_id}: {method} refused: {err}");
-                self.refuse_extension(thread_id, acp_id, method);
+                self.refuse_extension(thread_id, interaction, method);
                 return;
             }
         };
@@ -88,7 +88,7 @@ impl HostSession {
         );
         let pending = PendingPermission {
             thread_id: thread_id.to_string(),
-            acp_id,
+            interaction,
             title: title.clone(),
             kind: None,
             subject: typed.clone(),
@@ -107,12 +107,12 @@ impl HostSession {
         self.lifecycle_on_permission_pending(thread_id, &json!({ "title": title }));
     }
 
-    fn refuse_extension(&self, thread_id: &str, acp_id: RequestId, method: &str) {
+    fn refuse_extension(&self, thread_id: &str, interaction: InteractionId, method: &str) {
         let Some(conn) = self.conn(thread_id) else {
             return;
         };
         if let Err(err) = conn.respond_error(
-            acp_id,
+            interaction,
             METHOD_NOT_FOUND,
             &format!("Method not found: {method}"),
         ) {
@@ -179,7 +179,7 @@ impl HostSession {
         // finds it there, so the agent is told exactly once (#20).
         let live = self.pending_permissions.remove(&request_id);
         let delivered = match live {
-            Some(pending) => self.answer_agent(&thread_id, pending.acp_id, wire),
+            Some(pending) => self.answer_agent(&thread_id, pending.interaction, wire),
             // The asker is gone. Recorded, and said to be undelivered.
             None => false,
         };

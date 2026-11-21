@@ -10,14 +10,18 @@
 //! That makes routing this module's job, and there are two directions. Going
 //! out is easy: every ACP request names its `sessionId`. Coming back is not.
 //! `session/update` and `session/request_permission` carry a `sessionId` and
-//! are routed through [`AcpConnection::route`], but the ACP v1 prompt
+//! are routed through [`SessionBackend::route`], but the ACP v1 prompt
 //! *response* carries only the JSON-RPC request id — so the id `send_prompt`
 //! allocated is recorded against its thread, and that map is the only thing
 //! that can say whose turn just ended on a shared process.
+//!
+//! This is the ACP implementation of the host's [`SessionBackend`] boundary
+//! (#299). The host never names `AcpConnection` outside `spawn`; everything
+//! it asks goes through the trait.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -25,6 +29,9 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
+use super::super::backend::{
+    BackendCapabilities, BackendEvent, BackendKind, InteractionId, Restored, SessionBackend, TurnId,
+};
 use super::super::harness::doctor::advertised_models;
 use super::super::procgroup::GroupedChild;
 use super::super::protocol::error::RpcError;
@@ -47,57 +54,11 @@ const SESSION_RESUME_TIMEOUT: Duration = Duration::from_secs(8);
 /// in a second does not get to hold up the user's Archive.
 const SESSION_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
-/// What the agent said it can do, read once out of the `initialize` result.
-///
-/// Absent means **no**. Every one of these is a capability an adapter has to
-/// opt into (`session-lifecycle/keep-alive.md`), and guessing yes buys a
-/// `session/resume` that comes back `-32601` on a thread the user was told had
-/// been restored.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct AgentCapabilities {
-    /// ACP `agentCapabilities.loadSession` — replay history into the client.
-    pub load_session: bool,
-    /// `sessionCapabilities.resume` — restore context *without* a replay.
-    pub resume: bool,
-    /// `sessionCapabilities.close` — free adapter-side resources. Buzz never
-    /// sent it and leaked process trees; that is the bug this flag exists for.
-    pub close: bool,
-}
-
-#[derive(Debug)]
-pub enum Inbound {
-    Update(Value),
-    Permission {
-        acp_id: RequestId,
-        params: Value,
-    },
-    /// A blocking request from the agent that is not a permission: one of
-    /// the extension methods `extensions::SUPPORTED` names (#298). Carried
-    /// raw, so the host — not the reader thread — decides whether it can be
-    /// drawn, and still holds the request id to refuse it if not.
-    Extension {
-        acp_id: RequestId,
-        method: String,
-        params: Value,
-    },
-    /// The response to a `session/prompt`. `request_id` is carried because it
-    /// is the *only* thing on the wire that identifies the turn: ACP v1 puts
-    /// no `sessionId` on this message, so a shared process cannot tell whose
-    /// turn ended without matching the id back to the thread that sent it.
-    PromptResult {
-        request_id: i64,
-        payload: Value,
-    },
-    Closed {
-        error: Option<String>,
-    },
-}
-
 pub(crate) struct AcpConnection {
     child: GroupedChild,
     stdin: Arc<Mutex<std::process::ChildStdin>>,
     pending: Arc<Mutex<HashMap<i64, Sender<JsonRpcResponse>>>>,
-    inbound_rx: Receiver<Inbound>,
+    inbound_rx: Receiver<BackendEvent>,
     next_id: i64,
     /// thread id → the ACP session it owns on this process.
     sessions: HashMap<String, String>,
@@ -105,11 +66,11 @@ pub(crate) struct AcpConnection {
     by_session: HashMap<String, String>,
     /// `session/prompt` request ids in flight, against the thread that sent
     /// each. See the module docs: the prompt response names no session.
-    prompt_owners: HashMap<i64, String>,
-    pub log_path: PathBuf,
+    prompt_owners: HashMap<TurnId, String>,
+    log_path: PathBuf,
     initialized: bool,
     killed: bool,
-    capabilities: AgentCapabilities,
+    capabilities: BackendCapabilities,
     /// Model ids the last `session/new` advertised, when it did.
     advertised_models: Vec<String>,
 }
@@ -117,6 +78,7 @@ pub(crate) struct AcpConnection {
 impl std::fmt::Debug for AcpConnection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AcpConnection")
+            .field("kind", &self.kind().as_str())
             .field("pid", &self.child.id())
             .field("sessions", &self.sessions)
             .field("log_path", &self.log_path)
@@ -128,8 +90,8 @@ impl std::fmt::Debug for AcpConnection {
 impl AcpConnection {
     pub fn spawn(
         runtime: &HarnessRuntime,
-        cwd: Option<&std::path::Path>,
-        log_path: &std::path::Path,
+        cwd: Option<&Path>,
+        log_path: &Path,
         wake: Arc<AdapterWake>,
     ) -> Result<Self, RpcError> {
         let spawned = spawn_adapter(runtime, cwd, log_path).map_err(|e| match e {
@@ -176,36 +138,12 @@ impl AcpConnection {
             log_path: spawned.log_path,
             initialized: false,
             killed: false,
-            capabilities: AgentCapabilities::default(),
+            capabilities: BackendCapabilities::default(),
             advertised_models: Vec::new(),
         })
     }
 
-    pub fn try_recv(&mut self) -> Result<Inbound, TryRecvError> {
-        self.inbound_rx.try_recv()
-    }
-
-    pub fn capabilities(&self) -> AgentCapabilities {
-        self.capabilities
-    }
-
-    pub fn pid(&self) -> u32 {
-        self.child.id()
-    }
-
-    /// Is the adapter process still running?
-    ///
-    /// The supervisor cannot ask the reader thread: EOF on stdout is what
-    /// tells it a child is gone, and a child that forked something holding the
-    /// same stdout leaves that pipe open after it exits. So the read loop
-    /// blocks on a pipe nobody will ever write to while the adapter itself is
-    /// a corpse — which is a session JaBot would keep reporting as live
-    /// forever. Reaping the pid is the only answer that cannot lie.
-    pub fn is_alive(&mut self) -> bool {
-        !matches!(self.child.try_wait(), Ok(Some(_)) | Err(_))
-    }
-
-    pub fn initialize(&mut self) -> Result<Value, RpcError> {
+    fn initialize(&mut self) -> Result<Value, RpcError> {
         if self.initialized {
             return Ok(json!({ "protocolVersion": 1 }));
         }
@@ -258,44 +196,8 @@ impl AcpConnection {
         Ok(())
     }
 
-    pub fn new_session(
-        &mut self,
-        thread_id: &str,
-        cwd: &str,
-        mcp_servers: Value,
-        model: Option<&str>,
-    ) -> Result<String, RpcError> {
-        self.initialize()?;
-        let mut params = json!({
-            "cwd": cwd,
-            "mcpServers": mcp_servers
-        });
-        if let Some(model) = model {
-            params["model"] = json!(model);
-            // Some Claude adapter builds read the pin from `_meta` rather than
-            // the ACP `model` field. Both go out; neither invents an id.
-            params["_meta"] = json!({ "claudeCode": { "options": { "model": model } } });
-        }
-        let result = self.request("session/new", params, SESSION_NEW_TIMEOUT)?;
-        let session_id = result
-            .get("sessionId")
-            .and_then(Value::as_str)
-            .ok_or_else(|| RpcError::Internal("session/new did not return sessionId".into()))?
-            .to_string();
-        self.adopt(thread_id, &session_id);
-        if let Some(models) = advertised_models(&result) {
-            self.advertised_models = models;
-        }
-        if let Some(model) = model {
-            // Claude: `session/set_model`. OpenCode: `session/set_config`.
-            // Older builds answer method-not-found and keep the spawn pin.
-            let _ = self.apply_model(&session_id, model);
-        }
-        Ok(session_id)
-    }
-
     /// Best-effort live model switch. Tries the documented ACP verbs in order.
-    pub fn apply_model(&mut self, session_id: &str, model_id: &str) -> Result<(), RpcError> {
+    fn apply_model_verbs(&mut self, session_id: &str, model_id: &str) -> Result<(), RpcError> {
         let attempts = [
             (
                 "session/set_model",
@@ -329,10 +231,6 @@ impl AcpConnection {
             .unwrap_or_else(|| RpcError::Internal("no model apply method succeeded".into())))
     }
 
-    pub fn take_advertised_models(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.advertised_models)
-    }
-
     /// ACP `session/resume`: hand the agent back a session it already has.
     ///
     /// Restores context **without** replaying history, which is what makes it
@@ -341,7 +239,7 @@ impl AcpConnection {
     /// continuation of one job, and a session that comes back pointed at a
     /// different directory or holding different tools is a different job
     /// (`keep-alive.md`, "Resume recipe").
-    pub fn resume_session(
+    fn resume_session(
         &mut self,
         thread_id: &str,
         session_id: &str,
@@ -368,7 +266,7 @@ impl AcpConnection {
     /// returns, so the caller decides what happens to them — a thread with no
     /// transcript of its own wants them, and a thread that has one would get
     /// every message twice (`keep-alive.md` step 4).
-    pub fn load_session(
+    fn load_session(
         &mut self,
         thread_id: &str,
         session_id: &str,
@@ -389,83 +287,6 @@ impl AcpConnection {
         Ok(())
     }
 
-    // ---- tenancy ---------------------------------------------------------
-
-    /// Record that `thread_id` owns `session_id` on this process.
-    ///
-    /// Both directions, because both are asked: the outbound path needs a
-    /// session for a thread, and every inbound event needs a thread for a
-    /// session. A thread that re-attaches (resume after a drop, or a load that
-    /// followed a refused resume) replaces its old entry rather than adding
-    /// one, so the reverse map cannot accumulate a stale session pointing at a
-    /// thread that has moved on.
-    pub(crate) fn adopt(&mut self, thread_id: &str, session_id: &str) {
-        if let Some(previous) = self
-            .sessions
-            .insert(thread_id.to_string(), session_id.to_string())
-        {
-            if previous != session_id {
-                self.by_session.remove(&previous);
-            }
-        }
-        self.by_session
-            .insert(session_id.to_string(), thread_id.to_string());
-    }
-
-    /// The ACP session this thread owns here, if it has one yet.
-    pub fn session_for(&self, thread_id: &str) -> Option<String> {
-        self.sessions.get(thread_id).cloned()
-    }
-
-    /// Every thread riding this process. The supervisor asks so it can fan a
-    /// death over all of them, and so it knows when the last tenant has left.
-    pub fn tenants(&self) -> Vec<String> {
-        self.sessions.keys().cloned().collect()
-    }
-
-    /// Forget a thread, returning the session it held so the caller can close
-    /// it. Its outstanding prompt goes too: a response that arrives for a
-    /// thread that has left must not be handed to whoever is still here.
-    pub fn release(&mut self, thread_id: &str) -> Option<String> {
-        self.prompt_owners
-            .retain(|_, owner| owner.as_str() != thread_id);
-        let session_id = self.sessions.remove(thread_id)?;
-        self.by_session.remove(&session_id);
-        Some(session_id)
-    }
-
-    /// Whether anything is still riding this process.
-    ///
-    /// A connection with no tenants is not necessarily new — `ensure_connection`
-    /// spawns before `session/new` runs — so this is asked only where a thread
-    /// was just released.
-    pub fn is_vacant(&self) -> bool {
-        self.sessions.is_empty()
-    }
-
-    /// Who an inbound event belongs to.
-    ///
-    /// `Closed` is everybody's: the process is gone and every thread on it has
-    /// lost its adapter. The rest name one thread, or none — and none means
-    /// *drop it*, not "give it to whoever". Misattributing a neighbour's tool
-    /// call to this chat would write it into the wrong transcript permanently,
-    /// which is worse than losing an event that already has nowhere to go.
-    pub fn route(&mut self, event: &Inbound) -> Vec<String> {
-        match event {
-            Inbound::Closed { .. } => self.tenants(),
-            Inbound::PromptResult { request_id, .. } => {
-                self.prompt_owners.remove(request_id).into_iter().collect()
-            }
-            Inbound::Update(params) => self.owner_of_session(params),
-            Inbound::Permission { params, .. } => self.owner_of_session(params),
-            // Cursor's extensions carry no `sessionId`, which is fine on the
-            // one-session-per-process it is catalogued as; on a shared process
-            // this is unroutable, and the pump answers it rather than hanging
-            // the turn.
-            Inbound::Extension { params, .. } => self.owner_of_session(params),
-        }
-    }
-
     /// The thread a `sessionId`-bearing payload belongs to.
     ///
     /// One tenant is the overwhelmingly common case and an adapter that omits
@@ -483,81 +304,6 @@ impl AcpConnection {
             None if self.sessions.len() == 1 => self.tenants(),
             None => Vec::new(),
         }
-    }
-
-    /// ACP `session/close`. Frees the agent's own resources before we drop the
-    /// process; skipped, not faked, when the adapter never advertised it.
-    pub fn close_session(&mut self, session_id: &str) -> Result<(), RpcError> {
-        if !self.capabilities.close {
-            return Ok(());
-        }
-        self.request(
-            "session/close",
-            json!({ "sessionId": session_id }),
-            SESSION_CLOSE_TIMEOUT,
-        )?;
-        Ok(())
-    }
-
-    /// Fire `session/prompt` without waiting for the turn to finish. Completion
-    /// arrives later as a `PromptResult` inbound event (ACP v1 returns a stop
-    /// reason; the host API returns as soon as the agent has accepted the write).
-    pub fn send_prompt(
-        &mut self,
-        thread_id: &str,
-        session_id: &str,
-        content: &Value,
-    ) -> Result<(), RpcError> {
-        let prompt = prompt_blocks(content)?;
-        let id = self.next_id();
-        // Before the write, not after: the response can be read by the reader
-        // thread and queued the instant the bytes land, and an owner recorded
-        // afterwards would be a race a shared process loses by misrouting a
-        // turn to a neighbour chat.
-        self.prompt_owners.insert(id, thread_id.to_string());
-        let sent = self.write_request(
-            id,
-            "session/prompt",
-            json!({
-                "sessionId": session_id,
-                "prompt": prompt
-            }),
-        );
-        if sent.is_err() {
-            self.prompt_owners.remove(&id);
-        }
-        sent
-    }
-
-    /// ACP v1 `session/cancel` is a notification.
-    pub fn cancel(&mut self, session_id: &str) -> Result<(), RpcError> {
-        self.write_notification("session/cancel", json!({ "sessionId": session_id }))
-    }
-
-    pub fn respond(&self, id: RequestId, result: Value) -> Result<(), RpcError> {
-        let response = JsonRpcResponse::success(id, result);
-        self.write_message(&JsonRpcMessage::Response(response))
-    }
-
-    /// Refuse a request the agent made. `-32601` is what a request nobody
-    /// implements gets, and the one answer that lets Cursor fall back to
-    /// what it can do without us (#298).
-    pub fn respond_error(&self, id: RequestId, code: i64, message: &str) -> Result<(), RpcError> {
-        let error = JsonRpcError {
-            code,
-            message: message.to_string(),
-            data: None,
-        };
-        let response = JsonRpcResponse::failure(id, error);
-        self.write_message(&JsonRpcMessage::Response(response))
-    }
-
-    pub fn kill(&mut self) {
-        if self.killed {
-            return;
-        }
-        self.killed = true;
-        terminate_process_group(&mut self.child);
     }
 
     fn request(
@@ -639,6 +385,266 @@ impl AcpConnection {
     }
 }
 
+impl SessionBackend for AcpConnection {
+    fn kind(&self) -> BackendKind {
+        BackendKind::Acp
+    }
+
+    fn handshake(&mut self) -> Result<Value, RpcError> {
+        self.initialize()
+    }
+
+    fn capabilities(&self) -> BackendCapabilities {
+        self.capabilities
+    }
+
+    fn create_session(
+        &mut self,
+        thread_id: &str,
+        cwd: &str,
+        mcp_servers: Value,
+        model: Option<&str>,
+    ) -> Result<String, RpcError> {
+        self.initialize()?;
+        let mut params = json!({
+            "cwd": cwd,
+            "mcpServers": mcp_servers
+        });
+        if let Some(model) = model {
+            params["model"] = json!(model);
+            // Some Claude adapter builds read the pin from `_meta` rather than
+            // the ACP `model` field. Both go out; neither invents an id.
+            params["_meta"] = json!({ "claudeCode": { "options": { "model": model } } });
+        }
+        let result = self.request("session/new", params, SESSION_NEW_TIMEOUT)?;
+        let session_id = result
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .ok_or_else(|| RpcError::Internal("session/new did not return sessionId".into()))?
+            .to_string();
+        self.adopt(thread_id, &session_id);
+        if let Some(models) = advertised_models(&result) {
+            self.advertised_models = models;
+        }
+        if let Some(model) = model {
+            // Claude: `session/set_model`. OpenCode: `session/set_config`.
+            // Older builds answer method-not-found and keep the spawn pin.
+            let _ = self.apply_model_verbs(&session_id, model);
+        }
+        Ok(session_id)
+    }
+
+    fn apply_model(&mut self, session_id: &str, model_id: &str) -> Result<(), RpcError> {
+        self.apply_model_verbs(session_id, model_id)
+    }
+
+    fn take_advertised_models(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.advertised_models)
+    }
+
+    /// Resume first, then load, then — only then — tell the caller neither
+    /// worked. The order is the research's own (`keep-alive.md`): resume
+    /// restores context without a replay, which is right for a thread whose
+    /// transcript the host already holds; load is the fallback for an adapter
+    /// that only speaks that. A verb that was advertised and then refused
+    /// falls through rather than giving up, because the adapter still has the
+    /// conversation.
+    fn restore_session(
+        &mut self,
+        thread_id: &str,
+        session_id: &str,
+        cwd: &str,
+        mcp_servers: Value,
+    ) -> Result<Restored, RpcError> {
+        // Capabilities are only knowable after the handshake, and the
+        // handshake failing is the "install hint" case, not a resume case.
+        self.initialize()?;
+        let capabilities = self.capabilities;
+        if capabilities.resume {
+            match self.resume_session(thread_id, session_id, cwd, mcp_servers.clone()) {
+                Ok(()) => return Ok(Restored::Resumed),
+                Err(err) => eprintln!("session/resume for {thread_id} failed: {err}"),
+            }
+        }
+        if capabilities.load {
+            return match self.load_session(thread_id, session_id, cwd, mcp_servers) {
+                Ok(()) => Ok(Restored::Loaded),
+                Err(err) => Ok(Restored::Unsupported(Some(err.to_string()))),
+            };
+        }
+        Ok(Restored::Unsupported(None))
+    }
+
+    /// ACP `session/close`. Frees the agent's own resources before we drop the
+    /// process; skipped, not faked, when the adapter never advertised it.
+    fn close_session(&mut self, session_id: &str) -> Result<(), RpcError> {
+        if !self.capabilities.close {
+            return Ok(());
+        }
+        self.request(
+            "session/close",
+            json!({ "sessionId": session_id }),
+            SESSION_CLOSE_TIMEOUT,
+        )?;
+        Ok(())
+    }
+
+    /// Fire `session/prompt` without waiting for the turn to finish. Completion
+    /// arrives later as a `TurnEnded` event (ACP v1 returns a stop reason; the
+    /// host API returns as soon as the agent has accepted the write).
+    fn send_prompt(
+        &mut self,
+        thread_id: &str,
+        session_id: &str,
+        content: &Value,
+    ) -> Result<TurnId, RpcError> {
+        let prompt = prompt_blocks(content)?;
+        let id = self.next_id();
+        let turn = TurnId(RequestId::Number(id));
+        // Before the write, not after: the response can be read by the reader
+        // thread and queued the instant the bytes land, and an owner recorded
+        // afterwards would be a race a shared process loses by misrouting a
+        // turn to a neighbour chat.
+        self.prompt_owners
+            .insert(turn.clone(), thread_id.to_string());
+        let sent = self.write_request(
+            id,
+            "session/prompt",
+            json!({
+                "sessionId": session_id,
+                "prompt": prompt
+            }),
+        );
+        if let Err(err) = sent {
+            self.prompt_owners.remove(&turn);
+            return Err(err);
+        }
+        Ok(turn)
+    }
+
+    /// ACP v1 `session/cancel` is a notification.
+    fn cancel(&mut self, session_id: &str) -> Result<(), RpcError> {
+        self.write_notification("session/cancel", json!({ "sessionId": session_id }))
+    }
+
+    fn respond(&self, id: InteractionId, result: Value) -> Result<(), RpcError> {
+        let response = JsonRpcResponse::success(id.0, result);
+        self.write_message(&JsonRpcMessage::Response(response))
+    }
+
+    /// Refuse a request the agent made. `-32601` is what a request nobody
+    /// implements gets, and the one answer that lets Cursor fall back to
+    /// what it can do without us (#298).
+    fn respond_error(&self, id: InteractionId, code: i64, message: &str) -> Result<(), RpcError> {
+        let error = JsonRpcError {
+            code,
+            message: message.to_string(),
+            data: None,
+        };
+        let response = JsonRpcResponse::failure(id.0, error);
+        self.write_message(&JsonRpcMessage::Response(response))
+    }
+
+    // ---- tenancy ---------------------------------------------------------
+
+    /// Both directions, because both are asked: the outbound path needs a
+    /// session for a thread, and every inbound event needs a thread for a
+    /// session. A thread that re-attaches (resume after a drop, or a load that
+    /// followed a refused resume) replaces its old entry rather than adding
+    /// one, so the reverse map cannot accumulate a stale session pointing at a
+    /// thread that has moved on.
+    fn adopt(&mut self, thread_id: &str, session_id: &str) {
+        if let Some(previous) = self
+            .sessions
+            .insert(thread_id.to_string(), session_id.to_string())
+        {
+            if previous != session_id {
+                self.by_session.remove(&previous);
+            }
+        }
+        self.by_session
+            .insert(session_id.to_string(), thread_id.to_string());
+    }
+
+    fn session_for(&self, thread_id: &str) -> Option<String> {
+        self.sessions.get(thread_id).cloned()
+    }
+
+    fn tenants(&self) -> Vec<String> {
+        self.sessions.keys().cloned().collect()
+    }
+
+    /// Its outstanding prompt goes too: a response that arrives for a thread
+    /// that has left must not be handed to whoever is still here.
+    fn release(&mut self, thread_id: &str) -> Option<String> {
+        self.prompt_owners
+            .retain(|_, owner| owner.as_str() != thread_id);
+        let session_id = self.sessions.remove(thread_id)?;
+        self.by_session.remove(&session_id);
+        Some(session_id)
+    }
+
+    /// A connection with no tenants is not necessarily new — `ensure_connection`
+    /// spawns before `session/new` runs — so this is asked only where a thread
+    /// was just released.
+    fn is_vacant(&self) -> bool {
+        self.sessions.is_empty()
+    }
+
+    /// `Closed` is everybody's: the process is gone and every thread on it has
+    /// lost its adapter. The rest name one thread, or none — and none means
+    /// *drop it*, not "give it to whoever". Misattributing a neighbour's tool
+    /// call to this chat would write it into the wrong transcript permanently,
+    /// which is worse than losing an event that already has nowhere to go.
+    fn route(&mut self, event: &BackendEvent) -> Vec<String> {
+        match event {
+            BackendEvent::Closed { .. } => self.tenants(),
+            BackendEvent::TurnEnded { turn, .. } => {
+                self.prompt_owners.remove(turn).into_iter().collect()
+            }
+            BackendEvent::Update(params) => self.owner_of_session(params),
+            BackendEvent::Interaction { params, .. } => self.owner_of_session(params),
+            // Cursor's extensions carry no `sessionId`, which is fine on the
+            // one-session-per-process it is catalogued as; on a shared process
+            // this is unroutable, and the pump answers it rather than hanging
+            // the turn.
+            BackendEvent::Extension { params, .. } => self.owner_of_session(params),
+        }
+    }
+
+    // ---- liveness --------------------------------------------------------
+
+    fn try_recv(&mut self) -> Result<BackendEvent, TryRecvError> {
+        self.inbound_rx.try_recv()
+    }
+
+    /// The supervisor cannot ask the reader thread: EOF on stdout is what
+    /// tells it a child is gone, and a child that forked something holding the
+    /// same stdout leaves that pipe open after it exits. So the read loop
+    /// blocks on a pipe nobody will ever write to while the adapter itself is
+    /// a corpse — which is a session JaBot would keep reporting as live
+    /// forever. Reaping the pid is the only answer that cannot lie.
+    fn is_alive(&mut self) -> bool {
+        !matches!(self.child.try_wait(), Ok(Some(_)) | Err(_))
+    }
+
+    fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    fn log_path(&self) -> &Path {
+        &self.log_path
+    }
+
+    fn kill(&mut self) {
+        if self.killed {
+            return;
+        }
+        self.killed = true;
+        terminate_process_group(&mut self.child);
+    }
+}
+
 impl Drop for AcpConnection {
     fn drop(&mut self) {
         self.kill();
@@ -651,7 +657,7 @@ impl Drop for AcpConnection {
 /// wild: ACP nests it under `agentCapabilities`, and adapters written against
 /// the v2 session surface put it at the top level. Reading only one of them
 /// would silently downgrade half the adapters to "cannot resume".
-fn parse_capabilities(result: &Value) -> AgentCapabilities {
+fn parse_capabilities(result: &Value) -> BackendCapabilities {
     let agent = result.get("agentCapabilities");
     let session = agent
         .and_then(|caps| caps.get("sessionCapabilities"))
@@ -662,8 +668,8 @@ fn parse_capabilities(result: &Value) -> AgentCapabilities {
             .and_then(Value::as_bool)
             .unwrap_or(false)
     };
-    AgentCapabilities {
-        load_session: flag(agent, "loadSession"),
+    BackendCapabilities {
+        load: flag(agent, "loadSession"),
         resume: flag(session, "resume"),
         close: flag(session, "close"),
     }
@@ -692,7 +698,7 @@ fn read_loop(
     stdout: std::process::ChildStdout,
     stdin: Arc<Mutex<std::process::ChildStdin>>,
     pending: Arc<Mutex<HashMap<i64, Sender<JsonRpcResponse>>>>,
-    inbound: Sender<Inbound>,
+    inbound: Sender<BackendEvent>,
     wake: Arc<AdapterWake>,
 ) {
     let mut reader = BufReader::new(stdout);
@@ -701,7 +707,7 @@ fn read_loop(
         line.clear();
         match reader.read_line(&mut line) {
             Ok(0) => {
-                let _ = inbound.send(Inbound::Closed {
+                let _ = inbound.send(BackendEvent::Closed {
                     error: Some("adapter stdout closed".into()),
                 });
                 wake.ping();
@@ -722,7 +728,7 @@ fn read_loop(
                 }
             }
             Err(err) => {
-                let _ = inbound.send(Inbound::Closed {
+                let _ = inbound.send(BackendEvent::Closed {
                     error: Some(format!("adapter stdout: {err}")),
                 });
                 wake.ping();
@@ -767,7 +773,7 @@ fn dispatch_message(
     message: JsonRpcMessage,
     stdin: &Arc<Mutex<std::process::ChildStdin>>,
     pending: &Arc<Mutex<HashMap<i64, Sender<JsonRpcResponse>>>>,
-    inbound: &Sender<Inbound>,
+    inbound: &Sender<BackendEvent>,
     wake: &AdapterWake,
 ) {
     match message {
@@ -789,8 +795,8 @@ fn dispatch_message(
                         "error": response.error.as_ref().map(|e| e.message.clone())
                     })
                 });
-                let _ = inbound.send(Inbound::PromptResult {
-                    request_id: id,
+                let _ = inbound.send(BackendEvent::TurnEnded {
+                    turn: TurnId(RequestId::Number(id)),
                     payload,
                 });
                 wake.ping();
@@ -799,22 +805,22 @@ fn dispatch_message(
         JsonRpcMessage::Notification(notification) => {
             if notification.method == "session/update" {
                 let params = flatten_session_update(notification.params.unwrap_or(Value::Null));
-                let _ = inbound.send(Inbound::Update(params));
+                let _ = inbound.send(BackendEvent::Update(params));
                 wake.ping();
             }
         }
         JsonRpcMessage::Request(request) => {
             if request.method == "session/request_permission" {
-                let _ = inbound.send(Inbound::Permission {
-                    acp_id: request.id,
+                let _ = inbound.send(BackendEvent::Interaction {
+                    id: InteractionId(request.id),
                     params: request.params.unwrap_or(Value::Null),
                 });
                 wake.ping();
             } else if super::extensions::is_supported(&request.method) {
                 // A blocking extension the host renders (#298). Raw here: the
                 // host reads it, and refuses it with `-32601` if it cannot.
-                let _ = inbound.send(Inbound::Extension {
-                    acp_id: request.id,
+                let _ = inbound.send(BackendEvent::Extension {
+                    id: InteractionId(request.id),
                     method: request.method,
                     params: request.params.unwrap_or(Value::Null),
                 });
@@ -893,8 +899,8 @@ mod tests {
         }));
         assert_eq!(
             nested,
-            AgentCapabilities {
-                load_session: true,
+            BackendCapabilities {
+                load: true,
                 resume: true,
                 close: false
             }
@@ -906,7 +912,7 @@ mod tests {
             "sessionCapabilities": { "resume": true, "close": true }
         }));
         assert!(hoisted.resume && hoisted.close);
-        assert!(!hoisted.load_session);
+        assert!(!hoisted.load);
     }
 
     #[test]
@@ -914,14 +920,14 @@ mod tests {
         // The failure this rules out is a `session/resume` that comes back
         // "method not found" on a thread the user was told had been restored.
         let silent = parse_capabilities(&json!({ "protocolVersion": 1 }));
-        assert_eq!(silent, AgentCapabilities::default());
+        assert_eq!(silent, BackendCapabilities::default());
         let junk = parse_capabilities(&json!("not even an object"));
-        assert_eq!(junk, AgentCapabilities::default());
+        assert_eq!(junk, BackendCapabilities::default());
         // A non-boolean is not a yes either.
         let lying = parse_capabilities(&json!({
             "agentCapabilities": { "loadSession": "yes" }
         }));
-        assert!(!lying.load_session);
+        assert!(!lying.load);
     }
 
     /// The reader thread's split of an agent's requests (#298): permissions
