@@ -52,9 +52,25 @@ export const SCREENSHOT_STYLE = `
     animation-delay: 0s !important;
     transition-duration: 0s !important;
   }
-  /* Relative next-run copy changes width ("in 9 hours" vs "in 10 hours").
-     The magenta mask is the locator's box, so a shorter string shrinks the
-     overlay and fails maxDiffPixels: 0. Pin the slot for screenshots only. */
+  /* Relative clocks ("in 9 hours", "2 days ago") change with the wall clock.
+     Paint them as solid magenta blocks here rather than with Playwright's
+     \`mask\` option: the app zooms <html> by --ui-scale, and Playwright
+     places mask boxes in unzoomed coordinates, so they landed beside the
+     text and left it visible (#311). Both slots also get a fixed width, so
+     "in 9 hours" vs "in 10 hours" or "now" vs "2m" does not resize the
+     block. */
+  .when,
+  .sched-next {
+    color: transparent !important;
+    background: #ff00ff !important;
+  }
+  .when {
+    display: inline-block;
+    width: 10ch;
+    overflow: hidden;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
   .sched-next {
     display: inline-block;
     width: 24ch;

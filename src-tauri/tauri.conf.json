@@ -48,7 +48,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "REPLACE_ME__run__npm_run_tauri_signer_generate__see_docs_packaging.md",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU5M0VDMzkzNDYyNzYyQTAKUldTZ1lpZEdrOE0rV1hOdkhkRVRUVFNhVFVuMEtKd2tuNTg2SENFc2dvVy9yeE1CVHdzOWtVVTkK",
       "endpoints": [
         "https://github.com/jabreeflor/jabot/releases/latest/download/latest.json"
       ]

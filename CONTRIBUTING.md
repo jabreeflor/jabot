@@ -84,7 +84,10 @@ Only `verify.sh` is the gate. The others are conveniences around it.
 
 ## Running it live, on any machine
 
-`npm run tauri dev` opens the native window (macOS is the shipping shell;
+`npm run local` opens the native window as **JaBot Local**
+(`com.jabot.app.local`), which keeps its own app data apart from the installed,
+self-updating JaBot — see
+[docs/packaging.md](docs/packaging.md#local-and-dev) (macOS is the shipping shell;
 Windows prerequisites and the current gaps vs macOS are
 [docs/windows.md](docs/windows.md)). Everything else about the product does not
 need that window:

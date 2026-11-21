@@ -5,8 +5,12 @@ Runbook for [#12](https://github.com/jabreeflor/jabot/issues/12) (macOS) and
 What ships, what secrets it needs, how to cut a release, and how to prove
 the macOS result is actually notarized rather than merely built.
 
-**macOS channel:** direct download of a signed and notarized universal `.dmg`.
-Not the Mac App Store — the store requires App Sandbox, and a sandboxed app
+**macOS channel:** a universal `.app`, installed once with `install.sh` and
+updated in place by the app itself. **Every push to `main` is a release**
+([below](#releases-every-push-to-main)). Today those builds are **ad-hoc
+signed, not notarized** — there is no Apple Developer ID in the pipeline;
+[Ad-hoc signing](#ad-hoc-signing-no-apple-developer-id) says what that costs
+and how to switch. Not the Mac App Store — the store requires App Sandbox, and a sandboxed app
 cannot exec a harness from the user's PATH or supervise its process group.
 The reasoning is in
 [app-shell/process-architecture](research/app-shell/process-architecture.md#packaging).
@@ -20,6 +24,10 @@ not a packaging bug. See [Windows](#windows-nsis-installer) below.
 |---|---|
 | Release pipeline | [`.github/workflows/release.yml`](../.github/workflows/release.yml) (`macos` + `windows` jobs) |
 | Bundle + updater config | [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json) |
+| Release version math | [`scripts/release-version.mjs`](../scripts/release-version.mjs) |
+| Pre-publish feed check | [`scripts/release-verify-feed.mjs`](../scripts/release-verify-feed.mjs) |
+| In-app update check + banner | [`src-tauri/src/updates.rs`](../src-tauri/src/updates.rs), [`src/components/UpdateBanner.tsx`](../src/components/UpdateBanner.tsx) |
+| JaBot Local identity | [`src-tauri/tauri.local.conf.json`](../src-tauri/tauri.local.conf.json), [`scripts/local-install.sh`](../scripts/local-install.sh) |
 | Windows bundle overlay | [`src-tauri/tauri.windows.conf.json`](../src-tauri/tauri.windows.conf.json) (NSIS only; merged on Windows) |
 | Entitlements (and the audit) | [`src-tauri/entitlements.plist`](../src-tauri/entitlements.plist) |
 | Update feed | `https://github.com/jabreeflor/jabot/releases/latest/download/latest.json` (macOS only) |
@@ -31,9 +39,99 @@ not a packaging bug. See [Windows](#windows-nsis-installer) below.
 
 ---
 
+## Releases: every push to main
+
+There is no release step to remember. Merging to `main` runs
+[`release.yml`](../.github/workflows/release.yml):
+
+1. **version** — `scripts/release-version.mjs next` picks the next number: one
+   patch above the highest `vX.Y.Z` tag, or `tauri.conf.json`'s `version` if
+   that is higher. It tags the commit straight away so two runs can never
+   ship the same number. Nothing is committed back to `main`.
+2. **macos** — stamps the version into its checkout, builds the universal app
+   ad-hoc signed, signs the updater archive with `TAURI_SIGNING_PRIVATE_KEY`,
+   and uploads the `.dmg`, `.app.tar.gz` + `.sig`, `latest.json` and
+   `install.sh` to a **draft**.
+3. **windows** — the unsigned NSIS `setup.exe`, onto the same release. It
+   does not gate publishing.
+4. **publish** — on a fresh runner with no keys, downloads the draft's
+   `latest.json` and archive, checks the version and both `darwin-*` entries,
+   and verifies the signature against the `pubkey` compiled into the app
+   (`scripts/release-verify-feed.mjs`). Only then does it publish.
+
+Docs-only pushes (`docs/`, `*.md`, agent/plugin config) are skipped. Runs are
+queued, never cancelled mid-build; if several pushes land while one is
+building, the newest waiting one ships and includes all of them. Publishing
+from anything but `main` is refused, including `workflow_dispatch`.
+
+**Bumping minor or major.** Raise `version` in `tauri.conf.json` and
+`package.json` (they must agree — `verify.sh` checks) to e.g. `0.2.0` in a PR.
+The next push ships exactly `0.2.0`, then `0.2.1`, ...
+
+**What installed copies do.** Ten seconds after launch and every four hours,
+the Dev app (`com.jabot.app`) asks the feed. A newer version is downloaded and
+verified in memory, then a banner offers **Restart**; quitting instead
+installs it on the way out. **JaBot → Check for Updates…** asks right away.
+See [`updates.rs`](../src-tauri/src/updates.rs).
+
+**A bad release.** The updater only moves forward, so the fix is another
+push: revert on `main` and the revert ships as the next patch. To stop a
+broken build reaching anyone first, delete the release (and its tag) before
+installs pick it up — `releases/latest` falls back to the previous one.
+
+**A failed run.** Re-run the failed jobs from the Actions page; the version
+and tag from the first attempt are reused, and tauri-action uploads onto the
+existing draft. Or just push again: the failed version's tag stays, its draft
+is never published, and the next push takes the next patch.
+
+### Local and Dev
+
+| | **JaBot** ("Dev") | **JaBot Local** |
+|---|---|---|
+| Comes from | the latest release on `main` | your checkout |
+| Install / run | `install.sh` once, then it updates itself | `npm run local` (dev loop) or `npm run local:install` (an app in `~/Applications`) |
+| Bundle id | `com.jabot.app` | `com.jabot.app.local` |
+| App data | `~/Library/Application Support/com.jabot.app` | `~/Library/Application Support/com.jabot.app.local` |
+| Harness credentials | Keychain service `com.jabot.app` | the same — sign in once, both see it |
+| Self-update | yes | never |
+
+Local is `tauri.conf.json` with
+[`tauri.local.conf.json`](../src-tauri/tauri.local.conf.json) merged over it
+(name and identifier only), so the two run side by side. A plain
+`npm run tauri dev` still runs as `com.jabot.app` and shares Dev's data; use
+`npm run local`.
+
+### Ad-hoc signing (no Apple Developer ID)
+
+The macOS job passes `bundle.macOS.signingIdentity: "-"` and no `APPLE_*`
+secrets, so the bundler ad-hoc signs the `.app` and skips notarization. What
+that means in practice:
+
+- **Installing.** A browser-downloaded `.dmg` is quarantined, and Gatekeeper
+  refuses an unnotarized app from it. `install.sh` downloads with `curl`,
+  which sets no quarantine flag, so use
+  `curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash -s -- --allow-unnotarized`.
+  The flag relaxes exactly one check (notarization); the seal and the bundle
+  identifier are still verified.
+- **Updating.** Unaffected. The updater checks every archive against the
+  minisign `pubkey` compiled into the app, which is a stronger statement
+  about *who built this* than an ad-hoc signature, and the archive it unpacks
+  is never quarantined.
+- **Keychain.** macOS ties "Always Allow" on a Keychain item to the app's
+  code signature, and an ad-hoc signature changes with every build. Expect
+  macOS to ask again for JaBot's harness credentials after an update.
+- **Switching to Developer ID later.** Add the six `APPLE_*` secrets below,
+  put them back in the macOS job's `env`, drop `signingIdentity` from its
+  `--config`, and pin `TEAM_ID_PIN` in `install.sh` after the first signed
+  release. The `--allow-unnotarized` flag can then leave the release notes.
+
+---
+
 ## Secrets
 
-All eight are repository secrets (**Settings → Secrets and variables →
+Only the two `TAURI_SIGNING_*` secrets are used today; the six `APPLE_*` ones
+are for when releases move to Developer ID
+([above](#ad-hoc-signing-no-apple-developer-id)). All are repository secrets (**Settings → Secrets and variables →
 Actions**). Nothing in this repo contains a key, a certificate, a password, or
 a team ID, and nothing should.
 
@@ -88,10 +186,11 @@ That writes two single-line base64 files. Neither needs further encoding.
 | `~/.tauri/jabot.key` | secret `TAURI_SIGNING_PRIVATE_KEY` |
 | `~/.tauri/jabot.key.pub` | `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`, committed |
 
-`tauri.conf.json` currently holds `REPLACE_ME__run__npm_run_tauri_signer_generate__see_docs_packaging.md`
-rather than a fabricated key. The release workflow's preflight step fails fast
-on that placeholder, so the first real release cannot ship an unverifiable
-feed by accident.
+The committed `pubkey` is `~/.tauri/jabot.key.pub` (key id
+`593EC393462762A0`). The release workflow's preflight still fails fast if it
+is ever reset to a `REPLACE_ME` placeholder, and the publish job refuses a
+feed signed by any other key — which is what catches a
+`TAURI_SIGNING_PRIVATE_KEY` secret that is not this key's pair.
 
 **Back this key up somewhere that is not a laptop.** Losing it does not break
 new installs — it breaks *updates for every existing install*, permanently.
@@ -174,46 +273,13 @@ headless macOS bundle job, or a Playwright WebKit run, as that step.
 
 ## Cutting a release
 
-1. Bump `version` in `src-tauri/tauri.conf.json`. The workflow refuses to build
-   if it disagrees with the tag, because a mismatch silently produces a
-   `latest.json` no installed copy will ever accept.
-2. Merge to `main`.
-3. Tag and push:
-
-   ```sh
-   git tag v0.2.0 && git push origin v0.2.0
-   ```
-
-4. The `Release` workflow runs two sibling jobs against the same draft:
-   - **macos** builds `universal-apple-darwin`, signs with hardened runtime
-     and `entitlements.plist`, notarizes through `notarytool`, staples the
-     ticket, and uploads the `.dmg`, the `.app.tar.gz` + `.sig`,
-     `latest.json`, and `install.sh`.
-   - **windows** builds `x86_64-pc-windows-msvc` with `--bundles nsis` and
-     uploads `JaBot_*_x64-setup.exe`. It sets `uploadUpdaterJson: false`,
-     does **not** merge `createUpdaterArtifacts`, and does not see
-     `TAURI_SIGNING_*` or `APPLE_*`, so it cannot rewrite the macOS feed.
-     Both jobs carry the same `releaseBody`: pinned tauri-action will not
-     update name/body on an existing draft, so whoever creates the draft
-     writes the full notes (macOS `curl | bash` + unsigned / SmartScreen).
-5. Download the `.dmg` and run the verification below. On a Windows box,
-   run the `*-setup.exe` (SmartScreen → More info → Run anyway) and confirm
-   JaBot lands under the current-user install directory.
-6. **Publish the draft.** Publishing is the act of shipping: it is what makes
-   `releases/latest/download/latest.json` point here, and every installed
-   *macOS* copy starts offering the update immediately. Windows installs do
-   not auto-update yet.
-
-Notarization is the slow part — usually a few minutes, occasionally hours on a
-brand new team. The build waits for it.
-
-To retry a failed release, delete the draft release and the tag, then push the
-tag again; the workflow is not re-runnable from the Actions UI because
-`workflow_dispatch` cannot target a tag ref.
+Merge to `main`. See [Releases: every push to main](#releases-every-push-to-main)
+for what happens next, how to bump a minor/major, retry a failed run, and roll
+back.
 
 ### Why every action in `release.yml` is a 40-character SHA
 
-This job has all eight secrets in its environment and every step of it shares
+The macOS job has the updater signing key in its environment and every step of it shares
 one runner, so any third-party action in it can reach them. A tag can be
 force-moved and `dtolnay/rust-toolchain@stable` is a *branch*, which moves by
 design — either would let an upstream compromise change what runs here with no
@@ -273,22 +339,29 @@ New users have nothing of ours on their machine yet, so the entry point is one
 line:
 
 ```sh
-curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/jabreeflor/jabot/releases/latest/download/install.sh | bash -s -- --allow-unnotarized
 ```
+
+(`--allow-unnotarized` while releases are ad-hoc signed — see
+[above](#ad-hoc-signing-no-apple-developer-id). Without it the script refuses
+anything not notarized by Apple.)
 
 `scripts/install.sh` resolves the latest tag, downloads that release's `.dmg`,
 mounts it, and — before it copies anything — asks the same three questions the
 ["Verifying notarization" section](#verifying-notarization-succeeded) asks by
 hand: does the signature verify, is the bundle identifier `com.jabot.app`, and
 does `spctl -a -t install` say `source=Notarized Developer ID`. Any one of
-those failing aborts the install with the app still on the disk image. There
-is no flag to skip them, because a flag to skip them is the flag an attacker
-tells the user to pass.
+those failing aborts the install with the app still on the disk image. The
+only relaxation is `--allow-unnotarized`, which accepts an *ad-hoc* signature
+in place of the third question; the seal and identifier checks have no
+off switch, because a flag to skip them is the flag an attacker tells the
+user to pass.
 
 It then `ditto`s the app to a staging path inside the target directory and
 `mv`s it into place, so the moment where neither the old nor the new app
 exists is a rename rather than a multi-second copy. Arguments go after `bash -s
---`: `--version`, `--to`, `--force`, `--team-id`, `--dry-run`.
+--`: `--version`, `--to`, `--force`, `--team-id`, `--allow-unnotarized`,
+`--dry-run`.
 
 **It is served from the release, not from `main`.** The last step of
 `release.yml` uploads `scripts/install.sh` to the draft release, which is what
@@ -343,6 +416,9 @@ versus what it does not is
 ---
 
 ## Verifying notarization succeeded
+
+*Applies once releases are Developer ID signed; today's ad-hoc builds are
+expected to fail the `spctl` check below.*
 
 A green workflow is not proof. Run these against the app from the downloaded
 `.dmg` — a locally built copy is not carrying the quarantine flag that
@@ -401,7 +477,8 @@ Do not add an entitlement against a predicted failure.
 
 ### Verifying the feed
 
-After publishing:
+The publish job does this automatically before every release
+(`scripts/release-verify-feed.mjs`). To check by hand after publishing:
 
 ```sh
 curl -sL https://github.com/jabreeflor/jabot/releases/latest/download/latest.json
