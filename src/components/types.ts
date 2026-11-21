@@ -15,18 +15,14 @@ import type {
   ToolConnectionStatus,
 } from "../host";
 
-/** Legacy `bots.color` appearance IDs; mapped to monochrome icons by avatar/bots.ts. */
-export type BotColor =
-  | "b-teal"
-  | "b-yellow"
-  | "b-purple"
-  | "b-violet"
-  | "b-blue"
-  | "b-orange"
-  | "b-pink"
-  | "b-green";
-
-export const BOT_COLORS: readonly BotColor[] = [
+/**
+ * `bots.color` appearance IDs, one per open-bot-avatar character (see
+ * avatar/bots.ts). The first eight are the original slots and keep their
+ * legacy names so saved bots and older clients round-trip; every other
+ * character is `oba-<avatar id>`. Mirrors `BOT_COLORS` in
+ * src-tauri/src/host/crew/mod.rs — append only, never reorder.
+ */
+export const BOT_COLORS = [
   "b-teal",
   "b-yellow",
   "b-purple",
@@ -35,7 +31,24 @@ export const BOT_COLORS: readonly BotColor[] = [
   "b-orange",
   "b-pink",
   "b-green",
-];
+  "oba-barbell",
+  "oba-mug",
+  "oba-watering-can",
+  "oba-book",
+  "oba-bull",
+  "oba-bunny",
+  "oba-camera",
+  "oba-cat",
+  "oba-egg",
+  "oba-paint-brush",
+  "oba-palette",
+  "oba-rocket",
+  "oba-shield",
+  "oba-star",
+  "oba-witch-hat",
+] as const;
+
+export type BotColor = (typeof BOT_COLORS)[number];
 
 /** `threads.state` — visibility only. Fold does not stop work (#5). */
 export type ThreadState = "active" | "folded" | "resurfaced" | "archived";

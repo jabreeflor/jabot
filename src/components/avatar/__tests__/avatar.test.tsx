@@ -40,7 +40,6 @@ describe("the bot icon collection", () => {
         "data-character",
         BOT_ICONS.find((bot) => bot.value === color)!.id,
       );
-      expect(el.querySelectorAll(".bot-antenna circle")).toHaveLength(1);
       expect(el.querySelector("img")).toBeNull();
       cleanup();
     }
@@ -59,7 +58,7 @@ describe("the bot icon collection", () => {
       const el = avatar({ name: "Probe", color: "b-blue", state });
       expect(el.querySelector(".bot-mark")).toHaveAttribute(
         "data-character",
-        "relay",
+        "magnifier",
       );
       expect(el.querySelector("img")).toBeNull();
       cleanup();
@@ -210,15 +209,17 @@ describe("the crew's own avatar", () => {
     const characters = [...container.querySelectorAll(".bot-mark")].map((el) =>
       el.getAttribute("data-character"),
     );
-    expect(characters).toEqual(["classic", "buddy", "pixel"]);
+    expect(characters).toEqual(["cloud", "chat", "ghost"]);
   });
 });
 
 describe("botIconSvg", () => {
   it("renders the closed catalog as markup for the web companion", () => {
     const svg = botIconSvg("b-yellow");
-    expect(svg).toContain('data-character="scout"');
+    const bulb = BOT_ICONS.find((bot) => bot.value === "b-yellow")!;
+    expect(svg).toContain('data-character="lightbulb"');
     expect(svg).toContain('class="bot-mark"');
-    expect(svg).toContain(BOT_ICONS.find((bot) => bot.id === "scout")!.body);
+    expect(svg).toContain(`fill="${bulb.color}"`);
+    expect(svg).not.toContain("<script");
   });
 });

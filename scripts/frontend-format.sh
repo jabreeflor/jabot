@@ -39,6 +39,11 @@ if [[ ! -f "$ROOT/prettier.config.mjs" || ! -f "$ROOT/.prettierignore" ]]; then
   exit 1
 fi
 
+# Physical path, not the logical one. Prettier matches .prettierignore against
+# each file's real path relative to the ignore file; when ROOT reaches it
+# through a symlink (macOS /var -> /private/var, a symlinked checkout) the two
+# disagree, every pattern misses, and vendored trees get formatted.
+ROOT=$(CDPATH= cd -- "$ROOT" && pwd -P)
 cd "$ROOT"
 
 # --ignore-unknown keeps a stray extension from expanding the contract.

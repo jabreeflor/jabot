@@ -75,6 +75,9 @@ new_repo() { # name -> echoes path
 set -u
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)" || exit 99
 printf 'ran[%s]\n' "$*" >> "$STUB_LOG"
+if [ -n "${STUB_ENV_LOG:-}" ]; then
+  printf 'GIT_DIR[%s] GIT_INDEX_FILE[%s]\n' "${GIT_DIR-unset}" "${GIT_INDEX_FILE-unset}" >> "$STUB_ENV_LOG"
+fi
 if [ -n "${STUB_WRITE:-}" ]; then
   printf '%s' "${STUB_WRITE_CONTENT:-changed-by-the-gate}" > "$STUB_WRITE"
 fi
@@ -603,6 +606,27 @@ case_pre_push_refuses_without_a_gate() {
   out=$(cd "$d" && git push origin main 2>&1); rc=$?
   [ "$rc" -ne 0 ] || { fail "pushed with no gate present: $out"; return; }
   assert_contains "$out" "refusing to push blind" "should explain itself" || return
+  pass
+}
+
+# Pushing from a linked worktree, git exports GIT_DIR to the hook. The real
+# verify.sh runs tests that `git init` and `git commit` in throwaway
+# directories; with GIT_DIR inherited those commits landed on the branch being
+# pushed and flipped core.bare in the real repository. The gate must start from
+# a clean git environment.
+case_pre_push_gives_the_gate_a_clean_git_environment() {
+  local d; d=$(new_repo pushenv)
+  with_remote "$d"
+  git -C "$d" worktree add -q "$d.wt" -b side
+  export STUB_LOG="$SANDBOX/pushenv.log" STUB_EXIT=0 STUB_ENV_LOG="$SANDBOX/pushenv.env"
+  printf 'work\n' > "$d.wt/src/work.txt"
+  git -C "$d.wt" add -A && git -C "$d.wt" commit -q -m "work"
+  local out rc
+  out=$(cd "$d.wt" && git push origin side 2>&1); rc=$?
+  unset STUB_ENV_LOG
+  assert_eq 0 "$rc" "a passing gate must let the push through: $out" || return
+  assert_eq "GIT_DIR[unset] GIT_INDEX_FILE[unset]" "$(cat "$SANDBOX/pushenv.env" 2>/dev/null)" \
+    "the gate must not inherit the hook's git environment" || return
   pass
 }
 

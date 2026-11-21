@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
-import { afterEach, beforeEach } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 import { applyTheme } from "../../src/theme";
 import { seedOnboarded } from "./onboarding";
@@ -57,6 +57,18 @@ function ensureWebStorage(): void {
 }
 
 ensureWebStorage();
+
+/**
+ * open-bot-avatar paints to a canvas, and jsdom has none, so the engine would
+ * fall back to a CSS 3D scene of dozens of slices per avatar — real DOM work
+ * that makes every <App/> suite twice as slow and that no assertion reads.
+ * Bot marks still render their span and `data-character`; the drawing is
+ * covered in the browser suites. A test that wants the real mount (or its own
+ * spy, like bot-mark.test.tsx) declares its own `vi.mock`.
+ */
+vi.mock("open-bot-avatar/dom", () => ({
+  mountAvatar: () => ({ update() {}, destroy() {} }),
+}));
 
 // The unit default is "this Mac has already been through first-run setup".
 // SIX suites render <App/> — app, crew-store, fold, folders, inbox-host,

@@ -52,11 +52,35 @@ use super::store::{BotPatch, BotRow, NewBot, Store, StoreError};
 use super::tools::catalog::CATALOG;
 use super::HostSession;
 
-/// The colour tokens a bot may have. Closed on purpose: `bots.color` is a CSS
-/// class in the renderer (`BotColor` in `src/components/types.ts`), so a value
-/// outside this list is a blob with no gradient rather than a new colour.
+/// The appearance tokens a bot may have, one per open-bot-avatar character the
+/// renderer draws (`BOT_COLORS` in `src/components/types.ts`, which a renderer
+/// test keeps equal to this list). Closed on purpose: a value outside it has
+/// no character and would draw as the fallback. The first eight are the
+/// original slots; the rest are `oba-<avatar id>`. Append only.
 pub const BOT_COLORS: &[&str] = &[
-    "b-teal", "b-yellow", "b-purple", "b-violet", "b-blue", "b-orange", "b-pink", "b-green",
+    "b-teal",
+    "b-yellow",
+    "b-purple",
+    "b-violet",
+    "b-blue",
+    "b-orange",
+    "b-pink",
+    "b-green",
+    "oba-barbell",
+    "oba-mug",
+    "oba-watering-can",
+    "oba-book",
+    "oba-bull",
+    "oba-bunny",
+    "oba-camera",
+    "oba-cat",
+    "oba-egg",
+    "oba-paint-brush",
+    "oba-palette",
+    "oba-rocket",
+    "oba-shield",
+    "oba-star",
+    "oba-witch-hat",
 ];
 
 /// The media types an uploaded icon may claim to be — exactly the three the

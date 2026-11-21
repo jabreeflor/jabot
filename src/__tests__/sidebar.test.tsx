@@ -192,11 +192,11 @@ describe("Sidebar", () => {
     const code = screen.getByRole("button", { name: /^Code/ });
     expect(chief.querySelector(".bot-mark")).toHaveAttribute(
       "data-character",
-      "classic",
+      "cloud",
     );
     expect(code.querySelector(".bot-mark")).toHaveAttribute(
       "data-character",
-      "scout",
+      "lightbulb",
     );
     expect(chief.querySelector(".color-mark")).toBeNull();
     expect(code.querySelector(".color-mark")).toBeNull();

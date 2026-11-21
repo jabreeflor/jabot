@@ -246,7 +246,14 @@ describe("folding a host-owned thread", () => {
    */
   async function renderApp() {
     render(<App />);
-    await screen.findByRole("button", { name: "New thread in jabot" });
+    // Past findBy's 1s default: that much is the whole connect + folder/list
+    // round trip, and a loaded CI machine (or verify.sh's parallel suites)
+    // overruns it without anything being wrong.
+    await screen.findByRole(
+      "button",
+      { name: "New thread in jabot" },
+      { timeout: 5000 },
+    );
   }
 
   const authRow = () => screen.getByRole("button", { name: /Auth migration/ });

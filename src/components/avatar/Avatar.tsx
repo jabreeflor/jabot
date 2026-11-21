@@ -1,4 +1,4 @@
-//! Bot icons use a distinct animated silhouette, or an uploaded picture.
+//! Bot icons are an animated open-bot-avatar character, or an uploaded picture.
 //! CSS controls sizing and motion; unread dots and runtime state rings remain shared.
 
 import type { BotColor } from "../types";
@@ -64,7 +64,7 @@ export function Avatar({
         // the bot twice wherever `labelled` is on.
         <img className="pic" src={picture} alt="" draggable={false} />
       ) : (
-        <BotMark color={color} />
+        <BotMark color={color} state={state} />
       )}
       {unread && <span className="dot" data-testid="unread-dot" />}
       {state !== "idle" && <span className="ring" data-testid="state-ring" />}
@@ -72,7 +72,7 @@ export function Avatar({
   );
 }
 
-/** Three distinct bot silhouettes for the crew navigation. */
+/** Three distinct bot characters for the crew navigation. */
 const CREW_COLORS: readonly BotColor[] = ["b-teal", "b-purple", "b-violet"];
 
 export function CrewAvatar({ className }: { className?: string }) {

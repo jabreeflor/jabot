@@ -306,9 +306,11 @@ fn main() {
                     .as_str()
                     .map(str::to_string)
                     .or_else(|| session_id.clone());
-                if !is_empty_reply_mode(&mode)
-                    && !(mode == "first-reply-only" && prompts_received > 1)
-                {
+                // Silent when the mode says so, or on every prompt after the
+                // first in `first-reply-only`.
+                let silent = is_empty_reply_mode(&mode)
+                    || (mode == "first-reply-only" && prompts_received > 1);
+                if !silent {
                     notify(
                         &mut stdout,
                         "session/update",
