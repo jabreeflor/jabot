@@ -223,8 +223,8 @@ describe("the animated bot picker", () => {
   it("loads an existing choice and saves a different icon without changing other fields", async () => {
     const props = renderEditor({ bot: WRITER });
     expect(screen.getAllByRole("radio")).toHaveLength(8);
-    expect(screen.getByRole("radio", { name: "Player" })).toBeChecked();
-    await userEvent.click(screen.getByRole("radio", { name: "Bulb" }));
+    expect(screen.getByRole("radio", { name: "Controller" })).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: "Lightbulb" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(props.onSave).toHaveBeenCalledWith(
       expect.objectContaining({

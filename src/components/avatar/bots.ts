@@ -87,7 +87,7 @@ export const BOT_ICONS: readonly BotIcon[] = [
   {
     value: "b-yellow",
     id: "lightbulb",
-    name: "Bulb",
+    name: "Lightbulb",
     color: "#f8a01c",
     definition: example("lightbulb"),
   },
@@ -108,14 +108,14 @@ export const BOT_ICONS: readonly BotIcon[] = [
   {
     value: "b-blue",
     id: "magnifier",
-    name: "Seeker",
+    name: "Magnifier",
     color: "#1f7cf2",
     definition: MAGNIFIER,
   },
   {
     value: "b-orange",
     id: "controller",
-    name: "Player",
+    name: "Controller",
     color: "#ff6a1a",
     definition: example("controller"),
   },
