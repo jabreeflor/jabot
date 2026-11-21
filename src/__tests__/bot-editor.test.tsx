@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { BotEditorModal } from "../components/BotEditorModal";
+import { BOT_ICONS } from "../components/avatar/bots";
 import type { Bot } from "../components/types";
 import { BOT_TEMPLATES, HARNESSES, TOOL_CATALOG } from "../views/mock-host";
 
@@ -222,7 +223,7 @@ describe("BotEditorModal", () => {
 describe("the animated bot picker", () => {
   it("loads an existing choice and saves a different icon without changing other fields", async () => {
     const props = renderEditor({ bot: WRITER });
-    expect(screen.getAllByRole("radio")).toHaveLength(8);
+    expect(screen.getAllByRole("radio")).toHaveLength(BOT_ICONS.length);
     expect(screen.getByRole("radio", { name: "Controller" })).toBeChecked();
     await userEvent.click(screen.getByRole("radio", { name: "Lightbulb" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));

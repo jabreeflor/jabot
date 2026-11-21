@@ -51,8 +51,10 @@
 
 .bot-icon-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  /* Every open-bot-avatar character: six across keeps all of them on screen
+     without scrolling the modal. */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .bot-icon-option {
@@ -76,17 +78,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 10px 4px;
+  gap: 4px;
+  padding: 8px 2px 7px;
   border: 1px solid var(--edge-strong);
   border-radius: 12px;
   background: var(--sunk);
   color: var(--dim);
-  min-height: 84px;
+  height: 100%;
 }
 
 .bot-icon-choice .av {
-  --blob-size: 46px;
+  --blob-size: 38px;
 }
 
 .bot-icon-option input:checked + .bot-icon-choice {
@@ -101,12 +103,13 @@
 }
 
 .bot-icon-name {
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.2;
+  text-align: center;
 }
 
 @media (max-width: 480px) {
   .bot-icon-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }

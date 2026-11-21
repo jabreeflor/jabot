@@ -2199,9 +2199,9 @@ impl SettingsSetParams {
 pub struct BotView {
     pub bot_id: String,
     pub name: String,
-    /// A colour token from [`crate::host::BOT_COLORS`]. With no uploaded
-    /// picture this *is* the bot's mark, together with its initials, so the
-    /// host keeps the vocabulary closed.
+    /// An appearance token from [`crate::host::BOT_COLORS`]: which
+    /// open-bot-avatar character the renderer draws. With no uploaded picture
+    /// this *is* the bot's mark, so the host keeps the vocabulary closed.
     pub color: String,
     /// The uploaded icon as a `data:` URL, absent when the bot wears its
     /// colour. Checked on the way in — shape and size both — so what goes out
