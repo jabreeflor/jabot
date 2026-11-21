@@ -56,12 +56,20 @@ export const SCREENSHOT_STYLE = `
      Paint them as solid magenta blocks here rather than with Playwright's
      \`mask\` option: the app zooms <html> by --ui-scale, and Playwright
      places mask boxes in unzoomed coordinates, so they landed beside the
-     text and left it visible (#311). The next-run slot also gets a fixed
-     width, so "in 9 hours" vs "in 10 hours" does not resize the block. */
+     text and left it visible (#311). Both slots also get a fixed width, so
+     "in 9 hours" vs "in 10 hours" or "now" vs "2m" does not resize the
+     block. */
   .when,
   .sched-next {
     color: transparent !important;
     background: #ff00ff !important;
+  }
+  .when {
+    display: inline-block;
+    width: 10ch;
+    overflow: hidden;
+    white-space: nowrap;
+    vertical-align: bottom;
   }
   .sched-next {
     display: inline-block;

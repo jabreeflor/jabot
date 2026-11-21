@@ -37,7 +37,9 @@ async function shot(
   extraMask: Locator[] = [],
 ): Promise<void> {
   await settle(page);
-  await expect(page).toHaveScreenshot(`${name}.png`, {
+  // Soft, so a dark-theme mismatch still renders and checks the light one:
+  // one CI run then reports (and uploads actuals for) every stale baseline.
+  await expect.soft(page).toHaveScreenshot(`${name}.png`, {
     mask: extraMask,
     maxDiffPixels: 0,
     animations: "disabled",
