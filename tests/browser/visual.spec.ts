@@ -2,8 +2,8 @@
  * Visual regression for stable product states (#234).
  *
  * Baselines are environment-specific (OS + Playwright project). CI never
- * updates them — see docs/browser-tests.md. Masks cover only relative
- * clocks; content and layout stay in the picture.
+ * updates them — see docs/browser-tests.md. Relative clocks are painted
+ * over by SCREENSHOT_STYLE; content and layout stay in the picture.
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
@@ -14,7 +14,7 @@ import {
   type WindowSize,
   FAKE_ACP_REPLY,
 } from "./support/constants";
-import { openApp, settle, variableMasks } from "./support/page";
+import { openApp, settle } from "./support/page";
 import {
   putChiefOnFakeAcp,
   seedChiefConversation,
@@ -37,8 +37,10 @@ async function shot(
   extraMask: Locator[] = [],
 ): Promise<void> {
   await settle(page);
-  await expect(page).toHaveScreenshot(`${name}.png`, {
-    mask: [...variableMasks(page), ...extraMask],
+  // Soft, so a dark-theme mismatch still renders and checks the light one:
+  // one CI run then reports (and uploads actuals for) every stale baseline.
+  await expect.soft(page).toHaveScreenshot(`${name}.png`, {
+    mask: extraMask,
     maxDiffPixels: 0,
     animations: "disabled",
     caret: "hide",
