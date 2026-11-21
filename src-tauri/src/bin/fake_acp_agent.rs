@@ -2,6 +2,9 @@
 //!
 //! Modes (first arg):
 //! - `echo` (default): initialize, session/new, stream one agent chunk, return
+//! - `markdown`: like `echo`, but the one chunk is a markdown reply with
+//!   **bold**, `code` and a GFM pipe table — the live loop's way to show the
+//!   bubble renderer (#305) without a real model
 //! - `cursor-login`: advertise `cursor_login` and require `authenticate`
 //! - `cursor-auth-fail`: `authenticate` fails — startup must not look like success
 //! - `cursor-ask`: send a blocking `cursor/ask_question`, wait for the answer,
@@ -315,7 +318,11 @@ fn main() {
                         serde_json::json!({
                             "sessionId": session_id,
                             "sessionUpdate": "agent_message_chunk",
-                            "content": { "type": "text", "text": if mode == "whitespace-reply" { " \n " } else { "hello from fake-acp" } }
+                            "content": { "type": "text", "text": match mode.as_str() {
+                                "whitespace-reply" => " \n ",
+                                "markdown" => MARKDOWN_REPLY,
+                                _ => "hello from fake-acp",
+                            } }
                         }),
                     );
                 }
@@ -729,6 +736,9 @@ fn is_empty_reply_mode(mode: &str) -> bool {
             | "exit-before-reply"
     )
 }
+
+/// The `markdown` mode's reply: what a coding agent's answers are made of.
+const MARKDOWN_REPLY: &str = "hello from fake-acp — here is **bold**, `inline code`, and a table:\n\n| a | b |\n| --- | ---: |\n| 1 | 2 |\n| 3 | 4 |\n\nThat's it.";
 
 /// The text blocks of an ACP prompt, joined. The `execute` mode echoes them as
 /// shell output, so a test can decide exactly what the agent "printed".

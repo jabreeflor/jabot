@@ -54,8 +54,15 @@ import type {
  * without `withGlobalTauri`; `@tauri-apps/api`'s own `invoke` goes through it.
  * A plain browser (`vite dev`, `vite preview`) and jsdom have no such global,
  * and those are the only two places the fixtures are for.
+ *
+ * Except one plain browser: the live loop (`./scripts/live.sh up`), where the
+ * `jabot-host` Vite plugin bridges a real `jabot-hostd` behind the page and
+ * sets `JABOT_LIVE_HOST`. A real host answers there too, so the fixtures must
+ * not paint first — they used to flash fake projects and PR/Inbox counts
+ * until the first answer replaced them (#304).
  */
 export function hostedByApp(): boolean {
+  if (import.meta.env.JABOT_LIVE_HOST === "1") return true;
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 

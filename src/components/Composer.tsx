@@ -3,7 +3,7 @@
 //!
 //! Sending is a prop: this component never calls the host. #14 hands it a
 //! `session/prompt`, and — while a turn is in flight — a Stop button in place
-//! of the decorative mic. The field itself is never disabled mid-turn: talking
+//! of the mic. Attach and Voice are not wired yet, and say so (#306). The field itself is never disabled mid-turn: talking
 //! to a busy thread is the ordinary case, and what happens to what you type is
 //! the queue's decision, not the input's.
 
@@ -83,10 +83,15 @@ export function Composer({
         </div>
       )}
       <form onSubmit={submit}>
+        {/* Not wired yet (#245 owns attachments). Said out loud rather than
+            looking like a working control that silently does nothing (#306).
+            `aria-disabled` keeps it focusable so the reason is reachable. */}
         <button
           type="button"
           className="round-btn"
-          aria-label="Attach"
+          aria-label="Attach (not available yet)"
+          aria-disabled="true"
+          title="Attachments aren't available yet"
           disabled={disabled}
         >
           <PlusIcon />
@@ -112,7 +117,9 @@ export function Composer({
           <button
             type="button"
             className="round-btn"
-            aria-label="Voice"
+            aria-label="Voice (not available yet)"
+            aria-disabled="true"
+            title="Voice input isn't available yet"
             disabled={disabled}
           >
             <MicIcon />

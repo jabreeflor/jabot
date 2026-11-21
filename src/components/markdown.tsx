@@ -11,10 +11,12 @@
 //! sanitiser that has to be right, an escape hatch that does not exist. An
 //! agent that echoes a user's `<script>` back is drawing five characters.
 //!
-//! Deliberately not CommonMark. Tables, block quotes, links, headings, nested
-//! lists and setext anything are all absent, because each is a rule that can
-//! misfire on prose an agent wrote for a human. What is here is what a coding
-//! agent's replies are actually made of: fences, lists, `code`, and emphasis.
+//! Deliberately not CommonMark. Block quotes, links, headings, nested lists and
+//! setext anything are all absent, because each is a rule that can misfire on
+//! prose an agent wrote for a human. What is here is what a coding agent's
+//! replies are actually made of: fences, lists, GFM pipe tables, `code`, and
+//! emphasis. A table needs its `| --- |` delimiter row right under the header,
+//! so a sentence with a stray pipe in it never becomes one (#305).
 //! Anything unrecognised is left as the characters that were typed, which is
 //! exactly what shipped before.
 //!
@@ -29,6 +31,9 @@ const FENCE = /^(\s*)(```|~~~)(.*)$/;
 const BULLET = /^(\s*)[-*+][ \t]+(.*)$/;
 /** `1. ` or `1) `. The number is not preserved: `<ol>` counts for itself. */
 const ORDERED = /^(\s*)\d{1,9}[.)][ \t]+(.*)$/;
+/** A GFM delimiter row: `| --- | :-: |`, at least one cell, pipes optional at
+    the ends. */
+const TABLE_DELIMITER = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 /**
  * One agent message, as React nodes.
@@ -65,6 +70,40 @@ export function renderMarkdown(text: string): ReactNode {
       continue;
     }
 
+    const table = readTable(lines, i);
+    if (table) {
+      const { header, align, rows, next } = table;
+      const cell = (row: readonly string[], index: number) => row[index] ?? "";
+      blocks.push(
+        <div key={key++} className="md-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {header.map((text, index) => (
+                  <th key={index} style={alignStyle(align[index])}>
+                    {inline(text)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, r) => (
+                <tr key={r}>
+                  {header.map((_, index) => (
+                    <td key={index} style={alignStyle(align[index])}>
+                      {inline(cell(row, index))}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      i = next;
+      continue;
+    }
+
     const list = readList(lines, i);
     if (list) {
       const { items, next, ordered } = list;
@@ -90,7 +129,8 @@ export function renderMarkdown(text: string): ReactNode {
       i < lines.length &&
       !FENCE.test(lines[i]) &&
       !BULLET.test(lines[i]) &&
-      !ORDERED.test(lines[i])
+      !ORDERED.test(lines[i]) &&
+      !readTable(lines, i)
     ) {
       i += 1;
     }
@@ -102,6 +142,73 @@ export function renderMarkdown(text: string): ReactNode {
   }
 
   return blocks;
+}
+
+type Align = "left" | "center" | "right" | undefined;
+
+/** Split one table row on unescaped pipes, dropping the optional outer ones. */
+function splitRow(line: string): string[] {
+  let row = line.trim();
+  if (row.startsWith("|")) row = row.slice(1);
+  if (row.endsWith("|") && !row.endsWith("\\|")) row = row.slice(0, -1);
+  const cells: string[] = [];
+  let current = "";
+  for (let i = 0; i < row.length; i += 1) {
+    if (row[i] === "\\" && row[i + 1] === "|") {
+      current += "|";
+      i += 1;
+    } else if (row[i] === "|") {
+      cells.push(current.trim());
+      current = "";
+    } else {
+      current += row[i];
+    }
+  }
+  cells.push(current.trim());
+  return cells;
+}
+
+function alignStyle(align: Align) {
+  return align ? { textAlign: align } : undefined;
+}
+
+/**
+ * A GFM pipe table starting here: a header row containing a pipe, then a
+ * delimiter row with the same number of cells, then body rows until a line
+ * without a pipe. Anything short of that is not a table.
+ */
+function readTable(
+  lines: readonly string[],
+  from: number,
+): {
+  header: string[];
+  align: Align[];
+  rows: string[][];
+  next: number;
+} | null {
+  const head = lines[from];
+  const delimiter = lines[from + 1];
+  if (head === undefined || delimiter === undefined) return null;
+  if (!head.includes("|") || !TABLE_DELIMITER.test(delimiter)) return null;
+  if (!delimiter.includes("|") && !head.trim().startsWith("|")) return null;
+  const header = splitRow(head);
+  const marks = splitRow(delimiter);
+  if (header.length !== marks.length) return null;
+  const align: Align[] = marks.map((mark) => {
+    const left = mark.startsWith(":");
+    const right = mark.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    if (left) return "left";
+    return undefined;
+  });
+  const rows: string[][] = [];
+  let i = from + 2;
+  while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+    rows.push(splitRow(lines[i]));
+    i += 1;
+  }
+  return { header, align, rows, next: i };
 }
 
 /** A run of bullets or a run of numbers, whichever starts here. */

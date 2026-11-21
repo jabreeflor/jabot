@@ -6,9 +6,10 @@
  */
 import { readFileSync } from "node:fs";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  hostedByApp,
   BOT_TEMPLATES,
   HARNESSES,
   HOST_TOOLS,
@@ -416,5 +417,23 @@ describe("crew", () => {
       isChief: false,
     });
     expect(added.transcripts[created.id]).toBeDefined();
+  });
+});
+
+// #304: under the live loop a real host is bridged behind a plain browser, so
+// the fixtures must not paint before it answers.
+describe("hostedByApp", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("is false in a plain browser with no host behind it", () => {
+    vi.stubEnv("JABOT_LIVE_HOST", "");
+    expect(hostedByApp()).toBe(false);
+  });
+
+  it("is true when the live loop bridges a real host", () => {
+    vi.stubEnv("JABOT_LIVE_HOST", "1");
+    expect(hostedByApp()).toBe(true);
   });
 });
