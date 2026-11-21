@@ -381,7 +381,6 @@ export function BotEditorModal({
                   titled={false}
                 />
                 <span className="bot-icon-name">{choice.name}</span>
-                <span className="bot-icon-motion">{choice.motion}</span>
               </span>
             </label>
           ))}

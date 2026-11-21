@@ -28,13 +28,13 @@ const CHIEF: Bot = {
 };
 
 describe("AgentPill", () => {
-  it("draws the monochrome BotMark and the name, not a colour circle", () => {
+  it("draws the BotMark character and the name, not a colour circle", () => {
     const { container } = render(<AgentPill bot={SCOUT} variant="title" />);
 
     expect(screen.getByRole("heading", { name: "Scout" })).toBeInTheDocument();
     expect(container.querySelector(".bot-mark")).toHaveAttribute(
       "data-character",
-      "scout",
+      "lightbulb",
     );
     expect(container.querySelector(".av")).toHaveClass("b-yellow");
   });

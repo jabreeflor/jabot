@@ -15,7 +15,7 @@ import type {
   ToolConnectionStatus,
 } from "../host";
 
-/** Legacy `bots.color` appearance IDs; mapped to monochrome icons by avatar/bots.ts. */
+/** Legacy `bots.color` appearance IDs; mapped to open-bot-avatar characters by avatar/bots.ts. */
 export type BotColor =
   | "b-teal"
   | "b-yellow"

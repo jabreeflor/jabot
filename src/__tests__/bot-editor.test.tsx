@@ -223,8 +223,8 @@ describe("the animated bot picker", () => {
   it("loads an existing choice and saves a different icon without changing other fields", async () => {
     const props = renderEditor({ bot: WRITER });
     expect(screen.getAllByRole("radio")).toHaveLength(8);
-    expect(screen.getByRole("radio", { name: "Mini" })).toBeChecked();
-    await userEvent.click(screen.getByRole("radio", { name: "Scout" }));
+    expect(screen.getByRole("radio", { name: "Player" })).toBeChecked();
+    await userEvent.click(screen.getByRole("radio", { name: "Bulb" }));
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(props.onSave).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -240,11 +240,11 @@ describe("the animated bot picker", () => {
       bot: { ...WRITER, image: "data:image/webp;base64,AAAA" },
     });
     expect(document.querySelector(".iconpick .pic")).not.toBeNull();
-    await userEvent.click(screen.getByRole("radio", { name: "Classic" }));
+    await userEvent.click(screen.getByRole("radio", { name: "Cloud" }));
     expect(document.querySelector(".iconpick .pic")).toBeNull();
     expect(document.querySelector(".iconpick .bot-mark")).toHaveAttribute(
       "data-character",
-      "classic",
+      "cloud",
     );
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(props.onSave).toHaveBeenCalledWith(

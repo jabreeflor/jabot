@@ -1,41 +1,66 @@
-//! The built-in bot drawing: one monochrome silhouette per persisted color id.
-//! Motion lives in CSS; this file only names the parts the keyframes target.
+//! The built-in bot drawing: an open-bot-avatar mounted into one span.
+//! The engine owns volume, blinking and state motion and shares a single
+//! animation loop across every mark on the page; React only owns the span.
 
+import { useEffect, useRef } from "react";
+import type { AvatarState as EngineState } from "open-bot-avatar";
+import { mountAvatar, type MountedAvatar } from "open-bot-avatar/dom";
 import type { BotColor } from "../types";
 import { botIcon } from "./bots";
+import type { AvatarState } from "./state";
 
-export function BotMark({ color }: { color: BotColor }) {
+/** The app's four ring states, in the engine's vocabulary. */
+const ENGINE_STATE: Record<AvatarState, EngineState> = {
+  idle: "idle",
+  running: "working",
+  waiting: "waiting",
+  failed: "blocked",
+};
+
+export function BotMark({
+  color,
+  state = "idle",
+}: {
+  color: BotColor;
+  state?: AvatarState;
+}) {
   const bot = botIcon(color);
+  const host = useRef<HTMLSpanElement>(null);
+  const avatar = useRef<MountedAvatar | null>(null);
+
+  // Mounted once per element; every later change goes through `update`, which
+  // only redraws what changed. The engine replaces the span's children, so
+  // nothing React renders may live inside it.
+  useEffect(() => {
+    const mounted = mountAvatar(host.current!, {
+      definition: bot.definition,
+      color: bot.color,
+      state: ENGINE_STATE[state],
+      // Decorative: the surrounding avatar carries the name when it needs one.
+      label: "",
+    });
+    avatar.current = mounted;
+    return () => {
+      mounted.destroy();
+      avatar.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- later changes go through update()
+  }, []);
+
+  useEffect(() => {
+    avatar.current?.update({
+      definition: bot.definition,
+      color: bot.color,
+      state: ENGINE_STATE[state],
+    });
+  }, [bot, state]);
+
   return (
-    <svg
+    <span
+      ref={host}
       className="bot-mark"
       data-character={bot.id}
-      viewBox="4 3 40 40"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
       aria-hidden="true"
-    >
-      <g className="bot-pose">
-        <g className="bot-antenna">
-          <path d={bot.antenna} />
-          <circle cx="24" cy={bot.tipY} r="2" />
-        </g>
-        <path className="bot-head" d={bot.body} />
-        <g className="bot-face">
-          <path className="bot-eyes" d={bot.eyes} />
-          <path
-            className="bot-happy"
-            d="M18.5 26Q20 23.5 21.5 26M26.5 26Q28 23.5 29.5 26"
-          />
-          <path
-            className="bot-error"
-            d="M18 24L22 28M22 24L18 28M26 24L30 28M30 24L26 28"
-          />
-        </g>
-      </g>
-    </svg>
+    />
   );
 }

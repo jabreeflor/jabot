@@ -1,98 +1,148 @@
+//! The built-in bot catalog, drawn by open-bot-avatar
+//! (https://github.com/DominikScholz/open-bot-avatar, MIT).
+//!
+//! Each entry is one avatar definition (a silhouette path in a 0..100 box and
+//! where the eyes sit) plus the body color it is drawn in. The engine owns
+//! volume, blinking, gaze and state motion; this file only picks the shapes.
+
+import {
+  getExample,
+  renderAvatarSvg,
+  type AvatarDefinition,
+} from "open-bot-avatar";
+import type { BotColor } from "../types";
+
+/** The package's own starters, by id. Present in every release we pin. */
+function example(id: string): AvatarDefinition {
+  const definition = getExample(id);
+  if (!definition) throw new Error(`open-bot-avatar has no "${id}" example`);
+  return definition;
+}
+
+/* Copied verbatim from the project's `gallery/` (MIT): the package ships the
+   starters but not the gallery. */
+const CLOUD: AvatarDefinition = {
+  version: 1,
+  id: "cloud",
+  name: "Cloud",
+  body: {
+    path: "M24 76C14 76 9 69 9 61C9 52 15 46 23 45.5C25 33 36 24 49 24C61 24 70 31 73 41C83 41 91 49 91 59C91 69 83 76 74 76Z",
+  },
+  eyes: { x: 50, y: 54, spacing: 17, scale: 1.15 },
+};
+
+const GHOST: AvatarDefinition = {
+  version: 1,
+  id: "ghost",
+  name: "Ghost",
+  body: {
+    path: "M24 50C24 28 35 12 50 12C65 12 76 28 76 50L77 80C77 85 73 88 68 88C63 88 61 84 59 81C57 84 54 88 50 88C46 88 43 84 41 81C39 84 37 88 32 88C27 88 23 85 23 80Z",
+  },
+  eyes: { x: 50, y: 42, spacing: 16, scale: 1.15 },
+};
+
+const MAGNIFIER: AvatarDefinition = {
+  version: 1,
+  id: "magnifier",
+  name: "Magnifier",
+  body: {
+    path: "M41 12A29 29 0 0 1 64.44 58.08L68.50 62.13A8 8 0 0 1 75.65 64.33L87.67 76.36A8 8 0 0 1 76.36 87.67L64.33 75.65A8 8 0 0 1 62.13 68.50L58.08 64.44A29 29 0 1 1 41 12Z",
+  },
+  eyes: { x: 41, y: 40, spacing: 17, scale: 1.15 },
+};
+
+const BRAIN: AvatarDefinition = {
+  version: 1,
+  id: "brain",
+  name: "Brain",
+  body: {
+    path: "M14 50C10 42 14 32 22 30C24 21 34 17 41 21C46 15 56 15 61 20C68 16 78 20 79 28C87 30 91 39 88 47C92 54 89 64 81 66C80 71 76 74 71 73C67 75 64 74 62 72C61 74 61 76 61.5 78C62 81 59 82.5 57 81.5C55.5 80.5 55 78 54 76C53 74 50 72.5 47 72.5C42 74 38 72 36 70C30 73 20 71 18 64C12 62 10 56 14 50Z",
+  },
+  eyes: { x: 50, y: 45, spacing: 17, scale: 1.15 },
+};
+
+export interface BotIcon {
+  /** The persisted appearance id (the host's `bots.color` slot). */
+  readonly value: BotColor;
+  /** The drawing's id; also the `data-character` on the rendered mark. */
+  readonly id: string;
+  readonly name: string;
+  /** Body color, `#rrggbb`. The color the slot was always named after. */
+  readonly color: string;
+  readonly definition: AvatarDefinition;
+}
+
 /** Stable appearance IDs retain the host's existing `color` wire/storage slot.
  * Do not reorder the mapping: saved bots and older clients must round-trip it.
  * This catalog is vendored into the web companion by `sync:ui`.
  */
-export const BOT_ICONS = [
+export const BOT_ICONS: readonly BotIcon[] = [
   {
     value: "b-teal",
-    id: "classic",
-    name: "Classic",
-    motion: "Gentle bounce",
-    body: "M16 17H32Q36 17 36 21V31Q36 35 32 35H16Q12 35 12 31V21Q12 17 16 17Z",
-    eyes: "M20 24V27M28 24V27",
-    antenna: "M24 17V12",
-    tipY: 10,
+    id: "cloud",
+    name: "Cloud",
+    color: "#14b3a5",
+    definition: CLOUD,
   },
   {
     value: "b-yellow",
-    id: "scout",
-    name: "Scout",
-    motion: "Curious tilt",
-    body: "M18 17H30L37 24V31Q37 35 33 35H15Q11 35 11 31V24Z",
-    eyes: "M19 24V27M29 24V27",
-    antenna: "M24 17V12",
-    tipY: 10,
+    id: "lightbulb",
+    name: "Bulb",
+    color: "#f8a01c",
+    definition: example("lightbulb"),
   },
   {
     value: "b-purple",
-    id: "buddy",
-    name: "Buddy",
-    motion: "Soft bob",
-    body: "M18 17H30C37 17 39 35 30 35H18C9 35 11 17 18 17Z",
-    eyes: "M20 24V27M28 24V27",
-    antenna: "M24 17V12",
-    tipY: 10,
+    id: "chat",
+    name: "Chat",
+    color: "#8b5cf6",
+    definition: example("chat"),
   },
   {
     value: "b-violet",
-    id: "pixel",
-    name: "Pixel",
-    motion: "Playful steps",
-    body: "M15 17H33V20H36V32H33V35H15V32H12V20H15Z",
-    eyes: "M19 24V27M29 24V27",
-    antenna: "M24 17V12",
-    tipY: 10,
+    id: "ghost",
+    name: "Ghost",
+    color: "#6366f1",
+    definition: GHOST,
   },
   {
     value: "b-blue",
-    id: "relay",
-    name: "Relay",
-    motion: "Antenna flick",
-    body: "M17 18H31Q34 18 34 21V31Q34 34 31 34H17Q14 34 14 31V21Q14 18 17 18ZM14 24H10V29H14M34 24H38V29H34",
-    eyes: "M20 24V27M28 24V27",
-    antenna: "M24 18V12",
-    tipY: 10,
+    id: "magnifier",
+    name: "Seeker",
+    color: "#1f7cf2",
+    definition: MAGNIFIER,
   },
   {
     value: "b-orange",
-    id: "mini",
-    name: "Mini",
-    motion: "Little nod",
-    body: "M20 15H28Q32 15 32 19V33Q32 37 28 37H20Q16 37 16 33V19Q16 15 20 15Z",
-    eyes: "M21 24V27M27 24V27",
-    antenna: "M24 15V10",
-    tipY: 8,
+    id: "controller",
+    name: "Player",
+    color: "#ff6a1a",
+    definition: example("controller"),
   },
   {
     value: "b-pink",
-    id: "wide",
-    name: "Wide",
-    motion: "Sideways glance",
-    body: "M15 20H33Q39 20 39 26Q39 33 33 33H15Q9 33 9 26Q9 20 15 20Z",
-    eyes: "M19 25V28M29 25V28",
-    antenna: "M24 20V15",
-    tipY: 13,
+    id: "brain",
+    name: "Brain",
+    color: "#ec4899",
+    definition: BRAIN,
   },
   {
     value: "b-green",
-    id: "visor",
-    name: "Visor",
-    motion: "Quiet sway",
-    body: "M17 17H31Q36 17 36 22V30Q36 35 31 35H17Q12 35 12 30V22Q12 17 17 17ZM17 22H31Q33 22 33 26Q33 30 31 30H17Q15 30 15 26Q15 22 17 22Z",
-    eyes: "M20 25V27M28 25V27",
-    antenna: "M24 17V12",
-    tipY: 10,
+    id: "sprout",
+    name: "Sprout",
+    color: "#1fbf68",
+    definition: example("sprout"),
   },
-] as const;
-
-export type BotIcon = (typeof BOT_ICONS)[number];
+];
 
 export function botIcon(value: string): BotIcon {
   return BOT_ICONS.find((entry) => entry.value === value) ?? BOT_ICONS[0];
 }
 
-/** All interpolated values come from the closed catalog above, never user input. */
-export function botIconSvg(value: string): string {
+/** A still frame of the bot as an SVG string, for surfaces without React.
+ *  Every value comes from the closed catalog above, never user input. */
+export function botIconSvg(value: string, size = 96): string {
   const b = botIcon(value);
-  return `<svg class="bot-mark" data-character="${b.id}" viewBox="4 3 40 40" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="bot-pose"><g class="bot-antenna"><path d="${b.antenna}"/><circle cx="24" cy="${b.tipY}" r="2"/></g><path class="bot-head" d="${b.body}"/><g class="bot-face"><path class="bot-eyes" d="${b.eyes}"/><path class="bot-happy" d="M18.5 26Q20 23.5 21.5 26M26.5 26Q28 23.5 29.5 26"/><path class="bot-error" d="M18 24L22 28M22 24L18 28M26 24L30 28M30 24L26 28"/></g></g></svg>`;
+  const svg = renderAvatarSvg(b.definition, { color: b.color, size });
+  return `<span class="bot-mark" data-character="${b.id}" aria-hidden="true">${svg}</span>`;
 }
